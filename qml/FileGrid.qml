@@ -48,20 +48,20 @@ Item {
         const available = Math.max(0, width - padding * 2 - gapX * (columns - 1))
         return Math.max(72, available / Math.max(1, columns))
     }
+    /// The tiles `GridView` actually fits per row. It flows on `cellWidth`,
+    /// which is `tileWidth + gapX`, so the even split above leaves a remainder
+    /// and fits one fewer than `columns` whenever that remainder is smaller
+    /// than the gap. A marquee has to address rows by this number, not by
+    /// `columns`, or a band selects the row below the one under the pointer.
+    readonly property int flowColumns: Math.max(1, Math.floor(
+        Math.max(0, width - padding * 2) / (tileWidth + gapX)))
 
     function selectedPathList() {
-        const paths = []
-        if (tab === null)
-            return paths
-        for (const key in tab.selected) {
-            if (tab.selected[key])
-                paths.push(key)
-        }
-        return paths
+        return model !== null ? model.selectedPaths() : []
     }
 
     function handleClick(index, ctrl, shift) {
-        if (tab === null || model === null)
+        if (model === null)
             return
         grid.forceActiveFocus()
         grid.currentIndex = index
@@ -69,27 +69,22 @@ Item {
         if (path === "")
             return
 
-        if (shift && tab.selectionAnchor !== "") {
+        if (shift && tab !== null && tab.selectionAnchor !== "") {
             const anchor = model.indexOfPath(tab.selectionAnchor)
             if (anchor >= 0) {
-                const first = Math.min(anchor, index)
-                const last = Math.max(anchor, index)
-                const paths = []
-                for (let row = first; row <= last; row += 1) {
-                    const value = model.pathAt(row)
-                    if (value !== "")
-                        paths.push(value)
-                }
-                tab.selectMany(paths)
+                // One call: the model sets the flags for the whole range.
+                model.selectRange(Math.min(anchor, index), Math.max(anchor, index))
                 root.selectionChanged()
                 return
             }
         }
 
         if (ctrl)
-            tab.toggle(path)
+            model.toggleAt(index)
         else
-            tab.selectOnly(path)
+            model.selectOnly(index)
+        if (tab !== null)
+            tab.selectionAnchor = path
         root.selectionChanged()
     }
 
@@ -147,8 +142,14 @@ Item {
     property real marqueeStartY: 0
     property real marqueeX: 0
     property real marqueeY: 0
-    property var marqueeBase: []
+    /// Ctrl was held when the drag began: the band extends the selection
+    /// rather than replacing it. The model snapshots the base itself.
+    property bool marqueeKept: false
     property real marqueePointerY: 0
+    /// The cell range the last move applied, so a pointer that stays inside the
+    /// same band does not rebuild the whole selection.
+    property int appliedFirstIndex: -2
+    property int appliedLastIndex: -2
 
     function marqueeRect() {
         return {
@@ -159,43 +160,56 @@ Item {
         }
     }
 
-    function marqueePaths() {
-        if (model === null)
-            return []
+    /// The tiles the band can touch, clipped to the rows that exist, or `null`
+    /// when it touches none. A column is in the band only when its tile
+    /// reaches it: the band's edge can land in the gap between two tiles, and
+    /// that gap belongs to neither.
+    function marqueeRange() {
+        if (model === null || model.loaded <= 0)
+            return null
         const rect = marqueeRect()
         const stepX = tileWidth + gapX
         const stepY = tileHeight + gapY
-        const firstRow = Math.max(0, Math.floor(rect.top / stepY))
-        const lastRow = Math.max(0, Math.floor(rect.bottom / stepY))
-        const firstColumn = Math.max(0, Math.floor(rect.left / stepX))
-        const lastColumn = Math.min(columns - 1, Math.max(0, Math.floor(rect.right / stepX)))
-
-        const paths = []
-        for (let row = firstRow; row <= lastRow; row += 1) {
-            for (let column = firstColumn; column <= lastColumn; column += 1) {
-                const index = row * columns + column
-                const path = model.pathAt(index)
-                if (path === "")
-                    continue
-                const cellLeft = column * stepX
-                const cellTop = row * stepY
-                const cellRight = cellLeft + tileWidth
-                const cellBottom = cellTop + tileHeight
-                if (cellRight >= rect.left && cellLeft <= rect.right
-                        && cellBottom >= rect.top && cellTop <= rect.bottom)
-                    paths.push(path)
-            }
+        const rows = Math.ceil(model.loaded / flowColumns)
+        const firstRow = Math.max(0, Math.ceil((rect.top - tileHeight) / stepY))
+        const lastRow = Math.min(rows - 1, Math.floor(rect.bottom / stepY))
+        if (lastRow < firstRow)
+            return null
+        const firstColumn = Math.max(0, Math.ceil((rect.left - tileWidth) / stepX))
+        const lastColumn = Math.min(flowColumns - 1, Math.floor(rect.right / stepX))
+        if (lastColumn < firstColumn)
+            return null
+        const first = firstRow * flowColumns + firstColumn
+        const last = Math.min(model.loaded - 1, lastRow * flowColumns + lastColumn)
+        if (last < first)
+            return null
+        return {
+            firstRow: firstRow,
+            lastRow: lastRow,
+            firstColumn: firstColumn,
+            lastColumn: lastColumn,
+            first: first,
+            last: last
         }
-        return paths
     }
 
     function applyMarquee() {
-        if (!marqueeActive || tab === null)
+        if (!marqueeActive || model === null)
             return
-        const matched = marqueePaths()
-        const paths = marqueeBase.length > 0
-            ? Array.from(new Set(marqueeBase.concat(matched))) : matched
-        tab.selectMany(paths)
+        const range = marqueeRange()
+        const first = range === null ? -1 : range.first
+        const last = range === null ? -1 : range.last
+        if (first === appliedFirstIndex && last === appliedLastIndex)
+            return
+        appliedFirstIndex = first
+        appliedLastIndex = last
+        // One call for the whole rectangle, in the model's own cell grid; the
+        // base the drag started from lives there too.
+        if (range === null)
+            model.marqueeCells(-1, -1, -1, -1, flowColumns)
+        else
+            model.marqueeCells(range.firstRow, range.firstColumn,
+                               range.lastRow, range.lastColumn, flowColumns)
         root.selectionChanged()
     }
 
@@ -274,7 +288,7 @@ Item {
             width: grid.cellWidth - root.gapX
             height: grid.cellHeight - root.gapY
 
-            readonly property bool selected: root.tab !== null && root.tab.isSelected(cell.filePath)
+            required property bool selected
             readonly property bool dropTarget: root.dropTargetPath !== "" && cell.isDir
                 && cell.filePath === root.dropTargetPath
             readonly property bool current: grid.currentIndex === cell.index
@@ -387,9 +401,9 @@ Item {
                     dragArmed = false
                     dragStarted = false
                     dragPaths = []
-                    if (root.tab === null || root.model === null || root.model.remote)
+                    if (root.model === null || root.model.remote)
                         return
-                    const selected = root.tab.isSelected(cell.filePath)
+                    const selected = cell.selected
                     if (!selected && (mouse.modifiers
                                       & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
                         root.handleClick(cell.index, false, false)
@@ -447,7 +461,7 @@ Item {
                         return
                     }
                     if (mouse.button === Qt.RightButton) {
-                        if (root.tab === null || !root.tab.isSelected(cell.filePath))
+                        if (!cell.selected)
                             root.handleClick(cell.index, false, false)
                         const point = cell.mapToItem(null, mouse.x, mouse.y)
                         root.contextRequested(cell.filePath, cell.isDir, point.x, point.y)
@@ -488,18 +502,20 @@ Item {
             }
             root.keyboardCursor = false
             grid.forceActiveFocus()
-            root.marqueeBase = (mouse.modifiers & Qt.ControlModifier) !== 0
-                ? root.selectedPathList() : []
+            root.marqueeKept = (mouse.modifiers & Qt.ControlModifier) !== 0
+            root.model.beginMarquee(root.marqueeKept)
             root.marqueeStartX = mouse.x - root.padding + grid.contentX
             root.marqueeStartY = mouse.y - root.padding + grid.contentY
             root.marqueeX = root.marqueeStartX
             root.marqueeY = root.marqueeStartY
             root.marqueePointerY = mouse.y
+            root.appliedFirstIndex = -2
+            root.appliedLastIndex = -2
             root.marqueeActive = true
-            if (root.marqueeBase.length === 0 && root.tab !== null) {
-                root.tab.clearSelection()
+            // A plain drag starts from an empty selection, and the press is
+            // what clears it — before the first move reaches the model.
+            if (!root.marqueeKept)
                 root.selectionChanged()
-            }
             mouse.accepted = true
         }
 
@@ -518,14 +534,20 @@ Item {
             const width = Math.abs(root.marqueeX - root.marqueeStartX)
             const height = Math.abs(root.marqueeY - root.marqueeStartY)
             root.marqueeActive = false
-            if (width < 4 && height < 4
-                    && root.marqueeBase.length === 0 && root.tab !== null) {
-                root.tab.clearSelection()
+            root.model.endMarquee()
+            // A drag that never travelled is a click in the empty space
+            // between tiles, which clears the selection.
+            if (width < 4 && height < 4 && !root.marqueeKept) {
+                root.model.clearSelection()
                 root.selectionChanged()
             }
         }
 
-        onCanceled: root.marqueeActive = false
+        onCanceled: {
+            root.marqueeActive = false
+            if (root.model !== null)
+                root.model.endMarquee()
+        }
 
         Rectangle {
             visible: root.marqueeActive

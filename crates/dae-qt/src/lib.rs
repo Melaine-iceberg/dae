@@ -61,6 +61,7 @@ mod preview_markup;
 pub mod properties;
 mod runtime;
 pub mod search_model;
+mod selection;
 pub mod shell;
 pub mod shell_command_model;
 pub mod sidebar_model;

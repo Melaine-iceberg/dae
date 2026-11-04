@@ -13,11 +13,14 @@
 use std::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use cxx_qt_lib::{
+    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
+};
 use dae_core::fs::search;
 use dae_core::fs::vfs;
 
 use crate::model::{category_of, extension_of, icon_version_of, thumbnail_for};
+use crate::selection::{SelectableRow, Selection};
 use dae_core::types::{
     ContentSearchFile, EntryKind, SearchEntry, SearchResponse, display_name_from_path,
 };
@@ -45,6 +48,9 @@ const SEARCH_GIT: i32 = 0x0209;
 const SEARCH_CATEGORY: i32 = 0x020A;
 const SEARCH_EXTENSION: i32 = 0x020B;
 const SEARCH_THUMBNAIL: i32 = 0x020C;
+/// Whether this result is selected. The listing delegate is shared, so the
+/// search model answers the same role the listing model does.
+const SEARCH_SELECTED: i32 = 0x020D;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -72,6 +78,12 @@ pub mod qobject {
 
         include!("cxx-qt-lib/qhash.h");
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
+
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
+
+        include!("cxx-qt-lib/core/qlist/qlist_i32.h");
+        type QList_i32 = cxx_qt_lib::QList<i32>;
     }
 
     unsafe extern "RustQt" {
@@ -79,6 +91,9 @@ pub mod qobject {
         #[qml_element]
         #[base = QAbstractListModel]
         #[qproperty(i32, loaded)]
+        /// Results currently selected. The shared delegate reads the
+        /// `selected` role; this is what the status bar counts.
+        #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
         #[qproperty(bool, busy)]
         #[qproperty(bool, finished)]
         #[qproperty(bool, truncated)]
@@ -130,6 +145,33 @@ pub mod qobject {
         #[qinvokable]
         fn dispose(self: Pin<&mut SearchModel>);
 
+        /// Selection, in the same shape the listing model offers: the shared
+        /// delegate reads the `selected` role, and a result list is clicked,
+        /// Shift-clicked, Ctrl-clicked and cleared exactly like a listing.
+        #[qinvokable]
+        #[cxx_name = "selectOnly"]
+        fn select_only(self: Pin<&mut SearchModel>, row: i32);
+
+        #[qinvokable]
+        #[cxx_name = "toggleAt"]
+        fn toggle_at(self: Pin<&mut SearchModel>, row: i32);
+
+        #[qinvokable]
+        #[cxx_name = "selectRange"]
+        fn select_range(self: Pin<&mut SearchModel>, first: i32, last: i32);
+
+        #[qinvokable]
+        #[cxx_name = "selectAll"]
+        fn select_all_rows(self: Pin<&mut SearchModel>);
+
+        #[qinvokable]
+        #[cxx_name = "clearSelection"]
+        fn clear_selection(self: Pin<&mut SearchModel>);
+
+        #[qinvokable]
+        #[cxx_name = "selectedPaths"]
+        fn selected_paths(&self) -> QStringList;
+
         #[inherit]
         #[rust_name = "begin_reset_model"]
         unsafe fn beginResetModel(self: Pin<&mut SearchModel>);
@@ -137,6 +179,19 @@ pub mod qobject {
         #[inherit]
         #[rust_name = "end_reset_model"]
         unsafe fn endResetModel(self: Pin<&mut SearchModel>);
+
+        #[inherit]
+        #[rust_name = "model_index"]
+        unsafe fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
+
+        #[inherit]
+        #[rust_name = "data_changed"]
+        unsafe fn dataChanged(
+            self: Pin<&mut SearchModel>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QList_i32,
+        );
     }
 
     unsafe extern "RustQt" {
@@ -215,6 +270,23 @@ struct SearchRow {
     modified_at: Option<u64>,
     hidden: bool,
     read_only: bool,
+    selected: bool,
+}
+
+impl SelectableRow for SearchRow {
+    fn is_selected(&self) -> bool {
+        self.selected
+    }
+
+    fn set_selected(&mut self, selected: bool) {
+        self.selected = selected;
+    }
+
+    fn selection_key(&self) -> &str {
+        // A result can sit anywhere below the search root, so its identity is
+        // the whole path.
+        &self.path
+    }
 }
 
 impl SearchRow {
@@ -228,6 +300,7 @@ impl SearchRow {
             modified_at: entry.modified_at,
             hidden: entry.hidden,
             read_only: entry.read_only,
+            selected: false,
         }
     }
 }
@@ -235,6 +308,7 @@ impl SearchRow {
 #[derive(Default)]
 pub struct SearchModelRust {
     loaded: i32,
+    selected_count: i32,
     busy: bool,
     finished: bool,
     truncated: bool,
@@ -242,6 +316,7 @@ pub struct SearchModelRust {
     query: QString,
     path: QString,
     rows: Vec<SearchRow>,
+    selection: Selection,
     generation: u64,
     reload_args: Option<(String, String)>,
 }
@@ -281,6 +356,7 @@ impl qobject::SearchModel {
             SEARCH_HIDDEN => QVariant::from(&row.hidden),
             SEARCH_READ_ONLY => QVariant::from(&row.read_only),
             SEARCH_GIT => QVariant::from(&QString::default()),
+            SEARCH_SELECTED => QVariant::from(&row.selected),
             SEARCH_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
             SEARCH_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
             SEARCH_THUMBNAIL => {
@@ -336,6 +412,7 @@ impl qobject::SearchModel {
             (SEARCH_CATEGORY, "category"),
             (SEARCH_EXTENSION, "extension"),
             (SEARCH_THUMBNAIL, "thumbnailSource"),
+            (SEARCH_SELECTED, "selected"),
         ])
     }
 
@@ -435,6 +512,97 @@ impl qobject::SearchModel {
             .unwrap_or(false)
     }
 
+    /// Republishes the selected count and repaints the spans whose flags moved.
+    /// Same contract as the listing model's: one `dataChanged` per contiguous
+    /// run, carrying only the selected role.
+    fn publish_selection(mut self: Pin<&mut Self>, runs: Vec<crate::selection::Run>) {
+        self.as_mut().publish_selection_count();
+        if runs.is_empty() {
+            return;
+        }
+        unsafe {
+            let parent = QModelIndex::default();
+            let mut roles = cxx_qt_lib::QList::<i32>::default();
+            roles.append(SEARCH_SELECTED);
+            for (first, last) in runs {
+                let top = self.as_mut().model_index(first as i32, 0, &parent);
+                let bottom = self.as_mut().model_index(last as i32, 0, &parent);
+                self.as_mut().data_changed(&top, &bottom, &roles);
+            }
+        }
+    }
+
+    fn publish_selection_count(mut self: Pin<&mut Self>) {
+        let count = self.selection.count();
+        if self.selected_count != count {
+            self.as_mut().set_selected_count(count);
+        }
+    }
+
+    fn select_only(mut self: Pin<&mut Self>, row: i32) {
+        // A negative row is past the last one too: both clear the selection,
+        // which is what a click on a result that is no longer there means.
+        let row = usize::try_from(row).unwrap_or(usize::MAX);
+        let runs = {
+            let SearchModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.select_only(rows, row)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn toggle_at(mut self: Pin<&mut Self>, row: i32) {
+        let Ok(row) = usize::try_from(row) else {
+            return;
+        };
+        let runs = {
+            let SearchModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.toggle(rows, row)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn select_range(mut self: Pin<&mut Self>, first: i32, last: i32) {
+        let runs = {
+            let SearchModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.select_range(rows, first, last)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn select_all_rows(mut self: Pin<&mut Self>) {
+        let runs = {
+            let SearchModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.select_all(rows)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn clear_selection(mut self: Pin<&mut Self>) {
+        let runs = {
+            let SearchModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.clear(rows)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn selected_paths(&self) -> QStringList {
+        let mut paths = QStringList::default();
+        for row in self.rows.iter().filter(|row| row.selected) {
+            paths.append(QString::from(row.path.as_str()));
+        }
+        paths
+    }
+
     fn dispose(mut self: Pin<&mut Self>) {
         self.as_mut().cancel();
         self.as_mut().set_status(QString::from("Closed"));
@@ -443,9 +611,16 @@ impl qobject::SearchModel {
     fn reset_rows(mut self: Pin<&mut Self>) {
         unsafe {
             self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows.clear();
+            {
+                let SearchModelRust {
+                    rows, selection, ..
+                } = &mut *self.as_mut().rust_mut();
+                rows.clear();
+                selection.reset();
+            }
             self.as_mut().end_reset_model();
         }
+        self.as_mut().publish_selection_count();
     }
 
     fn apply_search(
@@ -468,9 +643,20 @@ impl qobject::SearchModel {
                 let count = rows.len() as i32;
                 unsafe {
                     self.as_mut().begin_reset_model();
-                    self.as_mut().rust_mut().rows = rows;
+                    {
+                        let SearchModelRust {
+                            rows: stored,
+                            selection,
+                            ..
+                        } = &mut *self.as_mut().rust_mut();
+                        *stored = rows;
+                        // A new result set is a new list of rows: the flags of
+                        // the old one address results that are gone.
+                        selection.reset();
+                    }
                     self.as_mut().end_reset_model();
                 }
+                self.as_mut().publish_selection_count();
                 self.as_mut().set_loaded(count);
                 self.as_mut().set_truncated(response.truncated);
                 let mut status = if count == 0 {

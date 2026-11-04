@@ -94,17 +94,19 @@ Item {
     property bool keyboardCursor: false
     property string typeAheadBuffer: ""
 
-    readonly property int selectionCount: {
-        const version = tab !== null ? tab.selectionVersion : 0
-        if (version < 0 || tab === null)
-            return 0
-        let count = 0
-        for (const key in tab.selected) {
-            if (tab.selected[key])
-                count += 1
-        }
-        return count
-    }
+    /// Selected rows, read from whichever model is showing. The count is a
+    /// property the model maintains as flags move, so this binding updates on
+    /// the signal instead of walking the selection every time the status bar
+    /// asks; the column view is the one surface that spreads its rows over
+    /// several models, so it answers for the panes.
+    readonly property int selectionCount: root.viewMode === "column"
+        ? (columnView !== null ? columnView.selectionCount : 0)
+        : (root.model !== null ? root.model.selectedCount : 0)
+
+    /// The deferred views. Null until their mode has been shown once, which is
+    /// also the only time they exist at all (see the `LazySurface`s below).
+    readonly property var gridView: gridSurface.content
+    readonly property var columnView: columnSurface.content
 
     property string pendingFocus: ""
     /// A reload is in flight and the viewport still has to be returned to the
@@ -150,14 +152,18 @@ Item {
     signal previewRequested(string path)
 
     function selectedPathList() {
-        const paths = []
-        if (tab === null)
-            return paths
-        for (const key in tab.selected) {
-            if (tab.selected[key])
-                paths.push(key)
+        if (root.viewMode === "column")
+            return columnView !== null ? columnView.selectedPathList() : []
+        return root.model !== null ? root.model.selectedPaths() : []
+    }
+
+    function clearSelection() {
+        if (root.viewMode === "column") {
+            if (columnView !== null)
+                columnView.clearSelection()
+        } else if (root.model !== null) {
+            root.model.clearSelection()
         }
-        return paths
     }
 
     function binding(id) {
@@ -196,16 +202,16 @@ Item {
 
     /// Keyboard focus lives on the view that is showing, not on this container.
     function takeFocus() {
-        if (viewMode === "grid")
+        if (viewMode === "grid" && gridView !== null)
             gridView.takeFocus()
-        else if (viewMode === "column")
+        else if (viewMode === "column" && columnView !== null)
             columnView.takeFocus()
         else
             list.forceActiveFocus()
     }
 
     function cursorIndex() {
-        if (viewMode === "grid")
+        if (viewMode === "grid" && gridView !== null)
             return gridView.cursorIndex()
         return list.currentIndex
     }
@@ -218,10 +224,6 @@ Item {
         if (root.model === null || index < 0)
             return ""
         return root.model.pathAt(index)
-    }
-
-    function nameAt(index) {
-        return root.model !== null && index >= 0 ? root.model.nameAt(index) : ""
     }
 
     Timer {
@@ -247,24 +249,26 @@ Item {
         const needle = root.typeAheadBuffer.toLowerCase()
         const current = root.cursorIndex()
         const start = current < 0 ? 0 : needle.length === 1 ? current + 1 : current
-        for (let offset = 0; offset < count; offset += 1) {
-            const index = (start + offset) % count
-            if (!root.nameAt(index).toLowerCase().startsWith(needle))
-                continue
-            const path = root.pathAtIndex(index)
-            if (path === "")
-                continue
-            if (root.viewMode === "grid") {
-                gridView.setCursor(index)
-                gridView.positionCursor(index)
-            } else {
-                list.currentIndex = index
-                list.positionViewAtIndex(index, ListView.Contain)
-            }
-            root.tab.selectOnly(path)
-            root.selectionChanged()
+        // The scan and the case folding happen in Rust: asking per row would
+        // cross the bridge, build a QString and allocate a lowercased copy for
+        // every name in the listing on a single keystroke.
+        const index = root.model.indexOfNamePrefix(needle, start)
+        if (index < 0)
             return
+        const path = root.pathAtIndex(index)
+        if (path === "")
+            return
+        if (root.viewMode === "grid" && gridView !== null) {
+            gridView.setCursor(index)
+            gridView.positionCursor(index)
+        } else {
+            list.currentIndex = index
+            list.positionViewAtIndex(index, ListView.Contain)
         }
+        root.model.selectOnly(index)
+        if (root.tab !== null)
+            root.tab.selectionAnchor = path
+        root.selectionChanged()
     }
 
     function pasteIntoCurrent() {
@@ -290,10 +294,10 @@ Item {
     }
 
     function handleClick(index, ctrl, shift) {
-        if (root.tab === null || root.model === null)
+        if (root.model === null)
             return
         root.takeFocus()
-        if (viewMode === "grid")
+        if (viewMode === "grid" && gridView !== null)
             gridView.setCursor(index)
         else
             list.currentIndex = index
@@ -301,27 +305,23 @@ Item {
         if (path === "")
             return
 
-        if (shift && root.tab.selectionAnchor !== "") {
+        if (shift && root.tab !== null && root.tab.selectionAnchor !== "") {
             const anchor = root.model.indexOfPath(root.tab.selectionAnchor)
             if (anchor >= 0) {
-                const first = Math.min(anchor, index)
-                const last = Math.max(anchor, index)
-                const paths = []
-                for (let row = first; row <= last; row += 1) {
-                    const value = root.model.pathAt(row)
-                    if (value !== "")
-                        paths.push(value)
-                }
-                root.tab.selectMany(paths)
+                // The whole range in one call: the model sets the flags and
+                // repaints the rows that moved, in Rust.
+                root.model.selectRange(Math.min(anchor, index), Math.max(anchor, index))
                 root.selectionChanged()
                 return
             }
         }
 
         if (ctrl)
-            root.tab.toggle(path)
+            root.model.toggleAt(index)
         else
-            root.tab.selectOnly(path)
+            root.model.selectOnly(index)
+        if (root.tab !== null)
+            root.tab.selectionAnchor = path
         root.selectionChanged()
     }
 
@@ -342,15 +342,9 @@ Item {
     }
 
     function selectAll() {
-        if (root.model === null || root.tab === null)
+        if (root.model === null)
             return
-        const paths = []
-        for (let row = 0; row < root.model.loaded; row += 1) {
-            const path = root.model.pathAt(row)
-            if (path !== "")
-                paths.push(path)
-        }
-        root.tab.selectMany(paths)
+        root.model.selectAll()
         root.selectionChanged()
     }
 
@@ -370,11 +364,13 @@ Item {
         root.pendingFocus = ""
         if (index < 0)
             return
-        if (viewMode === "grid")
+        if (viewMode === "grid" && gridView !== null)
             gridView.setCursor(index)
         else
             list.currentIndex = index
-        root.tab.selectOnly(path)
+        root.model.selectOnly(index)
+        if (root.tab !== null)
+            root.tab.selectionAnchor = path
         root.selectionChanged()
     }
 
@@ -442,13 +438,13 @@ Item {
     /// selection when it is part of it, otherwise the pressed row alone —
     /// selecting it first unless a modifier says the gesture is extending the
     /// selection instead.
-    function prepareDrag(index, mouse) {
+    function prepareDrag(index, selected, mouse) {
         root.suppressClick = false
         root.dragArmed = false
         root.dragStarted = false
         root.dragPaths = []
 
-        if (root.tab === null || root.model === null || root.searchModel !== null
+        if (root.model === null || root.searchModel !== null
                 || root.remote || index < 0)
             return
 
@@ -456,7 +452,6 @@ Item {
         if (path === "")
             return
 
-        const selected = root.tab.isSelected(path)
         if (!selected && (mouse.modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
             root.handleClick(index, false, false)
 
@@ -558,7 +553,7 @@ Item {
         if (root.model === null || root.model.path === "")
             return ""
         if (root.viewMode === "grid")
-            return gridView.dropDirectoryAt(x, y)
+            return gridView !== null ? gridView.dropDirectoryAt(x, y) : root.model.path
         if (root.viewMode === "column")
             return root.model.path
         const index = list.indexAt(x, list.contentY + y)
@@ -643,9 +638,9 @@ Item {
             return true
         }
         if (root.matches("explorer.clearSelection", event)) {
-            if (root.tab !== null) {
+            if (root.model !== null) {
                 const hadSelection = root.selectionCount > 0
-                root.tab.clearSelection()
+                root.clearSelection()
                 if (hadSelection)
                     root.selectionChanged()
             }
@@ -983,8 +978,7 @@ Item {
                 width: Math.min(ListView.view.width, root.contentMaxWidth)
                 height: root.rowHeight
 
-                readonly property bool selected: root.tab !== null
-                    && root.tab.isSelected(row.filePath)
+                required property bool selected
                 readonly property bool dropTarget: root.dropTargetPath !== ""
                     && row.isDir && row.filePath === root.dropTargetPath
                 readonly property bool current: list.currentIndex === row.index
@@ -1211,7 +1205,7 @@ Item {
                     onPressed: function (mouse) {
                         root.keyboardCursor = false
                         if (mouse.button === Qt.LeftButton)
-                            root.prepareDrag(row.index, mouse)
+                            root.prepareDrag(row.index, row.selected, mouse)
                     }
                     onPositionChanged: function (mouse) {
                         root.continueDrag(mouse)
@@ -1224,7 +1218,7 @@ Item {
                             return
                         }
                         if (mouse.button === Qt.RightButton) {
-                            if (root.tab === null || !root.tab.isSelected(row.filePath))
+                            if (!row.selected)
                                 root.handleClick(row.index, false, false)
                             const point = row.mapToItem(null, mouse.x, mouse.y)
                             root.contextRequested(row.filePath, row.isDir, point.x, point.y)
@@ -1242,48 +1236,64 @@ Item {
             }
         }
 
-        FileGrid {
-            id: gridView
+        /// The grid and the column view are built the first time their mode is
+        /// shown, and kept afterwards. Both used to be instantiated up front,
+        /// so every completion reset destroyed and recreated 177 delegates in
+        /// views nobody could see (docs/decisions/listing-shell-costs.md §9).
+        LazySurface {
+            id: gridSurface
             anchors.fill: parent
             visible: root.viewMode === "grid"
-            tab: root.tab
-            model: root.model
-            dropTargetPath: root.dropTargetPath
-            keyHandler: root.handleKey
+            loadWhenShown: root.viewMode === "grid"
+            surface: Component {
+                FileGrid {
+                    anchors.fill: parent
+                    tab: root.tab
+                    model: root.model
+                    dropTargetPath: root.dropTargetPath
+                    keyHandler: root.handleKey
 
-            onActivateRequested: function (path, isDir) {
-                root.activatePath(path, isDir)
-            }
-            onContextRequested: function (path, isDir, x, y) {
-                root.contextRequested(path, isDir, x, y)
-            }
-            onEmptyContextRequested: function (x, y) {
-                root.emptyContextRequested(x, y)
-            }
-            onSelectionChanged: root.selectionChanged()
-            onDragOutRequested: function (paths, mode) {
-                Workspace.startDragOut(paths, mode)
+                    onActivateRequested: function (path, isDir) {
+                        root.activatePath(path, isDir)
+                    }
+                    onContextRequested: function (path, isDir, x, y) {
+                        root.contextRequested(path, isDir, x, y)
+                    }
+                    onEmptyContextRequested: function (x, y) {
+                        root.emptyContextRequested(x, y)
+                    }
+                    onSelectionChanged: root.selectionChanged()
+                    onDragOutRequested: function (paths, mode) {
+                        Workspace.startDragOut(paths, mode)
+                    }
+                }
             }
         }
 
-        ColumnView {
-            id: columnView
+        LazySurface {
+            id: columnSurface
             anchors.fill: parent
             visible: root.viewMode === "column"
-            tab: root.tab
+            loadWhenShown: root.viewMode === "column"
+            surface: Component {
+                ColumnView {
+                    anchors.fill: parent
+                    tab: root.tab
 
-            onActivateRequested: function (path, isDir) {
-                root.activatePath(path, isDir)
-            }
-            onContextRequested: function (path, isDir, x, y) {
-                root.contextRequested(path, isDir, x, y)
-            }
-            onEmptyContextRequested: function (x, y) {
-                root.emptyContextRequested(x, y)
-            }
-            onSelectionChanged: root.selectionChanged()
-            onDragOutRequested: function (paths, mode) {
-                Workspace.startDragOut(paths, mode)
+                    onActivateRequested: function (path, isDir) {
+                        root.activatePath(path, isDir)
+                    }
+                    onContextRequested: function (path, isDir, x, y) {
+                        root.contextRequested(path, isDir, x, y)
+                    }
+                    onEmptyContextRequested: function (x, y) {
+                        root.emptyContextRequested(x, y)
+                    }
+                    onSelectionChanged: root.selectionChanged()
+                    onDragOutRequested: function (paths, mode) {
+                        Workspace.startDragOut(paths, mode)
+                    }
+                }
             }
         }
 
@@ -1307,7 +1317,16 @@ Item {
             property real startContentY: 0
             property real pointerX: 0
             property real pointerY: 0
-            property var baseSelection: []
+            /// Ctrl was held when the drag began: the band extends the
+            /// selection rather than replacing it. The model snapshots the
+            /// base itself.
+            property bool keptBase: false
+            /// The row range the last move applied. A pointer that stays inside
+            /// the same rows must not rebuild the selection: a drag emits moves
+            /// far faster than the rows under it change.
+            property int appliedFirstRow: -2
+            property int appliedLastRow: -2
+            property bool appliedInBand: false
 
             Timer {
                 interval: 16
@@ -1327,30 +1346,37 @@ Item {
             }
 
             function apply() {
-                if (!active || root.tab === null || root.model === null)
+                if (!active || root.model === null)
                     return
                 // Rows stop at the column track's edge, so the band has to
                 // cross that box horizontally as well: dragging over the blank
                 // area right of the columns selects nothing.
                 const left = Math.min(startX, pointerX)
                 const right = Math.max(startX, pointerX)
-                const paths = []
-                if (right > 0 && left < root.contentWidth) {
+                const inBand = right > 0 && left < root.contentWidth
+                let firstRow = -1
+                let lastRow = -1
+                if (inBand) {
                     const currentContent = list.contentY + pointerY
-                    const first = Math.floor(Math.min(startContentY, currentContent)
-                                              / root.rowHeight)
-                    const last = Math.floor(Math.max(startContentY, currentContent)
-                                            / root.rowHeight)
-                    for (let row = Math.max(0, first);
-                         row <= Math.min(root.model.loaded - 1, last); row += 1) {
-                        const path = root.model.pathAt(row)
-                        if (path !== "")
-                            paths.push(path)
-                    }
+                    firstRow = Math.max(0, Math.floor(
+                        Math.min(startContentY, currentContent) / root.rowHeight))
+                    lastRow = Math.min(root.model.loaded - 1, Math.floor(
+                        Math.max(startContentY, currentContent) / root.rowHeight))
                 }
-                const next = baseSelection.length > 0
-                    ? Array.from(new Set(baseSelection.concat(paths))) : paths
-                root.tab.selectMany(next)
+                if (inBand === appliedInBand && firstRow === appliedFirstRow
+                        && lastRow === appliedLastRow)
+                    return
+                appliedInBand = inBand
+                appliedFirstRow = firstRow
+                appliedLastRow = lastRow
+
+                // One call for the whole band. The model holds the selection
+                // the drag started from and the rows it already covered, so
+                // the move sets flags instead of shipping paths across.
+                if (inBand && lastRow >= firstRow)
+                    root.model.marqueeCells(firstRow, 0, lastRow, 0, 1)
+                else
+                    root.model.marqueeCells(-1, -1, -1, -1, 1)
                 root.selectionChanged()
             }
 
@@ -1366,18 +1392,21 @@ Item {
                 }
                 root.keyboardCursor = false
                 list.forceActiveFocus()
-                baseSelection = (mouse.modifiers & Qt.ControlModifier) !== 0
-                    ? root.selectedPathList() : []
+                keptBase = (mouse.modifiers & Qt.ControlModifier) !== 0
+                root.model.beginMarquee(keptBase)
                 startX = mouse.x
                 startY = mouse.y
                 startContentY = list.contentY + mouse.y
                 pointerX = mouse.x
                 pointerY = mouse.y
                 active = true
-                if (baseSelection.length === 0 && root.tab !== null) {
-                    root.tab.clearSelection()
+                appliedInBand = false
+                appliedFirstRow = -2
+                appliedLastRow = -2
+                // A plain drag starts from an empty selection, and the press is
+                // what clears it — before the first move reaches the model.
+                if (!keptBase)
                     root.selectionChanged()
-                }
                 mouse.accepted = true
             }
 
@@ -1395,13 +1424,20 @@ Item {
                 const width = Math.abs(pointerX - startX)
                 const height = Math.abs(list.contentY + pointerY - startContentY)
                 active = false
-                if (width < 4 && height < 4 && baseSelection.length === 0 && root.tab !== null) {
-                    root.tab.clearSelection()
+                root.model.endMarquee()
+                // A drag that never travelled is a click in the empty space
+                // below the rows, which clears the selection.
+                if (width < 4 && height < 4 && !keptBase) {
+                    root.clearSelection()
                     root.selectionChanged()
                 }
             }
 
-            onCanceled: active = false
+            onCanceled: {
+                active = false
+                if (root.model !== null)
+                    root.model.endMarquee()
+            }
 
             Rectangle {
                 visible: listMarquee.active
@@ -1485,8 +1521,8 @@ Item {
                 Workspace.createShortcuts(paths, target)
             else
                 Workspace.transferEntries(paths, target, action === "move")
-            if (root.tab !== null) {
-                root.tab.clearSelection()
+            if (root.model !== null) {
+                root.clearSelection()
                 root.selectionChanged()
             }
         }
@@ -1544,6 +1580,14 @@ Item {
                 root.applyFocus()
                 return
             }
+            root.restoreScroll()
+        }
+
+        /// The completion sort applies after `finished`: `aboutToReload` saved
+        /// the position just before its reset, and this is the matching
+        /// restore. Without it the list jumps to the top when a large listing
+        /// finishes sorting.
+        function onSortApplied() {
             root.restoreScroll()
         }
     }

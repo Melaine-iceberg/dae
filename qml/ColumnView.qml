@@ -68,6 +68,43 @@ Item {
             pane.takeFocus()
     }
 
+    /// Every column owns its own model, so the selection spans several of
+    /// them. The shell asks this view once and gets the union, the same way it
+    /// asked the tab's map before.
+    function selectedPathList() {
+        const paths = []
+        for (let index = 0; index < panes.count; index += 1) {
+            const pane = panes.itemAt(index)
+            if (pane !== null)
+                paths.push.apply(paths, pane.listing.selectedPaths())
+        }
+        return paths
+    }
+
+    /// Bumped whenever any column's selection moves, so the sum below is
+    /// re-read even where a column had no delegate yet when it was first
+    /// evaluated.
+    property int selectionRevision: 0
+
+    readonly property int selectionCount: {
+        selectionRevision
+        let total = 0
+        for (let index = 0; index < panes.count; index += 1) {
+            const pane = panes.itemAt(index)
+            if (pane !== null)
+                total += pane.listing.selectedCount
+        }
+        return total
+    }
+
+    function clearSelection() {
+        for (let index = 0; index < panes.count; index += 1) {
+            const pane = panes.itemAt(index)
+            if (pane !== null)
+                pane.listing.clearSelection()
+        }
+    }
+
     function nameOf(path) {
         const text = String(path).replace(/[\\/]+$/, "")
         const parts = text.split(/[\\/]/)
@@ -133,7 +170,10 @@ Item {
                     onContextRequested: function (path, isDir, x, y) {
                         root.contextRequested(path, isDir, x, y)
                     }
-                    onSelectionChanged: root.selectionChanged()
+                    onSelectionChanged: {
+                        root.selectionRevision += 1
+                        root.selectionChanged()
+                    }
                     onDragOutRequested: function (paths, mode) {
                         root.dragOutRequested(paths, mode)
                     }
@@ -206,6 +246,16 @@ Item {
                 ownModel.load(path)
         }
 
+        /// A selection can also change from the keyboard or the shell, which
+        /// goes straight to the model; the count the trail shows has to follow
+        /// that as well as the clicks this pane handles itself.
+        Connections {
+            target: pane.listing
+            function onSelectedCountChanged() {
+                root.selectionRevision += 1
+            }
+        }
+
         Connections {
             target: ExplorerPrefs
             function onSortKeyChanged() { pane.applyPreferences() }
@@ -217,15 +267,10 @@ Item {
             function onSizeFilterChanged() { pane.applyPreferences() }
         }
 
+        /// The drag takes the whole trail's selection, not just this column's:
+        /// a Ctrl-click in another column is part of the same gesture.
         function selectedPathList() {
-            const paths = []
-            if (tab === null)
-                return paths
-            for (const key in tab.selected) {
-                if (tab.selected[key])
-                    paths.push(key)
-            }
-            return paths
+            return root.selectedPathList()
         }
 
         function handleClick(index, ctrl, shift) {
@@ -240,29 +285,20 @@ Item {
             if (shift && tab.selectionAnchor !== "") {
                 const anchor = listing.indexOfPath(tab.selectionAnchor)
                 if (anchor >= 0) {
-                    const first = Math.min(anchor, index)
-                    const last = Math.max(anchor, index)
-                    const paths = []
-                    for (let row = first; row <= last; row += 1) {
-                        const value = listing.pathAt(row)
-                        if (value !== "")
-                            paths.push(value)
-                    }
-                    tab.selectMany(paths)
+                    // One call: the model sets the flags for the range and
+                    // repaints only the rows that moved.
+                    listing.selectRange(Math.min(anchor, index), Math.max(anchor, index))
                     pane.selectionChanged()
                     return
                 }
             }
 
             if (ctrl)
-                tab.toggle(value)
+                listing.toggleAt(index)
             else
-                tab.selectOnly(value)
+                listing.selectOnly(index)
+            tab.selectionAnchor = value
             pane.selectionChanged()
-        }
-
-        function nameAt(index) {
-            return listing.nameAt(index)
         }
 
         Timer {
@@ -286,14 +322,13 @@ Item {
             const needle = pane.typeAheadBuffer.toLowerCase()
             const current = list.currentIndex
             const start = current < 0 ? 0 : needle.length === 1 ? current + 1 : current
-            for (let offset = 0; offset < count; offset += 1) {
-                const index = (start + offset) % count
-                if (!pane.nameAt(index).toLowerCase().startsWith(needle))
-                    continue
-                pane.handleClick(index, false, false)
-                list.positionViewAtIndex(index, ListView.Contain)
+            // The scan and the folding run in Rust, so a miss costs one call
+            // instead of one per row.
+            const index = listing.indexOfNamePrefix(needle, start)
+            if (index < 0)
                 return
-            }
+            pane.handleClick(index, false, false)
+            list.positionViewAtIndex(index, ListView.Contain)
         }
 
         Rectangle {
@@ -413,8 +448,7 @@ Item {
                 width: list.width
                 height: pane.rowHeight
 
-                readonly property bool selected: pane.tab !== null
-                    && pane.tab.isSelected(row.filePath)
+                required property bool selected
                 readonly property bool expanded: pane.activeChildPath !== ""
                     && pane.activeChildPath === row.filePath
                 readonly property bool current: list.currentIndex === row.index
@@ -552,7 +586,7 @@ Item {
                         dragPaths = []
                         if (pane.tab === null || pane.listing.remote)
                             return
-                        const selected = pane.tab.isSelected(row.filePath)
+                        const selected = row.selected
                         if (!selected && (mouse.modifiers
                                           & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
                             pane.handleClick(row.index, false, false)
@@ -610,7 +644,7 @@ Item {
                             return
                         }
                         if (mouse.button === Qt.RightButton) {
-                            if (pane.tab === null || !pane.tab.isSelected(row.filePath))
+                            if (!row.selected)
                                 pane.handleClick(row.index, false, false)
                             const point = row.mapToItem(null, mouse.x, mouse.y)
                             pane.contextRequested(row.filePath, row.isDir, point.x, point.y)

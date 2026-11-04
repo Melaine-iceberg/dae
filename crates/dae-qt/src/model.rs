@@ -36,6 +36,8 @@ use dae_core::fs::watch;
 use dae_core::host::{Event, Host};
 use dae_core::types::{Breadcrumb, DirectoryEntry, EntryKind};
 
+use crate::selection::{Band, Run, SelectableRow, Selection};
+
 const ROLE_NAME: i32 = 0x0100;
 const ROLE_PATH: i32 = 0x0101;
 const ROLE_SIZE: i32 = 0x0102;
@@ -63,6 +65,11 @@ const ROLE_THUMBNAIL: i32 = 0x010B;
 /// delegate paints the letter; keeping the coarse kind here means the shell
 /// does not need a second map keyed by file name.
 const ROLE_GIT: i32 = 0x010C;
+/// Whether this row is selected. A role rather than a JS lookup on the tab:
+/// the delegate then re-evaluates only when its own row changes, and a click
+/// emits one `dataChanged` for the rows that moved instead of one script call
+/// per delegate on screen.
+const ROLE_SELECTED: i32 = 0x010D;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -94,6 +101,9 @@ pub mod qobject {
         #[qml_element]
         #[base = QAbstractListModel]
         #[qproperty(i32, loaded)]
+        /// Rows currently selected. Maintained as the selection changes, so the
+        /// status bar reads a number instead of walking the selection.
+        #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
         #[qproperty(bool, finished)]
         #[qproperty(QString, status)]
         #[qproperty(QString, path)]
@@ -184,6 +194,13 @@ pub mod qobject {
         #[cxx_name = "aboutToReload"]
         fn about_to_reload(self: Pin<&mut DirectoryListModel>);
 
+        /// Emitted after a completion re-sort applies. Its reset dropped the
+        /// viewport position that `aboutToReload` saved just before it, so the
+        /// view restores it here (and not only on `finished`).
+        #[qsignal]
+        #[cxx_name = "sortApplied"]
+        fn sort_applied(self: Pin<&mut DirectoryListModel>);
+
         /// The row whose full path is `path`, or -1. QML uses this to keep a
         /// renamed or newly created entry selected after the reload.
         #[qinvokable]
@@ -197,11 +214,77 @@ pub mod qobject {
         #[cxx_name = "pathAt"]
         fn path_at(&self, row: i32) -> QString;
 
-        /// The display name of `row`. Type-ahead matches on this rather than
-        /// rebuilding each full path just to split its last segment again.
+        /// Selects `row` and nothing else. An out-of-range row clears the
+        /// selection, which is what a click on a row that vanished under the
+        /// pointer has to mean.
         #[qinvokable]
-        #[cxx_name = "nameAt"]
-        fn name_at(&self, row: i32) -> QString;
+        #[cxx_name = "selectOnly"]
+        fn select_only(self: Pin<&mut DirectoryListModel>, row: i32);
+
+        /// Flips `row` in the selection, the Ctrl-click case.
+        #[qinvokable]
+        #[cxx_name = "toggleAt"]
+        fn toggle_at(self: Pin<&mut DirectoryListModel>, row: i32);
+
+        /// Replaces the selection with `[first, last]`, clipped to the rows
+        /// that exist: a Shift-click and a marquee both reach past the end on
+        /// purpose.
+        #[qinvokable]
+        #[cxx_name = "selectRange"]
+        fn select_range(self: Pin<&mut DirectoryListModel>, first: i32, last: i32);
+
+        #[qinvokable]
+        #[cxx_name = "selectAll"]
+        fn select_all_rows(self: Pin<&mut DirectoryListModel>);
+
+        #[qinvokable]
+        #[cxx_name = "clearSelection"]
+        fn clear_selection(self: Pin<&mut DirectoryListModel>);
+
+        /// Replaces the selection with the rows whose path is in `paths`. Used
+        /// by history, where the entry was captured before the listing it
+        /// belongs to has been read back: a path whose row has not streamed in
+        /// yet is held and flagged when it arrives.
+        #[qinvokable]
+        #[cxx_name = "setSelectedPaths"]
+        fn set_selected_paths(self: Pin<&mut DirectoryListModel>, paths: &QStringList);
+
+        /// The full paths of the selected rows, in listing order.
+        #[qinvokable]
+        #[cxx_name = "selectedPaths"]
+        fn selected_paths(&self) -> QStringList;
+
+        /// Starts a rubber-band drag. `keep` is the Ctrl case: the band then
+        /// extends the selection instead of replacing it.
+        #[qinvokable]
+        #[cxx_name = "beginMarquee"]
+        fn begin_marquee(self: Pin<&mut DirectoryListModel>, keep: bool);
+
+        /// Sets the selection to the marquee base plus the cells of the band.
+        /// The band is a rectangle of `columns` columns; the detail list passes
+        /// one column, so its band is a row range. A negative row clears the
+        /// band back to the base.
+        #[qinvokable]
+        #[cxx_name = "marqueeCells"]
+        fn marquee_cells(
+            self: Pin<&mut DirectoryListModel>,
+            first_row: i32,
+            first_column: i32,
+            last_row: i32,
+            last_column: i32,
+            columns: i32,
+        );
+
+        #[qinvokable]
+        #[cxx_name = "endMarquee"]
+        fn end_marquee(self: Pin<&mut DirectoryListModel>);
+
+        /// The first row at or after `start` (wrapping once) whose name begins
+        /// with `needle`, or -1. `needle` must already be lowercase: the
+        /// type-ahead folds the buffer once, not once per row.
+        #[qinvokable]
+        #[cxx_name = "indexOfNamePrefix"]
+        fn index_of_name_prefix(&self, needle: &QString, start: i32) -> i32;
 
         /// Whether `row` is a directory, for Enter/activation.
         #[qinvokable]
@@ -320,8 +403,10 @@ pub mod qobject {
 
 /// `PartialEq` is what lets a refresh keep the rows it already has: the diff
 /// compares old and new entries field by field, so an unchanged row costs no
-/// model signal at all.
-#[derive(Clone, PartialEq)]
+/// model signal at all. `selected` is deliberately outside that comparison —
+/// it is view state, and a click must not make the diff treat the whole
+/// directory as changed.
+#[derive(Clone)]
 struct StoredRow {
     name: String,
     /// Kept only for the rare row that is not under the listing base. Rows that
@@ -333,6 +418,38 @@ struct StoredRow {
     modified_at: Option<u64>,
     hidden: bool,
     read_only: bool,
+    selected: bool,
+}
+
+impl PartialEq for StoredRow {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.path == other.path
+            && self.kind == other.kind
+            && self.size == other.size
+            && self.modified_at == other.modified_at
+            && self.hidden == other.hidden
+            && self.read_only == other.read_only
+    }
+}
+
+impl SelectableRow for StoredRow {
+    fn is_selected(&self) -> bool {
+        self.selected
+    }
+
+    fn set_selected(&mut self, selected: bool) {
+        self.selected = selected;
+    }
+
+    fn selection_key(&self) -> &str {
+        // The same identity `row_for_path` compares: rows under the base are
+        // addressed by name, rows that spell their own path by that path.
+        match &self.path {
+            Some(path) => path.as_str(),
+            None => self.name.as_str(),
+        }
+    }
 }
 
 impl StoredRow {
@@ -350,6 +467,7 @@ impl StoredRow {
             modified_at: entry.modified_at,
             hidden: entry.hidden,
             read_only: entry.read_only,
+            selected: false,
         }
     }
 
@@ -362,6 +480,7 @@ impl StoredRow {
             modified_at: row.modified_at,
             hidden: row.hidden,
             read_only: row.read_only,
+            selected: false,
         }
     }
 
@@ -584,16 +703,44 @@ impl RowFilter {
     }
 }
 
+/// The fields the ordering rules read. Implemented by [`StoredRow`] and by the
+/// snapshot the completion sort hands to its worker, so both use one copy of
+/// the comparator.
+trait SortFields {
+    fn sort_kind(&self) -> EntryKind;
+    fn sort_name(&self) -> &str;
+    fn sort_size(&self) -> Option<u64>;
+    fn sort_modified_at(&self) -> Option<u64>;
+}
+
+impl SortFields for StoredRow {
+    fn sort_kind(&self) -> EntryKind {
+        self.kind
+    }
+
+    fn sort_name(&self) -> &str {
+        &self.name
+    }
+
+    fn sort_size(&self) -> Option<u64> {
+        self.size
+    }
+
+    fn sort_modified_at(&self) -> Option<u64> {
+        self.modified_at
+    }
+}
+
 /// Orders two rows for display.
 ///
 /// The rules reproduce the Tauri shell's comparator: folders lead in both
 /// directions when `foldersFirst` is on, the active key is scaled by the
 /// direction, and the name breaks ties ascending so equal sizes/timestamps
 /// still have one order.
-fn compare_rows(left: &StoredRow, right: &StoredRow, order: &ViewOrder) -> Ordering {
+fn compare_rows<T: SortFields>(left: &T, right: &T, order: &ViewOrder) -> Ordering {
     if order.folders_first {
-        let left_folder = u8::from(left.kind == EntryKind::Directory);
-        let right_folder = u8::from(right.kind == EntryKind::Directory);
+        let left_folder = u8::from(left.sort_kind() == EntryKind::Directory);
+        let right_folder = u8::from(right.sort_kind() == EntryKind::Directory);
         let folders = right_folder.cmp(&left_folder);
         if folders != Ordering::Equal {
             return folders;
@@ -601,18 +748,21 @@ fn compare_rows(left: &StoredRow, right: &StoredRow, order: &ViewOrder) -> Order
     }
 
     let primary = match order.key {
-        SortKey::Name => natural_cmp(&left.name, &right.name),
+        SortKey::Name => natural_cmp(left.sort_name(), right.sort_name()),
         SortKey::Modified => left
-            .modified_at
+            .sort_modified_at()
             .unwrap_or(0)
-            .cmp(&right.modified_at.unwrap_or(0)),
-        SortKey::Size => left.size.unwrap_or(0).cmp(&right.size.unwrap_or(0)),
+            .cmp(&right.sort_modified_at().unwrap_or(0)),
+        SortKey::Size => left
+            .sort_size()
+            .unwrap_or(0)
+            .cmp(&right.sort_size().unwrap_or(0)),
         SortKey::Type => {
-            let left_category = category_of(left.kind, &left.name);
-            let right_category = category_of(right.kind, &right.name);
+            let left_category = category_of(left.sort_kind(), left.sort_name());
+            let right_category = category_of(right.sort_kind(), right.sort_name());
             category_rank(left_category)
                 .cmp(&category_rank(right_category))
-                .then_with(|| natural_cmp(extension_of(&left.name), extension_of(&right.name)))
+                .then_with(|| natural_cmp(extension_of(left.sort_name()), extension_of(right.sort_name())))
         }
     };
     let primary = match order.order {
@@ -623,11 +773,94 @@ fn compare_rows(left: &StoredRow, right: &StoredRow, order: &ViewOrder) -> Order
         return primary;
     }
 
-    natural_cmp(&left.name, &right.name)
+    natural_cmp(left.sort_name(), right.sort_name())
 }
 
 fn sort_rows(rows: &mut [StoredRow], order: &ViewOrder) {
     rows.sort_by(|left, right| compare_rows(left, right, order));
+}
+
+/// One row reduced to the fields the comparator reads. The completion sort
+/// hands these to a worker so the GUI thread keeps its rows (and paints them)
+/// while the ordering is computed.
+struct SortEntry {
+    name: String,
+    kind: EntryKind,
+    size: Option<u64>,
+    modified_at: Option<u64>,
+}
+
+impl SortFields for SortEntry {
+    fn sort_kind(&self) -> EntryKind {
+        self.kind
+    }
+
+    fn sort_name(&self) -> &str {
+        &self.name
+    }
+
+    fn sort_size(&self) -> Option<u64> {
+        self.size
+    }
+
+    fn sort_modified_at(&self) -> Option<u64> {
+        self.modified_at
+    }
+}
+
+fn sort_snapshot(rows: &[StoredRow]) -> Vec<SortEntry> {
+    rows.iter()
+        .map(|row| SortEntry {
+            name: row.name.clone(),
+            kind: row.kind,
+            size: row.size,
+            modified_at: row.modified_at,
+        })
+        .collect()
+}
+
+/// Indices into `entries`, in display order. The index comparison is the
+/// stable-sort tie breaker: [`sort_rows`] keeps equal names in arrival order,
+/// and an unstable sort over indices has to reproduce that explicitly.
+fn sort_permutation(entries: &[SortEntry], order: &ViewOrder) -> Vec<u32> {
+    let mut perm: Vec<u32> = (0..entries.len() as u32).collect();
+    // The index tie breaker makes the order total, so an unstable sort over
+    // the 4-byte indices produces exactly what the stable row sort does.
+    perm.sort_unstable_by(|&left, &right| {
+        compare_rows(&entries[left as usize], &entries[right as usize], order)
+            .then_with(|| left.cmp(&right))
+    });
+    perm
+}
+
+fn is_permutation(perm: &[u32], len: usize) -> bool {
+    if perm.len() != len {
+        return false;
+    }
+    let mut seen = vec![false; len];
+    for &index in perm {
+        let index = index as usize;
+        if index >= len || seen[index] {
+            return false;
+        }
+        seen[index] = true;
+    }
+    true
+}
+
+/// Reorders `rows` so that `perm[position]` is the old index of the row that
+/// lands there. Returns `None` and leaves the input alone when `perm` is not a
+/// permutation, so a bad worker result cannot lose rows.
+fn apply_permutation(rows: Vec<StoredRow>, perm: &[u32]) -> Option<Vec<StoredRow>> {
+    if !is_permutation(perm, rows.len()) {
+        return None;
+    }
+    let mut slots: Vec<Option<StoredRow>> = rows.into_iter().map(Some).collect();
+    Some(
+        perm.iter()
+            .map(|&index| slots[index as usize].take().expect("checked permutation"))
+            .collect(),
+    )
 }
 
 fn rows_are_sorted(rows: &[StoredRow], order: &ViewOrder) -> bool {
@@ -641,58 +874,151 @@ fn rows_are_sorted(rows: &[StoredRow], order: &ViewOrder) -> bool {
 /// accents; Rust has no built-in collator here, so this covers the parts that
 /// matter for file names (case, digits) and leaves diacritics compared by code
 /// point.
+///
+/// This runs inside `sort_by` on the GUI thread, so it never allocates: the
+/// lowercase form is walked from the original strings (see [`Folded`]) and a
+/// digit run is compared where it sits instead of being collected into a
+/// `String`. Sorting 120,000 names is 4.3× faster than the allocating version,
+/// which is what the model's completion re-sort needed (see
+/// `docs/decisions/listing-shell-costs.md` §2).
 fn natural_cmp(left: &str, right: &str) -> Ordering {
-    let mut left_chars = left.chars().flat_map(char::to_lowercase).peekable();
-    let mut right_chars = right.chars().flat_map(char::to_lowercase).peekable();
+    let mut left = Folded::new(left);
+    let mut right = Folded::new(right);
 
     loop {
-        match (left_chars.next(), right_chars.next()) {
+        // Digits are ASCII, so the folded stream carries them unchanged; a run
+        // on both sides is compared as two slices of the original strings.
+        if left.on_digit() && right.on_digit() {
+            let ordering = left.compare_digits(&mut right);
+            if ordering != Ordering::Equal {
+                return ordering;
+            }
+            continue;
+        }
+
+        match (left.next(), right.next()) {
             (None, None) => return Ordering::Equal,
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
             (Some(left_char), Some(right_char)) => {
-                if left_char.is_ascii_digit() && right_char.is_ascii_digit() {
-                    let left_run = digit_run(left_char, &mut left_chars);
-                    let right_run = digit_run(right_char, &mut right_chars);
-                    let left_trimmed = left_run.trim_start_matches('0');
-                    let right_trimmed = right_run.trim_start_matches('0');
-                    let numbers = left_trimmed
-                        .len()
-                        .cmp(&right_trimmed.len())
-                        .then_with(|| left_trimmed.cmp(right_trimmed));
-                    if numbers != Ordering::Equal {
-                        return numbers;
-                    }
-                    // Numerically equal ("file01" vs "file1"): fewer leading
-                    // zeros first, like the collator's tie-break followed by
-                    // the exact name comparison.
-                    let zeros = left_run.len().cmp(&right_run.len());
-                    if zeros != Ordering::Equal {
-                        return zeros;
-                    }
-                } else {
-                    let ordering = left_char.cmp(&right_char);
-                    if ordering != Ordering::Equal {
-                        return ordering;
-                    }
+                let ordering = left_char.cmp(&right_char);
+                if ordering != Ordering::Equal {
+                    return ordering;
                 }
             }
         }
     }
 }
 
-fn digit_run<I: Iterator<Item = char>>(first: char, chars: &mut std::iter::Peekable<I>) -> String {
-    let mut run = String::new();
-    run.push(first);
-    while let Some(&next) = chars.peek() {
-        if next.is_ascii_digit() {
-            run.push(next);
-            chars.next();
-        } else {
-            break;
+/// How many characters one source character may expand to when folded.
+///
+/// Unicode's SpecialCasing has a single multi-character lowercase mapping
+/// (U+0130 → `i` + U+0307), so two would do; three leaves room for a case
+/// mapping added later, and the tests assert the bound over every `char`.
+const FOLDED_PENDING: usize = 3;
+
+/// A `&str` walked one **lowercase** character at a time.
+///
+/// `char::to_lowercase` may yield more than one character; the extras wait in
+/// `pending` until the next step asks for them, which keeps the stream equal to
+/// `text.chars().flat_map(char::to_lowercase)` without building it. `at` is the
+/// byte offset of the next character to fold, which is what a digit run needs in
+/// order to compare in place.
+struct Folded<'a> {
+    text: &'a str,
+    at: usize,
+    pending: [char; FOLDED_PENDING],
+    pending_len: usize,
+    pending_at: usize,
+}
+
+impl<'a> Folded<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            at: 0,
+            pending: ['\0'; FOLDED_PENDING],
+            pending_len: 0,
+            pending_at: 0,
         }
     }
-    run
+
+    /// The next character of the lowercase stream.
+    fn next(&mut self) -> Option<char> {
+        if self.pending_at < self.pending_len {
+            self.pending_at += 1;
+            return Some(self.pending[self.pending_at - 1]);
+        }
+
+        let character = self.text[self.at..].chars().next()?;
+        self.at += character.len_utf8();
+        // Every ASCII character folds to exactly one character, and most names
+        // are ASCII, so this is the path the sort spends its time in.
+        if character.is_ascii() {
+            return Some(character.to_ascii_lowercase());
+        }
+
+        let mut len = 0;
+        for folded in character.to_lowercase() {
+            if len < FOLDED_PENDING {
+                self.pending[len] = folded;
+            }
+            len += 1;
+        }
+        debug_assert!(
+            len <= FOLDED_PENDING,
+            "U+{:04X} expands to {len} lowercase characters",
+            character as u32
+        );
+        self.pending_len = len.min(FOLDED_PENDING);
+        self.pending_at = if self.pending_len == 0 { 0 } else { 1 };
+        Some(self.pending[0])
+    }
+
+    /// Whether the next character is an ASCII digit and no folded expansion is
+    /// still waiting — the state in which a run can be compared in place.
+    fn on_digit(&self) -> bool {
+        self.pending_at == self.pending_len
+            && self
+                .text
+                .as_bytes()
+                .get(self.at)
+                .is_some_and(u8::is_ascii_digit)
+    }
+
+    /// Compares this side's digit run against `other`'s and advances both past
+    /// it: numeric value first (length after leading zeros, then the digits),
+    /// then fewer leading zeros, the way the collator breaks `file1` vs `file01`.
+    fn compare_digits(&mut self, other: &mut Self) -> Ordering {
+        let (left_start, left_end) = digit_run(self.text, self.at);
+        let (right_start, right_end) = digit_run(other.text, other.at);
+        let left = &self.text[left_start..left_end];
+        let right = &other.text[right_start..right_end];
+        let ordering = left
+            .len()
+            .cmp(&right.len())
+            .then_with(|| left.cmp(right))
+            .then_with(|| (left_end - self.at).cmp(&(right_end - other.at)));
+        self.at = left_end;
+        other.at = right_end;
+        ordering
+    }
+}
+
+/// The bounds of the digit run at `at`, with leading zeros excluded from the
+/// start. `0` is a digit too, so a run of zeros comes back empty — its length
+/// still matters for the tie-break in [`Folded::compare_digits`].
+fn digit_run(text: &str, at: usize) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    let mut end = at;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    let mut start = at;
+    while start < end && bytes[start] == b'0' {
+        start += 1;
+    }
+    (start, end)
 }
 
 pub(crate) fn extension_of(name: &str) -> &str {
@@ -828,6 +1154,9 @@ impl GitOperation {
 
 pub struct DirectoryListModelRust {
     loaded: i32,
+    /// Rows currently selected, published as the `selectedCount` property so
+    /// the status bar never recounts the selection.
+    selected_count: i32,
     finished: bool,
     status: QString,
     path: QString,
@@ -854,11 +1183,21 @@ pub struct DirectoryListModelRust {
     /// A change arrived while a read was in flight. Re-reading now would cancel
     /// that read, so the reload waits for it to finish instead.
     reload_pending: bool,
+    /// The last read failed, so the rows on screen are not a listing of `path`.
+    /// A watcher patch must not add to or edit them; only a read can recover.
+    load_failed: bool,
     /// `dispose` ran and released the watcher; a reload already queued on the
     /// Qt thread must not revive a closed model.
     closed: bool,
+    /// A completion sort is running on a worker. Patches are refused while it
+    /// is: they plan insertions against the row order, and the rows are still
+    /// in enumeration order until the permutation lands.
+    sorting: bool,
     order: ViewOrder,
     filter: RowFilter,
+    /// Which rows are selected. The flags live on the rows; this is the index
+    /// that keeps a click from scanning the whole listing.
+    selection: Selection,
     /// The worktree root and the branch facts the status bar paints. Written
     /// together from one branch listing; the status-only refresh leaves the
     /// branch lists alone so a 1000-branch repository is not re-enumerated on
@@ -890,6 +1229,7 @@ impl Default for DirectoryListModelRust {
     fn default() -> Self {
         Self {
             loaded: 0,
+            selected_count: 0,
             finished: false,
             status: QString::default(),
             path: QString::default(),
@@ -903,9 +1243,12 @@ impl Default for DirectoryListModelRust {
             remote: false,
             watcher_id: next_watcher_id(),
             reload_pending: false,
+            load_failed: false,
             closed: false,
+            sorting: false,
             order: ViewOrder::default(),
             filter: RowFilter::default(),
+            selection: Selection::default(),
             git_root: QString::default(),
             git_branch: QString::default(),
             git_detached: false,
@@ -969,6 +1312,7 @@ impl qobject::DirectoryListModel {
             ROLE_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
             ROLE_HIDDEN => QVariant::from(&row.hidden),
             ROLE_READ_ONLY => QVariant::from(&row.read_only),
+            ROLE_SELECTED => QVariant::from(&row.selected),
             ROLE_ICON => {
                 // The desktop icon lookup cannot answer for a remote
                 // directory (a bare name is not a local path), so leave the
@@ -1023,6 +1367,7 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_EXTENSION, QByteArray::from("extension"));
         roles.insert(ROLE_THUMBNAIL, QByteArray::from("thumbnailSource"));
         roles.insert(ROLE_GIT, QByteArray::from("gitStatus"));
+        roles.insert(ROLE_SELECTED, QByteArray::from("selected"));
         roles
     }
 
@@ -1045,6 +1390,7 @@ impl qobject::DirectoryListModel {
         }
 
         let generation = self.generation.wrapping_add(1);
+        self.as_mut().rust_mut().sorting = false;
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
             listing::cancel_directory_listing(stream_id);
         }
@@ -1068,6 +1414,11 @@ impl qobject::DirectoryListModel {
                     rust.generation = generation;
                     rust.rows.clear();
                     rust.base.clear();
+                    // A selection belongs to the rows it was made on. Staying
+                    // inside the same directory (the refresh branch above)
+                    // keeps it; navigating drops it before the new rows can
+                    // inherit flags for names that happen to match.
+                    rust.selection.reset();
                     rust.refresh = None;
                     rust.reload_pending = false;
                     rust.closed = false;
@@ -1076,10 +1427,12 @@ impl qobject::DirectoryListModel {
             }
         }
         self.as_mut().set_remote(remote);
+        self.as_mut().rust_mut().load_failed = false;
 
         self.as_mut().set_finished(false);
         if !refreshing {
             self.as_mut().set_loaded(0);
+            self.as_mut().publish_selection_count();
             self.as_mut().set_path(QString::from(requested.as_str()));
             self.as_mut().set_status(QString::from("Loading…"));
         }
@@ -1094,6 +1447,7 @@ impl qobject::DirectoryListModel {
         // directory: the model has already adopted `requested` above.
         if let Err(error) = scheme {
             self.as_mut().rust_mut().refresh = None;
+            self.as_mut().rust_mut().load_failed = true;
             let message = crate::errors::friendly_error(&error.to_string());
             self.as_mut().set_status(QString::from(message.as_str()));
             self.as_mut().set_finished(true);
@@ -1532,13 +1886,38 @@ impl qobject::DirectoryListModel {
         let order = self.order;
         let mut rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
         self.as_mut().about_to_reload();
+        // The two halves of the stall a QML trace cannot see: the comparator
+        // and `begin/endResetModel` (plus the QML `aboutToReload` handler that
+        // saves the scroll position). `DAE_LOG=debug` prints it next to the
+        // watcher lines.
+        let sort_started = std::time::Instant::now();
         sort_rows(&mut rows, &order);
+        let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
         let total = rows.len() as i32;
+        let reset_started = std::time::Instant::now();
         unsafe {
             self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows = rows;
+            {
+                let DirectoryListModelRust {
+                    rows: stored,
+                    selection,
+                    ..
+                } = &mut *self.as_mut().rust_mut();
+                *stored = rows;
+                // The flags travelled with their rows; the indices that point
+                // at them did not.
+                selection.invalidate();
+            }
             self.as_mut().end_reset_model();
         }
+        let reset_ms = reset_started.elapsed().as_secs_f64() * 1e3;
+        log::debug!(
+            target: "dae::listing",
+            "re-sort: {} rows, sort {:.1} ms, reset {:.1} ms",
+            total,
+            sort_ms,
+            reset_ms
+        );
         self.as_mut().set_loaded(total);
     }
 
@@ -1558,9 +1937,7 @@ impl qobject::DirectoryListModel {
 
     fn index_of_path(&self, path: &QString) -> i32 {
         let path = path.to_string();
-        self.rows
-            .iter()
-            .position(|row| row.full_path(&self.base) == path)
+        row_for_path(&self.rows, &self.base, &path)
             .map(|index| index as i32)
             .unwrap_or(-1)
     }
@@ -1572,11 +1949,165 @@ impl qobject::DirectoryListModel {
             .unwrap_or_default()
     }
 
-    fn name_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.name.as_str()))
-            .unwrap_or_default()
+    /// Republishes the selected count and repaints the spans whose flags moved.
+    /// One `dataChanged` per contiguous run, carrying only the selected role:
+    /// the delegate re-reads one property, and rows whose flag did not move are
+    /// not touched at all.
+    fn publish_selection(mut self: Pin<&mut Self>, runs: Vec<Run>) {
+        self.as_mut().publish_selection_count();
+        if runs.is_empty() {
+            return;
+        }
+        unsafe {
+            let parent = QModelIndex::default();
+            let mut roles = QList::<i32>::default();
+            roles.append(ROLE_SELECTED);
+            for (first, last) in runs {
+                let top = self.as_mut().model_index(first as i32, 0, &parent);
+                let bottom = self.as_mut().model_index(last as i32, 0, &parent);
+                self.as_mut().data_changed(&top, &bottom, &roles);
+            }
+        }
+    }
+
+    fn publish_selection_count(mut self: Pin<&mut Self>) {
+        let count = self.selection.count();
+        if self.selected_count != count {
+            self.as_mut().set_selected_count(count);
+        }
+    }
+
+    fn select_only(mut self: Pin<&mut Self>, row: i32) {
+        // A negative row addresses nothing, and `usize::MAX` is past the last
+        // row either way: both clear, which is what a click on a row that is
+        // no longer there has to mean.
+        let row = usize::try_from(row).unwrap_or(usize::MAX);
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.select_only(rows, row)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn toggle_at(mut self: Pin<&mut Self>, row: i32) {
+        let Ok(row) = usize::try_from(row) else {
+            return;
+        };
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.toggle(rows, row)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn select_range(mut self: Pin<&mut Self>, first: i32, last: i32) {
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.select_range(rows, first, last)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn select_all_rows(mut self: Pin<&mut Self>) {
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.select_all(rows)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn clear_selection(mut self: Pin<&mut Self>) {
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.clear(rows)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn set_selected_paths(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let base = self.base.to_string();
+        let paths: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.restore(rows, &paths, &base)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn selected_paths(&self) -> QStringList {
+        let mut paths = QStringList::default();
+        for row in self.rows.iter().filter(|row| row.selected) {
+            paths.append(QString::from(row.full_path(&self.base).as_str()));
+        }
+        paths
+    }
+
+    fn begin_marquee(mut self: Pin<&mut Self>, keep: bool) {
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.begin_marquee(rows, keep)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn marquee_cells(
+        mut self: Pin<&mut Self>,
+        first_row: i32,
+        first_column: i32,
+        last_row: i32,
+        last_column: i32,
+        columns: i32,
+    ) {
+        let band = match (usize::try_from(first_row), usize::try_from(last_row)) {
+            (Ok(first_row), Ok(last_row))
+                if last_row >= first_row
+                    && columns > 0
+                    && first_column >= 0
+                    && last_column >= first_column =>
+            {
+                Some(Band {
+                    first_row,
+                    last_row,
+                    first_column: first_column as usize,
+                    last_column: last_column as usize,
+                    columns: columns as usize,
+                })
+            }
+            _ => None,
+        };
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.marquee_cells(rows, band)
+        };
+        self.as_mut().publish_selection(runs);
+    }
+
+    fn end_marquee(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().selection.end_marquee();
+    }
+
+    fn index_of_name_prefix(&self, needle: &QString, start: i32) -> i32 {
+        let needle = needle.to_string();
+        let start = usize::try_from(start).unwrap_or(0);
+        find_name_prefix(&self.rows, start, &needle)
+            .map(|index| index as i32)
+            .unwrap_or(-1)
     }
 
     fn is_directory_at(&self, row: i32) -> bool {
@@ -1606,6 +2137,7 @@ impl qobject::DirectoryListModel {
                 rust.git_generation = git_generation;
                 rust.rows.clear();
                 rust.base.clear();
+                rust.selection.reset();
                 rust.git_entries.clear();
                 rust.git_directory_untracked = false;
             }
@@ -1613,6 +2145,7 @@ impl qobject::DirectoryListModel {
         }
         self.as_mut().set_remote(false);
         self.as_mut().set_loaded(0);
+        self.as_mut().publish_selection_count();
         self.as_mut().set_status(QString::from("Closed"));
         self.as_mut().set_finished(true);
         self.as_mut().set_git_busy(false);
@@ -1701,7 +2234,7 @@ impl qobject::DirectoryListModel {
             return;
         }
 
-        let rows = self.as_mut().keep_visible(rows);
+        let mut rows = self.as_mut().keep_visible(rows);
         let added = rows.len() as i32;
         let first = self.loaded;
         if added > 0 {
@@ -1709,7 +2242,21 @@ impl qobject::DirectoryListModel {
             unsafe {
                 self.as_mut()
                     .begin_insert_rows(&QModelIndex::default(), first, last);
-                self.as_mut().rust_mut().rows.extend(rows);
+                {
+                    let DirectoryListModelRust {
+                        rows: stored,
+                        base,
+                        selection,
+                        ..
+                    } = &mut *self.as_mut().rust_mut();
+                    // A history entry restored before its listing was read has
+                    // been waiting for exactly these rows; the head batch is
+                    // what tells the selection which base their paths are
+                    // spelled from.
+                    selection.resolve_pending(base);
+                    selection.rows_inserted(&mut rows);
+                    stored.extend(rows);
+                }
                 // First batch only, and before the view sees the insertion: the
                 // data moment, not the layout that follows it. See
                 // `crates/dae-qt/src/startup.rs`.
@@ -1719,6 +2266,7 @@ impl qobject::DirectoryListModel {
                 self.as_mut().end_insert_rows();
             }
             self.as_mut().set_loaded(first + added);
+            self.as_mut().publish_selection_count();
         }
 
         if done {
@@ -1728,6 +2276,9 @@ impl qobject::DirectoryListModel {
             // order without paying a reset per batch. `aboutToReload` inside
             // `resortRows` lets the view keep its scroll position.
             self.as_mut().sort_at_completion();
+            // The stream is over: a restored path that never matched a row is
+            // a file that was renamed or deleted since the entry was captured.
+            self.as_mut().rust_mut().selection.settle();
             let pending = self.reload_pending;
             self.as_mut().rust_mut().stream_id = None;
             if pending {
@@ -1754,7 +2305,100 @@ impl qobject::DirectoryListModel {
         if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
             return;
         }
-        self.as_mut().resort_rows();
+        // A worker and a queued reply cost more than the sort for a directory
+        // that fits in a few batches; only the large listings are offloaded.
+        if self.rows.len() < COMPLETION_SORT_MIN_ROWS {
+            self.as_mut().resort_rows();
+        } else {
+            self.as_mut().start_completion_sort();
+        }
+    }
+
+    /// Snapshots the comparator's inputs and sorts an index permutation on a
+    /// worker. The rows stay in the model and keep painting in enumeration
+    /// order until `apply_completion_sort` lands on the Qt thread; a load,
+    /// order change or row-count change in between drops the result.
+    fn start_completion_sort(mut self: Pin<&mut Self>) {
+        let order = self.order;
+        let generation = self.generation;
+        let expected = self.rows.len();
+        let snapshot_started = std::time::Instant::now();
+        let entries = sort_snapshot(&self.rows);
+        log::debug!(
+            target: "dae::listing",
+            "completion sort: {} rows, snapshot {:.1} ms",
+            expected,
+            snapshot_started.elapsed().as_secs_f64() * 1e3
+        );
+        self.as_mut().rust_mut().sorting = true;
+        let thread = self.as_mut().qt_thread();
+        std::thread::spawn(move || {
+            let sort_started = std::time::Instant::now();
+            let perm = sort_permutation(&entries, &order);
+            let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
+            let _ = thread.queue(move |mut model| {
+                model
+                    .as_mut()
+                    .apply_completion_sort(generation, expected, order, perm, sort_ms)
+            });
+        });
+    }
+
+    /// Applies a worker's permutation with the same one-reset shape as the
+    /// synchronous path, plus `sortApplied` so the view can restore the scroll
+    /// position the reset drops.
+    fn apply_completion_sort(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        expected: usize,
+        order: ViewOrder,
+        perm: Vec<u32>,
+        sort_ms: f64,
+    ) {
+        // Only the load that started this sort may clear the flag: a newer
+        // load has its own sort pending and must keep patches refused.
+        if self.generation == generation {
+            self.as_mut().rust_mut().sorting = false;
+        }
+        if self.closed
+            || self.generation != generation
+            || self.rows.len() != expected
+            || self.order != order
+            || !is_permutation(&perm, expected)
+        {
+            return;
+        }
+        let permute_started = std::time::Instant::now();
+        let rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
+        // `is_permutation` above is the same check `apply_permutation` makes;
+        // reaching its failure branch would lose every row.
+        let rows = apply_permutation(rows, &perm).expect("validated permutation");
+        let permute_ms = permute_started.elapsed().as_secs_f64() * 1e3;
+        self.as_mut().about_to_reload();
+        let reset_started = std::time::Instant::now();
+        unsafe {
+            self.as_mut().begin_reset_model();
+            {
+                let DirectoryListModelRust {
+                    rows: stored,
+                    selection,
+                    ..
+                } = &mut *self.as_mut().rust_mut();
+                *stored = rows;
+                selection.invalidate();
+            }
+            self.as_mut().end_reset_model();
+        }
+        let reset_ms = reset_started.elapsed().as_secs_f64() * 1e3;
+        log::debug!(
+            target: "dae::listing",
+            "re-sort: {} rows, sort {:.1} ms, permute {:.1} ms, reset {:.1} ms",
+            expected,
+            sort_ms,
+            permute_ms,
+            reset_ms
+        );
+        self.as_mut().sort_applied();
     }
 
     /// Applies a completed refresh. The new rows are already in hand, so the
@@ -1777,6 +2421,18 @@ impl qobject::DirectoryListModel {
         let mut fresh = self.as_mut().keep_visible(rows);
         sort_rows(&mut fresh, &self.order);
 
+        // The rows below are rebuilt, so the selection is captured by key: a
+        // row that only moved keeps its flag, and one that really went away
+        // leaves the count with it.
+        let keep: std::collections::HashSet<String> = if self.selection.count() > 0 {
+            self.selection
+                .selected_keys(&self.rows)
+                .into_iter()
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         let pending = self.reload_pending;
         let total = fresh.len() as i32;
         let path_changed = self.path.to_string() != path;
@@ -1793,15 +2449,23 @@ impl qobject::DirectoryListModel {
             unsafe {
                 self.as_mut().begin_reset_model();
                 {
-                    let mut rust = self.as_mut().rust_mut();
-                    rust.rows = fresh;
-                    rust.base = base;
+                    let DirectoryListModelRust {
+                        rows: stored,
+                        base: stored_base,
+                        selection,
+                        ..
+                    } = &mut *self.as_mut().rust_mut();
+                    *stored = fresh;
+                    *stored_base = base;
+                    *selection = Selection::default();
+                    selection.flag(stored, &keep);
                 }
                 self.as_mut().end_reset_model();
             }
             self.as_mut().set_loaded(total);
+            self.as_mut().publish_selection_count();
         } else {
-            self.as_mut().apply_refreshed_rows(fresh);
+            self.as_mut().apply_refreshed_rows(fresh, &keep);
         }
 
         self.as_mut().set_status(QString::from(format!(
@@ -1818,10 +2482,16 @@ impl qobject::DirectoryListModel {
 
     /// Turns `fresh` into the smallest set of row operations that reaches it
     /// from the rows on screen. Unchanged rows keep their delegates, so a
-    /// create/delete does not rebuild the whole view.
-    fn apply_refreshed_rows(mut self: Pin<&mut Self>, mut fresh: Vec<StoredRow>) {
+    /// create/delete does not rebuild the whole view. `keep` holds the selected
+    /// rows' keys: the ones that were re-inserted get their flags back, and the
+    /// ones that are gone leave the count with them.
+    fn apply_refreshed_rows(
+        mut self: Pin<&mut Self>,
+        mut fresh: Vec<StoredRow>,
+        keep: &std::collections::HashSet<String>,
+    ) {
         let (prefix, removed, added) = row_edit(&self.rows, &fresh);
-        let middle: Vec<StoredRow> = fresh.drain(prefix..prefix + added).collect();
+        let mut middle: Vec<StoredRow> = fresh.drain(prefix..prefix + added).collect();
 
         unsafe {
             if removed > 0 {
@@ -1830,10 +2500,13 @@ impl qobject::DirectoryListModel {
                     prefix as i32,
                     (prefix + removed - 1) as i32,
                 );
-                self.as_mut()
-                    .rust_mut()
-                    .rows
-                    .drain(prefix..prefix + removed);
+                {
+                    let DirectoryListModelRust {
+                        rows, selection, ..
+                    } = &mut *self.as_mut().rust_mut();
+                    selection.rows_removed(&rows[prefix..prefix + removed]);
+                    rows.drain(prefix..prefix + removed);
+                }
                 self.as_mut().end_remove_rows();
             }
             if added > 0 {
@@ -1842,18 +2515,25 @@ impl qobject::DirectoryListModel {
                     prefix as i32,
                     (prefix + added - 1) as i32,
                 );
-                self.as_mut().rust_mut().rows.splice(prefix..prefix, middle);
+                {
+                    let DirectoryListModelRust {
+                        rows, selection, ..
+                    } = &mut *self.as_mut().rust_mut();
+                    selection.flag(&mut middle, keep);
+                    rows.splice(prefix..prefix, middle);
+                }
                 self.as_mut().end_insert_rows();
             }
         }
 
         let total = self.rows.len() as i32;
         self.as_mut().set_loaded(total);
+        self.as_mut().publish_selection_count();
     }
 
-    /// A watcher reported a change in `changed`. `changed` is re-checked
-    /// because an arm that lost a navigation can still have an event in flight.
-    fn reload_after_change(mut self: Pin<&mut Self>, changed: &str) {
+    /// A watcher reported a change in `change`. The path is re-checked because an
+    /// arm that lost a navigation can still have an event in flight.
+    fn reload_after_change(mut self: Pin<&mut Self>, change: Change) {
         if self.closed {
             return;
         }
@@ -1864,10 +2544,215 @@ impl qobject::DirectoryListModel {
             self.as_mut().rust_mut().reload_pending = true;
             return;
         }
-        if self.path.to_string() != changed {
+        if self.path.to_string() != change.path {
             return;
         }
-        self.as_mut().reload();
+        match change.names {
+            Some(names) if self.can_patch(&names) => {
+                log::debug!(
+                    target: "dae::listing",
+                    "watcher: patching {} child(ren) of {}",
+                    names.len(),
+                    change.path
+                );
+                self.as_mut().patch_rows(names);
+            }
+            _ => {
+                log::debug!(target: "dae::listing", "watcher: re-reading {}", change.path);
+                self.as_mut().reload();
+            }
+        }
+    }
+
+    /// Whether a burst can be applied to the rows on screen instead of re-reading
+    /// the directory. See [`plan_patch`] for what a patch is allowed to do.
+    fn can_patch(&self, names: &[String]) -> bool {
+        !self.remote
+            && self.finished
+            && !self.sorting
+            && !self.load_failed
+            && self.refresh.is_none()
+            && !names.is_empty()
+            && names.len() <= PATCH_LIMIT
+            // Only the name order is stable under a metadata change: any other
+            // key would have to move the patched row (and re-sort the listing).
+            && self.order.key == SortKey::Name
+            // A non-default filter dropped rows at insert time, so a row that
+            // now passes it cannot be recovered without a re-read.
+            && self.filter == RowFilter::default()
+    }
+
+    /// Reads the changed children off the GUI thread; `apply_patch` lands on the
+    /// Qt thread carrying the generation the read started under.
+    fn patch_rows(mut self: Pin<&mut Self>, names: Vec<String>) {
+        let directory = self.path.to_string();
+        let generation = self.generation;
+        let thread = self.as_mut().qt_thread();
+        crate::runtime::spawn(async move {
+            let requested = names.clone();
+            let result = dae_core::fs::service::read_directory_changes(directory, requested).await;
+            let _ = thread
+                .queue(move |mut model| model.as_mut().apply_patch(generation, names, result));
+        });
+    }
+
+    fn apply_patch(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        names: Vec<String>,
+        result: Result<Vec<Option<DirectoryEntry>>, dae_core::fs::error::FileSystemError>,
+    ) {
+        if self.closed || self.generation != generation {
+            return;
+        }
+        // A read started while the patch was being resolved (the user
+        // navigated, or the directory was refreshed). It delivers the rows
+        // itself, and re-reading now would cancel it and start the same walk
+        // again; ask for one more read after it instead.
+        if self.stream_id.is_some() {
+            self.as_mut().rust_mut().reload_pending = true;
+            return;
+        }
+        // The state the patch was resolved against moved on: the last read
+        // failed, or the order or the filter no longer matches the rows.
+        if self.refresh.is_some()
+            || !self.finished
+            || self.load_failed
+            || self.order.key != SortKey::Name
+            || self.filter != RowFilter::default()
+        {
+            log::debug!(
+                target: "dae::listing",
+                "watcher: state moved on, re-reading {}",
+                self.path
+            );
+            self.as_mut().reload();
+            return;
+        }
+        let Ok(entries) = result else {
+            // A stat that failed (the directory went away, a permission change)
+            // is answered better by a read, which also reports the failure.
+            log::debug!(
+                target: "dae::listing",
+                "watcher: patch read failed, re-reading {}",
+                self.path
+            );
+            self.as_mut().reload();
+            return;
+        };
+        let Some(patch) = plan_patch(&self.rows, &self.base, &names, &entries) else {
+            // A child changed kind, so its place in the folder grouping is no
+            // longer the one the rows have. Let the reader sort that out.
+            log::debug!(
+                target: "dae::listing",
+                "watcher: a child changed kind or spelling, re-reading {}",
+                self.path
+            );
+            self.as_mut().reload();
+            return;
+        };
+        if patch.is_empty() {
+            return;
+        }
+        self.as_mut().apply_row_patch(patch);
+    }
+
+    /// Applies a resolved patch with the smallest signals it can: one remove or
+    /// insert per changed row, and one `dataChanged` span per run of
+    /// replacements. No reset, so the scroll position and the delegates survive.
+    fn apply_row_patch(mut self: Pin<&mut Self>, patch: RowPatch) {
+        let RowPatch {
+            mut removals,
+            replacements,
+            insertions,
+        } = patch;
+        let (removed, replaced, inserted) = (removals.len(), replacements.len(), insertions.len());
+        removals.sort_unstable();
+
+        for &index in removals.iter().rev() {
+            unsafe {
+                self.as_mut().begin_remove_rows(
+                    &QModelIndex::default(),
+                    index as i32,
+                    index as i32,
+                );
+                {
+                    let DirectoryListModelRust {
+                        rows, selection, ..
+                    } = &mut *self.as_mut().rust_mut();
+                    selection.rows_removed(&rows[index..index + 1]);
+                    rows.remove(index);
+                }
+                self.as_mut().end_remove_rows();
+            }
+        }
+
+        let mut changed: Vec<(usize, StoredRow)> = replacements
+            .into_iter()
+            .map(|(index, row)| (index_after_removals(index, &removals), row))
+            .collect();
+        changed.sort_unstable_by_key(|(index, _)| *index);
+
+        let mut runs: Vec<(i32, i32)> = Vec::new();
+        for (index, _) in &changed {
+            match runs.last_mut() {
+                Some((_, last)) if *last as usize + 1 == *index => *last = *index as i32,
+                _ => runs.push((*index as i32, *index as i32)),
+            }
+        }
+        for (index, mut row) in changed {
+            let rust = &mut *self.as_mut().rust_mut();
+            // The same file with new metadata: the selection is view state and
+            // survives the replacement.
+            row.selected = rust.rows[index].selected;
+            rust.rows[index] = row;
+        }
+        let parent = QModelIndex::default();
+        for (first, last) in runs {
+            unsafe {
+                let top = self.as_mut().model_index(first, 0, &parent);
+                let bottom = self.as_mut().model_index(last, 0, &parent);
+                self.as_mut()
+                    .data_changed(&top, &bottom, &QList::<i32>::default());
+            }
+        }
+
+        let order = self.order;
+        let mut insertions = insertions;
+        insertions.sort_by(|left, right| compare_rows(left, right, &order));
+        for row in insertions {
+            let at = self.rows.partition_point(|existing| {
+                compare_rows(existing, &row, &order) != Ordering::Greater
+            });
+            unsafe {
+                self.as_mut()
+                    .begin_insert_rows(&QModelIndex::default(), at as i32, at as i32);
+                self.as_mut().rust_mut().rows.insert(at, row);
+                self.as_mut().end_insert_rows();
+            }
+        }
+
+        let total = self.rows.len() as i32;
+        self.as_mut().set_loaded(total);
+        // Every insert above moved the rows after it, and a removal dropped
+        // one outright: the cached indices no longer address the selected rows.
+        self.as_mut().rust_mut().selection.invalidate();
+        self.as_mut().set_status(QString::from(format!(
+            "{total} item{}",
+            if total == 1 { "" } else { "s" }
+        )));
+        log::debug!(
+            target: "dae::listing",
+            "watcher: {} rows now ({} removed, {} replaced, {} inserted)",
+            total,
+            removed,
+            replaced,
+            inserted
+        );
+        // The patched rows can change what the Git column says for them (a saved
+        // file turns modified, a new one untracked), so re-read the status. This
+        // is the same read a reload triggers, without the branch enumeration.
+        self.as_mut().begin_git_load(false);
     }
 
     fn mark_failed(mut self: Pin<&mut Self>, generation: u64, message: String) {
@@ -1876,6 +2761,7 @@ impl qobject::DirectoryListModel {
         }
         self.as_mut().rust_mut().stream_id = None;
         self.as_mut().rust_mut().reload_pending = false;
+        self.as_mut().rust_mut().load_failed = true;
         // A failed refresh keeps the rows already on screen; a failed
         // navigation had already cleared them.
         self.as_mut().rust_mut().refresh = None;
@@ -1883,6 +2769,69 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_finished(true);
     }
 }
+
+/// One coalesced watcher burst for the directory a model displays.
+///
+/// The core reports the children the OS event named, so a rename or a save can
+/// be applied to the rows on screen instead of re-reading a directory of tens
+/// of thousands of entries. `names` is `None` when the event could not be
+/// pinned to children — the core's documented "re-read, something differs"
+/// answer — and the only safe response then is a full reload.
+struct Change {
+    path: String,
+    names: Option<Vec<String>>,
+}
+
+impl Change {
+    fn from_event(path: String, names: Vec<String>) -> Self {
+        // An empty list is the core's "something differs, re-read" signal, not
+        // "nothing changed".
+        if names.is_empty() {
+            return Self { path, names: None };
+        }
+        // One event can name the same child twice (a rename reports the old and
+        // the new path); a patch plans row edits by name, so duplicates would
+        // edit the same row twice.
+        let mut names = names;
+        names.sort_unstable();
+        names.dedup();
+        Self {
+            path,
+            names: Some(names),
+        }
+    }
+
+    /// Folds a later event of the same burst into this one. Names are unioned
+    /// because every one of them has to be patched; one unattributable event
+    /// makes the whole burst a re-read.
+    fn merge(&mut self, next: Change) {
+        if self.path != next.path {
+            // The burst spans a navigation: only the newest directory has rows
+            // on screen, and the older names address rows that are gone.
+            *self = next;
+            return;
+        }
+        match (&mut self.names, next.names) {
+            (Some(mine), Some(mut theirs)) => {
+                mine.append(&mut theirs);
+                mine.sort_unstable();
+                mine.dedup();
+            }
+            _ => self.names = None,
+        }
+    }
+}
+
+/// How many children one burst may patch before the re-read wins. Every patched
+/// name is resolved against the rows with a linear scan, so this keeps the work
+/// bounded at roughly `names × rows` comparisons; a big copy or extraction is
+/// cheaper to answer with the streamed reader than with a row edit per name.
+const PATCH_LIMIT: usize = 64;
+
+/// Listings below this size are re-sorted in place. The snapshot clone, the
+/// worker and the queued reply cost more than the sort itself at that size, and
+/// the reset that follows would be the whole stall anyway.
+const COMPLETION_SORT_MIN_ROWS: usize = 2_048;
 
 /// Forwards the directory watcher's events into the model's Qt thread.
 ///
@@ -1895,7 +2844,7 @@ struct ListingHost {
     thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
     /// Created on the first event, so a load whose watcher was already armed
     /// (the steady-state refresh) costs nothing.
-    changes: Mutex<Option<mpsc::Sender<String>>>,
+    changes: Mutex<Option<mpsc::Sender<Change>>>,
 }
 
 impl ListingHost {
@@ -1909,7 +2858,7 @@ impl ListingHost {
 
 impl Host for ListingHost {
     fn emit(&self, event: Event) {
-        let Event::DirectoryChanged { path, .. } = event else {
+        let Event::DirectoryChanged { path, names } = event else {
             return;
         };
 
@@ -1920,7 +2869,7 @@ impl Host for ListingHost {
             std::thread::spawn(move || forward_changes(receiver, thread));
             sender
         });
-        let _ = sender.send(path);
+        let _ = sender.send(Change::from_event(path, names));
     }
 }
 
@@ -1930,22 +2879,22 @@ impl Host for ListingHost {
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(150);
 
 fn forward_changes(
-    changes: mpsc::Receiver<String>,
+    changes: mpsc::Receiver<Change>,
     thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
 ) {
     let mut pending = match changes.recv() {
-        Ok(path) => path,
+        Ok(change) => change,
         Err(_) => return,
     };
 
     loop {
         match changes.recv_timeout(CHANGE_DEBOUNCE) {
-            Ok(path) => pending = path,
+            Ok(change) => pending.merge(change),
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let changed = pending;
-                let _ = thread.queue(move |mut model| model.as_mut().reload_after_change(&changed));
+                let change = pending;
+                let _ = thread.queue(move |mut model| model.as_mut().reload_after_change(change));
                 pending = match changes.recv() {
-                    Ok(path) => path,
+                    Ok(change) => change,
                     Err(_) => return,
                 };
             }
@@ -2081,6 +3030,139 @@ fn row_edit(old: &[StoredRow], new: &[StoredRow]) -> (usize, usize, usize) {
         old.len() - prefix - suffix,
         new.len() - prefix - suffix,
     )
+}
+
+/// The row whose full path is `path`, or `None`.
+///
+/// The normal row shape is `(base, name)`, so the comparison is a borrowed
+/// `strip_prefix` instead of building `base + name` for every row: a lookup on
+/// a 120,000-row listing used to allocate 120,000 `String`s, and it sits at the
+/// end of every model reset and on every Shift-click anchor.
+fn row_for_path(rows: &[StoredRow], base: &str, path: &str) -> Option<usize> {
+    rows.iter().position(|row| match &row.path {
+        // A row outside the listing base carries its whole spelling.
+        Some(full) => full == path,
+        None => path.strip_prefix(base) == Some(row.name.as_str()),
+    })
+}
+
+/// The first row at or after `start`, wrapping once past the end, whose name
+/// begins with `needle`, or `None`.
+///
+/// This is the type-ahead scan. It runs over the rows in Rust so a miss — the
+/// common case — costs no cxx-qt call, no `QString` and no JS `toLowerCase` per
+/// row. `needle` must already be lowercase; [`folded_starts_with`] folds the
+/// row names as it compares.
+fn find_name_prefix(rows: &[StoredRow], start: usize, needle: &str) -> Option<usize> {
+    if rows.is_empty() {
+        return None;
+    }
+    let start = start % rows.len();
+    (start..rows.len())
+        .chain(0..start)
+        .find(|&index| folded_starts_with(&rows[index].name, needle))
+}
+
+/// The row edits a watcher patch resolves to.
+struct RowPatch {
+    /// Indices of rows that no longer exist, ascending.
+    removals: Vec<usize>,
+    /// Rows whose metadata changed, with their index in the current rows.
+    replacements: Vec<(usize, StoredRow)>,
+    /// Children that were not on screen yet, in no particular order.
+    insertions: Vec<StoredRow>,
+}
+
+impl RowPatch {
+    fn is_empty(&self) -> bool {
+        self.removals.is_empty() && self.replacements.is_empty() && self.insertions.is_empty()
+    }
+}
+
+/// Resolves a watcher patch into row edits, or `None` when it cannot be applied
+/// in place.
+///
+/// `names` is the request and `entries` its answer, index for index; `None` in
+/// `entries` is a child that no longer exists. The caller has restricted this to
+/// the name order, so a metadata change keeps its row where it is. Two cases
+/// still need the reader: a child that changed *kind* (folders lead, so its
+/// place in the listing moved) and a name that differs from a row only by case.
+/// The second one is not a rename on every platform — a case-insensitive
+/// filesystem can report a spelling the listing did not, and matching it would
+/// duplicate the row where the names are distinct, while missing it would add a
+/// second row where they are not.
+fn plan_patch(
+    rows: &[StoredRow],
+    base: &str,
+    names: &[String],
+    entries: &[Option<DirectoryEntry>],
+) -> Option<RowPatch> {
+    debug_assert_eq!(names.len(), entries.len());
+    let mut patch = RowPatch {
+        removals: Vec::new(),
+        replacements: Vec::new(),
+        insertions: Vec::new(),
+    };
+    for (name, entry) in names.iter().zip(entries) {
+        let existing = rows
+            .iter()
+            .position(|row| row.name.as_str() == name.as_str());
+        match (existing, entry) {
+            (Some(index), None) => patch.removals.push(index),
+            (Some(index), Some(entry)) => {
+                let row = StoredRow::from_entry(entry, base);
+                if row.kind != rows[index].kind {
+                    return None;
+                }
+                if row != rows[index] {
+                    patch.replacements.push((index, row));
+                }
+            }
+            (None, entry) => {
+                if rows.iter().any(|row| folded_eq(&row.name, name)) {
+                    return None;
+                }
+                if let Some(entry) = entry {
+                    patch.insertions.push(StoredRow::from_entry(entry, base));
+                }
+            }
+        }
+    }
+    Some(patch)
+}
+
+/// The index a row has once the removals before it have been applied.
+fn index_after_removals(index: usize, removals: &[usize]) -> usize {
+    index - removals.partition_point(|&removed| removed < index)
+}
+
+/// Whether two names are equal after case folding. A plain `==` miss is not
+/// enough to call a child new: the watcher may spell the name differently from
+/// the listing and still mean the same file.
+fn folded_eq(left: &str, right: &str) -> bool {
+    let mut left = Folded::new(left);
+    let mut right = Folded::new(right);
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return true,
+            (Some(left_char), Some(right_char)) if left_char == right_char => {}
+            _ => return false,
+        }
+    }
+}
+
+/// Whether `name`, folded, begins with `needle` — which must already be folded
+/// (`"istanbul"`, not `"Istanbul"`). The row name is folded as it is compared,
+/// so a scan over a listing builds no lowercased copies.
+fn folded_starts_with(name: &str, needle: &str) -> bool {
+    let mut name = Folded::new(name);
+    for expected in needle.chars() {
+        match name.next() {
+            Some(actual) if actual == expected => {}
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// The coarse Git state QML paints for one direct child.
@@ -2246,6 +3328,7 @@ mod tests {
             modified_at: Some(modified),
             hidden,
             read_only: false,
+            selected: false,
         }
     }
 
@@ -2260,6 +3343,375 @@ mod tests {
         assert_eq!(values, ["file1", "File2", "file10", "folder"]);
         assert_eq!(natural_cmp("File", "file"), Ordering::Equal);
         assert_eq!(natural_cmp("file01", "file1"), Ordering::Greater);
+    }
+
+    /// The comparator as it was before it was made allocation-free. Kept as the
+    /// oracle: the fast one has to answer every pair the same way, including the
+    /// leading-zero tie-break, the digit-run tie-break and the folding of
+    /// characters whose lowercase is more than one character.
+    fn natural_cmp_allocating(left: &str, right: &str) -> Ordering {
+        let mut left_chars = left.chars().flat_map(char::to_lowercase).peekable();
+        let mut right_chars = right.chars().flat_map(char::to_lowercase).peekable();
+
+        loop {
+            match (left_chars.next(), right_chars.next()) {
+                (None, None) => return Ordering::Equal,
+                (None, Some(_)) => return Ordering::Less,
+                (Some(_), None) => return Ordering::Greater,
+                (Some(left_char), Some(right_char)) => {
+                    if left_char.is_ascii_digit() && right_char.is_ascii_digit() {
+                        let left_run = allocating_digit_run(left_char, &mut left_chars);
+                        let right_run = allocating_digit_run(right_char, &mut right_chars);
+                        let left_trimmed = left_run.trim_start_matches('0');
+                        let right_trimmed = right_run.trim_start_matches('0');
+                        let numbers = left_trimmed
+                            .len()
+                            .cmp(&right_trimmed.len())
+                            .then_with(|| left_trimmed.cmp(right_trimmed));
+                        if numbers != Ordering::Equal {
+                            return numbers;
+                        }
+                        let zeros = left_run.len().cmp(&right_run.len());
+                        if zeros != Ordering::Equal {
+                            return zeros;
+                        }
+                    } else {
+                        let ordering = left_char.cmp(&right_char);
+                        if ordering != Ordering::Equal {
+                            return ordering;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn allocating_digit_run<I: Iterator<Item = char>>(
+        first: char,
+        chars: &mut std::iter::Peekable<I>,
+    ) -> String {
+        let mut run = String::new();
+        run.push(first);
+        while let Some(&next) = chars.peek() {
+            if next.is_ascii_digit() {
+                run.push(next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        run
+    }
+
+    /// Names whose ordering the two comparators must agree on: separators, case,
+    /// digit runs with and without leading zeros, and characters whose lowercase
+    /// is not the same character (CJK keeps its code point, `İ` expands to two).
+    fn oracle_names() -> Vec<&'static str> {
+        let mut names = vec![
+            "", " ", ".", "..", "...", "a", "A", "a b", "a-b", "a_b", "1", "01", "001", "0", "00",
+            "9", "10", "010",
+        ];
+        names.extend([
+            "file1", "file01", "file001", "file2", "file10", "File2", "FILE10",
+        ]);
+        names.extend(["file1.txt", "file01.txt", "file10.txt", "file2.txt"]);
+        names.extend([
+            "IMG_1.png",
+            "IMG_01.png",
+            "IMG_0001.png",
+            "img_1.PNG",
+            "IMG_2.png",
+        ]);
+        names.extend([
+            "IMG_10.png",
+            "a1b2c3",
+            "a01b2c03",
+            "a1b20c3",
+            "x0y",
+            "x00y",
+            "x000y",
+        ]);
+        names.extend(["文档1.txt", "文档01.txt", "文档2.txt", "文档10.txt", "文档"]);
+        names.extend(["éclair", "Éclair", "ÉCLAIR", "eclair"]);
+        names.extend(["İstanbul", "istanbul", "Istanbul", "İ", "i"]);
+        names.extend(["ẞ", "ß", "SS", "ss"]);
+        names.extend(["🎉", "🎉1", "1🎉", "🎉01"]);
+        names
+    }
+
+    #[test]
+    fn the_folded_cursor_holds_every_lowercase_expansion() {
+        let mut widest = 0;
+        for code in 0..=0x10FFFFu32 {
+            let Some(character) = char::from_u32(code) else {
+                continue;
+            };
+            widest = widest.max(character.to_lowercase().count());
+        }
+        assert!(
+            widest <= FOLDED_PENDING,
+            "a lowercase expansion needs {widest} chars, FOLDED_PENDING is {FOLDED_PENDING}"
+        );
+    }
+
+    #[test]
+    fn natural_order_agrees_with_the_allocating_comparator() {
+        let names = oracle_names();
+        for left in &names {
+            for right in &names {
+                assert_eq!(
+                    natural_cmp(left, right),
+                    natural_cmp_allocating(left, right),
+                    "comparator disagreed on {left:?} vs {right:?}"
+                );
+            }
+        }
+
+        // The same corpus, sorted both ways: a stable sort over agreeing
+        // comparators must produce the same sequence.
+        let mut fast = names.clone();
+        fast.sort_by(|left, right| natural_cmp(left, right));
+        let mut slow = names.clone();
+        slow.sort_by(|left, right| natural_cmp_allocating(left, right));
+        assert_eq!(fast, slow);
+    }
+
+    /// Names drawn from an alphabet that mixes digits, separators, CJK,
+    /// accented, multi-character-folding and supplementary-plane characters,
+    /// so the generated sort exercises the digit cursor and the fold buffer.
+    fn generated_names(count: usize) -> Vec<String> {
+        let alphabet: Vec<char> = "abAB01_ -.文档Ääéßİẞ🎉".chars().collect();
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        (0..count)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let len = (state % 7 + 1) as usize;
+                let mut name = String::new();
+                for _ in 0..len {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    name.push(alphabet[(state >> 33) as usize % alphabet.len()]);
+                }
+                name
+            })
+            .collect()
+    }
+
+    #[test]
+    fn natural_order_agrees_with_the_allocating_comparator_on_generated_names() {
+        let names = generated_names(4_000);
+        for left in &names[..200] {
+            for right in &names[..200] {
+                assert_eq!(
+                    natural_cmp(left, right),
+                    natural_cmp_allocating(left, right),
+                    "comparator disagreed on {left:?} vs {right:?}"
+                );
+            }
+        }
+
+        let mut fast = names.clone();
+        fast.sort_by(|left, right| natural_cmp(left, right));
+        let mut slow = names.clone();
+        slow.sort_by(|left, right| natural_cmp_allocating(left, right));
+        assert_eq!(fast, slow);
+    }
+
+    #[test]
+    fn the_completion_permutation_matches_the_stable_sort() {
+        let mut names = generated_names(2_000);
+        // Case-only ties are where a stable sort and an index permutation can
+        // disagree; the tie breaker has to keep arrival order.
+        names.extend(["README".to_owned(), "readme".to_owned(), "ReadMe".to_owned()]);
+        let entries: Vec<StoredRow> = names
+            .iter()
+            .map(|name| StoredRow::from_entry(&entry(&format!("K:/dae/{name}")), "K:/dae/"))
+            .collect();
+        let order = ViewOrder::default();
+
+        let mut sorted = entries.clone();
+        sort_rows(&mut sorted, &order);
+
+        let snapshot = sort_snapshot(&entries);
+        let perm = sort_permutation(&snapshot, &order);
+        assert!(is_permutation(&perm, entries.len()));
+        let applied = apply_permutation(entries, &perm).expect("a permutation");
+
+        assert_eq!(
+            applied.iter().map(|row| row.name.clone()).collect::<Vec<_>>(),
+            sorted.iter().map(|row| row.name.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_permutation_that_does_not_cover_every_row_is_rejected() {
+        let rows = rows(&["a", "b", "c"]);
+        assert!(apply_permutation(rows.clone(), &[0, 1]).is_none());
+        assert!(apply_permutation(rows.clone(), &[0, 0, 2]).is_none());
+        assert!(apply_permutation(rows, &[0, 1, 3]).is_none());
+    }
+
+
+    /// Where the model's completion re-sort spends its time, on a corpus shaped
+    /// like a large folder's names. Ignored by default; run it with
+    /// `--release` so the numbers are comparable to
+    /// `docs/decisions/listing-shell-costs.md` §2.2:
+    ///
+    /// ```text
+    /// cargo test -p dae-qt --lib --release -- --ignored --nocapture reports_where_the_completion_sort_spends_its_time
+    /// ```
+    #[test]
+    #[ignore = "prints the completion sort's cost; run with --release --ignored --nocapture"]
+    fn reports_where_the_completion_sort_spends_its_time() {
+        for count in [35_803usize, 120_000] {
+            let names: Vec<String> = (0..count)
+                .map(|index| format!("IMG_{}{}.png", index % 997, index))
+                .collect();
+            let mut folding = 0.0;
+            let mut allocating = 0.0;
+            for _ in 0..5 {
+                let mut fast = names.clone();
+                let start = std::time::Instant::now();
+                fast.sort_by(|left, right| natural_cmp(left, right));
+                folding += start.elapsed().as_secs_f64() * 1000.0;
+
+                let mut slow = names.clone();
+                let start = std::time::Instant::now();
+                slow.sort_by(|left, right| natural_cmp_allocating(left, right));
+                allocating += start.elapsed().as_secs_f64() * 1000.0;
+                assert_eq!(fast, slow, "the two orders must agree");
+            }
+            println!(
+                "{count:>7} names: allocating {:>7.1} ms, folded {:>7.1} ms",
+                allocating / 5.0,
+                folding / 5.0
+            );
+        }
+    }
+
+    #[test]
+    fn a_path_lookup_compares_borrowed_spellings() {
+        let under_base = rows(&["a.txt", "b.txt"]);
+        assert_eq!(
+            row_for_path(&under_base, "K:/dae/", "K:/dae/b.txt"),
+            Some(1)
+        );
+        assert_eq!(
+            row_for_path(&under_base, "K:/dae/", "K:/dae/a.txt"),
+            Some(0)
+        );
+        assert_eq!(row_for_path(&under_base, "K:/dae/", "K:/dae/c.txt"), None);
+        assert_eq!(row_for_path(&under_base, "K:/dae/", "K:/dae/b.txt "), None);
+
+        let outside = vec![StoredRow::from_entry(
+            &entry("K:/elsewhere/file.txt"),
+            "K:/dae/",
+        )];
+        assert_eq!(
+            row_for_path(&outside, "K:/dae/", "K:/elsewhere/file.txt"),
+            Some(0)
+        );
+        assert_eq!(row_for_path(&outside, "K:/dae/", "K:/dae/file.txt"), None);
+    }
+
+    #[test]
+    fn a_patch_replaces_a_changed_row_and_inserts_a_new_one() {
+        let base = "K:/dae/";
+        let rows = rows(&["a.txt", "b.txt", "c.txt"]);
+        let mut changed = entry("K:/dae/b.txt");
+        changed.size = Some(4_096);
+        let names = [
+            "a.txt".to_owned(),
+            "b.txt".to_owned(),
+            "gone.txt".to_owned(),
+            "d.txt".to_owned(),
+        ];
+        let entries = [
+            Some(entry("K:/dae/a.txt")),
+            Some(changed),
+            None,
+            Some(entry("K:/dae/d.txt")),
+        ];
+
+        let patch = plan_patch(&rows, base, &names, &entries).expect("the patch applies in place");
+        assert!(patch.removals.is_empty(), "an unknown name is not a row");
+        assert_eq!(patch.replacements.len(), 1);
+        assert_eq!(patch.replacements[0].0, 1);
+        assert_eq!(patch.replacements[0].1.size, Some(4_096));
+        assert_eq!(patch.insertions.len(), 1);
+        assert_eq!(patch.insertions[0].name, "d.txt");
+    }
+
+    #[test]
+    fn a_patch_removes_a_row_whose_child_is_gone() {
+        let rows = rows(&["a.txt", "b.txt"]);
+        let patch = plan_patch(&rows, "K:/dae/", &["b.txt".to_owned()], &[None])
+            .expect("the patch applies in place");
+        assert_eq!(patch.removals, vec![1]);
+        assert!(patch.replacements.is_empty());
+        assert!(patch.insertions.is_empty());
+    }
+
+    #[test]
+    fn a_child_that_changed_kind_needs_a_read() {
+        let rows = rows(&["a.txt"]);
+        let mut directory = entry("K:/dae/a.txt");
+        directory.kind = EntryKind::Directory;
+        let names = ["a.txt".to_owned()];
+        assert!(plan_patch(&rows, "K:/dae/", &names, &[Some(directory)]).is_none());
+    }
+
+    #[test]
+    fn a_spelling_that_differs_only_by_case_needs_a_read() {
+        let rows = rows(&["readme.md"]);
+        let names = ["README.md".to_owned()];
+        let entries = [Some(entry("K:/dae/README.md"))];
+        assert!(plan_patch(&rows, "K:/dae/", &names, &entries).is_none());
+    }
+
+    #[test]
+    fn replacements_keep_their_index_past_the_removals_before_them() {
+        let removals = [1usize, 4, 9];
+        assert_eq!(index_after_removals(0, &removals), 0);
+        assert_eq!(index_after_removals(2, &removals), 1);
+        assert_eq!(index_after_removals(5, &removals), 3);
+        assert_eq!(index_after_removals(10, &removals), 7);
+    }
+
+    #[test]
+    fn type_ahead_finds_the_first_prefix_from_the_cursor_and_wraps() {
+        let rows = rows(&["apple.txt", "banana.txt", "berry.txt", "cherry.txt"]);
+        assert_eq!(find_name_prefix(&rows, 0, "b"), Some(1));
+        assert_eq!(find_name_prefix(&rows, 1, "b"), Some(1));
+        assert_eq!(find_name_prefix(&rows, 2, "b"), Some(2));
+        assert_eq!(
+            find_name_prefix(&rows, 3, "b"),
+            Some(1),
+            "a start past the last match wraps once"
+        );
+        assert_eq!(find_name_prefix(&rows, 0, "be"), Some(2));
+        assert_eq!(find_name_prefix(&rows, 0, "zzz"), None);
+        assert_eq!(find_name_prefix(&[], 0, "a"), None);
+    }
+
+    #[test]
+    fn a_prefix_match_ignores_case_and_folds_like_the_comparator() {
+        let rows = rows(&["İstanbul.txt", "École.txt"]);
+        assert_eq!(find_name_prefix(&rows, 0, "i"), Some(0));
+        assert_eq!(
+            find_name_prefix(&rows, 0, "istan"),
+            None,
+            "the folded name is i + U+0307 + stan, exactly like JS toLowerCase"
+        );
+        assert_eq!(find_name_prefix(&rows, 0, "i\u{307}stan"), Some(0));
+        assert_eq!(find_name_prefix(&rows, 0, "école"), Some(1));
+        assert!(
+            !folded_starts_with("École", "ECOLE"),
+            "the caller folds the needle; an unfolded one must not match"
+        );
     }
 
     #[test]

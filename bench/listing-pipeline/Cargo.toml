@@ -1,3 +1,8 @@
+# An empty `[workspace]` keeps this crate out of the root workspace. Without it
+# Cargo resolves the repository root (whose `members` list does not include this
+# directory) and refuses to build.
+[workspace]
+
 [package]
 name = "listing-pipeline"
 version = "0.1.0"

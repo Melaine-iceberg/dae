@@ -41,16 +41,17 @@ QtObject {
     /// carries its shell along. `TerminalPanel` starts it on first use.
     property TerminalSession terminal: TerminalSession {}
 
-    /// path -> true. Replaced wholesale so QML bindings re-evaluate; mutating
-    /// an object in place would not notify the delegates.
-    property var selected: ({})
-    property int selectionVersion: 0
+    /// The path the last plain or Ctrl click landed on, so Shift extends from
+    /// it. The selection itself lives in the listing model — one role a
+    /// delegate reads, instead of a map every visible row has to look up — so
+    /// this is the only piece of it the tab still owns.
     property string selectionAnchor: ""
 
     /// path -> { y, current } for the listing viewport. Kept on the tab so a
     /// refresh — auto or F5 — and a return to a directory restore the position
-    /// the model reset would otherwise drop. Replaced wholesale like
-    /// `selected`: the view reads it in a function call, not in a binding.
+    /// the model reset would otherwise drop. Replaced wholesale so the read
+    /// sees one consistent map: the view reads it in a function call, not in a
+    /// binding.
     property var scrollState: ({})
 
     // ── Navigation history ──────────────────────────────────────────────────
@@ -67,7 +68,7 @@ QtObject {
     readonly property bool canGoForward: forwardStack.length > 0
 
     function historyEntry() {
-        return { path: listing.path, selected: selected, anchor: selectionAnchor }
+        return { path: listing.path, selected: listing.selectedPaths(), anchor: selectionAnchor }
     }
 
     function pushHistory(stack, entry) {
@@ -87,17 +88,17 @@ QtObject {
         cancelSearch()
         listing.load(path)
         if (!keepSelection)
-            clearSelection()
+            listing.clearSelection()
     }
 
     function loadHistoryEntry(entry) {
         loadFolder(entry.path, true)
-        // The entry was captured in another visit, so the paths in it may have
-        // been renamed or deleted since. A stale key is inert: `isSelected`
-        // only ever runs from a delegate over rows that exist now.
-        selected = entry.selected ? entry.selected : ({})
         selectionAnchor = entry.anchor ? entry.anchor : ""
-        selectionVersion += 1
+        // The entry was captured in another visit, so the paths in it may have
+        // been renamed or deleted since. The model flags the rows that are
+        // still there and holds the rest until they stream in, so restoring a
+        // folder larger than one batch keeps its selection too.
+        listing.setSelectedPaths(entry.selected ? entry.selected : [])
     }
 
     function navigate(path) {
@@ -135,7 +136,7 @@ QtObject {
     /// refreshes it when the surface becomes active.
     function openTrash() {
         cancelSearch()
-        clearSelection()
+        listing.clearSelection()
         surface = "trash"
         spaceId = ""
     }
@@ -143,7 +144,7 @@ QtObject {
     /// Shows the landing page. Its data lives in the window's OverviewModel.
     function openOverview() {
         cancelSearch()
-        clearSelection()
+        listing.clearSelection()
         surface = "overview"
         spaceId = ""
     }
@@ -154,7 +155,7 @@ QtObject {
         if (!id)
             return
         cancelSearch()
-        clearSelection()
+        listing.clearSelection()
         surface = "space"
         spaceId = id
     }
@@ -172,49 +173,6 @@ QtObject {
     function cancelSearch() {
         nameSearch.cancel()
         contentSearch.cancel()
-    }
-
-    function clearSelection() {
-        selected = ({})
-        selectionAnchor = ""
-        selectionVersion += 1
-    }
-
-    function selectOnly(path) {
-        const next = ({})
-        if (path)
-            next[path] = true
-        selected = next
-        selectionAnchor = path || ""
-        selectionVersion += 1
-    }
-
-    function toggle(path) {
-        const next = ({})
-        for (const key in selected) {
-            if (selected[key])
-                next[key] = true
-        }
-        if (next[path])
-            delete next[path]
-        else
-            next[path] = true
-        selected = next
-        selectionAnchor = path
-        selectionVersion += 1
-    }
-
-    function selectMany(paths) {
-        const next = ({})
-        for (let index = 0; index < paths.length; index += 1)
-            next[paths[index]] = true
-        selected = next
-        selectionVersion += 1
-    }
-
-    function isSelected(path) {
-        // The read is what makes delegate bindings depend on the version.
-        return selectionVersion >= 0 && selected[path] === true
     }
 
     function dispose() {

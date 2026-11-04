@@ -1017,7 +1017,7 @@ Window {
         // directory listing it already has.
         if (query === "" || root.remoteLocation)
             return
-        tab.clearSelection()
+        tab.listing.clearSelection()
         previewPanel.showPaths([])
         if (root.searchMode === "content")
             tab.contentSearch.search(tab.listing.path, query, root.searchRegex,
