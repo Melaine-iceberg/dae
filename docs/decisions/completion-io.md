@@ -1,10 +1,13 @@
 # 文件 IO 换 IOCP / io_uring：**实测否决**（不改机制）
 
-> **状态：已实测，结论是不换。** 实验分支 `exp/completion-io-bench`；
-> harness 与原始数据在 `bench/io-backends/`（`results/` 为 Windows，`results-linux/`
-> 为 io_uring）。应用代码**没有任何改动**——这一轮只做测量与判断。
+> **状态：已实测，结论是不换。** harness 与原始数据已随 `e8670f7` 并入 `main`
+> （`bench/io-backends/`，`results/` 为 Windows，`results-linux/` 为 io_uring；
+> 实验分支 `exp/completion-io-bench` 只作历史保留）。应用代码**没有任何改动**——
+> 这一轮只做测量与判断。
 > 被测机器：Ryzen 9 7940H（8C/16T）、39 GiB RAM、K: 卷为 ReFS on ZHITAI
 > TiPlus7100 NVMe。复现命令见 §8。
+> 测量时应用跑在 Tauri 壳上（`tauri` 分支）；本页的代码引用已按当前 `main` 的
+> Qt Quick 壳更新（`crates/dae-core/src/fs/`、`crates/dae-qt/`），IO 形状未变。
 
 ## 0. 结论先行
 
@@ -44,25 +47,32 @@
 
 | 路径 | 实现 | 引用 |
 |---|---|---|
-| Tauri 命令（预览、属性、git、打开方式…） | `tauri::async_runtime::spawn_blocking`，**每个命令一次** | `file_system/commands.rs`（:98, :192, :321 …），`preview.rs:1762` |
-| 目录列举（资源管理器关键路径） | `std::thread`：一个读迭代器、一个序列化 IPC，中间有界通道；每条目一次 `DirEntry::metadata()` | `file_system/listing.rs:258`、`local/directory.rs:226` |
-| 本机树拷贝/移动 | 独立 rayon 池（`transfer_pool`，核数-1）+ `fs::copy` | `local/operations.rs:26, :396` |
-| 跨后端传输（SMB/SFTP/云/归档） | 手写双线程流水线，环形缓冲复用 | `transfer.rs:790` `copy_stream` |
+| 命令入口（预览、属性、git、打开方式…） | `dae-core` 的 async 入口内部 `tokio::task::spawn_blocking`，**每个命令一次**；壳里共用一只运行时（线程名 `dae-io`） | `crates/dae-core/src/fs/service.rs`（:83, :110, :130 …）、`fs/preview.rs:177`、`crates/dae-qt/src/runtime.rs` |
+| 目录列举（资源管理器关键路径） | `std::thread`：一个读迭代器、一个序列化投递，中间 `sync_channel(PIPELINE_DEPTH = 2)`；首批发 `FIRST_BATCH_SIZE = 512`，之后翻倍到 `MAX_BATCH_SIZE = 8192` | `crates/dae-core/src/fs/listing.rs:168, :226, :240, :255`；盘上行走在 `fs/local/directory.rs:254`（`open_canonical_listing`） |
+| 本机树拷贝/移动 | 独立 rayon 池（`transfer_pool`，核数-1）+ `fs::copy` | `crates/dae-core/src/fs/local/operations.rs:26`（:92/:122/:159 是 `install` 调用点） |
+| 跨后端传输（SMB/SFTP/云/归档） | 手写双线程流水线，环形缓冲复用（`STREAM_PIPELINE_DEPTH = 2`） | `crates/dae-core/src/fs/transfer.rs:790` `copy_stream` |
 
-另外 `hashing.rs:113`、`directory_size.rs:97`、`prefetch.rs:63` 用的是裸
-`std::thread`；缩略图渲染是自有 `RENDER_WORKERS` 线程 + 通道
-（`preview.rs:379`）。也就是说：**这个应用的 IO 早已是「若干条线程各跑阻塞循环」**，
-Tokio 阻塞池只承担「一次命令 = 一次 handoff」的部分。
+Windows 上的目录行走不经 `std::fs::read_dir`：`fs/local/windows_directory.rs` 直接
+`FindFirstFileExW`/`FindNextFileW`，行从 `WIN32_FIND_DATAW` 建，**没有逐条目的
+系统调用**（这也是 Windows 侧 `PARALLEL_ENTRY_THRESHOLD` 为 `None` 的原因）；
+Unix 才逐条目 `DirEntry::metadata()`，且 ≥128 条目时摊到 rayon 上
+（`fs/local/directory.rs:204-211`）。
+
+另外 `fs/hashing.rs:83`、`fs/directory_size.rs:79`、`fs/prefetch.rs:71` 用的是裸
+`std::thread`；缩略图解码不在 Rust 侧——Qt 的 `QQuickImageProvider`
+（`crates/dae-qt/cpp/image_provider.cpp`，256 条 `QCache<QString, QImage>`）在 QML
+引擎的 pixmap 线程上解码，GUI 线程不读盘。也就是说：**这个应用的 IO 早已是
+「若干条线程各跑阻塞循环」**，Tokio 阻塞池只承担「一次命令 = 一次 handoff」的部分。
 
 ## 2. 被测的到底是什么
 
-`bench/io-backends`（独立 crate，不参与 Tauri 构建）用同一份 `Vec<Op>` 描述工作，
+`bench/io-backends`（独立 crate，不在 workspace 里，不参与应用构建）用同一份 `Vec<Op>` 描述工作，
 四个后端跑同一份 op 列表、同一批路径、同样的在途数，只有派发方式不同：
 
 | 后端 | 含义 |
 |---|---|
-| `tokio` | 每个 op 一次 `spawn_blocking` —— 今天每个 Tauri 命令的形状 |
-| `tokio-chunked` | 每个线程一次 `spawn_blocking` 后内部循环 —— `read_directory` / `stat_named_children` / 拷贝的形状 |
+| `tokio` | 每个 op 一次 `spawn_blocking` —— 今天每个命令入口的形状 |
+| `tokio-chunked` | 每个线程一次 `spawn_blocking` 后内部循环 —— `read_directory_sync` / `stat_named_children` / 拷贝的形状 |
 | `rayon` | `transfer_pool` 的形状 |
 | `compio` | 完成式：Windows 上 IOCP + `OVERLAPPED`，Linux 上 io_uring |
 
@@ -102,9 +112,9 @@ io_uring」这种自我欺骗。
   还可能把窗口之前开始的滴答算进来，所以短于「8 个滴答 × 线程数」的 pass 打印 `-`。
 - **warmup 丢弃、median 取中间那个 pass 本身**（不是把不同 pass 的字段拼在一起）。
   冷负载不 warmup。
-- **与产品同款分配器**：全局 `mimalloc`，与 `src-tauri/src/main.rs` 一致；仓库自己
-  记录了「仅换分配器就让 35 821 条目目录从 48.3ms 降到 32.6ms」，测 IO 机制时
-  不能同时换堆。
+- **与产品同款分配器**：全局 `mimalloc`，与 `apps/dae/src/main.rs:21` 一致；仓库
+  自己记录了「仅换分配器就让 35 821 条目目录从 48.3ms 降到 32.6ms」
+  （`docs/decisions/engine-qt-quick.md`），测 IO 机制时不能同时换堆。
 - 拷贝是唯一「后端做的系统调用不同」的负载：`fs::copy`（= `CopyFileExW`）对
   compio 没有等价物，所以 compio 有两个形状——`kernel`（同样调 `fs::copy`，
   只是放在它的阻塞池上，等于「务实移植会怎么写」）和 `readwrite`（在驱动上
@@ -165,7 +175,7 @@ cached（8 GiB blob 全在 page cache 里，65 536 × 4 KiB）：
 两个读法都测是必要的：**单个共享句柄上多线程读，池子会越加越慢**
 （1238 → 787），此时 IOCP 看起来赢了 1.5 倍——但那是自己给自己制造的瓶颈。
 给每次在途读各自一个句柄之后，池子 1445–1468 反过来压过 compio 936。
-（Tauri 命令本来就一个文件一个句柄，所以真实代码不受这条坑影响。）
+（命令入口本来就是一个文件一个句柄，所以真实代码不受这条坑影响。）
 
 ### 4.4 小文件：换过去慢 12.6 倍（`smallfiles`，20 000 × 8 KiB 全读）
 
@@ -212,7 +222,8 @@ batch=全部是 **14.5 µs/文件**（1081 ms → 291 ms）。
 
 **收益正比于「每个文件真正的活有多少」**：文本预览这类每文件几 µs 的路径能吃满
 8×；图片解码那种每文件几百 µs 的路径，省下的 18 µs 是 3% 的噪声——而缩略图
-渲染本来就已经是「有界 worker 池 + 通道」（`preview.rs:379`），也就是批量形状。
+解码本来就跑在 GUI 线程之外（Qt 的 `QQuickImageProvider`，
+`crates/dae-qt/cpp/image_provider.cpp`），也就是批量形状。
 
 ### 4.5 顺序读：吞吐同级，冷读时 IOCP 的 CPU 便宜 6 倍
 
@@ -288,13 +299,15 @@ page cache 吸收，测的是提交+memcpy 成本；要测设备写带宽得加�
    在 Windows 上跑——「关键路径」这一格连机会都没有。
 2. **每 op 成本只在深队列里才被摊薄**：IOCP 每次操作 1.5–2.2 µs 并不低，
    它赢的是「不随深度变差」；而这个应用真正的 IO 是「一次命令、一个大循环」
-   （`read_directory`、`copy_stream`、`transfer_pool`），在途数本来就低。
+   （`open_streamed_listing` 的读迭代器、`copy_stream`、`transfer_pool`），
+   在途数本来就低。
 3. **阻塞池无法摆脱**：compio-fs 在 Windows 上把 open/metadata/dir 都交给阻塞池，
    而它那只池比应用现有池更贵（每文件一次派发、可能现场起线程、60s 线程存活）。
    于是「换成 IOCP」变成「保留阻塞池 + 加一层完成队列」。
 4. **`CopyFileExW` 无可替代**：内核里一次调用、无用户态缓冲，任何异步循环都更慢。
 5. **纯 CPU 的活不在这里**：仓库自己的测量显示，仅仅换分配器就有 -31% 的列举
-   收益，列举行的成本大头在条目构造 + JSON/IPC，而不是 IO 机制。
+   收益（`docs/decisions/engine-qt-quick.md`），列举行的成本大头在条目构造 +
+   IPC，而不是 IO 机制。
 
 ## 7. 建议
 
@@ -304,10 +317,11 @@ page cache 吸收，测的是提交+memcpy 成本；要测设备写带宽得加�
    一次命令 + 一次 `spawn_blocking`」改成「一次阻塞调用携带 16–32 个文件」
    （§4.4：每文件 20.2 µs → 2.15 µs，**3.6×–9×**，拐点在 16–32，再大无收益；
    在途为 1 时 54 µs → 14.5 µs）。代价是首字节延迟变大，而应用已有的流式列举
-   （`listing.rs` 的有界通道 + 512/8192 分批）就是这个形状，可以照搬。
-   只对「每文件只有几 µs 活」的路径（文本预览、校验和、`stat_named_children`）
-   有意义；图片解码那种每文件几百 µs 的路径不必动。句柄复用/LRU 这一条本轮
-   没有单独量化，别按上面的数字推算。
+   （`fs/listing.rs` 的 `sync_channel(PIPELINE_DEPTH = 2)` + 512/8192 分批）就是
+   这个形状，可以照搬。
+   只对「每文件只有几 µs 活」的路径（文本预览、校验和）有意义；`stat_named_children`
+   （`fs/local/directory.rs:363`）本身已经是批量接口，图片解码那种每文件几百 µs
+   的路径不必动。句柄复用/LRU 这一条本轮没有单独量化，别按上面的数字推算。
 2. **别在一个句柄上堆线程**（§4.3）：需要并发读同一文件时就每在途请求一个句柄；
    cached 场景下线程多反而更慢。
 3. **拷贝继续用 `fs::copy` / 内核原语**（§4.7）。
@@ -368,5 +382,6 @@ bash probe-linux-dispatch.sh
 - [`README.md`](README.md) —— 决策记录索引
 - `bench/io-backends/README.md` —— harness 的方法、负载表、注意事项
 - `bench/io-backends/results/summary.md`、`results-linux/summary.md` —— 本页所有表格的原始产出
-- `src-tauri/src/file_system/listing.rs`（流式列举）、`local/operations.rs`（`transfer_pool`）、
-  `transfer.rs`（`copy_stream`）、`preview.rs`（渲染 worker）—— §1 的四条路径
+- `crates/dae-core/src/fs/listing.rs`（流式列举）、`fs/local/operations.rs`（`transfer_pool`）、
+  `fs/transfer.rs`（`copy_stream`）、`fs/service.rs`（命令入口的 `spawn_blocking`）、
+  `crates/dae-qt/cpp/image_provider.cpp`（缩略图解码）—— §1 的四条路径
