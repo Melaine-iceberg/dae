@@ -2,7 +2,7 @@
 
 > **状态：审计完成；第 1 项（§2、§3）、§4 的 watcher 补丁、§5 的批量选择/前缀
 > 与 §6 的选区表示都已实施；§9 的 app 内 qmlprofiler 复测（2026-11-03）之后，
-> §10 又落地了两刀（可见视图按需、完成排序移出 GUI 线程），§7 的次级清单
+> §10 又落地了三刀（可见视图按需、完成排序与交互式排序移出 GUI 线程），§7 的次级清单
 > 只记录、未动。**
 > 枚举与 IO 不在本文范围之内——它们已经有实测与结论
 > （[`windows-directory-enumeration.md`](windows-directory-enumeration.md)、
@@ -32,9 +32,10 @@
 | 3 | `model.rs` 的 watcher | 事件带着精确子项名，被丢弃后整目录重读 | **已实施**（§4） |
 | 4 | `FileList.qml` / `FileGrid.qml` | 全选、前缀、Shift 范围、框选逐行跨 FFI 调用 | **已实施**（§5） |
 | 5 | `Tab.qml` 选区 | JS map 全量复制、状态栏全量遍历、delegate 每次变更跑 JS | **已实施**（§6） |
-| 6 | 次级清单 | 交互式改排序仍在 GUI 线程（12 万条 60–100 ms）、图标同步加载、git 徽标线性回退、预览随选区抖动、Overview 同步 IO… | 未做（§7） |
+| 6 | `model.rs` 的 `set_order` | 点列头在 GUI 线程重排；12 万条 60–100 ms | **已实施**（§10.4） |
+| 7 | 次级清单 | 图标同步加载、git 徽标线性回退、预览随选区抖动、Overview 同步 IO… | 未做（§7） |
 
-§9 的复测与 §10 的两刀之后，完成路径的结论要连着读：第 1 项的同步排序现在只用于
+§9 的复测与 §10 的三刀之后，完成路径的结论要连着读：第 1 项的同步排序现在只用于
 ≤2048 行和小目录；大目录在 worker 上排序，重置只重建可见视图的 delegate。
 
 ## 1. 前提：一次列表的完成路径
@@ -359,12 +360,11 @@ n 次比较，**结构推断**，未单独计时）。
 
 | 位置 | 机制 | 备注 |
 |---|---|---|
-| `model.rs` `set_order` → `resort_rows` | 交互式改排序仍在 GUI 线程同步重排；12 万条 60–100 ms（§10.4），是目前唯一已知超过两帧的确定性阻塞 | 复用 §10.2 的 `sort_snapshot`/`sort_permutation` 与 generation 复核，另需核对排序键；reset 后仍要恢复滚动 |
 | `FileList.qml` 的 `list` | grid/column 模式下 list 仍常驻，165 个 delegate 随 reset 重建（§10.1 只按需化了 grid/column） | 要等 `list.` 的引用面收窄（滚动恢复、框选、前缀直接读它）后再 lazy |
-| `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.4 |
+| `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.5 |
 | `FileList.qml` 的 `rowIcon` | 行内系统图标 `Image` 没有 `asynchronous: true`（同文件缩略图、ColumnView、FileGrid 都有），provider 调用发生在 GUI 线程 | 只在 `iconStyle == "system"` 时可见；默认 `themed` 走 Glyph，不触发 |
 | `model.rs` 的 `git_badge` | git 徽标精确查不到就线性回退，干净行（大多数）都走这条 | 成本 = O(行 × 脏条目)，只在有大量未提交改动的仓库里明显 |
-| `ShellWindow.qml` 的 `onSelectionChanged` → `PreviewPanel.showPaths` | 选区一变就重开预览，无去重、无防抖；框选时每 16 ms 起一个 stat+读+高亮任务 | 结果应用在 GUI 线程，超时的任务靠 generation 丢弃但会跑完 |
+| `ShellWindow.qml` 的 `onSelectionChanged` → `PreviewPanel.showPaths` | 选区一变就重开预览，无去重、无防抖；`showPaths` 只在恰好 1 项时 `open`（多选是 `clear`），单行框选或方向键切换会每次重开 | 结果应用在 GUI 线程，超时的任务靠 generation 丢弃但会跑完 |
 | `Glyph.qml` 的 `canvas.onPaint` | 每行一个 `Canvas.Immediate`，悬停/选中改 tint → `requestPaint`，paint 里 `d.match(...)` 每次重新分词 | 仓库做过 Canvas→Rectangle 的创建期 A/B（`qml-aot.md` §7）无差异；重绘路径**未测**（§9.1），所以不排前 |
 | `OverviewModel::refresh`、`SidebarModel::refresh` | 刷新在 GUI 线程同步读 `recents`/`favorites`/`hidden` 等 JSON，再 `replace_rows` 两次 | Overview/侧栏切换时；文档注释里“这三次读是便宜的”只在热缓存成立 |
 | `DirectoryListModel::data` | 每次角色读取重新格式化 size/time/路径/图标/缩略图；delegate 声明 13 个 required role，创建时全部读取 | 每屏几十行、每行 2–4 次分配，量级小于排序，但在滚动路径上 |
@@ -488,7 +488,7 @@ n 次比较，**结构推断**，未单独计时）。
 > §5.3 的“没有计时”不在这张表里：它省的是逐行跨 FFI，量级按行数线性，
 > 行为已由 app 内冒烟覆盖；要数字时按 §5.3 的入口补 qmlprofiler。
 
-## 10. 复测后的两刀（已实施）
+## 10. 复测后的三刀（已实施）
 
 ### 10.1 可见视图按需
 
@@ -542,7 +542,34 @@ n 次比较，**结构推断**，未单独计时）。
 12 万条的最长轮次是 reset 后那一段 16.9 ms，3.58 万条是 apply 轮次 21.8 ms），
 计划里的 ≤33 ms 目标达成。
 
-### 10.4 没做的
+### 10.4 交互式改排序（已实施）
+
+`set_order` 以前在 GUI 线程直接走 `resort_rows`，12 万条点列头就是 §10.3 基线里
+同一段 60–100 ms 的阻塞。现在 ≥2048 行走 §10.2 的同一条 worker 路径：快照比较器
+输入、worker 排下标、回到 Qt 线程复核后应用置换并 `sortApplied`；≤2048 行仍原地排。
+
+交互式排序的 generation 和行数在点击时都不变，§10.2 的复核无法区分“同一份列表的
+旧结果”。所以每次 worker 排序带一张 `sort_request` 票据：`load`、同步
+`resort_rows`、`finish_refresh` 都递增它；应用端先比票据，再比 generation、行数、
+排序键，只有最新一次能落地并清除 `sorting`。旧结果既不改行，也不会提前放行
+watcher 补丁。
+
+app 内实测（release，120 000 条，`DAE_LOG=debug`，列表模式）：
+
+| | 快照（GUI 线程） | worker 排序 | permute + reset（同一轮 GUI） |
+|---|---:|---:|---:|
+| 打开目录的完成排序 | 1.6 ms | 35.1 ms | 2.4 + 10.6 ≈ **13.0 ms** |
+| 点 `Modified` 列头 | 3.3 ms | 24.3 ms | 2.4 + 10.4 ≈ **12.8 ms** |
+
+第一次点一个新列会先改 `sortKey` 再改 `sortOrder`，QML 因此连续调两次 `setOrder`，
+启动两次 worker（debug 日志能看到两行 `sort:`）；票据让第一次的结果被丢弃，只有
+第二次落地。这是两个偏好写入的既有形状，不是新增的 GUI 阻塞；要省掉那次多余快照，
+可以在 QML 把两次写入合成一次调用。
+
+排序本身仍在 worker 上跑 24–35 ms，列表在结果回来前保持旧顺序——收益是点击不再
+冻结 GUI，而不是立即换序。
+
+### 10.5 没做的
 
 - **`layoutChanged` 代替 reset**：单轮阻塞已经 ≤22 ms，§2.4 的触发条件不再成立；
   它还需要 `changePersistentIndexList`（cxx-qt 0.10 没有绑定）和持久索引正确性的
@@ -550,6 +577,4 @@ n 次比较，**结构推断**，未单独计时）。
 - **列表视图在 grid/column 模式下也常驻**：那两种模式下 list 的 165 个 delegate
   仍随 reset 重建。要等 `list.` 的引用面收窄（滚动恢复、框选、前缀都直接读它）
   才能同样 `LazySurface` 化。留在 §7。
-- **交互式改排序**：点列头走 `set_order` → 同步 `resort_rows`，12 万条仍是同一段
-  60–100 ms 的 GUI 阻塞；本轮只把**完成**排序移出了线程。
 - **watcher 刷新**：§4.3 的整段仍未计时（§9.1）；§10 量的是打开路径。

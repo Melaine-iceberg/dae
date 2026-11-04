@@ -1583,10 +1583,10 @@ Item {
             root.restoreScroll()
         }
 
-        /// The completion sort applies after `finished`: `aboutToReload` saved
-        /// the position just before its reset, and this is the matching
-        /// restore. Without it the list jumps to the top when a large listing
-        /// finishes sorting.
+        /// A worker sort applies after `aboutToReload` saved the position just
+        /// before its reset, and this is the matching restore. Without it the
+        /// list jumps to the top when a large listing finishes sorting, or
+        /// when a column header starts a re-sort.
         function onSortApplied() {
             root.restoreScroll()
         }

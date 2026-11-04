@@ -163,8 +163,10 @@ pub mod qobject {
         fn reload(self: Pin<&mut DirectoryListModel>);
 
         /// Sets the display order. Re-sorts the rows already loaded and
-        /// returns immediately; batches that arrive later are appended in
-        /// stream order and the completed listing is sorted once more.
+        /// returns immediately; large listings sort on a worker and emit
+        /// `sortApplied` when the permutation lands. Batches that arrive later
+        /// are appended in stream order and the completed listing is sorted
+        /// once more.
         #[qinvokable]
         #[cxx_name = "setOrder"]
         fn set_order(
@@ -194,7 +196,7 @@ pub mod qobject {
         #[cxx_name = "aboutToReload"]
         fn about_to_reload(self: Pin<&mut DirectoryListModel>);
 
-        /// Emitted after a completion re-sort applies. Its reset dropped the
+        /// Emitted after a worker re-sort applies. Its reset dropped the
         /// viewport position that `aboutToReload` saved just before it, so the
         /// view restores it here (and not only on `finished`).
         #[qsignal]
@@ -833,6 +835,38 @@ fn sort_permutation(entries: &[SortEntry], order: &ViewOrder) -> Vec<u32> {
     perm
 }
 
+/// Identifies one worker sort: the model state it was started for and the
+/// request that owns it. The request token lets a newer interactive sort
+/// supersede an older one without waiting for a load.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SortTicket {
+    generation: u64,
+    rows: usize,
+    order: ViewOrder,
+    request: u64,
+}
+
+/// Whether `ticket`'s permutation still describes the model. A load changes
+/// the generation, a newer sort changes the request (or the order), a row edit
+/// changes the row count, and a malformed permutation is refused before it can
+/// lose rows.
+fn worker_sort_is_current(
+    closed: bool,
+    current_generation: u64,
+    current_rows: usize,
+    current_order: ViewOrder,
+    current_request: u64,
+    ticket: SortTicket,
+    perm: &[u32],
+) -> bool {
+    !closed
+        && current_generation == ticket.generation
+        && current_rows == ticket.rows
+        && current_order == ticket.order
+        && current_request == ticket.request
+        && is_permutation(perm, ticket.rows)
+}
+
 fn is_permutation(perm: &[u32], len: usize) -> bool {
     if perm.len() != len {
         return false;
@@ -1189,10 +1223,14 @@ pub struct DirectoryListModelRust {
     /// `dispose` ran and released the watcher; a reload already queued on the
     /// Qt thread must not revive a closed model.
     closed: bool,
-    /// A completion sort is running on a worker. Patches are refused while it
-    /// is: they plan insertions against the row order, and the rows are still
-    /// in enumeration order until the permutation lands.
+    /// A sort is running on a worker. Patches are refused while it is: they
+    /// plan insertions against the row order, and the rows are still in their
+    /// old order until the permutation lands.
     sorting: bool,
+    /// Identifies the newest worker sort. A reply carrying an older value is
+    /// stale even when the generation and row count still match, which is how
+    /// an interactive re-sort can be superseded without a load.
+    sort_request: u64,
     order: ViewOrder,
     filter: RowFilter,
     /// Which rows are selected. The flags live on the rows; this is the index
@@ -1246,6 +1284,7 @@ impl Default for DirectoryListModelRust {
             load_failed: false,
             closed: false,
             sorting: false,
+            sort_request: 0,
             order: ViewOrder::default(),
             filter: RowFilter::default(),
             selection: Selection::default(),
@@ -1390,7 +1429,13 @@ impl qobject::DirectoryListModel {
         }
 
         let generation = self.generation.wrapping_add(1);
-        self.as_mut().rust_mut().sorting = false;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.sorting = false;
+            // A reply from a sort started before this load describes rows that
+            // are about to be replaced, even if the row count happens to match.
+            rust.sort_request = rust.sort_request.wrapping_add(1);
+        }
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
             listing::cancel_directory_listing(stream_id);
         }
@@ -1854,7 +1899,11 @@ impl qobject::DirectoryListModel {
         if self.rows.len() < 2 || rows_are_sorted(&self.rows, &next) {
             return;
         }
-        self.as_mut().resort_rows();
+        if self.rows.len() < WORKER_SORT_MIN_ROWS {
+            self.as_mut().resort_rows();
+        } else {
+            self.as_mut().start_worker_sort();
+        }
     }
 
     fn set_filters(
@@ -1884,6 +1933,13 @@ impl qobject::DirectoryListModel {
     /// position, and `FileList` restores the latter once the rows are back.
     fn resort_rows(mut self: Pin<&mut Self>) {
         let order = self.order;
+        // A sync re-sort supersedes any worker sort still in flight: its
+        // permutation no longer describes the rows this call is about to sort.
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.sorting = false;
+            rust.sort_request = rust.sort_request.wrapping_add(1);
+        }
         let mut rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
         self.as_mut().about_to_reload();
         // The two halves of the stall a QML trace cannot see: the comparator
@@ -2307,67 +2363,73 @@ impl qobject::DirectoryListModel {
         }
         // A worker and a queued reply cost more than the sort for a directory
         // that fits in a few batches; only the large listings are offloaded.
-        if self.rows.len() < COMPLETION_SORT_MIN_ROWS {
+        if self.rows.len() < WORKER_SORT_MIN_ROWS {
             self.as_mut().resort_rows();
         } else {
-            self.as_mut().start_completion_sort();
+            self.as_mut().start_worker_sort();
         }
     }
 
     /// Snapshots the comparator's inputs and sorts an index permutation on a
-    /// worker. The rows stay in the model and keep painting in enumeration
-    /// order until `apply_completion_sort` lands on the Qt thread; a load,
-    /// order change or row-count change in between drops the result.
-    fn start_completion_sort(mut self: Pin<&mut Self>) {
-        let order = self.order;
-        let generation = self.generation;
-        let expected = self.rows.len();
+    /// worker. The rows stay in the model and keep painting in their old order
+    /// until `apply_worker_sort` lands on the Qt thread; a load, order change,
+    /// row-count change or newer sort in between drops the result.
+    fn start_worker_sort(mut self: Pin<&mut Self>) {
+        let ticket = SortTicket {
+            generation: self.generation,
+            rows: self.rows.len(),
+            order: self.order,
+            request: self.sort_request.wrapping_add(1),
+        };
         let snapshot_started = std::time::Instant::now();
         let entries = sort_snapshot(&self.rows);
         log::debug!(
             target: "dae::listing",
-            "completion sort: {} rows, snapshot {:.1} ms",
-            expected,
+            "sort: {} rows, snapshot {:.1} ms",
+            ticket.rows,
             snapshot_started.elapsed().as_secs_f64() * 1e3
         );
-        self.as_mut().rust_mut().sorting = true;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.sort_request = ticket.request;
+            rust.sorting = true;
+        }
         let thread = self.as_mut().qt_thread();
         std::thread::spawn(move || {
             let sort_started = std::time::Instant::now();
-            let perm = sort_permutation(&entries, &order);
+            let perm = sort_permutation(&entries, &ticket.order);
             let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
-            let _ = thread.queue(move |mut model| {
-                model
-                    .as_mut()
-                    .apply_completion_sort(generation, expected, order, perm, sort_ms)
-            });
+            let _ = thread
+                .queue(move |mut model| model.as_mut().apply_worker_sort(ticket, perm, sort_ms));
         });
     }
 
     /// Applies a worker's permutation with the same one-reset shape as the
     /// synchronous path, plus `sortApplied` so the view can restore the scroll
     /// position the reset drops.
-    fn apply_completion_sort(
+    fn apply_worker_sort(
         mut self: Pin<&mut Self>,
-        generation: u64,
-        expected: usize,
-        order: ViewOrder,
+        ticket: SortTicket,
         perm: Vec<u32>,
         sort_ms: f64,
     ) {
-        // Only the load that started this sort may clear the flag: a newer
-        // load has its own sort pending and must keep patches refused.
-        if self.generation == generation {
+        // Only the newest request may clear the flag: a superseded sort has
+        // nothing to say about the rows the newer one is ordering.
+        if self.sort_request == ticket.request {
             self.as_mut().rust_mut().sorting = false;
         }
-        if self.closed
-            || self.generation != generation
-            || self.rows.len() != expected
-            || self.order != order
-            || !is_permutation(&perm, expected)
-        {
+        if !worker_sort_is_current(
+            self.closed,
+            self.generation,
+            self.rows.len(),
+            self.order,
+            self.sort_request,
+            ticket,
+            &perm,
+        ) {
             return;
         }
+        let expected = ticket.rows;
         let permute_started = std::time::Instant::now();
         let rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
         // `is_permutation` above is the same check `apply_permutation` makes;
@@ -2410,6 +2472,13 @@ impl qobject::DirectoryListModel {
         if self.generation != generation {
             self.as_mut().rust_mut().refresh = None;
             return;
+        }
+        // The staged rows replace what a worker may still be permuting; its
+        // indices describe the old rows even when the count happens to match.
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.sorting = false;
+            rust.sort_request = rust.sort_request.wrapping_add(1);
         }
         let Some(stage) = self.as_mut().rust_mut().refresh.take() else {
             return;
@@ -2831,7 +2900,7 @@ const PATCH_LIMIT: usize = 64;
 /// Listings below this size are re-sorted in place. The snapshot clone, the
 /// worker and the queued reply cost more than the sort itself at that size, and
 /// the reset that follows would be the whole stall anyway.
-const COMPLETION_SORT_MIN_ROWS: usize = 2_048;
+const WORKER_SORT_MIN_ROWS: usize = 2_048;
 
 /// Forwards the directory watcher's events into the model's Qt thread.
 ///
@@ -3554,6 +3623,45 @@ mod tests {
         assert!(apply_permutation(rows, &[0, 1, 3]).is_none());
     }
 
+    #[test]
+    fn a_superseded_sort_reply_is_dropped() {
+        let order = ViewOrder::default();
+        let ticket = SortTicket {
+            generation: 7,
+            rows: 3,
+            order,
+            request: 4,
+        };
+        let perm = [2, 0, 1];
+        assert!(worker_sort_is_current(false, 7, 3, order, 4, ticket, &perm));
+        // A newer click bumps the request while generation and rows stay put.
+        assert!(!worker_sort_is_current(
+            false, 7, 3, order, 5, ticket, &perm
+        ));
+        assert!(!worker_sort_is_current(
+            false, 8, 3, order, 4, ticket, &perm
+        ));
+        assert!(!worker_sort_is_current(
+            false, 7, 2, order, 4, ticket, &perm
+        ));
+        let another = ViewOrder {
+            key: SortKey::Size,
+            ..order
+        };
+        assert!(!worker_sort_is_current(
+            false, 7, 3, another, 4, ticket, &perm
+        ));
+        assert!(!worker_sort_is_current(true, 7, 3, order, 4, ticket, &perm));
+        assert!(!worker_sort_is_current(
+            false,
+            7,
+            3,
+            order,
+            4,
+            ticket,
+            &[0, 0, 2]
+        ));
+    }
 
     /// Where the model's completion re-sort spends its time, on a corpus shaped
     /// like a large folder's names. Ignored by default; run it with
