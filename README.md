@@ -189,6 +189,9 @@ behind it, plus the conditions that would reopen the question. Start at
 [`docs/decisions/README.md`](docs/decisions/README.md); the records that only
 describe the retired WebView shell are archived on the `tauri` branch.
 
+Feature planning sits outside that log: [`docs/files-parity.md`](docs/files-parity.md)
+is the gap list against Files and the cross-platform plan for each item.
+
 ## Tests
 
 Rust tests use [cargo-nextest](https://nexte.st/):
