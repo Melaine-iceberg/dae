@@ -51,6 +51,16 @@ const SEARCH_THUMBNAIL: i32 = 0x020C;
 /// Whether this result is selected. The listing delegate is shared, so the
 /// search model answers the same role the listing model does.
 const SEARCH_SELECTED: i32 = 0x020D;
+/// The listing delegate is shared with the result list, and once the listing
+/// grew tag, creation-time and section columns the delegate requires their
+/// roles. A result carries no tags and no section, so these answer empty; the
+/// delegate paints nothing for them.
+const SEARCH_CREATED: i32 = 0x020E;
+const SEARCH_CREATED_FALLBACK: i32 = 0x020F;
+const SEARCH_TAGS: i32 = 0x0210;
+const SEARCH_TAG_IDS: i32 = 0x0211;
+const SEARCH_TAG_COLORS: i32 = 0x0212;
+const SEARCH_GROUP: i32 = 0x0213;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -113,8 +123,19 @@ pub mod qobject {
         #[rust_name = "role_names"]
         fn roleNames(&self) -> QHash_i32_QByteArray;
 
+        /// Searches `query` under `scope` (`current`, `favorites`, `recent`
+        /// or `volumes`). The other three narrow by the same buckets the
+        /// listing filter offers; `query` may also carry `tag:` tokens.
         #[qinvokable]
-        fn search(self: Pin<&mut SearchModel>, path: &QString, query: &QString);
+        fn search(
+            self: Pin<&mut SearchModel>,
+            path: &QString,
+            query: &QString,
+            scope: &QString,
+            kind: &QString,
+            modified: &QString,
+            size: &QString,
+        );
 
         #[qinvokable]
         fn cancel(self: Pin<&mut SearchModel>);
@@ -305,6 +326,17 @@ impl SearchRow {
     }
 }
 
+/// One name-search request, kept so `reload()` re-runs exactly what was shown.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SearchArgs {
+    path: String,
+    query: String,
+    scope: String,
+    kind: String,
+    modified: String,
+    size: String,
+}
+
 #[derive(Default)]
 pub struct SearchModelRust {
     loaded: i32,
@@ -318,7 +350,8 @@ pub struct SearchModelRust {
     rows: Vec<SearchRow>,
     selection: Selection,
     generation: u64,
-    reload_args: Option<(String, String)>,
+    /// Everything needed to re-run the current query after the files changed.
+    reload_args: Option<SearchArgs>,
 }
 
 impl qobject::SearchModel {
@@ -393,6 +426,11 @@ impl qobject::SearchModel {
                         .as_str(),
                 ))
             }
+            SEARCH_CREATED => QVariant::from(&QString::default()),
+            SEARCH_CREATED_FALLBACK => QVariant::from(&false),
+            SEARCH_TAGS | SEARCH_TAG_IDS | SEARCH_TAG_COLORS | SEARCH_GROUP => {
+                QVariant::from(&QString::default())
+            }
             _ => QVariant::default(),
         }
     }
@@ -413,24 +451,44 @@ impl qobject::SearchModel {
             (SEARCH_EXTENSION, "extension"),
             (SEARCH_THUMBNAIL, "thumbnailSource"),
             (SEARCH_SELECTED, "selected"),
+            (SEARCH_CREATED, "createdText"),
+            (SEARCH_CREATED_FALLBACK, "createdFallback"),
+            (SEARCH_TAGS, "tagNames"),
+            (SEARCH_TAG_IDS, "tagIds"),
+            (SEARCH_TAG_COLORS, "tagColors"),
+            (SEARCH_GROUP, "groupLabel"),
         ])
     }
 
-    fn search(mut self: Pin<&mut Self>, path: &QString, query: &QString) {
-        let requested_path = path.to_string();
-        let requested_query = query.to_string();
+    fn search(
+        mut self: Pin<&mut Self>,
+        path: &QString,
+        query: &QString,
+        scope: &QString,
+        kind: &QString,
+        modified: &QString,
+        size: &QString,
+    ) {
+        let args = SearchArgs {
+            path: path.to_string(),
+            query: query.to_string(),
+            scope: scope.to_string(),
+            kind: kind.to_string(),
+            modified: modified.to_string(),
+            size: size.to_string(),
+        };
         let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
 
         {
             let mut rust = self.as_mut().rust_mut();
             rust.generation = generation;
-            rust.path = QString::from(requested_path.as_str());
-            rust.query = QString::from(requested_query.as_str());
-            rust.reload_args = Some((requested_path.clone(), requested_query.clone()));
+            rust.path = QString::from(args.path.as_str());
+            rust.query = QString::from(args.query.as_str());
+            rust.reload_args = Some(args.clone());
         }
 
         self.as_mut().reset_rows();
-        if requested_query.trim().is_empty() {
+        if args.query.trim().is_empty() {
             search::cancel_search();
             self.as_mut().set_loaded(0);
             self.as_mut().set_busy(false);
@@ -447,7 +505,18 @@ impl qobject::SearchModel {
 
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
-            let result = search::search_directory(requested_path, requested_query).await;
+            let request = match build_request(&args) {
+                Ok(request) => request,
+                Err(message) => {
+                    let _ = thread.queue(move |mut model| {
+                        model.as_mut().set_busy(false);
+                        model.as_mut().set_finished(true);
+                        model.as_mut().set_status(QString::from(message.as_str()));
+                    });
+                    return;
+                }
+            };
+            let result = search::search(request).await;
             let _ = thread.queue(move |mut model| model.as_mut().apply_search(generation, result));
         });
     }
@@ -466,12 +535,16 @@ impl qobject::SearchModel {
     }
 
     fn reload(mut self: Pin<&mut Self>) {
-        let Some((path, query)) = self.reload_args.clone() else {
+        let Some(args) = self.reload_args.clone() else {
             return;
         };
         self.as_mut().search(
-            &QString::from(path.as_str()),
-            &QString::from(query.as_str()),
+            &QString::from(args.path.as_str()),
+            &QString::from(args.query.as_str()),
+            &QString::from(args.scope.as_str()),
+            &QString::from(args.kind.as_str()),
+            &QString::from(args.modified.as_str()),
+            &QString::from(args.size.as_str()),
         );
     }
 
@@ -678,6 +751,81 @@ impl qobject::SearchModel {
         }
         self.as_mut().set_finished(true);
     }
+}
+
+/// Translates one request into the roots and bounds the core search takes.
+/// Scopes name where to look; a scope that resolves to nothing is reported
+/// instead of quietly searching the current directory.
+fn build_request(args: &SearchArgs) -> Result<search::SearchRequest, String> {
+    let mut roots: Vec<String> = match args.scope.as_str() {
+        "favorites" => dae_core::fs::sidebar::load_favorites()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|favorite| favorite.path)
+            .collect(),
+        "recent" => dae_core::fs::recents::list_recents()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| {
+                if item.kind == EntryKind::Directory {
+                    item.path
+                } else {
+                    item.path
+                        .rsplit_once(['/', '\\'])
+                        .map(|(parent, _)| parent.to_owned())
+                        .unwrap_or(item.path)
+                }
+            })
+            .collect(),
+        "volumes" => dae_core::fs::sidebar::volume_roots(),
+        // `current` and anything a stale document spells fall back to the
+        // directory on screen.
+        _ => vec![args.path.clone()],
+    };
+
+    roots.retain(|root| !root.is_empty() && vfs::is_local_path(root));
+    roots.sort_unstable();
+    roots.dedup();
+    if roots.is_empty() {
+        return Err("没有可搜索的本地位置".to_owned());
+    }
+
+    let (size_min, size_max) = match args.size.as_str() {
+        "small" => (Some(0), Some(1024 * 1024)),
+        "medium" => (Some(1024 * 1024), Some(100 * 1024 * 1024)),
+        "large" => (Some(100 * 1024 * 1024), None),
+        _ => (None, None),
+    };
+
+    Ok(search::SearchRequest {
+        text: args.query.clone(),
+        roots,
+        tags: Vec::new(),
+        filters: search::SearchFilters {
+            kind: args.kind.clone(),
+            modified_after: modified_cutoff(&args.modified),
+            size_min,
+            size_max,
+        },
+    })
+}
+
+/// The same buckets the listing filter uses; "today" is local midnight rather
+/// than a rolling 24 hours.
+fn modified_cutoff(bucket: &str) -> Option<u64> {
+    use chrono::TimeZone;
+    let now = chrono::Local::now();
+    let millis = match bucket {
+        "today" => now
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .and_then(|midnight| chrono::Local.from_local_datetime(&midnight).earliest())
+            .map(|midnight| midnight.timestamp_millis().max(0) as u64),
+        "week" => Some((now - chrono::Duration::days(7)).timestamp_millis().max(0) as u64),
+        "month" => Some((now - chrono::Duration::days(30)).timestamp_millis().max(0) as u64),
+        _ => None,
+    };
+    millis
 }
 
 enum ContentRow {

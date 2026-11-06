@@ -125,9 +125,8 @@ fn launch_path() -> Result<PathBuf, FileSystemError> {
 
 /// Resolves the running executable, used to build handler launch commands.
 fn current_exe() -> Result<PathBuf, FileSystemError> {
-    std::env::current_exe().map_err(|error| {
-        FileSystemError::Internal(format!("default_manager.set_failed: {error}"))
-    })
+    std::env::current_exe()
+        .map_err(|error| FileSystemError::Internal(format!("default_manager.set_failed: {error}")))
 }
 
 mod platform {
@@ -759,8 +758,8 @@ mod windows_impl {
 
 #[cfg(test)]
 mod tests {
-    use super::desktop;
     use super::alias_path;
+    use super::desktop;
     use std::path::Path;
 
     /// The alias is `%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe` — not the

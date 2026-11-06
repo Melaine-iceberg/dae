@@ -340,13 +340,13 @@ mod tests {
         assert!(directory.is_directory);
 
         let file = TrashRow::from_entry(&entry(1, Some(2_048), false));
-        assert_eq!(file.size_text, "2.0 KB");
+        assert_eq!(file.size_text, "2.0 KiB");
     }
 
     #[test]
     fn the_summary_counts_entries_and_their_bytes() {
         assert_eq!(summary(0, 0), "Trash is empty");
         assert_eq!(summary(1, 0), "Items: 1");
-        assert_eq!(summary(2, 2_048), "Items: 2 · 2.0 KB");
+        assert_eq!(summary(2, 2_048), "Items: 2 · 2.0 KiB");
     }
 }

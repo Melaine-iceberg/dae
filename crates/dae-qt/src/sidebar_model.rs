@@ -42,6 +42,9 @@ const ROLE_ICON: i32 = 0x0205;
 const ROLE_IS_DIR: i32 = 0x0206;
 const ROLE_FILE_SYSTEM: i32 = 0x0207;
 const ROLE_FILL: i32 = 0x0106;
+/// A removable volume: the drive menu's eject/unmount/format rows are gated
+/// on it, so a fixed disk never gets an "Eject" row.
+const ROLE_REMOVABLE: i32 = 0x0107;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -114,6 +117,7 @@ struct SidebarRow {
     fill: f64,
     /// NTFS, APFS, ext4… Empty for everything that is not a volume.
     file_system: String,
+    removable: bool,
 }
 
 #[derive(Default)]
@@ -149,6 +153,7 @@ impl qobject::SidebarModel {
             ROLE_IS_DIR => QVariant::from(&row.is_dir),
             ROLE_FILE_SYSTEM => QVariant::from(&QString::from(row.file_system.as_str())),
             ROLE_FILL => QVariant::from(&row.fill),
+            ROLE_REMOVABLE => QVariant::from(&row.removable),
             _ => QVariant::default(),
         }
     }
@@ -164,6 +169,7 @@ impl qobject::SidebarModel {
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
         roles.insert(ROLE_FILE_SYSTEM, QByteArray::from("fileSystem"));
         roles.insert(ROLE_FILL, QByteArray::from("fill"));
+        roles.insert(ROLE_REMOVABLE, QByteArray::from("removable"));
         roles
     }
 
@@ -200,6 +206,7 @@ impl qobject::SidebarModel {
                 is_dir: false,
                 fill: 0.0,
                 file_system: String::new(),
+                removable: false,
             });
         }
         let favorites = sidebar::load_favorites().unwrap_or_default();
@@ -217,6 +224,7 @@ impl qobject::SidebarModel {
                 is_dir: false,
                 fill: 0.0,
                 file_system: String::new(),
+                removable: false,
             });
         } else {
             for favorite in favorites {
@@ -230,6 +238,7 @@ impl qobject::SidebarModel {
                     is_dir: true,
                     fill: 0.0,
                     file_system: String::new(),
+                    removable: false,
                 });
             }
         }
@@ -257,6 +266,7 @@ impl qobject::SidebarModel {
                 is_dir: true,
                 fill: 0.0,
                 file_system: String::new(),
+                removable: false,
             });
         }
         spaces.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
@@ -310,6 +320,7 @@ impl qobject::SidebarModel {
                             .clamp(0.0, 1.0)
                     },
                     file_system: volume.file_system,
+                    removable: volume.is_removable,
                 });
             }
             rows.extend(spaces);
@@ -371,6 +382,7 @@ fn place_row(kind: PlaceKind, path: &str) -> SidebarRow {
         is_dir: true,
         fill: 0.0,
         file_system: String::new(),
+        removable: false,
     }
 }
 
@@ -403,6 +415,7 @@ fn distro_row(distro: WslDistro) -> SidebarRow {
         is_dir: true,
         fill: 0.0,
         file_system: String::new(),
+        removable: false,
     }
 }
 
@@ -422,6 +435,7 @@ fn connection_row(connection: StoredConnection) -> SidebarRow {
         is_dir: true,
         fill: 0.0,
         file_system: String::new(),
+        removable: false,
     }
 }
 
@@ -436,6 +450,7 @@ fn cloud_row(account: StoredCloudAccount) -> SidebarRow {
         is_dir: true,
         fill: 0.0,
         file_system: String::new(),
+        removable: false,
     }
 }
 
@@ -450,6 +465,7 @@ fn action_row(section: &str, name: &str, kind: &str) -> SidebarRow {
         is_dir: true,
         fill: 0.0,
         file_system: String::new(),
+        removable: false,
     }
 }
 

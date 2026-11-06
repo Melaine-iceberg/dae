@@ -91,6 +91,12 @@ pub mod qobject {
         #[qinvokable]
         fn refresh(self: Pin<&mut OverviewModel>);
 
+        /// Hides the named sections and rebuilds. Unknown names are ignored,
+        /// so a stale preference cannot blank the whole page.
+        #[qinvokable]
+        #[cxx_name = "setHiddenSections"]
+        fn set_hidden_sections(self: Pin<&mut OverviewModel>, sections: &QString);
+
         #[qinvokable]
         #[cxx_name = "kindAt"]
         fn kind_at(&self, row: i32) -> QString;
@@ -156,6 +162,10 @@ pub struct OverviewModelRust {
     project_busy: bool,
     status: QString,
     generation: u64,
+    /// Section names the landing page must not show, comma-separated
+    /// (`Projects`, `Favorites`, `Recent`, `Spaces`). Set from the shell's
+    /// preference so hiding a widget survives a restart; empty shows all.
+    hidden_sections: String,
 }
 
 impl qobject::OverviewModel {
@@ -204,11 +214,29 @@ impl qobject::OverviewModel {
         roles
     }
 
+    fn set_hidden_sections(mut self: Pin<&mut Self>, sections: &QString) {
+        let next = sections.to_string();
+        if self.hidden_sections == next {
+            return;
+        }
+        self.as_mut().rust_mut().hidden_sections = next;
+        self.as_mut().refresh();
+    }
+
     fn refresh(mut self: Pin<&mut Self>) {
         let generation = self.generation.wrapping_add(1);
         self.as_mut().rust_mut().generation = generation;
 
-        let (rows, candidates) = self.as_ref().build_base();
+        let (mut rows, candidates) = self.as_ref().build_base();
+        let hidden: Vec<&str> = self
+            .hidden_sections
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .collect();
+        if !hidden.is_empty() {
+            rows.retain(|row| !hidden.contains(&row.section));
+        }
         let count = rows.len() as i32;
         self.as_mut().rust_mut().base_rows = rows.clone();
         self.as_mut().replace_rows(rows);

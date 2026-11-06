@@ -186,8 +186,7 @@ fn read_shortcuts(path: &Path) -> (bool, String, String) {
     (
         true,
         qt_sequence(
-            &parse_binding(&contents, PATH_JUMP_ID)
-                .unwrap_or_else(|| DEFAULT_PATH_JUMP.to_owned()),
+            &parse_binding(&contents, PATH_JUMP_ID).unwrap_or_else(|| DEFAULT_PATH_JUMP.to_owned()),
         ),
         qt_sequence(
             &parse_binding(&contents, COMMAND_BAR_ID)

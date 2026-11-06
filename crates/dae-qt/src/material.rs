@@ -315,7 +315,10 @@ mod tests {
     #[test]
     fn transparency_effects_off_wins() {
         assert_eq!(choose(Some(26100), false, "acrylic"), Material::None);
-        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD), false, "mica"), Material::None);
+        assert_eq!(
+            choose(Some(ACRYLIC_MIN_BUILD), false, "mica"),
+            Material::None
+        );
         assert_eq!(choose(Some(MICA_MIN_BUILD), false, "none"), Material::None);
     }
 

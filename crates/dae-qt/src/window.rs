@@ -66,6 +66,12 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_startup_mark(stage: &QString);
 
+        /// The native window handle as a number, or 0. Only the Windows share
+        /// sheet consumes it; QML's `Window` has no `winId` of its own.
+        #[namespace = "dae_qt"]
+        #[rust_name = "native_window_handle"]
+        fn dae_qt_native_handle(token: &QString) -> f64;
+
         #[namespace = "dae_qt"]
         fn dae_qt_watch_first_frame(engine: usize);
 
@@ -138,6 +144,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "titlebarDoubleAction"]
         fn titlebar_double_action(self: Pin<&mut WindowController>) -> QString;
+
+        /// The HWND for this window, or 0 before it is attached. The Windows
+        /// share sheet needs it; other platforms return 0 and never ask.
+        #[qinvokable]
+        #[cxx_name = "nativeHandle"]
+        fn native_handle(self: Pin<&mut WindowController>) -> f64;
     }
 }
 
@@ -204,6 +216,10 @@ impl qobject::WindowController {
 
     pub fn titlebar_double_action(self: Pin<&mut Self>) -> QString {
         QString::from(crate::platform::titlebar_double_click())
+    }
+
+    pub fn native_handle(self: Pin<&mut Self>) -> f64 {
+        qobject::native_window_handle(&self.token)
     }
 }
 

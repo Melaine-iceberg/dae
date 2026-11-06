@@ -70,6 +70,22 @@ const ROLE_GIT: i32 = 0x010C;
 /// emits one `dataChanged` for the rows that moved instead of one script call
 /// per delegate on screen.
 const ROLE_SELECTED: i32 = 0x010D;
+/// The row's creation time, formatted for the details column. Empty when the
+/// backend cannot report one.
+const ROLE_CREATED: i32 = 0x010E;
+/// `createdText` is the `ctime` fallback rather than a birth time, so the
+/// column can say so.
+const ROLE_CREATED_FALLBACK: i32 = 0x010F;
+/// The tag names on this row, joined with `, ` for the details column.
+const ROLE_TAGS: i32 = 0x0110;
+/// The ids, joined with `, `. The context menu edits by id.
+const ROLE_TAG_IDS: i32 = 0x0111;
+/// The colours of [`ROLE_TAGS`] in the same order, joined with `, `, so the
+/// delegate can paint one dot per tag without a second lookup.
+const ROLE_TAG_COLORS: i32 = 0x0112;
+/// The section this row belongs to under the current grouping; empty when
+/// grouping is off.
+const ROLE_GROUP: i32 = 0x0113;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -101,6 +117,11 @@ pub mod qobject {
         #[qml_element]
         #[base = QAbstractListModel]
         #[qproperty(i32, loaded)]
+        /// Image files and file rows in the finished listing. The adaptive
+        /// layout reads them once per directory; nothing else needs a second
+        /// pass over the rows.
+        #[qproperty(i32, images)]
+        #[qproperty(i32, files)]
         /// Rows currently selected. Maintained as the selection changes, so the
         /// status bar reads a number instead of walking the selection.
         #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
@@ -173,8 +194,42 @@ pub mod qobject {
             self: Pin<&mut DirectoryListModel>,
             sort_key: &QString,
             sort_order: &QString,
-            folders_first: bool,
+            folder_order: &QString,
         );
+
+        /// Sections the listing by `group_key` (`name`, `modified`, `created`,
+        /// `size`, `type`, `tag`, or empty for none); dates are bucketed by
+        /// `group_date` (`year`, `month`, `day`). The grouping is part of the
+        /// order, so changing it re-sorts.
+        #[qinvokable]
+        #[cxx_name = "setGroup"]
+        fn set_group(self: Pin<&mut DirectoryListModel>, group_key: &QString, group_date: &QString);
+
+        /// Reads the tags of the rows in `[first, last]`. The view calls this
+        /// for the rows it is about to paint, so tagging never touches the
+        /// enumeration path.
+        #[qinvokable]
+        #[cxx_name = "requestTags"]
+        fn request_tags(self: Pin<&mut DirectoryListModel>, first: i32, last: i32);
+
+        /// Records a measured byte total for one directory and repaints its
+        /// size cell. Written by the shell after `Workspace.measureFolders`
+        /// answers; a folder with no entry keeps showing the em dash.
+        #[qinvokable]
+        #[cxx_name = "setDirectorySize"]
+        fn set_directory_size(self: Pin<&mut DirectoryListModel>, path: &QString, bytes: f64);
+
+        /// Re-reads the tags of `paths` after the tag editor changed them, and
+        /// repaints those rows. Also re-applies a tag sort or grouping.
+        #[qinvokable]
+        #[cxx_name = "refreshTags"]
+        fn refresh_tags(self: Pin<&mut DirectoryListModel>, paths: &QStringList);
+
+        /// Re-reads `tags.toml` after the tag manager created, renamed or
+        /// removed a definition.
+        #[qinvokable]
+        #[cxx_name = "refreshTagDefinitions"]
+        fn refresh_tag_definitions(self: Pin<&mut DirectoryListModel>);
 
         /// Sets the visibility filter. A filter change re-reads the directory:
         /// a listing that changed which rows exist has to be rebuilt, and the
@@ -418,9 +473,22 @@ struct StoredRow {
     kind: EntryKind,
     size: Option<u64>,
     modified_at: Option<u64>,
+    created_at: Option<u64>,
+    /// `created_at` is the ctime fallback, so the column can say so.
+    created_fallback: bool,
     hidden: bool,
     read_only: bool,
     selected: bool,
+    /// The group this row falls into under the current grouping, computed once
+    /// per grouping change so the comparator and the section header agree.
+    /// Empty when grouping is off.
+    group_label: String,
+    group_rank: i64,
+    /// Tag ids on this row, read from the tag index in a batch after the
+    /// listing lands. Empty until then.
+    tag_ids: Vec<String>,
+    /// Tag names joined in definition order, kept for the tag sort.
+    tag_sort: String,
 }
 
 impl PartialEq for StoredRow {
@@ -430,6 +498,8 @@ impl PartialEq for StoredRow {
             && self.kind == other.kind
             && self.size == other.size
             && self.modified_at == other.modified_at
+            && self.created_at == other.created_at
+            && self.created_fallback == other.created_fallback
             && self.hidden == other.hidden
             && self.read_only == other.read_only
     }
@@ -467,9 +537,15 @@ impl StoredRow {
             kind: entry.kind,
             size: entry.size,
             modified_at: entry.modified_at,
+            created_at: entry.created_at,
+            created_fallback: entry.created_fallback,
             hidden: entry.hidden,
             read_only: entry.read_only,
             selected: false,
+            group_label: String::new(),
+            group_rank: 0,
+            tag_ids: Vec::new(),
+            tag_sort: String::new(),
         }
     }
 
@@ -480,9 +556,15 @@ impl StoredRow {
             kind: row.kind,
             size: row.size,
             modified_at: row.modified_at,
+            created_at: row.created_at,
+            created_fallback: row.created_fallback,
             hidden: row.hidden,
             read_only: row.read_only,
             selected: false,
+            group_label: String::new(),
+            group_rank: 0,
+            tag_ids: Vec::new(),
+            tag_sort: String::new(),
         }
     }
 
@@ -501,18 +583,112 @@ impl StoredRow {
 enum SortKey {
     Name,
     Modified,
+    Created,
     Type,
     Size,
+    Path,
+    Tag,
 }
 
 impl SortKey {
     fn parse(value: &str) -> Self {
         match value {
             "modified" => Self::Modified,
+            "created" => Self::Created,
             "type" => Self::Type,
             "size" => Self::Size,
+            "path" => Self::Path,
+            "tag" => Self::Tag,
             _ => Self::Name,
         }
+    }
+}
+
+/// Where folders sit relative to files at the top of every group.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum FolderOrder {
+    #[default]
+    FoldersFirst,
+    FilesFirst,
+    Mixed,
+}
+
+impl FolderOrder {
+    fn parse(value: &str) -> Self {
+        match value {
+            "filesFirst" => Self::FilesFirst,
+            "mixed" => Self::Mixed,
+            _ => Self::FoldersFirst,
+        }
+    }
+
+    fn rank(self, kind: EntryKind) -> u8 {
+        let folder = u8::from(kind == EntryKind::Directory);
+        match self {
+            Self::FoldersFirst => folder ^ 1,
+            Self::FilesFirst => folder,
+            Self::Mixed => 0,
+        }
+    }
+}
+
+/// What the listing is sectioned by. The label is computed per row (see
+/// `assign_groups`), so the comparator stays a pure function of precomputed
+/// values and the worker sort needs no tag or timestamp lookups.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum GroupKey {
+    #[default]
+    None,
+    Name,
+    Modified,
+    Created,
+    Size,
+    Type,
+    Tag,
+}
+
+impl GroupKey {
+    fn parse(value: &str) -> Self {
+        match value {
+            "name" => Self::Name,
+            "modified" => Self::Modified,
+            "created" => Self::Created,
+            "size" => Self::Size,
+            "type" => Self::Type,
+            "tag" => Self::Tag,
+            _ => Self::None,
+        }
+    }
+}
+
+/// How precisely a date group names its bucket.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum GroupDate {
+    Year,
+    #[default]
+    Month,
+    Day,
+}
+
+impl GroupDate {
+    fn parse(value: &str) -> Self {
+        match value {
+            "year" => Self::Year,
+            "day" => Self::Day,
+            _ => Self::Month,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Grouping {
+    key: GroupKey,
+    date: GroupDate,
+}
+
+impl Grouping {
+    fn active(self) -> bool {
+        self.key != GroupKey::None
     }
 }
 
@@ -536,7 +712,8 @@ impl SortOrder {
 struct ViewOrder {
     key: SortKey,
     order: SortOrder,
-    folders_first: bool,
+    folders: FolderOrder,
+    grouping: Grouping,
 }
 
 impl Default for ViewOrder {
@@ -544,7 +721,8 @@ impl Default for ViewOrder {
         Self {
             key: SortKey::Name,
             order: SortOrder::Asc,
-            folders_first: true,
+            folders: FolderOrder::FoldersFirst,
+            grouping: Grouping::default(),
         }
     }
 }
@@ -713,6 +891,14 @@ trait SortFields {
     fn sort_name(&self) -> &str;
     fn sort_size(&self) -> Option<u64>;
     fn sort_modified_at(&self) -> Option<u64>;
+    fn sort_created_at(&self) -> Option<u64>;
+    /// The row's path suffix. Every row of one listing hangs off the same
+    /// base, so comparing these is the full-path order without building a
+    /// string per comparison; a patched row from another directory sorts by
+    /// its own spelling, which is the only case where the base would matter.
+    fn sort_path(&self) -> &str;
+    fn sort_tag(&self) -> &str;
+    fn sort_group(&self) -> (i64, &str);
 }
 
 impl SortFields for StoredRow {
@@ -731,6 +917,22 @@ impl SortFields for StoredRow {
     fn sort_modified_at(&self) -> Option<u64> {
         self.modified_at
     }
+
+    fn sort_created_at(&self) -> Option<u64> {
+        self.created_at
+    }
+
+    fn sort_path(&self) -> &str {
+        self.path.as_deref().unwrap_or(&self.name)
+    }
+
+    fn sort_tag(&self) -> &str {
+        &self.tag_sort
+    }
+
+    fn sort_group(&self) -> (i64, &str) {
+        (self.group_rank, &self.group_label)
+    }
 }
 
 /// Orders two rows for display.
@@ -740,13 +942,41 @@ impl SortFields for StoredRow {
 /// direction, and the name breaks ties ascending so equal sizes/timestamps
 /// still have one order.
 fn compare_rows<T: SortFields>(left: &T, right: &T, order: &ViewOrder) -> Ordering {
-    if order.folders_first {
-        let left_folder = u8::from(left.sort_kind() == EntryKind::Directory);
-        let right_folder = u8::from(right.sort_kind() == EntryKind::Directory);
-        let folders = right_folder.cmp(&left_folder);
-        if folders != Ordering::Equal {
-            return folders;
+    if order.grouping.active() {
+        let (left_rank, left_label) = left.sort_group();
+        let (right_rank, right_label) = right.sort_group();
+        let groups = left_rank
+            .cmp(&right_rank)
+            .then_with(|| natural_cmp(left_label, right_label));
+        let groups = match order.order {
+            SortOrder::Asc => groups,
+            SortOrder::Desc => groups.reverse(),
+        };
+        if groups != Ordering::Equal {
+            return groups;
         }
+    }
+
+    // Untagged rows sort after tagged ones in both directions: "no tag" is
+    // not a value that belongs at either end of the tag order.
+    if order.key == SortKey::Tag {
+        let left_empty = left.sort_tag().is_empty();
+        let right_empty = right.sort_tag().is_empty();
+        if left_empty != right_empty {
+            return if left_empty {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
+        }
+    }
+
+    let folders = order
+        .folders
+        .rank(left.sort_kind())
+        .cmp(&order.folders.rank(right.sort_kind()));
+    if folders != Ordering::Equal {
+        return folders;
     }
 
     let primary = match order.key {
@@ -755,16 +985,27 @@ fn compare_rows<T: SortFields>(left: &T, right: &T, order: &ViewOrder) -> Orderi
             .sort_modified_at()
             .unwrap_or(0)
             .cmp(&right.sort_modified_at().unwrap_or(0)),
+        SortKey::Created => left
+            .sort_created_at()
+            .unwrap_or(0)
+            .cmp(&right.sort_created_at().unwrap_or(0)),
         SortKey::Size => left
             .sort_size()
             .unwrap_or(0)
             .cmp(&right.sort_size().unwrap_or(0)),
+        SortKey::Path => natural_cmp(left.sort_path(), right.sort_path()),
+        SortKey::Tag => natural_cmp(left.sort_tag(), right.sort_tag()),
         SortKey::Type => {
             let left_category = category_of(left.sort_kind(), left.sort_name());
             let right_category = category_of(right.sort_kind(), right.sort_name());
             category_rank(left_category)
                 .cmp(&category_rank(right_category))
-                .then_with(|| natural_cmp(extension_of(left.sort_name()), extension_of(right.sort_name())))
+                .then_with(|| {
+                    natural_cmp(
+                        extension_of(left.sort_name()),
+                        extension_of(right.sort_name()),
+                    )
+                })
         }
     };
     let primary = match order.order {
@@ -787,9 +1028,14 @@ fn sort_rows(rows: &mut [StoredRow], order: &ViewOrder) {
 /// while the ordering is computed.
 struct SortEntry {
     name: String,
+    path: Option<String>,
     kind: EntryKind,
     size: Option<u64>,
     modified_at: Option<u64>,
+    created_at: Option<u64>,
+    tag_sort: String,
+    group_label: String,
+    group_rank: i64,
 }
 
 impl SortFields for SortEntry {
@@ -808,15 +1054,36 @@ impl SortFields for SortEntry {
     fn sort_modified_at(&self) -> Option<u64> {
         self.modified_at
     }
+
+    fn sort_created_at(&self) -> Option<u64> {
+        self.created_at
+    }
+
+    fn sort_path(&self) -> &str {
+        self.path.as_deref().unwrap_or(&self.name)
+    }
+
+    fn sort_tag(&self) -> &str {
+        &self.tag_sort
+    }
+
+    fn sort_group(&self) -> (i64, &str) {
+        (self.group_rank, &self.group_label)
+    }
 }
 
 fn sort_snapshot(rows: &[StoredRow]) -> Vec<SortEntry> {
     rows.iter()
         .map(|row| SortEntry {
             name: row.name.clone(),
+            path: row.path.clone(),
             kind: row.kind,
             size: row.size,
             modified_at: row.modified_at,
+            created_at: row.created_at,
+            tag_sort: row.tag_sort.clone(),
+            group_label: row.group_label.clone(),
+            group_rank: row.group_rank,
         })
         .collect()
 }
@@ -900,6 +1167,166 @@ fn apply_permutation(rows: Vec<StoredRow>, perm: &[u32]) -> Option<Vec<StoredRow
 fn rows_are_sorted(rows: &[StoredRow], order: &ViewOrder) -> bool {
     rows.windows(2)
         .all(|pair| compare_rows(&pair[0], &pair[1], order) != Ordering::Greater)
+}
+
+/// Filters a group by its id. The UI maps these ids to localized labels; the
+/// model keeps them language-neutral so a section header is translated once,
+/// not per row.
+const GROUP_TAG_LESS: i64 = i64::MAX;
+
+/// Computes the section label and ordering rank for every row.
+///
+/// Runs once per grouping change (and once per streamed batch, so the rows
+/// arriving under an active grouping already carry their header). The
+/// comparator then reads two plain values, which is what lets the worker sort
+/// stay allocation-free.
+fn assign_groups(rows: &mut [StoredRow], grouping: Grouping) {
+    if !grouping.active() {
+        for row in rows {
+            row.group_label.clear();
+            row.group_rank = 0;
+        }
+        return;
+    }
+
+    let definitions = if grouping.key == GroupKey::Tag {
+        dae_core::fs::tags::definitions()
+    } else {
+        Vec::new()
+    };
+
+    for row in rows {
+        let (rank, label) = group_of(row, grouping, &definitions);
+        row.group_rank = rank;
+        row.group_label = label;
+    }
+}
+
+fn group_of(
+    row: &StoredRow,
+    grouping: Grouping,
+    definitions: &[dae_core::fs::tags::TagDefinition],
+) -> (i64, String) {
+    match grouping.key {
+        GroupKey::None => (0, String::new()),
+        GroupKey::Name => {
+            let label = row
+                .name
+                .chars()
+                .next()
+                .map(|character| {
+                    let mut folded = character.to_uppercase();
+                    folded.next().unwrap_or('#').to_string()
+                })
+                // Digits get the `#` bucket: a numeric first character is
+                // not a letter group, which is what file managers have always
+                // done.
+                .filter(|label| label.chars().next().is_some_and(char::is_alphabetic))
+                .unwrap_or_else(|| "#".to_owned());
+            (0, label)
+        }
+        GroupKey::Modified => date_group(row.modified_at, grouping.date),
+        // A fallback value is still the best bucket the file system has; the
+        // header names the grouping, and the created column carries the
+        // fallback note.
+        GroupKey::Created => date_group(row.created_at, grouping.date),
+        GroupKey::Size => {
+            if row.kind == EntryKind::Directory {
+                return (3, "—".to_owned());
+            }
+            const MIB: u64 = 1024 * 1024;
+            let size = row.size.unwrap_or(0);
+            if size < MIB {
+                (0, "< 1 MB".to_owned())
+            } else if size < 100 * MIB {
+                (1, "1–100 MB".to_owned())
+            } else {
+                (2, "> 100 MB".to_owned())
+            }
+        }
+        GroupKey::Type => {
+            let category = category_of(row.kind, &row.name);
+            (i64::from(category_rank(category)), category.to_owned())
+        }
+        GroupKey::Tag => {
+            if row.tag_ids.is_empty() {
+                return (GROUP_TAG_LESS, String::new());
+            }
+            let mut ordered: Vec<(usize, &str)> = row
+                .tag_ids
+                .iter()
+                .filter_map(|id| {
+                    definitions
+                        .iter()
+                        .position(|definition| definition.id == *id)
+                        .map(|position| (position, definitions[position].name.as_str()))
+                })
+                .collect();
+            ordered.sort_unstable_by_key(|(position, _)| *position);
+            let label = ordered
+                .into_iter()
+                .map(|(_, name)| name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let rank = row
+                .tag_ids
+                .iter()
+                .filter_map(|id| {
+                    definitions
+                        .iter()
+                        .position(|definition| definition.id == *id)
+                })
+                .min()
+                .map(|position| position as i64)
+                .unwrap_or(GROUP_TAG_LESS - 1);
+            (rank, label)
+        }
+    }
+}
+
+/// Writes one row's tag ids and the derived sort key from `definitions`.
+fn set_row_tags(
+    row: &mut StoredRow,
+    ids: &[String],
+    definitions: &[dae_core::fs::tags::TagDefinition],
+) {
+    row.tag_ids = ids.to_vec();
+    row.tag_sort = definitions
+        .iter()
+        .filter(|definition| ids.contains(&definition.id))
+        .map(|definition| definition.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+}
+
+/// A date bucket's rank and label. The rank is `YYYYMMDD`-shaped so
+/// lexicographic and numeric order agree; a missing timestamp sorts last.
+fn date_group(timestamp: Option<u64>, granularity: GroupDate) -> (i64, String) {
+    use chrono::TimeZone;
+    let Some(timestamp) = timestamp else {
+        return (GROUP_TAG_LESS, "—".to_owned());
+    };
+    let Some(moment) = chrono::Local
+        .timestamp_millis_opt(timestamp as i64)
+        .single()
+    else {
+        return (GROUP_TAG_LESS, "—".to_owned());
+    };
+    use chrono::Datelike;
+    let year = moment.year();
+    let month = moment.month();
+    let day = moment.day();
+    match granularity {
+        GroupDate::Year => (i64::from(year) * 10_000, format!("{year}")),
+        GroupDate::Month => (
+            i64::from(year) * 10_000 + i64::from(month) * 100,
+            format!("{year}-{month:02}"),
+        ),
+        GroupDate::Day => (
+            i64::from(year) * 10_000 + i64::from(month) * 100 + i64::from(day),
+            format!("{year}-{month:02}-{day:02}"),
+        ),
+    }
 }
 
 /// Case-insensitive natural ordering: `file2` sorts before `file10`.
@@ -1188,6 +1615,8 @@ impl GitOperation {
 
 pub struct DirectoryListModelRust {
     loaded: i32,
+    images: i32,
+    files: i32,
     /// Rows currently selected, published as the `selectedCount` property so
     /// the status bar never recounts the selection.
     selected_count: i32,
@@ -1255,18 +1684,37 @@ pub struct DirectoryListModelRust {
     /// the rows rather than inside `StoredRow`: a status refresh must not make
     /// the row diff treat the whole directory as changed.
     git_entries: HashMap<String, GitEntryStatusKind>,
+    /// Tag ids per full path, filled in batches after the listing lands.
+    /// Keyed by path rather than stored on the row so a refresh can carry the
+    /// ids over when a row's metadata changed but its path did not.
+    tags_cache: HashMap<String, Vec<String>>,
+    /// Drops a tag read that lands after a load or a newer read.
+    tag_generation: u64,
+    /// Every row's tags have been read, so a tag sort does not have to start
+    /// another pass.
+    tags_complete: bool,
+    /// The tag definitions, read once per load and after an edit in the tag
+    /// manager. `data()` runs per visible cell, so it must not open
+    /// `tags.toml`.
+    tag_definitions: Vec<dae_core::fs::tags::TagDefinition>,
     /// The shown directory is entirely untracked; every child gets the `U`
     /// badge without an entry per file.
     git_directory_untracked: bool,
     /// Drops a Git read that lands after the user navigated away or a newer
     /// request replaced it.
     git_generation: u64,
+    /// Byte totals for directories the user asked to measure, keyed by full
+    /// path. Folders are never walked during enumeration; this map only holds
+    /// the totals a "calculate size" pass returned.
+    folder_sizes: HashMap<String, u64>,
 }
 
 impl Default for DirectoryListModelRust {
     fn default() -> Self {
         Self {
             loaded: 0,
+            images: 0,
+            files: 0,
             selected_count: 0,
             finished: false,
             status: QString::default(),
@@ -1300,7 +1748,12 @@ impl Default for DirectoryListModelRust {
             git_remote_branches: QStringList::default(),
             git_current_branch: QString::default(),
             git_entries: HashMap::new(),
+            tags_cache: HashMap::new(),
+            tag_generation: 0,
+            tags_complete: false,
+            tag_definitions: Vec::new(),
             git_directory_untracked: false,
+            folder_sizes: HashMap::new(),
             git_generation: 0,
         }
     }
@@ -1339,7 +1792,10 @@ impl qobject::DirectoryListModel {
             // detail view shows an em dash instead of a made-up "0 B".
             ROLE_SIZE => {
                 let text = if row.kind == EntryKind::Directory {
-                    "—".to_owned()
+                    self.folder_sizes
+                        .get(&row.full_path(&self.base))
+                        .map(|bytes| crate::format::size(*bytes))
+                        .unwrap_or_else(|| "—".to_owned())
                 } else {
                     crate::format::size(row.size.unwrap_or(0))
                 };
@@ -1387,6 +1843,21 @@ impl qobject::DirectoryListModel {
                 self.git_directory_untracked,
                 &row.name,
             ))),
+            ROLE_CREATED => QVariant::from(&QString::from(
+                if row.created_at.is_some() {
+                    crate::format::timestamp(row.created_at.unwrap_or(0))
+                } else {
+                    "—".to_owned()
+                }
+                .as_str(),
+            )),
+            ROLE_CREATED_FALLBACK => QVariant::from(&row.created_fallback),
+            ROLE_TAGS => QVariant::from(&QString::from(self.tag_names(&row.tag_ids).as_str())),
+            ROLE_TAG_IDS => QVariant::from(&QString::from(row.tag_ids.join(",").as_str())),
+            ROLE_TAG_COLORS => {
+                QVariant::from(&QString::from(self.tag_colors(&row.tag_ids).as_str()))
+            }
+            ROLE_GROUP => QVariant::from(&QString::from(row.group_label.as_str())),
             _ => QVariant::default(),
         }
     }
@@ -1407,6 +1878,12 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_THUMBNAIL, QByteArray::from("thumbnailSource"));
         roles.insert(ROLE_GIT, QByteArray::from("gitStatus"));
         roles.insert(ROLE_SELECTED, QByteArray::from("selected"));
+        roles.insert(ROLE_CREATED, QByteArray::from("createdText"));
+        roles.insert(ROLE_CREATED_FALLBACK, QByteArray::from("createdFallback"));
+        roles.insert(ROLE_TAGS, QByteArray::from("tagNames"));
+        roles.insert(ROLE_TAG_IDS, QByteArray::from("tagIds"));
+        roles.insert(ROLE_TAG_COLORS, QByteArray::from("tagColors"));
+        roles.insert(ROLE_GROUP, QByteArray::from("groupLabel"));
         roles
     }
 
@@ -1435,6 +1912,14 @@ impl qobject::DirectoryListModel {
             // A reply from a sort started before this load describes rows that
             // are about to be replaced, even if the row count happens to match.
             rust.sort_request = rust.sort_request.wrapping_add(1);
+            // Same rule for tag reads, plus a definition re-read: the tag
+            // manager may have changed a name since the last directory.
+            rust.tag_generation = rust.tag_generation.wrapping_add(1);
+            rust.tags_complete = false;
+            rust.tag_definitions = dae_core::fs::tags::definitions();
+            if !refreshing {
+                rust.tags_cache.clear();
+            }
         }
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
             listing::cancel_directory_listing(stream_id);
@@ -1459,6 +1944,7 @@ impl qobject::DirectoryListModel {
                     rust.generation = generation;
                     rust.rows.clear();
                     rust.base.clear();
+                    rust.folder_sizes.clear();
                     // A selection belongs to the rows it was made on. Staying
                     // inside the same directory (the refresh branch above)
                     // keeps it; navigating drops it before the new rows can
@@ -1885,17 +2371,40 @@ impl qobject::DirectoryListModel {
         mut self: Pin<&mut Self>,
         sort_key: &QString,
         sort_order: &QString,
-        folders_first: bool,
+        folder_order: &QString,
     ) {
-        let next = ViewOrder {
-            key: SortKey::parse(&sort_key.to_string()),
-            order: SortOrder::parse(&sort_order.to_string()),
-            folders_first,
+        let mut next = self.order;
+        next.key = SortKey::parse(&sort_key.to_string());
+        next.order = SortOrder::parse(&sort_order.to_string());
+        next.folders = FolderOrder::parse(&folder_order.to_string());
+        self.as_mut().apply_order(next);
+    }
+
+    fn set_group(mut self: Pin<&mut Self>, group_key: &QString, group_date: &QString) {
+        let mut next = self.order;
+        next.grouping = Grouping {
+            key: GroupKey::parse(&group_key.to_string()),
+            date: GroupDate::parse(&group_date.to_string()),
         };
+        self.as_mut().apply_order(next);
+    }
+
+    /// Adopts `next`, recomputes the section labels it implies and re-sorts.
+    /// A tag order or tag grouping needs every row's tags first; that read is
+    /// started here and re-applies the sort when it lands.
+    fn apply_order(mut self: Pin<&mut Self>, next: ViewOrder) {
         if self.order == next {
             return;
         }
-        self.as_mut().rust_mut().order = next;
+        let needs_tags = next.key == SortKey::Tag || next.grouping.key == GroupKey::Tag;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.order = next;
+            assign_groups(&mut rust.rows, next.grouping);
+        }
+        if needs_tags && !self.tags_complete {
+            self.as_mut().start_full_tag_load();
+        }
         if self.rows.len() < 2 || rows_are_sorted(&self.rows, &next) {
             return;
         }
@@ -1904,6 +2413,227 @@ impl qobject::DirectoryListModel {
         } else {
             self.as_mut().start_worker_sort();
         }
+    }
+
+    fn set_directory_size(mut self: Pin<&mut Self>, path: &QString, bytes: f64) {
+        let path = path.to_string();
+        if path.is_empty() || !bytes.is_finite() || bytes < 0.0 {
+            return;
+        }
+        let bytes = bytes.round() as u64;
+        if self
+            .folder_sizes
+            .get(&path)
+            .is_some_and(|stored| *stored == bytes)
+        {
+            return;
+        }
+        self.as_mut()
+            .rust_mut()
+            .folder_sizes
+            .insert(path.clone(), bytes);
+
+        let Some(index) = self
+            .rows
+            .iter()
+            .position(|row| row.full_path(&self.base) == path)
+        else {
+            return;
+        };
+        unsafe {
+            let parent = QModelIndex::default();
+            let cell = self.as_mut().model_index(index as i32, 0, &parent);
+            let mut roles = QList::<i32>::default();
+            roles.append(ROLE_SIZE);
+            self.as_mut().data_changed(&cell, &cell, &roles);
+        }
+    }
+
+    fn request_tags(mut self: Pin<&mut Self>, first: i32, last: i32) {
+        let Ok(first) = usize::try_from(first) else {
+            return;
+        };
+        let last = usize::try_from(last)
+            .unwrap_or(usize::MAX)
+            .min(self.rows.len().saturating_sub(1));
+        if first > last || first >= self.rows.len() {
+            return;
+        }
+        let mut paths: Vec<String> = Vec::with_capacity(last - first + 1);
+        for row in &self.rows[first..=last] {
+            let path = row.full_path(&self.base);
+            if !self.tags_cache.contains_key(&path) && !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+        if !paths.is_empty() {
+            self.as_mut().start_tag_load(paths, false);
+        }
+    }
+
+    fn refresh_tags(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let paths: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        {
+            let mut rust = self.as_mut().rust_mut();
+            // An edit invalidates any read that started before it, even one
+            // for a different path: the definitions may have changed with it.
+            rust.tag_generation = rust.tag_generation.wrapping_add(1);
+            for path in &paths {
+                rust.tags_cache.remove(path);
+            }
+        }
+        // A tag edit can change a sort or grouping that reads the tags, so a
+        // refresh also re-runs the order once the new ids are in.
+        self.as_mut().start_tag_load(paths, false);
+    }
+
+    /// Reads `paths`' tags on a blocking thread. Results carry the load's
+    /// generation and the tag epoch; a load that started before an edit (or
+    /// before a navigation) is dropped instead of repainting stale ids.
+    fn start_tag_load(mut self: Pin<&mut Self>, paths: Vec<String>, full: bool) {
+        let generation = self.generation;
+        let epoch = self.tag_generation;
+        let thread = self.as_mut().qt_thread();
+        crate::runtime::spawn(async move {
+            let read = tokio::task::spawn_blocking(move || dae_core::fs::tags::tags_for(&paths));
+            if let Ok(entries) = read.await {
+                let _ = thread.queue(move |mut model| {
+                    model.as_mut().adopt_tags(generation, epoch, full, entries)
+                });
+            }
+        });
+    }
+
+    fn start_full_tag_load(mut self: Pin<&mut Self>) {
+        if self.rows.is_empty() || self.tags_complete {
+            return;
+        }
+        let base = self.base.to_string();
+        let mut paths: Vec<String> = Vec::with_capacity(self.rows.len());
+        for row in &self.rows {
+            let path = row.full_path(&base);
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+        self.as_mut().start_tag_load(paths, true);
+    }
+
+    fn adopt_tags(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        epoch: u64,
+        full: bool,
+        entries: Vec<dae_core::fs::tags::EntryTags>,
+    ) {
+        if self.generation != generation || self.tag_generation != epoch {
+            return;
+        }
+        let base = self.base.to_string();
+        let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
+        let mut by_path: HashMap<String, Vec<String>> = HashMap::new();
+        for entry in entries {
+            self.as_mut()
+                .rust_mut()
+                .tags_cache
+                .insert(entry.path.clone(), entry.tag_ids.clone());
+            match entry.path.strip_prefix(base.as_str()) {
+                Some(name) if !name.contains(['/', '\\']) => {
+                    by_name.insert(name.to_owned(), entry.tag_ids);
+                }
+                _ => {
+                    by_path.insert(entry.path, entry.tag_ids);
+                }
+            }
+        }
+        let definitions = self.tag_definitions.clone();
+        {
+            let DirectoryListModelRust {
+                rows, tags_cache, ..
+            } = &mut *self.as_mut().rust_mut();
+            for row in rows.iter_mut() {
+                let ids = match by_name.get(row.name.as_str()) {
+                    Some(ids) => Some(ids),
+                    None => {
+                        let path = row.full_path(&base);
+                        by_path.get(&path).or_else(|| tags_cache.get(&path))
+                    }
+                };
+                if let Some(ids) = ids
+                    && row.tag_ids != *ids
+                {
+                    set_row_tags(row, ids, &definitions);
+                }
+            }
+        }
+        if full {
+            self.as_mut().rust_mut().tags_complete = true;
+        }
+        self.as_mut().emit_tag_roles();
+        if self.order.key == SortKey::Tag || self.order.grouping.key == GroupKey::Tag {
+            let grouping = self.order.grouping;
+            {
+                let mut rust = self.as_mut().rust_mut();
+                assign_groups(&mut rust.rows, grouping);
+            }
+            self.as_mut().resort_if_needed();
+        }
+    }
+
+    /// Repaints the tag and section roles for every row in one signal. The
+    /// view only re-reads its visible delegates, so the range costs nothing
+    /// per row in QML.
+    fn emit_tag_roles(mut self: Pin<&mut Self>) {
+        let count = self.rows.len();
+        if count == 0 {
+            return;
+        }
+        unsafe {
+            let parent = QModelIndex::default();
+            let top = self.as_mut().model_index(0, 0, &parent);
+            let bottom = self.as_mut().model_index(count as i32 - 1, 0, &parent);
+            let mut roles = QList::<i32>::default();
+            roles.append(ROLE_TAGS);
+            roles.append(ROLE_TAG_IDS);
+            roles.append(ROLE_TAG_COLORS);
+            roles.append(ROLE_GROUP);
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
+    }
+
+    fn resort_if_needed(mut self: Pin<&mut Self>) {
+        if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
+            return;
+        }
+        if self.rows.len() < WORKER_SORT_MIN_ROWS {
+            self.as_mut().resort_rows();
+        } else {
+            self.as_mut().start_worker_sort();
+        }
+    }
+
+    fn refresh_tag_definitions(mut self: Pin<&mut Self>) {
+        let definitions = dae_core::fs::tags::definitions();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.tag_definitions = definitions;
+            // A renamed tag changes the sort key and the section labels.
+            let order = rust.order;
+            let base = rust.base.clone();
+            let definitions = rust.tag_definitions.clone();
+            let mut cache = rust.tags_cache.clone();
+            for row in rust.rows.iter_mut() {
+                if let Some(ids) = cache.remove(&row.full_path(&base)) {
+                    set_row_tags(row, &ids, &definitions);
+                }
+            }
+            assign_groups(&mut rust.rows, order.grouping);
+        }
+        self.as_mut().emit_tag_roles();
+        self.as_mut().resort_if_needed();
     }
 
     fn set_filters(
@@ -1989,6 +2719,31 @@ impl qobject::DirectoryListModel {
         rows.into_iter()
             .filter(|row| filter.keeps(row, cutoff))
             .collect()
+    }
+
+    /// Counts the two things the adaptive rule asks about. One pass at
+    /// completion, never per batch.
+    fn publish_counts(mut self: Pin<&mut Self>) {
+        let mut images = 0;
+        let mut files = 0;
+        for row in &self.rows {
+            match row.kind {
+                EntryKind::File => {
+                    files += 1;
+                    if category_of(row.kind, &row.name) == "image" {
+                        images += 1;
+                    }
+                }
+                EntryKind::Directory => {}
+                _ => {}
+            }
+        }
+        if self.images != images {
+            self.as_mut().set_images(images);
+        }
+        if self.files != files {
+            self.as_mut().set_files(files);
+        }
     }
 
     fn index_of_path(&self, path: &QString) -> i32 {
@@ -2173,6 +2928,26 @@ impl qobject::DirectoryListModel {
             .unwrap_or(false)
     }
 
+    /// The visible names of `ids`, in definition order. Unknown ids are
+    /// dropped: a definition the user deleted must not keep painting.
+    fn tag_names(&self, ids: &[String]) -> String {
+        self.tag_definitions
+            .iter()
+            .filter(|definition| ids.contains(&definition.id))
+            .map(|definition| definition.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn tag_colors(&self, ids: &[String]) -> String {
+        self.tag_definitions
+            .iter()
+            .filter(|definition| ids.contains(&definition.id))
+            .map(|definition| definition.color.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
     fn dispose(mut self: Pin<&mut Self>) {
         watch::unwatch_directory(self.watcher_id.clone());
         self.as_mut().rust_mut().closed = true;
@@ -2194,6 +2969,9 @@ impl qobject::DirectoryListModel {
                 rust.rows.clear();
                 rust.base.clear();
                 rust.selection.reset();
+                rust.tags_cache.clear();
+                rust.tags_complete = false;
+                rust.tag_generation = rust.tag_generation.wrapping_add(1);
                 rust.git_entries.clear();
                 rust.git_directory_untracked = false;
             }
@@ -2204,6 +2982,8 @@ impl qobject::DirectoryListModel {
         self.as_mut().publish_selection_count();
         self.as_mut().set_status(QString::from("Closed"));
         self.as_mut().set_finished(true);
+        self.as_mut().set_images(0);
+        self.as_mut().set_files(0);
         self.as_mut().set_git_busy(false);
         self.as_mut().clear_git_state();
     }
@@ -2275,6 +3055,28 @@ impl qobject::DirectoryListModel {
         self.as_mut().append_rows(generation, rows, done);
     }
 
+    /// Applies the current grouping and any tags already read to a batch that
+    /// is about to be inserted. Batch-local so an active section header is
+    /// right before the completion sort, not only after it.
+    fn decorate_rows(&self, rows: &mut [StoredRow]) {
+        let grouping = self.order.grouping;
+        if grouping.active() {
+            assign_groups(rows, grouping);
+        }
+        if !self.tags_cache.is_empty() {
+            let base = self.base.to_string();
+            for row in rows.iter_mut() {
+                let path = row.full_path(&base);
+                if let Some(ids) = self.tags_cache.get(&path) {
+                    set_row_tags(row, ids, &self.tag_definitions);
+                }
+            }
+            if grouping.active() {
+                assign_groups(rows, grouping);
+            }
+        }
+    }
+
     fn append_rows(mut self: Pin<&mut Self>, generation: u64, rows: Vec<StoredRow>, done: bool) {
         if self.generation != generation {
             return;
@@ -2291,6 +3093,7 @@ impl qobject::DirectoryListModel {
         }
 
         let mut rows = self.as_mut().keep_visible(rows);
+        self.as_mut().decorate_rows(&mut rows);
         let added = rows.len() as i32;
         let first = self.loaded;
         if added > 0 {
@@ -2341,6 +3144,7 @@ impl qobject::DirectoryListModel {
                 self.as_mut().rust_mut().reload_pending = false;
             }
             let total = self.rows.len() as i32;
+            self.as_mut().publish_counts();
             // Status before `finished`: QML reads the status in
             // `onFinishedChanged`, which is emitted synchronously.
             self.as_mut().set_status(QString::from(format!(
@@ -2537,6 +3341,7 @@ impl qobject::DirectoryListModel {
             self.as_mut().apply_refreshed_rows(fresh, &keep);
         }
 
+        self.as_mut().publish_counts();
         self.as_mut().set_status(QString::from(format!(
             "{total} item{}",
             if total == 1 { "" } else { "s" }
@@ -2643,9 +3448,11 @@ impl qobject::DirectoryListModel {
             && self.refresh.is_none()
             && !names.is_empty()
             && names.len() <= PATCH_LIMIT
-            // Only the name order is stable under a metadata change: any other
-            // key would have to move the patched row (and re-sort the listing).
+            // Only the plain name order is stable under a metadata change: any
+            // other key or an active grouping would have to move the patched
+            // row (and re-sort the listing).
             && self.order.key == SortKey::Name
+            && !self.order.grouping.active()
             // A non-default filter dropped rows at insert time, so a row that
             // now passes it cannot be recovered without a re-read.
             && self.filter == RowFilter::default()
@@ -2772,8 +3579,12 @@ impl qobject::DirectoryListModel {
         for (index, mut row) in changed {
             let rust = &mut *self.as_mut().rust_mut();
             // The same file with new metadata: the selection is view state and
-            // survives the replacement.
+            // survives the replacement, and so do the tags already read.
             row.selected = rust.rows[index].selected;
+            row.tag_ids = rust.rows[index].tag_ids.clone();
+            row.tag_sort = rust.rows[index].tag_sort.clone();
+            row.group_label = rust.rows[index].group_label.clone();
+            row.group_rank = rust.rows[index].group_rank;
             rust.rows[index] = row;
         }
         let parent = QModelIndex::default();
@@ -3312,6 +4123,8 @@ mod tests {
             path: path.to_owned(),
             kind: EntryKind::File,
             modified_at: Some(1_000),
+            created_at: Some(900),
+            created_fallback: false,
             size: Some(2_048),
             hidden: true,
             read_only: true,
@@ -3395,9 +4208,15 @@ mod tests {
             kind,
             size: (kind == EntryKind::File).then_some(size),
             modified_at: Some(modified),
+            created_at: Some(modified.saturating_sub(1)),
+            created_fallback: false,
             hidden,
             read_only: false,
             selected: false,
+            group_label: String::new(),
+            group_rank: 0,
+            tag_ids: Vec::new(),
+            tag_sort: String::new(),
         }
     }
 
@@ -3594,7 +4413,11 @@ mod tests {
         let mut names = generated_names(2_000);
         // Case-only ties are where a stable sort and an index permutation can
         // disagree; the tie breaker has to keep arrival order.
-        names.extend(["README".to_owned(), "readme".to_owned(), "ReadMe".to_owned()]);
+        names.extend([
+            "README".to_owned(),
+            "readme".to_owned(),
+            "ReadMe".to_owned(),
+        ]);
         let entries: Vec<StoredRow> = names
             .iter()
             .map(|name| StoredRow::from_entry(&entry(&format!("K:/dae/{name}")), "K:/dae/"))
@@ -3610,8 +4433,14 @@ mod tests {
         let applied = apply_permutation(entries, &perm).expect("a permutation");
 
         assert_eq!(
-            applied.iter().map(|row| row.name.clone()).collect::<Vec<_>>(),
-            sorted.iter().map(|row| row.name.clone()).collect::<Vec<_>>()
+            applied
+                .iter()
+                .map(|row| row.name.clone())
+                .collect::<Vec<_>>(),
+            sorted
+                .iter()
+                .map(|row| row.name.clone())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -3846,13 +4675,171 @@ mod tests {
     }
 
     #[test]
+    fn files_first_is_the_mirror_of_folders_first() {
+        let mut rows = vec![
+            stored("a", EntryKind::Directory, 0, 1, false),
+            stored("b.txt", EntryKind::File, 1, 2, false),
+        ];
+        sort_rows(
+            &mut rows,
+            &ViewOrder {
+                folders: FolderOrder::FilesFirst,
+                ..ViewOrder::default()
+            },
+        );
+        assert_eq!(names(&rows), ["b.txt", "a"]);
+
+        sort_rows(
+            &mut rows,
+            &ViewOrder {
+                folders: FolderOrder::Mixed,
+                ..ViewOrder::default()
+            },
+        );
+        assert_eq!(names(&rows), ["a", "b.txt"], "mixed keeps the name order");
+    }
+
+    #[test]
+    fn created_time_is_its_own_sort_key() {
+        let mut rows = vec![
+            stored("old.txt", EntryKind::File, 1, 1, false),
+            stored("new.txt", EntryKind::File, 1, 1, false),
+        ];
+        // `stored` derives the birth time from the modification time, so give
+        // the second row a newer one explicitly.
+        rows[1].created_at = Some(9_000);
+        sort_rows(
+            &mut rows,
+            &ViewOrder {
+                key: SortKey::Created,
+                order: SortOrder::Desc,
+                ..ViewOrder::default()
+            },
+        );
+        assert_eq!(names(&rows), ["new.txt", "old.txt"]);
+    }
+
+    #[test]
+    fn tag_sort_reads_the_precomputed_key_and_puts_untagged_last() {
+        let mut tagged = stored("b.txt", EntryKind::File, 1, 1, false);
+        tagged.tag_ids = vec!["work".to_owned()];
+        tagged.tag_sort = "Work".to_owned();
+        let untagged = stored("a.txt", EntryKind::File, 1, 1, false);
+        let mut rows = vec![untagged, tagged];
+
+        sort_rows(
+            &mut rows,
+            &ViewOrder {
+                key: SortKey::Tag,
+                order: SortOrder::Desc,
+                ..ViewOrder::default()
+            },
+        );
+        assert_eq!(names(&rows), ["b.txt", "a.txt"]);
+
+        sort_rows(
+            &mut rows,
+            &ViewOrder {
+                key: SortKey::Tag,
+                order: SortOrder::Asc,
+                ..ViewOrder::default()
+            },
+        );
+        assert_eq!(names(&rows), ["b.txt", "a.txt"], "untagged stays last");
+    }
+
+    #[test]
+    fn name_grouping_uses_the_first_letter_and_puts_non_letters_under_hash() {
+        let mut rows = vec![
+            stored("beta.txt", EntryKind::File, 1, 1, false),
+            stored("alpha.txt", EntryKind::File, 1, 1, false),
+            stored("1.txt", EntryKind::File, 1, 1, false),
+        ];
+        assign_groups(
+            &mut rows,
+            Grouping {
+                key: GroupKey::Name,
+                date: GroupDate::Month,
+            },
+        );
+        assert_eq!(rows[0].group_label, "B");
+        assert_eq!(rows[1].group_label, "A");
+        assert_eq!(rows[2].group_label, "#");
+
+        sort_rows(
+            &mut rows,
+            &ViewOrder {
+                grouping: Grouping {
+                    key: GroupKey::Name,
+                    date: GroupDate::Month,
+                },
+                ..ViewOrder::default()
+            },
+        );
+        assert_eq!(
+            names(&rows),
+            ["1.txt", "alpha.txt", "beta.txt"],
+            "the hash bucket leads because it sorts before letters"
+        );
+    }
+
+    #[test]
+    fn date_groups_rank_chronologically_whatever_the_label_locale() {
+        let mut older = stored("old.txt", EntryKind::File, 1, 1_000, false);
+        older.created_at = Some(1_000);
+        let mut newer = stored("new.txt", EntryKind::File, 1, 9_000_000_000_000, false);
+        newer.created_at = Some(9_000_000_000_000);
+        let mut rows = vec![older, newer];
+        assign_groups(
+            &mut rows,
+            Grouping {
+                key: GroupKey::Created,
+                date: GroupDate::Year,
+            },
+        );
+        assert!(rows[0].group_rank < rows[1].group_rank);
+        assert!(!rows[0].group_label.is_empty());
+        assert_ne!(rows[0].group_label, rows[1].group_label);
+    }
+
+    #[test]
+    fn tag_groups_order_by_definition_and_untagged_last() {
+        use dae_core::fs::tags::TagDefinition;
+        let definitions = vec![
+            TagDefinition {
+                id: "work".into(),
+                name: "Work".into(),
+                color: "#111111".into(),
+            },
+            TagDefinition {
+                id: "home".into(),
+                name: "Home".into(),
+                color: "#222222".into(),
+            },
+        ];
+        let mut tagged = stored("a.txt", EntryKind::File, 1, 1, false);
+        tagged.tag_ids = vec!["home".to_owned(), "work".to_owned()];
+        let untagged = stored("b.txt", EntryKind::File, 1, 1, false);
+        let grouping = Grouping {
+            key: GroupKey::Tag,
+            date: GroupDate::Month,
+        };
+
+        let (tagged_rank, tagged_label) = group_of(&tagged, grouping, &definitions);
+        let (untagged_rank, untagged_label) = group_of(&untagged, grouping, &definitions);
+        assert_eq!(tagged_label, "Work, Home", "definition order, not id order");
+        assert!(tagged_rank < untagged_rank, "untagged sorts last");
+        assert_eq!(untagged_label, "");
+    }
+
+    #[test]
     fn folders_interleave_when_the_preference_is_off() {
         let mut rows = vec![
             stored("b.txt", EntryKind::File, 10, 1, false),
             stored("a", EntryKind::Directory, 0, 9, false),
         ];
         let order = ViewOrder {
-            folders_first: false,
+            folders: FolderOrder::Mixed,
             ..ViewOrder::default()
         };
         sort_rows(&mut rows, &order);
@@ -3869,7 +4856,7 @@ mod tests {
         let by_size = ViewOrder {
             key: SortKey::Size,
             order: SortOrder::Desc,
-            folders_first: true,
+            ..ViewOrder::default()
         };
         sort_rows(&mut rows, &by_size);
         assert_eq!(names(&rows), ["large.txt", "middle.txt", "small.txt"]);

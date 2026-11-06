@@ -21,7 +21,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use dae_core::fs::service;
 use dae_core::fs::vfs;
-use dae_core::fs::{directory_size, hashing};
+use dae_core::fs::{directory_size, hashing, security};
 use dae_core::host::{Event, Host};
 use dae_core::types::{
     EntryKind, FileProperties, OwnerChange, PlatformProperties, PropertyChanges,
@@ -87,6 +87,19 @@ pub mod qobject {
         #[qproperty(QString, hash_sha256, cxx_name = "hashSha256")]
         #[qproperty(QString, hash_error, cxx_name = "hashError")]
         #[qproperty(bool, hash_done, cxx_name = "hashDone")]
+        /// Authenticode verdict (`valid`, `unsigned`, `untrusted`, `invalid`).
+        /// Windows only; `signatureSupported` hides the tab elsewhere.
+        #[qproperty(QString, signature_status, cxx_name = "signatureStatus")]
+        #[qproperty(QString, signature_signer, cxx_name = "signatureSigner")]
+        #[qproperty(QString, signature_issuer, cxx_name = "signatureIssuer")]
+        #[qproperty(QString, signature_detail, cxx_name = "signatureDetail")]
+        #[qproperty(bool, signature_supported, cxx_name = "signatureSupported")]
+        /// The discretionary ACL, read-only. Windows only.
+        #[qproperty(QString, acl_owner, cxx_name = "aclOwner")]
+        #[qproperty(QString, acl_group, cxx_name = "aclGroup")]
+        /// One ACE per line, already formatted by the core.
+        #[qproperty(QString, acl_entries, cxx_name = "aclEntries")]
+        #[qproperty(bool, acl_supported, cxx_name = "aclSupported")]
         type PropertiesController = super::PropertiesControllerRust;
 
         #[qinvokable]
@@ -178,6 +191,15 @@ pub struct PropertiesControllerRust {
     hash_sha256: QString,
     hash_error: QString,
     hash_done: bool,
+    signature_status: QString,
+    signature_signer: QString,
+    signature_issuer: QString,
+    signature_detail: QString,
+    signature_supported: bool,
+    acl_owner: QString,
+    acl_group: QString,
+    acl_entries: QString,
+    acl_supported: bool,
     /// The snapshot the edits are compared against, so a field the user did
     /// not touch never reaches `chmod`/`chown`/`SetFileAttributesW`.
     loaded: Option<FileProperties>,
@@ -255,12 +277,30 @@ impl qobject::PropertiesController {
         self.as_mut().set_remote(!vfs::is_local_path(&path));
         self.as_mut().reset_size_scan();
         self.as_mut().reset_hash();
+        self.as_mut().reset_security();
 
         let thread = self.as_mut().qt_thread();
+        let security_path = path.clone();
         runtime::spawn(async move {
-            let result = service::get_file_properties(path.clone()).await;
+            let result = service::get_file_properties(path).await;
+            // Signature and ACL are blocking platform reads; they run beside
+            // the metadata read rather than after it, so a slow WinVerifyTrust
+            // cannot hold the whole dialog.
+            let security = if vfs::is_local_path(&security_path) {
+                tokio::task::spawn_blocking(move || {
+                    (
+                        security::signature(&security_path),
+                        security::acl(&security_path),
+                    )
+                })
+                .await
+                .ok()
+            } else {
+                None
+            };
             let _ = thread.queue(move |mut controller| {
-                controller.as_mut().apply_properties(generation, result)
+                controller.as_mut().apply_properties(generation, result);
+                controller.as_mut().apply_security(generation, security);
             });
         });
     }
@@ -631,6 +671,58 @@ impl qobject::PropertiesController {
         self.as_mut().set_hash_sha256(QString::default());
         self.as_mut().set_hash_error(QString::default());
         self.as_mut().set_hash_done(false);
+    }
+
+    fn reset_security(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .set_signature_supported(security::signature_supported());
+        self.as_mut().set_acl_supported(security::acl_supported());
+        self.as_mut().set_signature_status(QString::default());
+        self.as_mut().set_signature_signer(QString::default());
+        self.as_mut().set_signature_issuer(QString::default());
+        self.as_mut().set_signature_detail(QString::default());
+        self.as_mut().set_acl_owner(QString::default());
+        self.as_mut().set_acl_group(QString::default());
+        self.as_mut().set_acl_entries(QString::default());
+    }
+
+    fn apply_security(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        result: Option<(
+            Result<security::FileSignature, dae_core::error::FileSystemError>,
+            Result<security::FileAcl, dae_core::error::FileSystemError>,
+        )>,
+    ) {
+        if self.generation != generation {
+            return;
+        }
+        let Some((signature, acl)) = result else {
+            return;
+        };
+
+        if let Ok(signature) = signature {
+            self.as_mut()
+                .set_signature_status(QString::from(signature.status.as_str()));
+            self.as_mut().set_signature_signer(QString::from(
+                signature.signer.as_deref().unwrap_or(""),
+            ));
+            self.as_mut().set_signature_issuer(QString::from(
+                signature.issuer.as_deref().unwrap_or(""),
+            ));
+            self.as_mut().set_signature_detail(QString::from(
+                signature.detail.as_deref().unwrap_or(""),
+            ));
+        }
+
+        if let Ok(acl) = acl {
+            self.as_mut()
+                .set_acl_owner(QString::from(acl.owner.as_deref().unwrap_or("")));
+            self.as_mut()
+                .set_acl_group(QString::from(acl.group.as_deref().unwrap_or("")));
+            self.as_mut()
+                .set_acl_entries(QString::from(acl.entries.join("\n").as_str()));
+        }
     }
 
     fn start_hashing(mut self: Pin<&mut Self>) {

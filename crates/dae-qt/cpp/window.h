@@ -750,6 +750,14 @@ inline bool dae_qt_blur_supported()
     return false;
 }
 
+/// The HWND the Windows Share interop needs. QML's `Window` exposes no
+/// `winId`, so this is the one place the native handle crosses into Rust.
+inline double dae_qt_native_handle(const QString& token)
+{
+    QQuickWindow* window = find_window_by_token(token);
+    return window ? static_cast<double>(window->winId()) : 0.0;
+}
+
 #else // !Q_OS_WIN
 
 inline void dae_qt_dress_placeholder(QWindow*) {}
@@ -1046,6 +1054,13 @@ inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
 inline bool dae_qt_set_caption_client(const QString& token, double, double)
 {
     return find_window_by_token(token) != nullptr;
+}
+
+/// Sharing is a Windows feature; no caller on this platform asks for a
+/// native handle, and there is no share sheet to hand it to.
+inline double dae_qt_native_handle(const QString&)
+{
+    return 0.0;
 }
 
 #endif // Q_OS_WIN

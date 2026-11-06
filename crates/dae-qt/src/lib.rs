@@ -62,6 +62,8 @@ pub mod properties;
 mod runtime;
 pub mod search_model;
 mod selection;
+pub mod session;
+pub mod share;
 pub mod shell;
 pub mod shell_command_model;
 pub mod sidebar_model;
@@ -69,6 +71,7 @@ pub mod sidebar_tree_model;
 pub mod spaces_model;
 pub mod startup;
 mod system_watch;
+pub mod tags;
 pub mod terminal;
 pub mod trash_model;
 pub mod updater;
@@ -93,6 +96,9 @@ pub fn init() {
     } else {
         appearance::migrate_legacy();
     }
+    // `format::size` is called from `data()`; it has to know the unit before
+    // the first listing, not when the preferences singleton is first touched.
+    preferences::apply_process_wide_preferences();
     window::startup_mark("settings");
     terminal::register_item();
     window::startup_mark("terminal");

@@ -622,6 +622,8 @@ mod tests {
             path: format!("C:/root/{name}"),
             kind,
             modified_at: None,
+            created_at: None,
+            created_fallback: false,
             size: None,
             hidden,
             read_only: false,

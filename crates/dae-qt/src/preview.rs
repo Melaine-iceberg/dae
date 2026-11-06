@@ -352,8 +352,8 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         .map_err(|error| friendly_preview_error(&error.to_string()))?;
     let is_directory = properties.kind == EntryKind::Directory;
 
-    let (text, media) = if is_directory {
-        (None, None)
+    let (text, media, exif) = if is_directory {
+        (None, None, None)
     } else {
         // Cloud paths end in opaque provider ids, so extension checks belong
         // on the resolved name rather than on the path text.
@@ -367,12 +367,20 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         };
         // Media tags come from the platform's metadata readers, which only
         // open local files. A remote clip still gets its name and size.
-        let media = if is_media_path(name) && vfs::is_local_path(path) {
+        let local = vfs::is_local_path(path);
+        let media = if is_media_path(name) && local {
             media_meta::read_media_preview(path.to_owned()).await.ok()
         } else {
             None
         };
-        (text, media)
+        // EXIF is a header read like the media probe, and only local files
+        // have a reader behind them. An EXIF-less JPEG still previews.
+        let exif = if local && media_meta::is_image_path(name) {
+            media_meta::read_image_exif(path.to_owned()).await.ok()
+        } else {
+            None
+        };
+        (text, media, exif)
     };
 
     let children = if is_directory {
@@ -381,7 +389,7 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         (0, Vec::new())
     };
 
-    Ok(snapshot_from(properties, text, media, children, dark))
+    Ok(snapshot_from(properties, text, media, exif, children, dark))
 }
 
 /// The pane names the first few children of a selected folder. This is a
@@ -428,6 +436,7 @@ fn snapshot_from(
     properties: FileProperties,
     text: Option<preview::TextPreview>,
     media: Option<media_meta::MediaPreview>,
+    exif: Option<media_meta::ImageExif>,
     children: (i32, Vec<String>),
     dark: bool,
 ) -> Snapshot {
@@ -485,7 +494,7 @@ fn snapshot_from(
             properties.modified_at.unwrap_or(0),
             properties.size.unwrap_or(0)
         ),
-        media_text: media.map(media_lines).unwrap_or_default(),
+        media_text: metadata_block(media, exif),
         media_kind,
         media_url,
         remote: !vfs::is_local_path(&properties.path),
@@ -520,6 +529,60 @@ fn media_lines(media: media_meta::MediaPreview) -> String {
     }
     for (label, value) in media.tags {
         lines.push(format!("{label}: {value}"));
+    }
+    lines.join("\n")
+}
+
+/// The pane's metadata block: media tags when the file has a player, EXIF
+/// fields when it is a photo, both when it is a motion-photo container.
+fn metadata_block(
+    media: Option<media_meta::MediaPreview>,
+    exif: Option<media_meta::ImageExif>,
+) -> String {
+    let mut blocks = Vec::new();
+    if let Some(media) = media {
+        let text = media_lines(media);
+        if !text.is_empty() {
+            blocks.push(text);
+        }
+    }
+    if let Some(exif) = exif {
+        let text = exif_lines(exif);
+        if !text.is_empty() {
+            blocks.push(text);
+        }
+    }
+    blocks.join("\n")
+}
+
+fn exif_lines(exif: media_meta::ImageExif) -> String {
+    let mut lines = Vec::new();
+    if let Some((width, height)) = exif.dimensions {
+        lines.push(format!("Dimensions: {width} × {height}"));
+    }
+    if let Some(camera) = exif.camera {
+        lines.push(format!("Camera: {camera}"));
+    }
+    if let Some(lens) = exif.lens {
+        lines.push(format!("Lens: {lens}"));
+    }
+    if let Some(taken) = exif.taken {
+        lines.push(format!("Taken: {taken}"));
+    }
+    if let Some(exposure) = exif.exposure {
+        lines.push(format!("Exposure: {exposure}"));
+    }
+    if let Some(aperture) = exif.aperture {
+        lines.push(format!("Aperture: {aperture}"));
+    }
+    if let Some(iso) = exif.iso {
+        lines.push(format!("ISO: {iso}"));
+    }
+    if let Some(focal_length) = exif.focal_length {
+        lines.push(format!("Focal length: {focal_length}"));
+    }
+    if let Some(gps) = exif.gps {
+        lines.push(format!("GPS: {gps}"));
     }
     lines.join("\n")
 }

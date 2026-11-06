@@ -28,6 +28,12 @@ dae-core = { path = "../dae-core" }
 # explicit because feature unification across the workspace leaves it off, and
 # `set_boxed_logger` is gated behind it.
 log = { version = "0.4", features = ["std"] }
+# The per-directory layout document is TOML; its tables are derived, the same
+# way dae-core derives its own documents.
+serde = { version = "1", features = ["derive"] }
+# The tag definitions reach QML as one JSON array; QML already parses JSON for
+# the palette, so a second model type would be a second representation.
+serde_json = "1"
 percent-encoding = "2"
 pulldown-cmark = { version = "0.13", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
@@ -46,14 +52,30 @@ zbus = "5"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
+  "ApplicationModel_DataTransfer",
+  "Foundation",
+  "Foundation_Collections",
+  "Storage",
+  "Storage_Streams",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
   "Win32_System_LibraryLoader",
   "Win32_System_Registry",
+  "Win32_System_WinRT",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# The share handler hands `DataPackage` a custom `IIterable<IStorageItem>`;
+# those interfaces live in the collection crate the `windows` facade builds on.
+windows-collections = "0.3"
+# `#[windows::core::implement]` expands to items that name the `windows_core`
+# crate directly, so it has to be a dependency of this crate, not only of the
+# `windows` facade.
+windows-core = "0.62"
+# `StorageFile::GetFileFromPathAsync` returns a `windows_future` operation;
+# its blocking `join` is the only wait this build needs.
+windows-future = "0.3"
 
 [build-dependencies]
 cc = "1"

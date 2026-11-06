@@ -3,19 +3,58 @@
 //! QML gets finished strings rather than raw numbers, so a visible row costs
 //! one `data()` call per role instead of a JavaScript format in every delegate.
 
-/// Human-readable byte count.
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// How byte counts are labelled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SizeUnits {
+    /// Powers of 1024, labelled `KiB`/`MiB`. This is what the divisor does, and
+    /// an explorer that divides by 1024 while printing "KB" is lying by 2.4%.
+    #[default]
+    Binary,
+    /// Powers of 1000, labelled `KB`/`MB` — the units drive vendors, phone
+    /// storage screens and most upload forms use.
+    Decimal,
+}
+
+/// Process-wide because `size()` is called from `data()` on every visible row;
+/// threading a units argument through the models would add a branch to the
+/// hottest text path for a value that changes once a session.
+static DECIMAL_UNITS: AtomicBool = AtomicBool::new(false);
+
+pub fn set_size_units(units: SizeUnits) {
+    DECIMAL_UNITS.store(units == SizeUnits::Decimal, Ordering::Relaxed);
+}
+
+pub fn size_units() -> SizeUnits {
+    if DECIMAL_UNITS.load(Ordering::Relaxed) {
+        SizeUnits::Decimal
+    } else {
+        SizeUnits::Binary
+    }
+}
+
+/// Human-readable byte count in the process-wide units.
 pub fn size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    if bytes < 1024 {
+    size_with(bytes, size_units())
+}
+
+/// Pure formatter, for tests and for callers that must not follow the setting.
+pub fn size_with(bytes: u64, units: SizeUnits) -> String {
+    let (base, labels): (f64, [&str; 5]) = match units {
+        SizeUnits::Binary => (1024.0, ["B", "KiB", "MiB", "GiB", "TiB"]),
+        SizeUnits::Decimal => (1000.0, ["B", "KB", "MB", "GB", "TB"]),
+    };
+    if bytes < base as u64 {
         return format!("{bytes} B");
     }
     let mut value = bytes as f64;
     let mut unit = 0;
-    while value >= 1024.0 && unit + 1 < UNITS.len() {
-        value /= 1024.0;
+    while value >= base && unit + 1 < labels.len() {
+        value /= base;
         unit += 1;
     }
-    format!("{value:.1} {}", UNITS[unit])
+    format!("{value:.1} {}", labels[unit])
 }
 
 /// `YYYY-MM-DD HH:MM` in UTC. Calendar math is inlined (Howard Hinnant's
@@ -92,11 +131,29 @@ mod tests {
     }
 
     #[test]
-    fn formats_sizes() {
-        assert_eq!(size(0), "0 B");
-        assert_eq!(size(1023), "1023 B");
-        assert_eq!(size(1024), "1.0 KB");
-        assert_eq!(size(1024 * 1024 * 3 / 2), "1.5 MB");
+    fn formats_binary_sizes_with_binary_labels() {
+        assert_eq!(size_with(0, SizeUnits::Binary), "0 B");
+        assert_eq!(size_with(1023, SizeUnits::Binary), "1023 B");
+        assert_eq!(size_with(1024, SizeUnits::Binary), "1.0 KiB");
+        assert_eq!(size_with(1024 * 1024 * 3 / 2, SizeUnits::Binary), "1.5 MiB");
+    }
+
+    #[test]
+    fn formats_decimal_sizes_with_si_labels() {
+        assert_eq!(size_with(999, SizeUnits::Decimal), "999 B");
+        assert_eq!(size_with(1000, SizeUnits::Decimal), "1.0 KB");
+        // 1 GiB is 1.07 GB: the point of the switch is that the number moves.
+        assert_eq!(size_with(1024 * 1024 * 1024, SizeUnits::Decimal), "1.1 GB");
+    }
+
+    #[test]
+    fn the_process_wide_units_follow_the_setter() {
+        set_size_units(SizeUnits::Decimal);
+        assert_eq!(size_units(), SizeUnits::Decimal);
+        assert_eq!(size(1000), "1.0 KB");
+        set_size_units(SizeUnits::Binary);
+        assert_eq!(size_units(), SizeUnits::Binary);
+        assert_eq!(size(1024), "1.0 KiB");
     }
 
     #[test]

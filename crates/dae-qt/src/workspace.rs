@@ -13,11 +13,14 @@
 
 use core::pin::Pin;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use dae_core::error::FileSystemError;
+use dae_core::fs::actions;
 use dae_core::fs::archive::{self, ArchiveFormat};
 use dae_core::fs::clipboard::{
     ClipboardEffect, SystemClipboardFiles, clipboard_sequence as system_clipboard_sequence,
@@ -26,6 +29,9 @@ use dae_core::fs::cloud::accounts as cloud_accounts;
 use dae_core::fs::cloud::oauth::{self as cloud_oauth, AuthorizeCloudAccountInput};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, SaveConnectionInput};
+use dae_core::fs::directory_size;
+use dae_core::fs::drives;
+use dae_core::fs::hashing;
 use dae_core::fs::open_with;
 use dae_core::fs::recents::RecentSource;
 use dae_core::fs::service;
@@ -37,6 +43,7 @@ use dae_core::fs::types::{
 };
 use dae_core::fs::vfs;
 use dae_core::host::{Event, Host};
+use serde::{Deserialize, Serialize};
 
 use crate::default_manager::{self, DefaultManagerStatus};
 use crate::errors::{default_manager_detail, friendly_error};
@@ -84,6 +91,23 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
+        /// `rar`/`iso` when an external tool (7z, unrar, bsdtar) is installed;
+        /// the extract row is gated on it. As JSON, e.g. `["rar","iso"]`.
+        #[qproperty(QString, external_archive_formats, cxx_name = "externalArchiveFormats")]
+        /// What the drive menu may offer on this platform, as JSON
+        /// (`{eject, unmount, mount, format, cleanup, encryption,
+        /// previousVersions}`). The menu hides the rows the platform cannot
+        /// honour instead of showing ones that fail.
+        #[qproperty(QString, drive_capabilities, cxx_name = "driveCapabilities")]
+        /// The external actions that apply right now: platform, program on
+        /// PATH, and — when the shell asks with a selection — the action's
+        /// file/directory/multiple rule. Entries are `{id, name}`.
+        #[qproperty(QString, custom_actions_json, cxx_name = "customActionsJson")]
+        /// The status center's rows as JSON, newest first.
+        #[qproperty(QString, operations_json, cxx_name = "operationsJson")]
+        /// Failures the panel has not shown since they happened. The title bar
+        /// badge reads it; opening the panel clears it.
+        #[qproperty(i32, failure_count, cxx_name = "failureCount")]
         #[qproperty(QString, status)]
         #[qproperty(QString, last_error, cxx_name = "lastError")]
         #[qproperty(bool, busy)]
@@ -205,6 +229,143 @@ pub mod qobject {
             destination_dir: &QString,
             password: &QString,
         );
+
+        #[qinvokable]
+        #[cxx_name = "ejectDrive"]
+        fn eject_drive(self: Pin<&mut Workspace>, path: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "unmountDrive"]
+        fn unmount_drive(self: Pin<&mut Workspace>, path: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "mountDrive"]
+        fn mount_drive(self: Pin<&mut Workspace>, path: &QString);
+
+        /// Opens the platform's format dialog for `path`. Never formats here.
+        #[qinvokable]
+        #[cxx_name = "formatDrive"]
+        fn format_drive(self: Pin<&mut Workspace>, path: &QString);
+
+        /// Opens the platform's storage cleanup settings.
+        #[qinvokable]
+        #[cxx_name = "openStorageCleanup"]
+        fn open_storage_cleanup(self: Pin<&mut Workspace>);
+
+        /// A read-only encryption sentence, or the tool's failure. Empty
+        /// `path` asks about the system volume.
+        #[qinvokable]
+        #[cxx_name = "driveEncryptionStatus"]
+        fn drive_encryption_status(self: Pin<&mut Workspace>, path: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "openPreviousVersions"]
+        fn open_previous_versions(self: Pin<&mut Workspace>, path: &QString);
+
+        /// The actions that belong on the menu for this selection, as JSON.
+        #[qinvokable]
+        #[cxx_name = "customActionsFor"]
+        fn custom_actions_for(
+            self: Pin<&mut Workspace>,
+            paths: &QStringList,
+            directory: &QString,
+        ) -> QString;
+
+        /// Every stored action with its command and arguments, for the
+        /// settings page. Unlike `customActionsFor` this list is not filtered:
+        /// an action whose program is missing still has to be editable.
+        #[qinvokable]
+        #[cxx_name = "customActionDefinitions"]
+        fn custom_action_definitions(&self) -> QString;
+
+        /// Runs one `[[actions]]` entry without a shell. The failure path is
+        /// the same `operationFailed` every other command uses, so the toast
+        /// and the status center need no second channel.
+        #[qinvokable]
+        #[cxx_name = "runCustomAction"]
+        fn run_custom_action(
+            self: Pin<&mut Workspace>,
+            id: &QString,
+            paths: &QStringList,
+            directory: &QString,
+        );
+
+        /// Whether this platform has a system share sheet. The context menu
+        /// hides the entry when false instead of opening a sheet that cannot
+        /// appear.
+        #[qinvokable]
+        #[cxx_name = "shareSupported"]
+        fn share_supported(self: Pin<&mut Workspace>) -> bool;
+
+        /// Opens the system share sheet for `paths` on the window `handle`.
+        /// False means the sheet could not be shown; the caller reports it.
+        #[qinvokable]
+        #[cxx_name = "sharePaths"]
+        fn share_paths(
+            self: Pin<&mut Workspace>,
+            paths: &QStringList,
+            handle: f64,
+        ) -> bool;
+
+        /// Creates or updates an action. `id` empty creates one; `args` is one
+        /// argument per line, which keeps a path with spaces a single argument.
+        #[qinvokable]
+        #[cxx_name = "saveCustomAction"]
+        fn save_custom_action(
+            self: Pin<&mut Workspace>,
+            id: &QString,
+            name: &QString,
+            command: &QString,
+            args: &QString,
+            selection: &QString,
+        );
+
+        #[qinvokable]
+        #[cxx_name = "removeCustomAction"]
+        fn remove_custom_action(self: Pin<&mut Workspace>, id: &QString);
+
+        /// Drops every user action and restores the built-in "open in IDE"
+        /// entry (offered only while `code` is on PATH).
+        #[qinvokable]
+        #[cxx_name = "resetCustomActions"]
+        fn reset_custom_actions(self: Pin<&mut Workspace>);
+
+        /// Marks every failure as seen. Opening the panel calls this; the rows
+        /// themselves stay until `clearOperationHistory`.
+        #[qinvokable]
+        #[cxx_name = "markOperationsRead"]
+        fn mark_operations_read(self: Pin<&mut Workspace>);
+
+        /// Drops every recorded operation, including the persisted half.
+        #[qinvokable]
+        #[cxx_name = "clearOperationHistory"]
+        fn clear_operation_history(self: Pin<&mut Workspace>);
+
+        /// Re-runs a failed transfer or extraction from the arguments it was
+        /// recorded with. Other kinds cannot be retried: a delete that removed
+        /// a file has nothing left to retry against.
+        #[qinvokable]
+        #[cxx_name = "retryOperation"]
+        fn retry_operation(self: Pin<&mut Workspace>, id: &QString);
+
+        /// Compares two local files by SHA-256, one read each, and answers
+        /// with `compareFinished`. The dialog's checksum tab compares against a
+        /// typed value instead; this covers "is this copy the same file".
+        #[qinvokable]
+        #[cxx_name = "compareHashes"]
+        fn compare_hashes(self: Pin<&mut Workspace>, paths: &QStringList);
+
+        /// Sums the folders in `paths` and answers with `folderSizesMeasured`.
+        /// Enumeration never walks a directory, so this is the only path that
+        /// turns a folder's em dash into a number. A second call cancels the
+        /// first. `cancelMeasureFolders` stops the running pass.
+        #[qinvokable]
+        #[cxx_name = "measureFolders"]
+        fn measure_folders(self: Pin<&mut Workspace>, paths: &QStringList);
+
+        #[qinvokable]
+        #[cxx_name = "cancelMeasureFolders"]
+        fn cancel_measure_folders(self: Pin<&mut Workspace>);
 
         /// Copies or moves `paths` into `destination`. `cut` selects move.
         #[qinvokable]
@@ -378,6 +539,14 @@ pub mod qobject {
         #[qinvokable]
         fn reveal(self: Pin<&mut Workspace>, path: &QString);
 
+        /// The byte total of the selected files, formatted. Folders are left
+        /// out: their total is a recursive walk, and the details pane says
+        /// "files" rather than lying about a directory. Remote paths are
+        /// skipped for the same reason `reveal` is local-only.
+        #[qinvokable]
+        #[cxx_name = "selectionSizeText"]
+        fn selection_size_text(&self, paths: &QStringList) -> QString;
+
         #[qinvokable]
         #[cxx_name = "recordRecent"]
         fn record_recent(
@@ -464,6 +633,18 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "operationFailed"]
         fn operation_failed(self: Pin<&mut Workspace>, kind: &QString, message: &QString);
+
+        /// Two files were compared; `equal` is the SHA-256 verdict.
+        #[qsignal]
+        #[cxx_name = "compareFinished"]
+        fn compare_finished(self: Pin<&mut Workspace>, equal: bool);
+
+        /// Measured folder totals as a JSON array of `{"path": …, "size": …}`.
+        /// One event per pass, not per folder: the model applies them in a
+        /// batch and repaints each cell once.
+        #[qsignal]
+        #[cxx_name = "folderSizesMeasured"]
+        fn folder_sizes_measured(self: Pin<&mut Workspace>, sizes: &QString);
 
         /// An extraction needs a password. `target` is the archive path and
         /// `message` is a ready-to-display explanation (also a wrong-password
@@ -599,6 +780,23 @@ pub struct WorkspaceRust {
     /// Copies and moves waiting for the operation slot, oldest first. The one
     /// that owns the slot is not in here.
     queue: Vec<TransferJob>,
+    /// Cancellation flag of the running "calculate size" pass, if any.
+    size_scan: Option<Arc<AtomicBool>>,
+    /// Status-center history, oldest first.
+    operations: Vec<OperationRecord>,
+    drive_capabilities: QString,
+    external_archive_formats: QString,
+    custom_actions_json: QString,
+    operations_json: QString,
+    failure_count: i32,
+    /// When each running operation began, with the label it showed. A stack
+    /// rather than a map: operations legitimately overlap (a background size
+    /// scan during a copy), and the newest start is the one finishing next.
+    operation_starts: Vec<(u64, String)>,
+    /// The retry payload for the operation about to start. `extractArchive`
+    /// and a transfer set it immediately after `beginOperation`; finishing the
+    /// operation consumes it.
+    retry_hint: Option<String>,
     /// The transfer holding the slot, from its conflict check until its
     /// copy/move reports back. `None` is what lets a new request start at once.
     active_transfer: Option<ActiveTransfer>,
@@ -638,6 +836,8 @@ impl Default for WorkspaceRust {
         crate::init_stores();
         let settings = dae_core::settings::load_settings().unwrap_or_default();
         let home = service::get_home_directory().unwrap_or_default();
+        let operations = load_operations();
+        let operations_text = operations_json(&operations);
 
         Self {
             status: QString::default(),
@@ -660,6 +860,15 @@ impl Default for WorkspaceRust {
             queued_transfer_paths: QStringList::default(),
             transfer_destination: QString::default(),
             queue: Vec::new(),
+            custom_actions_json: QString::from(custom_actions_json().as_str()),
+            drive_capabilities: QString::from(drive_capabilities_json().as_str()),
+            external_archive_formats: QString::from(external_archive_formats_json().as_str()),
+            operations_json: QString::from(operations_text.as_str()),
+            failure_count: 0,
+            size_scan: None,
+            operations,
+            operation_starts: Vec::new(),
+            retry_hint: None,
             active_transfer: None,
             clipboard_mode: QString::default(),
             clipboard_paths: QStringList::default(),
@@ -869,6 +1078,11 @@ fn take_next_queued(queue: &mut Vec<TransferJob>) -> Option<TransferJob> {
 
 impl qobject::Workspace {
     fn begin_operation(mut self: Pin<&mut Self>, label: &str) {
+        self.as_mut()
+            .rust_mut()
+            .operation_starts
+            .push((now_millis(), label.to_owned()));
+        self.as_mut().rust_mut().retry_hint = None;
         let active = self.active_operations + 1;
         self.as_mut().rust_mut().active_operations = active;
         self.as_mut().set_busy(true);
@@ -880,6 +1094,7 @@ impl qobject::Workspace {
 
     fn finish_operation(mut self: Pin<&mut Self>, kind: &str, focus: &str, error: Option<String>) {
         self.as_mut().settle_operation();
+        self.as_mut().record_operation(kind, error.as_deref());
 
         let kind_value = QString::from(kind);
         let focus_value = QString::from(focus);
@@ -895,6 +1110,341 @@ impl qobject::Workspace {
                 self.as_mut().set_status(QString::from(status));
                 self.as_mut().operation_finished(&kind_value, &focus_value);
             }
+        }
+    }
+
+    /// Turns a drive tool's outcome into the same toast and status-center row
+    /// every other command uses.
+    fn run_drive_action(
+        mut self: Pin<&mut Self>,
+        kind: &str,
+        result: Result<(), FileSystemError>,
+        success: &str,
+    ) {
+        match result {
+            Ok(()) => {
+                self.as_mut().begin_operation(success);
+                self.as_mut().set_status(QString::from(success));
+                self.as_mut().finish_operation(kind, "", None);
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.as_mut().finish_operation(kind, "", Some(message));
+            }
+        }
+    }
+
+    /// One line for the status center. Runs before the toast, so a failed
+    /// operation is already in the history when its message appears.
+    fn record_operation(mut self: Pin<&mut Self>, kind: &str, error: Option<&str>) {
+        let (started, label) = self
+            .as_mut()
+            .rust_mut()
+            .operation_starts
+            .pop()
+            .unwrap_or_else(|| (now_millis(), String::new()));
+        let retry = self
+            .as_mut()
+            .rust_mut()
+            .retry_hint
+            .take()
+            .unwrap_or_default();
+        let retryable = !retry.is_empty() && matches!(kind, "copy" | "move" | "extract");
+        let record = OperationRecord {
+            id: operation_id(),
+            kind: kind.to_owned(),
+            label: if label.is_empty() {
+                success_message(kind).to_owned()
+            } else {
+                label
+            },
+            started,
+            finished: now_millis(),
+            status: if error.is_some() { "failed" } else { "ok" }.to_owned(),
+            detail: error.unwrap_or_else(|| success_message(kind)).to_owned(),
+            retryable,
+            retry: if retryable { retry } else { String::new() },
+        };
+
+        let failed = record.status == "failed";
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.operations.push(record);
+            let excess = rust
+                .operations
+                .len()
+                .saturating_sub(OPERATION_HISTORY_LIMIT);
+            if excess > 0 {
+                rust.operations.drain(0..excess);
+            }
+            persist_operations(&rust.operations);
+        }
+        let json = operations_json(&self.operations);
+        self.as_mut()
+            .set_operations_json(QString::from(json.as_str()));
+        if failed {
+            let count = self.failure_count + 1;
+            self.as_mut().set_failure_count(count);
+        }
+    }
+
+    fn eject_drive(mut self: Pin<&mut Self>, path: &QString) {
+        self.as_mut()
+            .run_drive_action("drive", drives::eject(&path.to_string()), "Ejected");
+    }
+
+    fn unmount_drive(mut self: Pin<&mut Self>, path: &QString) {
+        self.as_mut()
+            .run_drive_action("drive", drives::unmount(&path.to_string()), "Unmounted");
+    }
+
+    fn mount_drive(mut self: Pin<&mut Self>, path: &QString) {
+        self.as_mut()
+            .run_drive_action("drive", drives::mount(&path.to_string()), "Mounted");
+    }
+
+    fn format_drive(mut self: Pin<&mut Self>, path: &QString) {
+        self.as_mut().run_drive_action(
+            "drive",
+            drives::open_format_tool(&path.to_string()),
+            "Format dialog opened",
+        );
+    }
+
+    fn open_storage_cleanup(mut self: Pin<&mut Self>) {
+        self.as_mut().run_drive_action(
+            "drive",
+            drives::open_cleanup_tool(),
+            "Storage settings opened",
+        );
+    }
+
+    fn drive_encryption_status(self: Pin<&mut Self>, path: &QString) -> QString {
+        match drives::encryption_status(&path.to_string()) {
+            Ok(text) => QString::from(text.as_str()),
+            Err(error) => QString::from(error.to_string().as_str()),
+        }
+    }
+
+    fn open_previous_versions(mut self: Pin<&mut Self>, path: &QString) {
+        self.as_mut().run_drive_action(
+            "drive",
+            drives::open_previous_versions(&path.to_string()),
+            "Previous versions opened",
+        );
+    }
+
+    fn custom_action_definitions(&self) -> QString {
+        let actions = dae_core::settings::load_settings()
+            .map(|settings| settings.actions)
+            .unwrap_or_default();
+        let entries: Vec<serde_json::Value> = actions
+            .into_iter()
+            .map(|action| {
+                serde_json::json!({
+                    "id": action.id,
+                    "name": action.name,
+                    "command": action.command,
+                    "args": action.args.join("\n"),
+                    "selection": action.selection,
+                    "extensions": action.extensions.join(","),
+                    "platforms": action.platforms.join(","),
+                })
+            })
+            .collect();
+        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+        QString::from(json.as_str())
+    }
+
+    fn custom_actions_for(
+        self: Pin<&mut Self>,
+        paths: &QStringList,
+        directory: &QString,
+    ) -> QString {
+        let selection = strings(paths);
+        let directory = directory.to_string();
+        let entries: Vec<serde_json::Value> = actions::available_actions()
+            .into_iter()
+            .filter(|action| actions::selection_allows(action, &selection, &directory))
+            .map(|action| serde_json::json!({"id": action.id, "name": action.name}))
+            .collect();
+        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+        QString::from(json.as_str())
+    }
+
+    fn run_custom_action(
+        mut self: Pin<&mut Self>,
+        id: &QString,
+        paths: &QStringList,
+        directory: &QString,
+    ) {
+        let id = id.to_string();
+        let selection = strings(paths);
+        let directory = directory.to_string();
+        let Some(action) = actions::action_by_id(&id) else {
+            self.as_mut()
+                .finish_operation("action", "", Some("Unknown action".to_owned()));
+            return;
+        };
+        if !actions::selection_allows(&action, &selection, &directory) {
+            self.as_mut().finish_operation(
+                "action",
+                "",
+                Some("This action does not apply to the selection".to_owned()),
+            );
+            return;
+        }
+        match actions::run(&action, &selection, &directory) {
+            Ok(program) => {
+                self.as_mut().begin_operation("Running action…");
+                self.as_mut()
+                    .set_status(QString::from(format!("Ran {program}").as_str()));
+                self.as_mut().finish_operation("action", "", None);
+            }
+            Err(error) => {
+                self.as_mut()
+                    .finish_operation("action", "", Some(error.to_string()));
+            }
+        }
+    }
+
+    fn share_supported(self: Pin<&mut Self>) -> bool {
+        crate::share::supported()
+    }
+
+    fn share_paths(self: Pin<&mut Self>, paths: &QStringList, handle: f64) -> bool {
+        crate::share::share_paths(paths, handle)
+    }
+
+    fn save_custom_action(
+        mut self: Pin<&mut Self>,
+        id: &QString,
+        name: &QString,
+        command: &QString,
+        args: &QString,
+        selection: &QString,
+    ) {
+        let Ok(mut settings) = dae_core::settings::load_settings() else {
+            return;
+        };
+        let id = id.to_string();
+        let action = dae_core::settings::CustomAction {
+            id: id.clone(),
+            name: name.to_string(),
+            command: command.to_string(),
+            args: action_args(&args.to_string()),
+            platforms: Vec::new(),
+            selection: selection.to_string(),
+            extensions: Vec::new(),
+        };
+
+        if id.trim().is_empty() {
+            let mut candidate = settings.actions.len() + 1;
+            loop {
+                let generated = format!("custom-{candidate}");
+                if !settings.actions.iter().any(|entry| entry.id == generated) {
+                    settings.actions.push(dae_core::settings::CustomAction {
+                        id: generated,
+                        ..action
+                    });
+                    break;
+                }
+                candidate += 1;
+            }
+        } else if let Some(existing) = settings.actions.iter_mut().find(|entry| entry.id == id) {
+            *existing = action;
+        } else {
+            settings.actions.push(action);
+        }
+
+        if dae_core::settings::save_settings(settings).is_ok() {
+            let json = custom_actions_json();
+            self.as_mut()
+                .set_custom_actions_json(QString::from(json.as_str()));
+        }
+    }
+
+    fn remove_custom_action(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let Ok(mut settings) = dae_core::settings::load_settings() else {
+            return;
+        };
+        settings.actions.retain(|action| action.id != id);
+        if dae_core::settings::save_settings(settings).is_ok() {
+            let json = custom_actions_json();
+            self.as_mut()
+                .set_custom_actions_json(QString::from(json.as_str()));
+        }
+    }
+
+    fn reset_custom_actions(mut self: Pin<&mut Self>) {
+        let Ok(mut settings) = dae_core::settings::load_settings() else {
+            return;
+        };
+        settings.actions = dae_core::settings::default_actions();
+        if dae_core::settings::save_settings(settings).is_ok() {
+            let json = custom_actions_json();
+            self.as_mut()
+                .set_custom_actions_json(QString::from(json.as_str()));
+        }
+    }
+
+    fn mark_operations_read(mut self: Pin<&mut Self>) {
+        if self.failure_count != 0 {
+            self.as_mut().set_failure_count(0);
+        }
+    }
+
+    fn clear_operation_history(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().operations.clear();
+        persist_operations(&[]);
+        self.as_mut().set_operations_json(QString::from("[]"));
+        self.as_mut().set_failure_count(0);
+    }
+
+    fn retry_operation(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let Some(record) = self
+            .operations
+            .iter()
+            .find(|record| record.id == id)
+            .cloned()
+        else {
+            return;
+        };
+        if !record.retryable {
+            return;
+        }
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&record.retry) else {
+            return;
+        };
+        match payload["kind"].as_str() {
+            Some("extract") => {
+                let archive = payload["archive"].as_str().unwrap_or_default();
+                let destination = payload["destination"].as_str().unwrap_or_default();
+                self.as_mut().extract_archive(
+                    &QString::from(archive),
+                    &QString::from(destination),
+                    &QString::default(),
+                );
+            }
+            Some("transfer") => {
+                let mut paths = QStringList::default();
+                if let Some(items) = payload["paths"].as_array() {
+                    for item in items {
+                        if let Some(path) = item.as_str() {
+                            paths.append(QString::from(path));
+                        }
+                    }
+                }
+                let destination = payload["destination"].as_str().unwrap_or_default();
+                let cut = payload["cut"].as_bool().unwrap_or(false);
+                if paths.len() > 0 {
+                    self.as_mut()
+                        .transfer_entries(&paths, &QString::from(destination), cut);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1012,6 +1562,117 @@ impl qobject::Workspace {
                 Err(error) => Outcome::failed(error),
             }
         });
+    }
+
+    fn compare_hashes(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let paths = strings(paths);
+        if paths.len() != 2 {
+            return;
+        }
+        if !paths.iter().all(|path| vfs::is_local_path(path)) {
+            self.as_mut().finish_operation(
+                "compare",
+                "",
+                Some("Hashes can only be compared for local files".to_owned()),
+            );
+            return;
+        }
+
+        self.as_mut().begin_operation("Comparing hashes…");
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                let first = hashing::digests(Path::new(&paths[0]))?;
+                let second = hashing::digests(Path::new(&paths[1]))?;
+                Ok::<bool, FileSystemError>(first.sha256 == second.sha256)
+            })
+            .await;
+
+            let _ = thread.queue(move |mut workspace| match result {
+                Ok(Ok(equal)) => {
+                    workspace.as_mut().settle_operation();
+                    workspace.as_mut().record_operation("compare", None);
+                    workspace.as_mut().compare_finished(equal);
+                }
+                Ok(Err(error)) => {
+                    workspace
+                        .as_mut()
+                        .finish_operation("compare", "", Some(error.to_string()))
+                }
+                Err(error) => {
+                    workspace
+                        .as_mut()
+                        .finish_operation("compare", "", Some(error.to_string()))
+                }
+            });
+        });
+    }
+
+    fn measure_folders(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let directories: Vec<String> = strings(paths)
+            .into_iter()
+            .filter(|path| vfs::is_local_path(path) && Path::new(path).is_dir())
+            .collect();
+        if directories.is_empty() {
+            return;
+        }
+
+        // A second pass replaces the first: the user asked again, and two
+        // walks of the same tree would report the same numbers twice.
+        let cancel = Arc::new(AtomicBool::new(false));
+        if let Some(previous) = self.as_mut().rust_mut().size_scan.replace(cancel.clone()) {
+            previous.store(true, Ordering::Relaxed);
+        }
+
+        self.as_mut().begin_operation("Calculating sizes…");
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let measured = tokio::task::spawn_blocking(move || {
+                let mut measured: Vec<(String, u64)> = Vec::with_capacity(directories.len());
+                for path in directories {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let bytes = directory_size::measure_directory(Path::new(&path), &cancel);
+                    measured.push((path, bytes));
+                }
+                measured
+            })
+            .await
+            .unwrap_or_default();
+
+            let mut payload = String::from("[");
+            for (index, (path, bytes)) in measured.iter().enumerate() {
+                if index > 0 {
+                    payload.push(',');
+                }
+                let escaped = serde_json::to_string(path).unwrap_or_else(|_| "\"\"".to_owned());
+                payload.push_str(&format!("{{\"path\":{escaped},\"size\":{bytes}}}"));
+            }
+            payload.push(']');
+
+            let _ = thread.queue(move |mut workspace| {
+                workspace.as_mut().finish_size_scan(payload);
+            });
+        });
+    }
+
+    fn cancel_measure_folders(mut self: Pin<&mut Self>) {
+        let cancelled = self.as_mut().rust_mut().size_scan.take();
+        if let Some(cancel) = cancelled {
+            cancel.store(true, Ordering::Relaxed);
+            self.as_mut().settle_operation();
+            self.as_mut()
+                .set_status(QString::from("Size calculation cancelled"));
+        }
+    }
+
+    fn finish_size_scan(mut self: Pin<&mut Self>, payload: String) {
+        self.as_mut().rust_mut().size_scan = None;
+        let sizes = QString::from(payload.as_str());
+        self.as_mut().folder_sizes_measured(&sizes);
+        self.as_mut().settle_operation();
+        self.as_mut().set_status(QString::from("Sizes calculated"));
     }
 
     fn trash_entries(mut self: Pin<&mut Self>, paths: &QStringList) {
@@ -1134,6 +1795,12 @@ impl qobject::Workspace {
         let password = optional_string(password);
         let password_supplied = password.is_some();
         self.as_mut().begin_operation("Extracting…");
+        let retry = serde_json::json!({
+            "kind": "extract",
+            "archive": archive_path,
+            "destination": destination_dir.clone().unwrap_or_default(),
+        });
+        self.as_mut().rust_mut().retry_hint = Some(retry.to_string());
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         let signal_target = archive_path.clone();
@@ -1420,6 +2087,12 @@ impl qobject::Workspace {
             self.as_mut().clear_clipboard();
         }
 
+        // Kept for the status center's retry: the job itself is about to move
+        // into `active_transfer`, and `destination` is about to move into the
+        // future.
+        let retry_paths: Vec<String> = items.iter().map(|item| item.path.clone()).collect();
+        let retry_destination = destination.clone();
+
         // The job keeps the slot while the copy runs, so a transfer asked for
         // now queues behind it instead of sharing the progress row.
         self.as_mut().rust_mut().active_transfer = Some(ActiveTransfer {
@@ -1430,6 +2103,13 @@ impl qobject::Workspace {
         });
         self.as_mut()
             .begin_operation(if cut { "Moving…" } else { "Copying…" });
+        let retry = serde_json::json!({
+            "kind": "transfer",
+            "paths": retry_paths,
+            "destination": retry_destination,
+            "cut": cut,
+        });
+        self.as_mut().rust_mut().retry_hint = Some(retry.to_string());
 
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
@@ -1963,6 +2643,28 @@ impl qobject::Workspace {
                 self.as_mut()
                     .finish_operation("terminal", "", Some(message));
             }
+        }
+    }
+
+    fn selection_size_text(&self, paths: &QStringList) -> QString {
+        let mut total: u64 = 0;
+        let mut counted = false;
+        for path in paths.iter().map(|path| path.to_string()) {
+            if !dae_core::fs::vfs::is_local_path(&path) {
+                continue;
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.is_file() {
+                total = total.saturating_add(metadata.len());
+                counted = true;
+            }
+        }
+        if counted {
+            QString::from(crate::format::size(total).as_str())
+        } else {
+            QString::default()
         }
     }
 
@@ -2698,6 +3400,119 @@ fn conflict_detail(
     )
 }
 
+/// The status center's file: the last operations this shell ran, newest last
+/// in memory, newest first in the document.
+const OPERATIONS_FILE_NAME: &str = "operations-qt.json";
+/// A session can issue thousands of operations; the panel only has to answer
+/// "what happened lately", so older entries fall off the front.
+const OPERATION_HISTORY_LIMIT: usize = 200;
+/// What survives a restart. Smaller than the in-memory ring on purpose: the
+/// bad case is a session that failed a hundred transfers, and a hundred rows
+/// after a relaunch are noise rather than history.
+const OPERATION_PERSISTED_LIMIT: usize = 50;
+
+/// One line of the status center.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OperationRecord {
+    id: String,
+    kind: String,
+    label: String,
+    started: u64,
+    finished: u64,
+    /// `ok` or `failed`; a running operation is only ever on the progress row.
+    status: String,
+    detail: String,
+    retryable: bool,
+    /// The call arguments a retry needs, as JSON. Empty when not retryable.
+    retry: String,
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn operations_path() -> Option<std::path::PathBuf> {
+    dae_core::paths::config_dir()
+        .ok()
+        .map(|dir| dir.join(OPERATIONS_FILE_NAME))
+}
+
+fn load_operations() -> Vec<OperationRecord> {
+    let Some(path) = operations_path() else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut records: Vec<OperationRecord> = serde_json::from_str(&text).unwrap_or_default();
+    records.truncate(OPERATION_HISTORY_LIMIT);
+    records
+}
+
+fn persist_operations(records: &[OperationRecord]) {
+    let Some(path) = operations_path() else {
+        return;
+    };
+    let start = records.len().saturating_sub(OPERATION_PERSISTED_LIMIT);
+    let Ok(contents) = serde_json::to_vec_pretty(&records[start..]) else {
+        return;
+    };
+    if let Err(error) = dae_core::fs::atomic::write_atomic(&path, &contents) {
+        log::warn!(target: "dae::workspace", "could not save the operation log: {error}");
+    }
+}
+
+/// Newest first, as the panel draws it. Written on every change rather than
+/// read through a model: the list is at most 200 rows and the panel is closed
+/// most of the time.
+fn operations_json(records: &[OperationRecord]) -> String {
+    let mut sorted: Vec<&OperationRecord> = records.iter().collect();
+    sorted.sort_by_key(|record| std::cmp::Reverse(record.finished));
+    serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".to_owned())
+}
+
+fn external_archive_formats_json() -> String {
+    serde_json::to_string(&archive::external_formats()).unwrap_or_else(|_| "[]".to_owned())
+}
+
+fn drive_capabilities_json() -> String {
+    let capabilities = drives::capabilities();
+    serde_json::json!({
+        "eject": capabilities.eject,
+        "unmount": capabilities.unmount,
+        "mount": capabilities.mount,
+        "format": capabilities.format,
+        "cleanup": capabilities.cleanup,
+        "encryption": capabilities.encryption,
+        "previousVersions": capabilities.previous_versions,
+    })
+    .to_string()
+}
+
+/// The menu-ready action list: id and name only, because the menu shows
+/// nothing else and the command may be long.
+fn custom_actions_json() -> String {
+    let entries: Vec<serde_json::Value> = actions::available_actions()
+        .into_iter()
+        .map(|action| serde_json::json!({"id": action.id, "name": action.name}))
+        .collect();
+    serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// One argument per line; blank lines are dropped rather than passed as empty
+/// arguments, which almost every program reads as a missing value.
+fn action_args(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn operation_id() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -2719,6 +3534,7 @@ fn success_message(kind: &str) -> &'static str {
         "undo" => "Undone",
         "redo" => "Redone",
         "openWith" => "Opened",
+        "compare" => "Compared",
         "restore_trash" => "Restored",
         "purge_trash" => "Permanently deleted",
         "empty_trash" => "Trash emptied",
@@ -2983,7 +3799,7 @@ mod tests {
             Some(2048),
             Some(1_792_886_400_000),
         );
-        assert_eq!(detail, "BIN · 2.0 KB\nModified 2026-10-25 00:00");
+        assert_eq!(detail, "BIN · 2.0 KiB\nModified 2026-10-25 00:00");
 
         // A folder has no size and a remote entry may have no timestamp; both
         // read as an em dash rather than as a zero.
