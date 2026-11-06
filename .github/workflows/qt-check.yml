@@ -53,7 +53,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential curl wget file pkg-config cmake ninja-build \
+            build-essential curl wget file pkg-config \
             libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
             libx11-xcb-dev libxrender-dev libxext-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \

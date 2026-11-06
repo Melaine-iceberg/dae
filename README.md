@@ -72,7 +72,7 @@ Manual verification steps for both installers — signing credentials,
   `qmake` on `PATH` or in `QMAKE`; set both before `cargo build -p dae-app`
   (`QMAKE=…/bin/qmake`, and Qt's `bin/` on `PATH`).
 - Platform build dependencies, the same sets the release workflow installs:
-  - **Linux** — `build-essential curl wget file pkg-config cmake ninja-build`,
+  - **Linux** — `build-essential curl wget file pkg-config`,
     plus the GL, XCB/Wayland, xkbcommon, fontconfig, dbus and secret
     development headers; the authoritative list is the `qt` job in
     `.github/workflows/release.yml`.
