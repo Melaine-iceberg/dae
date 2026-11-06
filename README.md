@@ -21,7 +21,7 @@ that shell; `git log` and the decision document are where it lives now.
   has one.
 - **Yours to configure.** A human-editable `settings.toml`, rebindable
   shortcuts, `dae://` deep links, and registering dae as the default file
-  manager. Interface in English and Simplified Chinese.
+  manager. Interface in English, Simplified and Traditional Chinese.
 
 ## Install
 

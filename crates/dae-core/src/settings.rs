@@ -35,6 +35,11 @@ const MAX_LINE_HEIGHT: f32 = 3.0;
 /// A complete xterm ANSI palette is exactly 16 entries (8 normal + 8 bright).
 const ANSI_PALETTE_LEN: usize = 16;
 
+/// Language tags the settings document accepts. `Appearance` validates against
+/// this list, so a hand-edited `settings.toml` cannot leave the UI in a state
+/// the panel does not offer; the panel's own option list mirrors it.
+pub const LANGUAGES: &[&str] = &["system", "zh-CN", "zh-TW", "en"];
+
 /// The full settings document, as persisted and exposed to the frontend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -269,7 +274,7 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
     if !["system", "brand"].contains(&settings.accent.as_str()) {
         settings.accent = "brand".to_string();
     }
-    if !["system", "zh-CN", "en"].contains(&settings.language.as_str()) {
+    if !LANGUAGES.contains(&settings.language.as_str()) {
         settings.language = "system".to_string();
     }
     if !["mica", "acrylic", "none"].contains(&settings.window_material.as_str()) {

@@ -900,11 +900,14 @@ action id 与默认值），Tauri 壳读写同一份文档；旧 `appearance-qt.
 都从 `Workspace.shortcutsJson` 取当前绑定。录制时 `SettingsPanel.capturing`
 让 ShellWindow 的 Escape 暂时失效，Esc 只取消录制、不关闭面板。
 
-**翻译不经过 lrelease。** `qml/i18n/dae_en.ts` 与 `dae_zh_CN.ts` 由
-`lupdate` 生成/更新并打进 QRC（`/i18n`）；`crates/dae-qt/cpp/translator.cpp`
-用 `QXmlStreamReader` 直接解析 TS 的 `<context>/<message>`，安装后调用
-`QQmlEngine::retranslate()`。中文是源语言，运行时不装 translator；
-`system` 跟随 `QLocale::system()`，`zh*` 用中文，其余用英文。32 个 QML
+**翻译不经过 lrelease。** `qml/i18n/dae_en.ts`、`dae_zh_CN.ts` 与
+`dae_zh_TW.ts` 由 `lupdate` 生成/更新并打进 QRC（`/i18n`）；
+`crates/dae-qt/cpp/translator.cpp` 用 `QXmlStreamReader` 直接解析 TS 的
+`<context>/<message>`，安装后调用 `QQmlEngine::retranslate()`。简体中文是源
+语言，运行时不装 translator；其余语言按链安装：先英文、再目标语言（Qt 先查
+后装的 translator），所以目标语言缺词时回落英文而不是回落中文。
+`system` 跟随 `QLocale::system()`，繁体中文脚本用 `zh-TW`，其余 `zh*` 用
+`zh-CN`，非中文用英文。32 个 QML
 文件的可见文案全部改为 `qsTr()`（686 条 message，英文全部填充），
 `Sidebar`/`Overview`/状态栏把共享后端返回的常见固定串（`N 项`、`今天`、
 操作 toast、进度词等）在显示层映射；用户数据（收藏名、空间名、文件名）不译。

@@ -11,7 +11,7 @@
 namespace dae_qt {
 namespace {
 
-constexpr const char *ENGLISH_RESOURCE = ":/i18n/dae_en.ts";
+constexpr const char *TRANSLATION_DIRECTORY = ":/i18n/";
 
 /// A `QTranslator` backed by the contents of a Qt Linguist `.ts` file.
 ///
@@ -91,20 +91,47 @@ private:
 };
 
 QQmlEngine *g_engine = nullptr;
-TsTranslator *g_translator = nullptr;
+TsTranslator *g_english = nullptr;
+TsTranslator *g_target = nullptr;
+
+/// `zh-CN` -> `:/i18n/dae_zh_CN.ts`, matching the alias `build.rs` embeds.
+QString resource_for(const QString &language) {
+  QString tag = language;
+  tag.replace(QLatin1Char('-'), QLatin1Char('_'));
+  return QString::fromLatin1(TRANSLATION_DIRECTORY) + QStringLiteral("dae_") + tag +
+         QStringLiteral(".ts");
+}
+
+void drop_translator(TsTranslator *&translator) {
+  if (translator == nullptr)
+    return;
+  QCoreApplication::removeTranslator(translator);
+  delete translator;
+  translator = nullptr;
+}
+
+bool install_translator(const QString &path, TsTranslator *&slot) {
+  auto *translator = new TsTranslator(QCoreApplication::instance());
+  if (!translator->loadFile(path)) {
+    delete translator;
+    return false;
+  }
+  QCoreApplication::installTranslator(translator);
+  slot = translator;
+  return true;
+}
 
 QString resolve(const QString &preference) {
-  if (preference == QStringLiteral("en"))
-    return QStringLiteral("en");
-  if (preference == QStringLiteral("zh-CN"))
-    return QStringLiteral("zh-CN");
+  if (preference == QStringLiteral("en") || preference == QStringLiteral("zh-CN") ||
+      preference == QStringLiteral("zh-TW"))
+    return preference;
 
+  // The system locale picks the Chinese script; everything else is English.
   const QLocale locale = QLocale::system();
-  const QString name = locale.name();
-  if (name.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive))
+  if (locale.script() == QLocale::TraditionalChineseScript)
+    return QStringLiteral("zh-TW");
+  if (locale.name().startsWith(QStringLiteral("zh"), Qt::CaseInsensitive))
     return QStringLiteral("zh-CN");
-  if (name.startsWith(QStringLiteral("en"), Qt::CaseInsensitive))
-    return QStringLiteral("en");
   return QStringLiteral("en");
 }
 
@@ -115,23 +142,22 @@ void dae_qt_i18n_attach_engine(std::size_t engine) {
 }
 
 bool dae_qt_i18n_apply(const QString &language) {
-  if (g_translator != nullptr) {
-    QCoreApplication::removeTranslator(g_translator);
-    delete g_translator;
-    g_translator = nullptr;
-  }
+  drop_translator(g_target);
+  drop_translator(g_english);
 
   const QString resolved = resolve(language);
   bool installed = false;
-  if (resolved == QStringLiteral("en")) {
-    auto *translator = new TsTranslator(QCoreApplication::instance());
-    if (translator->loadFile(QString::fromLatin1(ENGLISH_RESOURCE))) {
-      g_translator = translator;
-      QCoreApplication::installTranslator(translator);
-      installed = true;
-    } else {
-      delete translator;
-    }
+
+  // Chinese is the source language, so it installs nothing: a string the
+  // source already has needs no lookup. Every other language gets English
+  // first and the requested one on top — Qt searches the most recently
+  // installed translator first, so a key the translation lacks reads in
+  // English instead of falling back to Chinese.
+  if (resolved != QStringLiteral("zh-CN")) {
+    install_translator(resource_for(QStringLiteral("en")), g_english);
+    installed = resolved == QStringLiteral("en")
+                    ? g_english != nullptr
+                    : install_translator(resource_for(resolved), g_target);
   }
 
   // `installTranslator` posts LanguageChange to the application, but a QML

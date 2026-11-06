@@ -90,6 +90,7 @@ FocusScope {
     readonly property var languageOptions: [
         { value: "system", label: qsTr("跟随系统") },
         { value: "zh-CN", label: qsTr("简体中文") },
+        { value: "zh-TW", label: qsTr("繁體中文") },
         { value: "en", label: "English" }
     ]
     readonly property var materialOptions: [

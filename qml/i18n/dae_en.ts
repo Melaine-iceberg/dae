@@ -715,6 +715,96 @@
             <source>试试命令名、文件路径，或一个空间的名字。</source>
             <translation>Try a command, a file path, or the name of a space.</translation>
         </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="287" />
+            <source>按创建时间排序</source>
+            <translation>Sort by creation date</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="288" />
+            <source>按路径排序</source>
+            <translation>Sort by path</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="289" />
+            <source>按标签排序</source>
+            <translation>Sort by tag</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="292" />
+            <source>不分组</source>
+            <translation>No grouping</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="293" />
+            <source>按名称分组</source>
+            <translation>Group by name</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="294" />
+            <source>按修改时间分组</source>
+            <translation>Group by date modified</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="295" />
+            <source>按创建时间分组</source>
+            <translation>Group by date created</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="296" />
+            <source>按大小分组</source>
+            <translation>Group by size</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="297" />
+            <source>按类型分组</source>
+            <translation>Group by type</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="298" />
+            <source>按标签分组</source>
+            <translation>Group by tag</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="299" />
+            <source>日期分组：按日</source>
+            <translation>Date groups: by day</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="300" />
+            <source>显示/隐藏类型列</source>
+            <translation>Show/hide the type column</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="301" />
+            <source>显示/隐藏大小列</source>
+            <translation>Show/hide the size column</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="302" />
+            <source>显示/隐藏修改时间列</source>
+            <translation>Show/hide the modified column</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="303" />
+            <source>显示/隐藏创建时间列</source>
+            <translation>Show/hide the created column</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="304" />
+            <source>显示/隐藏标签列</source>
+            <translation>Show/hide the tags column</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="305" />
+            <source>显示/隐藏扩展名</source>
+            <translation>Show/hide extensions</translation>
+        </message>
+        <message>
+            <location filename="../CommandPalette.qml" line="306" />
+            <source>清除所选标签</source>
+            <translation>Clear tags from the selection</translation>
+        </message>
     </context>
     <context>
         <name>ConfirmDialog</name>
@@ -954,6 +1044,131 @@
             <source>预览</source>
             <translation>Preview</translation>
         </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="60" />
+            <source>排序</source>
+            <translation>Sort</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="61" />
+            <source>名称</source>
+            <translation>Name</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="62" />
+            <source>修改时间</source>
+            <translation>Modified</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="63" />
+            <source>创建时间</source>
+            <translation>Created</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="64" />
+            <source>大小</source>
+            <translation>Size</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="65" />
+            <source>类型</source>
+            <translation>Type</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="66" />
+            <source>路径</source>
+            <translation>Path</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="67" />
+            <source>标签</source>
+            <translation>Tags</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="69" />
+            <source>分组</source>
+            <translation>Group</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="70" />
+            <source>不分组</source>
+            <translation>Ungrouped</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="71" />
+            <source>按名称</source>
+            <translation>By name</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="72" />
+            <source>按修改时间</source>
+            <translation>By date modified</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="73" />
+            <source>按创建时间</source>
+            <translation>By date created</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="74" />
+            <source>按大小</source>
+            <translation>By size</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="75" />
+            <source>按类型</source>
+            <translation>By type</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="76" />
+            <source>按标签</source>
+            <translation>By tag</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="78" />
+            <source>文件夹</source>
+            <translation>Folder</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="79" />
+            <source>文件夹优先</source>
+            <translation>Folders first</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="80" />
+            <source>文件优先</source>
+            <translation>Files first</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="81" />
+            <source>混合排列</source>
+            <translation>Mixed</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="83" />
+            <source>列</source>
+            <translation>Columns</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="89" />
+            <source>显示扩展名</source>
+            <translation>Show extensions</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="106" />
+            <source>所有目录使用同一布局</source>
+            <translation>Use one layout for all folders</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="108" />
+            <source>按内容自动选择布局</source>
+            <translation>Pick the layout from the contents</translation>
+        </message>
+        <message>
+            <location filename="../DisplayMenu.qml" line="110" />
+            <source>图标大小</source>
+            <translation>Icon size</translation>
+        </message>
     </context>
     <context>
         <name>FileGrid</name>
@@ -1071,6 +1286,96 @@
             <location filename="../FileList.qml" line="943" />
             <source>文件列表</source>
             <translation>File list</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="136" />
+            <source>工作, 重要</source>
+            <translation>Work, Important</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="150" />
+            <source>创建时间</source>
+            <translation>Created</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="151" />
+            <source>标签</source>
+            <translation>Tags</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="160" />
+            <source>无标签</source>
+            <translation>No tags</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="164" />
+            <source>链接</source>
+            <translation>Links</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="165" />
+            <source>图片</source>
+            <translation>Images</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="165" />
+            <source>视频</source>
+            <translation>Videos</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="166" />
+            <source>文档</source>
+            <translation>Documents</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="166" />
+            <source>音频</source>
+            <translation>Audio</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="167" />
+            <source>代码</source>
+            <translation>Code</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="167" />
+            <source>文本</source>
+            <translation>Text</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="168" />
+            <source>压缩包</source>
+            <translation>Archives</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="168" />
+            <source>字体</source>
+            <translation>Fonts</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="169" />
+            <source>其他</source>
+            <translation>Other</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="169" />
+            <source>程序</source>
+            <translation>Programs</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="175" />
+            <source> 修改</source>
+            <translation> modified</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="177" />
+            <source> 创建</source>
+            <translation> created</translation>
+        </message>
+        <message>
+            <location filename="../FileList.qml" line="194" />
+            <source>（回退）</source>
+            <translation> (fallback)</translation>
         </message>
     </context>
     <context>
@@ -1965,6 +2270,46 @@
             <source>无法启动更新安装程序：%1</source>
             <translation>Could not start the update installer: %1</translation>
         </message>
+        <message>
+            <location filename="../Localize.js" line="73" />
+            <source>相机</source>
+            <translation>Camera</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="74" />
+            <source>镜头</source>
+            <translation>Lens</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="75" />
+            <source>拍摄时间</source>
+            <translation>Taken</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="76" />
+            <source>曝光</source>
+            <translation>Exposure</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="77" />
+            <source>光圈</source>
+            <translation>Aperture</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="78" />
+            <source>ISO</source>
+            <translation>ISO</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="79" />
+            <source>焦距</source>
+            <translation>Focal length</translation>
+        </message>
+        <message>
+            <location filename="../Localize.js" line="80" />
+            <source>位置</source>
+            <translation>Location</translation>
+        </message>
     </context>
     <context>
         <name>MediaPreview</name>
@@ -2448,6 +2793,51 @@
             <source>全部属性</source>
             <translation>All properties</translation>
         </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="671" />
+            <source>创建时间</source>
+            <translation>Created</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="672" />
+            <source>权限</source>
+            <translation>Permissions</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="673" />
+            <source>所有者</source>
+            <translation>Owner</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="695" />
+            <source>正在计算…</source>
+            <translation>Calculating…</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="696" />
+            <source>重新计算哈希</source>
+            <translation>Recalculate hash</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="697" />
+            <source>计算哈希</source>
+            <translation>Calculate hash</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="803" />
+            <source>已选择 %1 项</source>
+            <translation>%1 selected</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="812" />
+            <source>文件合计 %1</source>
+            <translation>Total %1</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="821" />
+            <source>没有共同标签</source>
+            <translation>No shared tags</translation>
+        </message>
     </context>
     <context>
         <name>PropertiesDialog</name>
@@ -2659,6 +3049,76 @@
             <source>复制</source>
             <translation>Copy</translation>
         </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="94" />
+            <source>有效</source>
+            <translation>Valid</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="95" />
+            <source>未签名</source>
+            <translation>Unsigned</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="96" />
+            <source>不受信任</source>
+            <translation>Untrusted</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="97" />
+            <source>无效</source>
+            <translation>Invalid</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="224" />
+            <source>签名</source>
+            <translation>Signature</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="489" />
+            <source>所有者：</source>
+            <translation>Owner: </translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="491" />
+            <source>　组：</source>
+            <translation> · Group: </translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="514" />
+            <source>状态</source>
+            <translation>Status</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="518" />
+            <source>签名者</source>
+            <translation>Signer</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="523" />
+            <source>颁发者</source>
+            <translation>Issuer</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="598" />
+            <source>粘贴已知的 MD5 / SHA-1 / SHA-256 以比对</source>
+            <translation>Paste a known MD5 / SHA-1 / SHA-256 to compare</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="612" />
+            <source>点击“开始校验”后比对</source>
+            <translation>Click “Start checksum” to compare</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="614" />
+            <source>与 %1 校验值相同</source>
+            <translation>Matches the %1 checksum</translation>
+        </message>
+        <message>
+            <location filename="../PropertiesDialog.qml" line="615" />
+            <source>与任何校验值都不匹配</source>
+            <translation>Matches none of the checksums</translation>
+        </message>
     </context>
     <context>
         <name>SearchBar</name>
@@ -2752,6 +3212,36 @@
             <source>输入以筛选名称</source>
             <translation>Type to filter by name</translation>
         </message>
+        <message>
+            <location filename="../SearchFilterBar.qml" line="165" />
+            <source>当前</source>
+            <translation>Current</translation>
+        </message>
+        <message>
+            <location filename="../SearchFilterBar.qml" line="172" />
+            <source>收藏</source>
+            <translation>Favorites</translation>
+        </message>
+        <message>
+            <location filename="../SearchFilterBar.qml" line="179" />
+            <source>最近</source>
+            <translation>Recent</translation>
+        </message>
+        <message>
+            <location filename="../SearchFilterBar.qml" line="186" />
+            <source>筛选</source>
+            <translation>Filters</translation>
+        </message>
+        <message>
+            <location filename="../SearchFilterBar.qml" line="200" />
+            <source>历史</source>
+            <translation>History</translation>
+        </message>
+        <message>
+            <location filename="../SearchFilterBar.qml" line="211" />
+            <source>所有卷</source>
+            <translation>All volumes</translation>
+        </message>
     </context>
     <context>
         <name>SettingsPanel</name>
@@ -2810,6 +3300,11 @@
             <location filename="../SettingsPanel.qml" line="92" />
             <source>简体中文</source>
             <translation>Simplified Chinese</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="122" />
+            <source>繁體中文</source>
+            <translation>Traditional Chinese</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="118" />
@@ -3126,11 +3621,6 @@
             <translation>When enabled, a solid-colour window appears first and the interface loads behind it: the first frame moves from ~955 ms to ~302 ms at the cost of about 0.6 s of blank screen before the UI is ready. Takes effect on the next launch.</translation>
         </message>
         <message>
-            <location filename="../SettingsPanel.qml" line="762" />
-            <source>外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</source>
-            <translation>Appearance, language, backdrop effects, startup mode, shortcuts and terminal typography are stored together in settings.toml and shared with the Tauri shell.</translation>
-        </message>
-        <message>
             <location filename="../SettingsPanel.qml" line="921" />
             <source>恢复默认快捷键</source>
             <translation>Reset shortcuts to defaults</translation>
@@ -3408,6 +3898,346 @@
             <location filename="../SettingsPanel.qml" line="597" />
             <source>关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级“减少动效”查询，所以这个开关在 dae 自己这里。</source>
             <translation>With this off every transition becomes instant instead of merely faster. Qt 6 has no system-wide “reduce motion” query, so dae keeps the switch to itself.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="59" />
+            <source>无法创建标签（名称可能重复）</source>
+            <translation>Could not create the tag (its name may already exist)</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="157" />
+            <source>新建窗口</source>
+            <translation>New window</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="158" />
+            <source>在相同目录打开一个新窗口</source>
+            <translation>Open a new window in the same folder</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="159" />
+            <source>新建标签页</source>
+            <translation>New tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="160" />
+            <source>在当前标签页之后新建一个</source>
+            <translation>Open a new tab after the current one</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="161" />
+            <source>关闭标签页</source>
+            <translation>Close tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="162" />
+            <source>关闭当前标签页</source>
+            <translation>Close the current tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="163" />
+            <source>重新打开标签页</source>
+            <translation>Reopen tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="164" />
+            <source>恢复最近关闭的标签页</source>
+            <translation>Restore the most recently closed tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="165" />
+            <source>下一个标签页</source>
+            <translation>Next tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="166" />
+            <source>按顺序切换到下一个标签页</source>
+            <translation>Switch to the next tab in order</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="167" />
+            <source>上一个标签页</source>
+            <translation>Previous tab</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="168" />
+            <source>按顺序切换到上一个标签页</source>
+            <translation>Switch to the previous tab in order</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="169" />
+            <source>切换侧栏</source>
+            <translation>Toggle sidebar</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="170" />
+            <source>显示或隐藏侧栏</source>
+            <translation>Show or hide the sidebar</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="194" />
+            <source>属性</source>
+            <translation>Properties</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="195" />
+            <source>打开选中项的属性</source>
+            <translation>Open the properties of the selection</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="196" />
+            <source>刷新</source>
+            <translation>Refresh</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="197" />
+            <source>重新读取当前目录</source>
+            <translation>Re-read the current folder</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="198" />
+            <source>新建文件夹</source>
+            <translation>New folder</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="199" />
+            <source>在当前位置新建文件夹</source>
+            <translation>Create a folder here</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="200" />
+            <source>切换分屏</source>
+            <translation>Toggle split view</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="201" />
+            <source>打开或关闭双窗格</source>
+            <translation>Turn the second pane on or off</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="202" />
+            <source>显示选项</source>
+            <translation>Display options</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="203" />
+            <source>打开视图、排序与列菜单</source>
+            <translation>Open the view, sort and column menu</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="204" />
+            <source>过滤</source>
+            <translation>Filters</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="205" />
+            <source>打开类型、时间与大小过滤</source>
+            <translation>Open the type, date and size filters</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="543" />
+            <source>动作</source>
+            <translation>Actions</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="545" />
+            <source>标签</source>
+            <translation>Tags</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="850" />
+            <source>文件大小单位</source>
+            <translation>File size units</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="861" />
+            <source>二进制按 1024 进位并写作 KiB/MiB；十进制按 1000 进位并写作 KB/MB。只影响显示，排序与比较仍用字节数。</source>
+            <translation>Binary counts by 1024 and writes KiB/MiB; decimal counts by 1000 and writes KB/MB. Display only: sorting and comparisons still use bytes.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="875" />
+            <source>二进制（KiB）</source>
+            <translation>Binary (KiB)</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="876" />
+            <source>十进制（KB）</source>
+            <translation>Decimal (KB)</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="891" />
+            <source>主页小部件</source>
+            <translation>Home widgets</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="902" />
+            <source>关闭一项后，概览页对应的分组整段隐藏；分组本身没有内容时也不会留下空标题。</source>
+            <translation>Turning one off hides its whole group on the overview; a group with nothing in it leaves no empty heading either.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="916" />
+            <source>项目</source>
+            <translation>Projects</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="917" />
+            <source>收藏</source>
+            <translation>Favorites</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="918" />
+            <source>最近</source>
+            <translation>Recent</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="919" />
+            <source>空间</source>
+            <translation>Spaces</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="934" />
+            <source>背景图</source>
+            <translation>Background image</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="945" />
+            <source>图片铺在列表后面，列表用半透明画布盖住它；“遮罩”越高，文字越清楚。标题栏、侧栏和地址栏保持实色。</source>
+            <translation>The image sits behind the listing, which covers it with a translucent canvas; the higher the veil, the clearer the text. The title bar, sidebar and address bar stay solid.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="991" />
+            <source>选择…</source>
+            <translation>Choose…</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1016" />
+            <source>清除</source>
+            <translation>Clear</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1039" />
+            <source>无遮罩</source>
+            <translation>None</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1040" />
+            <source>轻</source>
+            <translation>Light</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1041" />
+            <source>中</source>
+            <translation>Medium</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1042" />
+            <source>强</source>
+            <translation>Strong</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1057" />
+            <source>工具栏</source>
+            <translation>Toolbar</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1068" />
+            <source>拖动地址栏两侧的按钮可以调整顺序；导航按钮与右侧操作各自排序，重启后保留。</source>
+            <translation>Drag the buttons on either side of the address bar to reorder them; the navigation buttons and the actions on the right are ordered separately, and the order survives a restart.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1091" />
+            <source>恢复默认</source>
+            <translation>Restore defaults</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1123" />
+            <source>外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml；大小单位与视图偏好保存在 explorer-qt.ini。</source>
+            <translation>Appearance, language, background effect, startup, shortcuts and terminal typography are stored together in settings.toml; size units and view preferences live in explorer-qt.ini.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1367" />
+            <source>动作把选中的文件或文件夹交给外部程序，参数逐个传递，不经过 shell。占位符：%f 首个选中项，%F 每一项（各成一个参数），%d 当前目录，%u 首个选中项的 file: 地址。参数每行一个。只列出程序在 PATH 上的动作。</source>
+            <translation>Actions hand the selected files or folders to an external program, one argument at a time, without a shell. Placeholders: %f the first selected item, %F every item (one argument each), %d the current folder, %u the file: URL of the first item. One argument per line. Only actions whose program is on PATH are listed.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1443" />
+            <source>任意</source>
+            <translation>Any</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1444" />
+            <source>文件</source>
+            <translation>File</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1445" />
+            <source>文件夹</source>
+            <translation>Folder</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1446" />
+            <source>多选</source>
+            <translation>Multiple</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1483" />
+            <source>保存</source>
+            <translation>Save</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1503" />
+            <source>删除</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1530" />
+            <source>新增动作</source>
+            <translation>New action</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1537" />
+            <source>名称 · 程序 · 参数（每行一个）</source>
+            <translation>Name · program · arguments (one per line)</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1629" />
+            <source>添加</source>
+            <translation>Add</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1654" />
+            <source>恢复内置动作</source>
+            <translation>Restore built-in actions</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1898" />
+            <source>标签会写进文件本身（NTFS 数据流、xattr）；网络位置、压缩包以及不支持的文件系统改为保存在 dae 的索引里，不会随文件移动。</source>
+            <translation>Tags are written into the file itself (NTFS streams, xattr); network locations, archives and file systems that cannot carry them fall back to dae&amp;apos;s index, where they do not travel with the file.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1928" />
+            <source>新标签名称</source>
+            <translation>New tag name</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1953" />
+            <source>颜色</source>
+            <translation>Color</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2054" />
+            <source>%1 项</source>
+            <translation>%1 items</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2616" />
+            <source>选择背景图片</source>
+            <translation>Choose a background image</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2617" />
+            <source>图片</source>
+            <translation>Images</translation>
         </message>
     </context>
     <context>
@@ -4448,6 +5278,241 @@
             <source>已复制名称</source>
             <translation>Name copied</translation>
         </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="761" />
+            <source>复制标签页</source>
+            <translation>Duplicate tab</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="763" />
+            <source>取消固定</source>
+            <translation>Unpin tab</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="763" />
+            <source>固定标签页</source>
+            <translation>Pin tab</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="765" />
+            <source>关闭标签页</source>
+            <translation>Close tab</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="766" />
+            <source>关闭其他标签页</source>
+            <translation>Close other tabs</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="768" />
+            <source>关闭左侧标签页</source>
+            <translation>Close tabs to the left</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="770" />
+            <source>关闭右侧标签页</source>
+            <translation>Close tabs to the right</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="773" />
+            <source>重新打开关闭的标签页</source>
+            <translation>Reopen closed tab</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="871" />
+            <source>上次会话未正常退出，已恢复窗口与标签页</source>
+            <translation>The last session did not exit cleanly; windows and tabs were restored</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="1473" />
+            <source>尚无搜索历史</source>
+            <translation>No search history yet</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="1475" />
+            <source>清除历史</source>
+            <translation>Clear history</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="1775" />
+            <source>无法打开系统共享面板</source>
+            <translation>Could not open the system share panel</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2089" />
+            <source>分组</source>
+            <translation>Group</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2121" />
+            <source>创建时间</source>
+            <translation>Created</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2123" />
+            <source>路径</source>
+            <translation>Path</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2124" />
+            <source>标签</source>
+            <translation>Tags</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2131" />
+            <source>文件优先</source>
+            <translation>Files first</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2133" />
+            <source>混合排列</source>
+            <translation>Mixed</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2150" />
+            <source>不分组</source>
+            <translation>Ungrouped</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2151" />
+            <source>按名称</source>
+            <translation>By name</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2152" />
+            <source>按修改时间</source>
+            <translation>By date modified</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2153" />
+            <source>按创建时间</source>
+            <translation>By date created</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2154" />
+            <source>按大小</source>
+            <translation>By size</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2155" />
+            <source>按类型</source>
+            <translation>By type</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2156" />
+            <source>按标签</source>
+            <translation>By tag</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2160" />
+            <source>按年</source>
+            <translation>By year</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2161" />
+            <source>按月</source>
+            <translation>By month</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2162" />
+            <source>按日</source>
+            <translation>By day</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2354" />
+            <source>尚无标签</source>
+            <translation>No tags yet</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2356" />
+            <source>清除标签</source>
+            <translation>Clear tags</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2403" />
+            <source>共享…</source>
+            <translation>Share…</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2405" />
+            <source>计算大小</source>
+            <translation>Calculate size</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2407" />
+            <source>比较 SHA-256</source>
+            <translation>Compare SHA-256</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2421" />
+            <source>自定义动作</source>
+            <translation>Custom actions</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2440" />
+            <source>解压到新文件夹…</source>
+            <translation>Extract to new folder…</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2645" />
+            <source>弹出</source>
+            <translation>Eject</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2648" />
+            <source>卸载</source>
+            <translation>Unmount</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2651" />
+            <source>挂载</source>
+            <translation>Mount</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2653" />
+            <source>格式化…</source>
+            <translation>Format…</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2656" />
+            <source>存储清理…</source>
+            <translation>Storage cleanup…</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2658" />
+            <source>磁盘加密状态</source>
+            <translation>Disk encryption status</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2661" />
+            <source>以前的版本…</source>
+            <translation>Previous versions…</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="2934" />
+            <source>关闭</source>
+            <translation>Close</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="3153" />
+            <source>SHA-256 相同：两个文件内容一致</source>
+            <translation>SHA-256 matches: the two files are identical</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="3154" />
+            <source>SHA-256 不同：两个文件内容不一致</source>
+            <translation>SHA-256 differs: the two files are not identical</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="4736" />
+            <source>状态中心，%1 项失败</source>
+            <translation>Status Center, %1 failed</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="4737" />
+            <source>状态中心</source>
+            <translation>Status Center</translation>
+        </message>
     </context>
     <context>
         <name>Sidebar</name>
@@ -4581,6 +5646,11 @@
             <location filename="../Sidebar.qml" line="364" />
             <source>松开以加入收藏</source>
             <translation>Release to add to favorites</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="817" />
+            <source>标签</source>
+            <translation>Tags</translation>
         </message>
     </context>
     <context>
@@ -5040,6 +6110,39 @@
             <location filename="../UpdateDialog.qml" line="319" />
             <source>下载并安装</source>
             <translation>Download and install</translation>
+        </message>
+    </context>
+    <context>
+        <name>StatusCenter</name>
+        <message>
+            <location filename="../StatusCenter.qml" line="62" />
+            <source>失败</source>
+            <translation>Failed</translation>
+        </message>
+        <message>
+            <location filename="../StatusCenter.qml" line="100" />
+            <source>状态中心</source>
+            <translation>Status Center</translation>
+        </message>
+        <message>
+            <location filename="../StatusCenter.qml" line="117" />
+            <source>清除记录</source>
+            <translation>Clear history</translation>
+        </message>
+        <message>
+            <location filename="../StatusCenter.qml" line="141" />
+            <source>关闭</source>
+            <translation>Close</translation>
+        </message>
+        <message>
+            <location filename="../StatusCenter.qml" line="177" />
+            <source>还没有操作记录</source>
+            <translation>No operations recorded yet</translation>
+        </message>
+        <message>
+            <location filename="../StatusCenter.qml" line="244" />
+            <source>重试</source>
+            <translation>Retry</translation>
         </message>
     </context>
 </TS>

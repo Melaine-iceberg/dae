@@ -1,9 +1,15 @@
 //! The Qt shell's language switch.
 //!
 //! QML marks every user-visible sentence with `qsTr()`. The source strings are
-//! Chinese, matching the shipped shell; `qml/i18n/dae_en.ts` carries the
-//! English translation. Both are embedded as Qt resources by
+//! Simplified Chinese, matching the shipped shell; `qml/i18n/dae_en.ts` and
+//! `qml/i18n/dae_zh_TW.ts` carry the English and Traditional Chinese
+//! translations. All of them are embedded as Qt resources by
 //! `apps/dae/build.rs`, so a deployed binary needs no loose files.
+//!
+//! Every non-source language is installed as a chain: English first, then the
+//! requested translation on top. Qt searches the most recently installed
+//! translator first, so a key the translation lacks reads in English rather
+//! than falling back to the Chinese source.
 //!
 //! Installation is a small C++ helper because `QTranslator` is not part of
 //! `cxx-qt-lib` and because switching language has to call
@@ -25,15 +31,16 @@ pub fn attach_engine(engine: usize) {
 }
 
 /// Applies the language saved in `settings.toml`. `system` resolves to the OS
-/// UI language: Chinese keeps the source strings, everything else loads the
-/// English translation.
+/// UI language: a Chinese locale keeps either script, everything else loads
+/// English.
 pub fn apply_stored() {
     let language = crate::appearance::stored_language();
     apply(&language);
 }
 
-/// Applies one of `system`, `zh-CN` or `en`. Returns whether a translation was
-/// installed (`false` means the Chinese source strings are in use).
+/// Applies one of `system`, `zh-CN`, `zh-TW` or `en`. Returns whether a
+/// translation was installed (`false` means the Simplified Chinese source
+/// strings are in use).
 pub fn apply(language: &str) -> bool {
     crate::appearance::qobject::dae_qt_i18n_apply(&cxx_qt_lib::QString::from(language))
 }

@@ -317,6 +317,7 @@ fn main() {
     let translations = QResource::new().prefix("/i18n").files([
         QResourceFile::new("../../qml/i18n/dae_en.ts").alias("dae_en.ts".to_owned()),
         QResourceFile::new("../../qml/i18n/dae_zh_CN.ts").alias("dae_zh_CN.ts".to_owned()),
+        QResourceFile::new("../../qml/i18n/dae_zh_TW.ts").alias("dae_zh_TW.ts".to_owned()),
     ]);
 
     // The C++ type descriptions for the two modules registered by hand at run

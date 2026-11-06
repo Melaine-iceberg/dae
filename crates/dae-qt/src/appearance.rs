@@ -2,11 +2,11 @@
 //! `settings.toml` document with shortcuts and terminal typography.
 //!
 //! `theme` is `system` / `light` / `dark`, `accent` is `system` / `brand`, and
-//! `language` is `system` / `zh-CN` / `en`. Values are validated on load and on
-//! write, so a hand-edited file cannot leave the UI in a state the panel does
-//! not offer. The actual language install is done by [`crate::i18n`]; keeping
-//! the preference here means the startup path can read it before the QML engine
-//! loads its first file.
+//! `language` is `system` / `zh-CN` / `zh-TW` / `en`. Values are validated on
+//! load and on write, so a hand-edited file cannot leave the UI in a state the
+//! panel does not offer. The actual language install is done by
+//! [`crate::i18n`]; keeping the preference here means the startup path can read
+//! it before the QML engine loads its first file.
 
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ const FILE_NAME: &str = "appearance-qt.ini";
 
 const THEMES: &[&str] = &["system", "light", "dark"];
 const ACCENTS: &[&str] = &["system", "brand"];
-const LANGUAGES: &[&str] = &["system", "zh-CN", "en"];
+const LANGUAGES: &[&str] = dae_core::settings::LANGUAGES;
 const MATERIALS: &[&str] = &["mica", "acrylic", "none"];
 
 #[cxx_qt::bridge]
