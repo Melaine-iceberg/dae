@@ -111,8 +111,7 @@ mod browse {
     use std::ffi::OsString;
 
     /// See `commands::list_trash` for the contract; this half is engine-free.
-    pub async fn list_trash(
-    ) -> Result<Vec<TrashEntry>, FileSystemError> {
+    pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
         tokio::task::spawn_blocking(|| {
             let mut entries = collect_entries()?;
             entries.sort_by_key(|entry| std::cmp::Reverse(entry.time_deleted));
@@ -155,8 +154,11 @@ mod browse {
                 ));
             }
 
-            let progress =
-                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Move);
+            let progress = FileOperationProgressReporter::new(
+                std::sync::Arc::clone(&host),
+                operation_id,
+                FileOperationKind::Move,
+            );
             progress.start(selected.len() as u64);
 
             let mut restored = 0u64;
@@ -193,8 +195,11 @@ mod browse {
                 ));
             }
 
-            let progress =
-                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
+            let progress = FileOperationProgressReporter::new(
+                std::sync::Arc::clone(&host),
+                operation_id,
+                FileOperationKind::Delete,
+            );
             progress.start(selected.len() as u64);
 
             let mut purged = 0u64;
@@ -224,8 +229,11 @@ mod browse {
                 return Ok(0);
             }
 
-            let progress =
-                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
+            let progress = FileOperationProgressReporter::new(
+                std::sync::Arc::clone(&host),
+                operation_id,
+                FileOperationKind::Delete,
+            );
             progress.start(items.len() as u64);
 
             let mut purged = 0u64;
@@ -289,8 +297,7 @@ mod macos_view {
     use std::path::{Path, PathBuf};
 
     /// See `commands::list_trash` for the contract; this half is engine-free.
-    pub async fn list_trash(
-    ) -> Result<Vec<TrashEntry>, FileSystemError> {
+    pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
         tokio::task::spawn_blocking(|| {
             let mut entries: Vec<TrashEntry> = macos_trash::list_entries()?
                 .iter()
@@ -323,8 +330,11 @@ mod macos_view {
                 ));
             }
 
-            let progress =
-                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Move);
+            let progress = FileOperationProgressReporter::new(
+                std::sync::Arc::clone(&host),
+                operation_id,
+                FileOperationKind::Move,
+            );
             progress.start(selected.len() as u64);
 
             let mut restored = 0u64;
@@ -365,8 +375,11 @@ mod macos_view {
                 ));
             }
 
-            let progress =
-                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
+            let progress = FileOperationProgressReporter::new(
+                std::sync::Arc::clone(&host),
+                operation_id,
+                FileOperationKind::Delete,
+            );
             progress.start(selected.len() as u64);
 
             let mut purged = 0u64;
@@ -395,8 +408,11 @@ mod macos_view {
                 return Ok(0);
             }
 
-            let progress =
-                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
+            let progress = FileOperationProgressReporter::new(
+                std::sync::Arc::clone(&host),
+                operation_id,
+                FileOperationKind::Delete,
+            );
             progress.start(entries.len() as u64);
 
             let mut purged = 0u64;

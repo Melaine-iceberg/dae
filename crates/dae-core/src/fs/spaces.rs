@@ -1,7 +1,7 @@
 use super::error::FileSystemError;
 use super::recents::now_millis;
-use crate::fs::atomic::write_atomic;
 use super::types::display_name_from_path;
+use crate::fs::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -31,8 +31,7 @@ pub struct Space {
 }
 
 /// See `commands::list_spaces` for the contract; this half is engine-free.
-pub fn list_spaces(
-) -> Result<Vec<Space>, FileSystemError> {
+pub fn list_spaces() -> Result<Vec<Space>, FileSystemError> {
     if let Some(spaces) = super::prefetch::state().take_spaces() {
         return Ok(spaces);
     }
@@ -49,9 +48,7 @@ pub fn list_spaces(
 }
 
 /// See `commands::create_space` for the contract; this half is engine-free.
-pub fn create_space(
-    name: String,
-) -> Result<Space, FileSystemError> {
+pub fn create_space(name: String) -> Result<Space, FileSystemError> {
     let name = validated_name(&name)?;
     let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
@@ -69,10 +66,7 @@ pub fn create_space(
 }
 
 /// See `commands::rename_space` for the contract; this half is engine-free.
-pub fn rename_space(
-    space_id: String,
-    name: String,
-) -> Result<Space, FileSystemError> {
+pub fn rename_space(space_id: String, name: String) -> Result<Space, FileSystemError> {
     let name = validated_name(&name)?;
     let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
@@ -89,9 +83,7 @@ pub fn rename_space(
 }
 
 /// See `commands::delete_space` for the contract; this half is engine-free.
-pub fn delete_space(
-    space_id: String,
-) -> Result<(), FileSystemError> {
+pub fn delete_space(space_id: String) -> Result<(), FileSystemError> {
     let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
 
@@ -111,10 +103,7 @@ pub fn delete_space(
 }
 
 /// See `commands::add_space_item` for the contract; this half is engine-free.
-pub fn add_space_item(
-    space_id: String,
-    path: String,
-) -> Result<Space, FileSystemError> {
+pub fn add_space_item(space_id: String, path: String) -> Result<Space, FileSystemError> {
     update_space_items(&space_id, |items| {
         if items.iter().any(|item| item.path == path) {
             return;
@@ -129,10 +118,7 @@ pub fn add_space_item(
 }
 
 /// See `commands::remove_space_item` for the contract; this half is engine-free.
-pub fn remove_space_item(
-    space_id: String,
-    path: String,
-) -> Result<Space, FileSystemError> {
+pub fn remove_space_item(space_id: String, path: String) -> Result<Space, FileSystemError> {
     update_space_items(&space_id, |items| {
         items.retain(|item| item.path != path);
     })

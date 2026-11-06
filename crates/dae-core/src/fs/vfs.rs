@@ -1,4 +1,5 @@
 use super::error::FileSystemError;
+use super::ftp;
 use super::local::LocalBackend;
 use super::progress::FileOperationProgressReporterTrait;
 use super::sftp;
@@ -7,6 +8,7 @@ use super::types::{
     DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges,
     RecursivePropertyUpdateOutcome, SearchResponse,
 };
+use super::webdav;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -48,6 +50,8 @@ pub fn split_scheme(path: &str) -> Result<(Scheme, &str), FileSystemError> {
         "smb" => Scheme::Smb,
         "sftp" => Scheme::Sftp,
         "ftp" => Scheme::Ftp,
+        // Explicit FTPS: the same scheme, with `AUTH TLS` before the login.
+        "ftps" => Scheme::Ftp,
         "webdav" | "webdavs" => Scheme::WebDav,
         "cloud" => Scheme::Cloud,
         other => {
@@ -76,17 +80,25 @@ pub fn resolve(path: &str) -> Result<SharedBackend, FileSystemError> {
             let (_, rest) = split_scheme(path)?;
             sftp::open_backend(rest)
         }
-        Scheme::Ftp => Err(unsupported_scheme("FTP")),
-        Scheme::WebDav => Err(unsupported_scheme("WebDAV")),
+        Scheme::Ftp => {
+            let (_, rest) = split_scheme(path)?;
+            // `split_scheme` folds `ftp` and `ftps` into one scheme, so the
+            // spelling is what decides explicit TLS.
+            if path.len() >= 5 && path[..5].eq_ignore_ascii_case("ftps:") {
+                ftp::open_backend_with_tls(rest, ftp::TlsMode::Explicit)
+            } else {
+                ftp::open_backend(rest)
+            }
+        }
+        Scheme::WebDav => {
+            let (_, rest) = split_scheme(path)?;
+            webdav::open_backend(rest)
+        }
         Scheme::Cloud => {
             let (_, rest) = split_scheme(path)?;
             super::cloud::open_backend(rest)
         }
     }
-}
-
-fn unsupported_scheme(name: &str) -> FileSystemError {
-    FileSystemError::InvalidInput(format!("{name} storage is not supported in this build"))
 }
 
 /// The scheme serving `path`, without the remainder.
@@ -138,9 +150,10 @@ pub trait FileSystemBackend: Send + Sync {
         &self,
         root: &str,
         query: &str,
+        filters: &super::search::SearchFilters,
         is_current: &(dyn Fn() -> bool + Send + Sync),
     ) -> Result<SearchResponse, FileSystemError> {
-        let _ = (root, query, is_current);
+        let _ = (root, query, filters, is_current);
         Err(FileSystemError::InvalidInput("fs.search_local_only".into()))
     }
 
@@ -250,12 +263,9 @@ mod tests {
         let unknown = resolve("s3://bucket/data").err().expect("unknown scheme");
         assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
 
-        // SMB and SFTP resolve to connect attempts these days; ftp is a scheme
-        // that still has no backend.
-        let unregistered = resolve("ftp://nas/media")
-            .err()
-            .expect("no ftp backend yet");
-        assert!(matches!(unregistered, FileSystemError::InvalidInput(_)));
+        // Every scheme now has a backend: smb, sftp, ftp and webdav resolve to
+        // a connect attempt. Only an unknown scheme is a parse error, which the
+        // first assertion above covers.
     }
 
     #[test]

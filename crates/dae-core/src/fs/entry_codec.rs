@@ -53,8 +53,9 @@ pub const MAGIC: [u8; 4] = *b"DAE1";
 
 /// Bumped whenever a section is added, removed, or reordered. The reader
 /// rejects anything it does not know rather than mis-reading it. Version 2
-/// added the base blob and [`FLAG_PATH_WHOLE`].
-pub const VERSION: u16 = 2;
+/// added the base blob and [`FLAG_PATH_WHOLE`]; version 3 added the creation
+/// time column and its two flags.
+pub const VERSION: u16 = 3;
 
 /// Fixed header: magic, version, header flags, the three lengths, the base
 /// length, then reserved padding.
@@ -72,9 +73,9 @@ pub const HEADER_BASE_LEN_OFFSET: usize = 20;
 /// a final empty batch from a batch that has not arrived yet.
 pub const HEADER_FLAG_FINAL: u16 = 1 << 0;
 
-/// Per-entry bytes outside the string blobs: kind, flags, modified, size, and
-/// one offset each for the name and the path.
-pub const FIXED_BYTES_PER_ENTRY: usize = 1 + 1 + 8 + 8 + 4 + 4;
+/// Per-entry bytes outside the string blobs: kind, flags, modified, created,
+/// size, and one offset each for the name and the path.
+pub const FIXED_BYTES_PER_ENTRY: usize = 1 + 1 + 8 + 8 + 8 + 4 + 4;
 
 /// Both offset tables carry one entry past the last one — that trailing offset
 /// is what makes a string `i` the slice `[offsets[i], offsets[i + 1])`. So a
@@ -87,6 +88,11 @@ pub const FLAG_READ_ONLY: u8 = 1 << 1;
 pub const FLAG_HAS_MODIFIED_AT: u8 = 1 << 2;
 pub const FLAG_HAS_SIZE: u8 = 1 << 3;
 
+/// The creation column carries a value.
+pub const FLAG_HAS_CREATED_AT: u8 = 1 << 5;
+/// The value is `ctime` standing in for a birth time (Linux without
+/// `STATX_BTIME`). Kept beside the value so the view can label it.
+pub const FLAG_CREATED_FALLBACK: u8 = 1 << 6;
 /// The entry's path blob slice is its whole spelling rather than a suffix of it.
 /// Set for the handful of rows that do not live under the packet's base — a
 /// patched row from another directory, a listing whose spelling of that
@@ -146,6 +152,7 @@ pub struct Layout {
     pub kinds: usize,
     pub flags: usize,
     pub modified: usize,
+    pub created: usize,
     pub sizes: usize,
     pub name_offsets: usize,
     pub path_offsets: usize,
@@ -163,19 +170,15 @@ pub struct Layout {
 impl Layout {
     /// `None` when the four lengths describe a layout that cannot fit in
     /// memory, which is what a corrupt or hostile header looks like.
-    pub fn new(
-        count: usize,
-        names_len: usize,
-        paths_len: usize,
-        base_len: usize,
-    ) -> Option<Self> {
+    pub fn new(count: usize, names_len: usize, paths_len: usize, base_len: usize) -> Option<Self> {
         let eight_per_entry = count.checked_mul(8)?;
         let four_per_entry = count.checked_add(1)?.checked_mul(4)?;
 
         let kinds = HEADER_LEN;
         let flags = kinds.checked_add(count)?;
         let modified = flags.checked_add(count)?;
-        let sizes = modified.checked_add(eight_per_entry)?;
+        let created = modified.checked_add(eight_per_entry)?;
+        let sizes = created.checked_add(eight_per_entry)?;
         let name_offsets = sizes.checked_add(eight_per_entry)?;
         let path_offsets = name_offsets.checked_add(four_per_entry)?;
         let names = path_offsets.checked_add(four_per_entry)?;
@@ -186,6 +189,7 @@ impl Layout {
             kinds,
             flags,
             modified,
+            created,
             sizes,
             name_offsets,
             path_offsets,
@@ -211,6 +215,8 @@ pub struct ListingRow {
     pub path: Option<String>,
     pub kind: EntryKind,
     pub modified_at: Option<u64>,
+    pub created_at: Option<u64>,
+    pub created_fallback: bool,
     pub size: Option<u64>,
     pub hidden: bool,
     pub read_only: bool,
@@ -232,6 +238,8 @@ impl ListingRow {
             path,
             kind: self.kind,
             modified_at: self.modified_at,
+            created_at: self.created_at,
+            created_fallback: self.created_fallback,
             size: self.size,
             hidden: self.hidden,
             read_only: self.read_only,
@@ -246,6 +254,8 @@ impl From<&DirectoryEntry> for ListingRow {
             path: Some(entry.path.clone()),
             kind: entry.kind,
             modified_at: entry.modified_at,
+            created_at: entry.created_at,
+            created_fallback: entry.created_fallback,
             size: entry.size,
             hidden: entry.hidden,
             read_only: entry.read_only,
@@ -346,6 +356,12 @@ pub fn pack_with_header_flags(rows: &[ListingRow], base: &str, header_flags: u16
         if row.size.is_some() {
             flags |= FLAG_HAS_SIZE;
         }
+        if row.created_at.is_some() {
+            flags |= FLAG_HAS_CREATED_AT;
+        }
+        if row.created_fallback {
+            flags |= FLAG_CREATED_FALLBACK;
+        }
         if locations[index].1 {
             flags |= FLAG_PATH_WHOLE;
         }
@@ -357,6 +373,11 @@ pub fn pack_with_header_flags(rows: &[ListingRow], base: &str, header_flags: u16
             &mut buffer,
             layout.modified + index * 8,
             row.modified_at.unwrap_or(0),
+        );
+        write_u64(
+            &mut buffer,
+            layout.created + index * 8,
+            row.created_at.unwrap_or(0),
         );
         write_u64(&mut buffer, layout.sizes + index * 8, row.size.unwrap_or(0));
 
@@ -472,7 +493,8 @@ impl<'a> Packet<'a> {
         let names_len = read_u32(bytes, 12) as usize;
         let paths_len = read_u32(bytes, 16) as usize;
         let base_len = read_u32(bytes, HEADER_BASE_LEN_OFFSET) as usize;
-        let layout = Layout::new(count, names_len, paths_len, base_len).ok_or(CodecError::TooLarge)?;
+        let layout =
+            Layout::new(count, names_len, paths_len, base_len).ok_or(CodecError::TooLarge)?;
 
         if bytes.len() < layout.byte_len {
             return Err(CodecError::Truncated {
@@ -569,6 +591,19 @@ impl<'a> Packet<'a> {
         (flags & FLAG_HAS_SIZE != 0).then(|| read_u64(self.bytes, self.layout.sizes + index * 8))
     }
 
+    /// The creation time, when the packet carries one.
+    pub fn created_at(&self, index: usize) -> Option<u64> {
+        let flags = self.flags(index)?;
+        (flags & FLAG_HAS_CREATED_AT != 0)
+            .then(|| read_u64(self.bytes, self.layout.created + index * 8))
+    }
+
+    /// Whether [`Self::created_at`] is `ctime` standing in for a birth time.
+    pub fn created_is_fallback(&self, index: usize) -> bool {
+        self.flags(index)
+            .is_some_and(|flags| flags & FLAG_CREATED_FALLBACK != 0)
+    }
+
     pub fn is_hidden(&self, index: usize) -> bool {
         self.flags(index)
             .is_some_and(|flags| flags & FLAG_HIDDEN != 0)
@@ -591,6 +626,8 @@ impl<'a> Packet<'a> {
             path: self.path(index)?.into_owned(),
             kind: self.kind(index)?,
             modified_at: self.modified_at(index),
+            created_at: self.created_at(index),
+            created_fallback: self.created_is_fallback(index),
             size: self.size(index),
             hidden: self.is_hidden(index),
             read_only: self.is_read_only(index),
@@ -682,6 +719,8 @@ mod tests {
             path: format!("{BASE}{name}"),
             kind,
             modified_at: Some(1_700_000_000_000),
+            created_at: Some(1_700_000_000_500),
+            created_fallback: false,
             size: Some(4_096),
             hidden: false,
             read_only: false,
@@ -707,6 +746,11 @@ mod tests {
         assert_eq!(actual.path, expected.path, "path");
         assert_eq!(actual.kind, expected.kind, "kind");
         assert_eq!(actual.modified_at, expected.modified_at, "modified_at");
+        assert_eq!(actual.created_at, expected.created_at, "created_at");
+        assert_eq!(
+            actual.created_fallback, expected.created_fallback,
+            "created_fallback"
+        );
         assert_eq!(actual.size, expected.size, "size");
         assert_eq!(actual.hidden, expected.hidden, "hidden");
         assert_eq!(actual.read_only, expected.read_only, "read_only");
@@ -729,6 +773,8 @@ mod tests {
                 path: "C:/code/dae/项目文档".to_owned(),
                 kind: EntryKind::File,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: None,
                 hidden: true,
                 read_only: false,
@@ -738,6 +784,8 @@ mod tests {
                 path: "C:/code/dae/🦀-emoji".to_owned(),
                 kind: EntryKind::Symlink,
                 modified_at: Some(0),
+                created_at: Some(0),
+                created_fallback: true,
                 size: Some(0),
                 hidden: false,
                 read_only: true,
@@ -747,6 +795,8 @@ mod tests {
                 path: "C:/code/dae/e\u{301}combining".to_owned(),
                 kind: EntryKind::Other,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: Some(u64::MAX),
                 hidden: true,
                 read_only: true,
@@ -862,7 +912,8 @@ mod tests {
         assert_eq!(packet.base(), "");
         assert_eq!(
             buffer.len(),
-            HEADER_LEN + TRAILING_OFFSETS_LEN
+            HEADER_LEN
+                + TRAILING_OFFSETS_LEN
                 + FIXED_BYTES_PER_ENTRY * entries.len()
                 + entries.iter().map(|entry| entry.name.len()).sum::<usize>()
                 + entries.iter().map(|entry| entry.path.len()).sum::<usize>(),
@@ -896,6 +947,8 @@ mod tests {
             path: "C:/code/dae/no-metadata".to_owned(),
             kind: EntryKind::File,
             modified_at: None,
+            created_at: None,
+            created_fallback: false,
             size: None,
             hidden: false,
             read_only: false,
@@ -919,6 +972,8 @@ mod tests {
             path: "zero".to_owned(),
             kind: EntryKind::File,
             modified_at: Some(0),
+            created_at: None,
+            created_fallback: false,
             size: Some(0),
             hidden: false,
             read_only: false,
@@ -1363,6 +1418,8 @@ mod tests {
                     path,
                     kind,
                     modified_at: (index % 13 != 0).then_some(1_700_000_000_000 + index as u64 * 37),
+                    created_at: None,
+                    created_fallback: false,
                     size: (index % 11 != 3).then_some(index as u64 * 37),
                     hidden: index % 23 == 0,
                     read_only: index % 31 == 0,
@@ -1386,6 +1443,8 @@ mod tests {
                 path: "C:/code/dae/项目文档".to_owned(),
                 kind: EntryKind::File,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: None,
                 hidden: true,
                 read_only: false,
@@ -1395,6 +1454,8 @@ mod tests {
                 path: "C:/code/dae/🦀".to_owned(),
                 kind: EntryKind::Symlink,
                 modified_at: Some(0),
+                created_at: None,
+                created_fallback: false,
                 size: Some(0),
                 hidden: false,
                 read_only: true,
@@ -1404,6 +1465,8 @@ mod tests {
                 path: "C:/code/dae/e\u{301}".to_owned(),
                 kind: EntryKind::Other,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: Some(u64::MAX),
                 hidden: true,
                 read_only: true,
@@ -1413,6 +1476,8 @@ mod tests {
                 path: "C:/code/dae".to_owned(),
                 kind: EntryKind::Directory,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: None,
                 hidden: false,
                 read_only: false,
@@ -1499,9 +1564,7 @@ mod tests {
         println!(
             "  paths, base     {paths_based:?}  ({path_bytes} bytes, {BASE} prepended per row)"
         );
-        println!(
-            "  paths, whole    {paths_unbased:?}  ({borrowed_bytes} bytes, borrowed)"
-        );
+        println!("  paths, whole    {paths_unbased:?}  ({borrowed_bytes} bytes, borrowed)");
         println!(
             "  all entries     {all_entries:?}  ({} materialised)",
             materialised.len()

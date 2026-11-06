@@ -94,6 +94,16 @@ fn collect_system_places(candidates: [(PlaceKind, Option<PathBuf>); 7]) -> Vec<S
         .collect()
 }
 
+/// Root paths of the mounted local volumes, in the order the sidebar shows
+/// them. "Search all volumes" walks these; a remote backend is never included,
+/// because name search has no remote implementation.
+pub fn volume_roots() -> Vec<String> {
+    list_disks_sync()
+        .into_iter()
+        .map(|volume| volume.mount_point)
+        .collect()
+}
+
 /// See `commands::list_disks` for the contract; this half is engine-free.
 pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
     tokio::task::spawn_blocking(list_disks_sync)

@@ -15,13 +15,16 @@
 
 pub use crate::{error, types};
 
+pub mod actions;
 pub mod archive;
 pub mod atomic;
 pub mod clipboard;
 pub mod cloud;
 pub mod connections;
 pub mod directory_size;
+pub mod drives;
 pub mod entry_codec;
+pub mod ftp;
 pub mod git;
 pub mod hashing;
 pub mod icons;
@@ -37,19 +40,22 @@ pub mod preview;
 pub mod progress;
 pub mod recents;
 pub mod search;
+pub mod security;
 pub mod service;
-pub mod shell_commands;
 pub mod sftp;
+pub mod shell_commands;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod smb;
 pub mod spaces;
+pub mod tags;
 pub mod thumbnails;
 pub mod transfer;
 pub mod trash_view;
 pub mod undo;
 pub mod vfs;
 pub mod watch;
+pub mod webdav;
 #[cfg(windows)]
 pub mod windows_image;
 

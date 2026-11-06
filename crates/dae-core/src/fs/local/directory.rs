@@ -264,9 +264,7 @@ pub fn open_canonical_listing(
 
     let mut cursor = DirectoryListingCursor {
         #[cfg(windows)]
-        iterator: crate::fs::local::windows_directory::WindowsDirectoryEntries::open(
-            &path,
-        )?,
+        iterator: crate::fs::local::windows_directory::WindowsDirectoryEntries::open(&path)?,
         #[cfg(not(windows))]
         iterator: fs::read_dir(&path)?,
         base: entry_codec::base_of(&display),
@@ -316,7 +314,10 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
 #[cfg_attr(windows, allow(dead_code))]
 fn listing_row(entry: fs::DirEntry) -> Option<ListingRow> {
     let metadata = entry.metadata().ok()?;
-    Some(row_from(entry.file_name().to_string_lossy().into_owned(), metadata))
+    Some(row_from(
+        entry.file_name().to_string_lossy().into_owned(),
+        metadata,
+    ))
 }
 
 /// The row for a child whose name and metadata are in hand.
@@ -324,12 +325,15 @@ fn row_from(name: String, metadata: fs::Metadata) -> ListingRow {
     let kind = entry_kind(metadata.file_type());
     let size = matches!(kind, EntryKind::File).then_some(metadata.len());
     let (hidden, read_only) = entry_state_flags(&metadata, &name);
+    let (created_at, created_fallback) = created_at_millis(&metadata);
 
     ListingRow {
         name,
         path: None,
         kind,
         modified_at: modified_at_millis(&metadata),
+        created_at,
+        created_fallback,
         size,
         hidden,
         read_only,
@@ -383,10 +387,7 @@ pub fn stat_named_children(
     // is exactly the batch worth spreading over threads.
     let results: Vec<Result<Option<DirectoryEntry>, FileSystemError>> =
         if batch_is_worth_splitting(names.len()) {
-            names
-                .into_par_iter()
-                .map(|name| stat_one(&name))
-                .collect()
+            names.into_par_iter().map(|name| stat_one(&name)).collect()
         } else {
             names.iter().map(|name| stat_one(name)).collect()
         };
@@ -403,6 +404,35 @@ pub fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
         .as_millis()
         .try_into()
         .ok()
+}
+
+/// The creation time as milliseconds since the Unix epoch, and whether it is
+/// the `ctime` fallback rather than a real birth time.
+///
+/// Windows and macOS report a birth time directly. On Linux the answer depends
+/// on the file system: `statx` exposes `STATX_BTIME` on ext4/xfs/btrfs, and
+/// where it is absent the inode change time is the closest thing the kernel
+/// keeps. The caller gets the flag so the UI can label the fallback instead of
+/// claiming the file was created when its metadata last changed.
+pub fn created_at_millis(metadata: &fs::Metadata) -> (Option<u64>, bool) {
+    if let Ok(created) = metadata.created()
+        && let Ok(elapsed) = created.duration_since(std::time::UNIX_EPOCH)
+        && let Ok(millis) = u64::try_from(elapsed.as_millis())
+    {
+        return (Some(millis), false);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let millis =
+            i128::from(metadata.ctime()) * 1_000 + i128::from(metadata.ctime_nsec()) / 1_000_000;
+        if millis >= 0 {
+            return (u64::try_from(millis).ok(), true);
+        }
+    }
+
+    (None, false)
 }
 
 pub fn entry_kind(file_type: fs::FileType) -> EntryKind {
@@ -729,7 +759,10 @@ mod tests {
                 .find(|entry| &entry.name == name)
                 .expect("listed entry");
 
-            assert_eq!(&entry.path, &original.path, "path spelling is the match key");
+            assert_eq!(
+                &entry.path, &original.path,
+                "path spelling is the match key"
+            );
             assert_eq!(&entry.kind, &original.kind, "a directory stays a directory");
             assert_eq!(&entry.name, &original.name);
             assert_eq!(entry.size, original.size);
@@ -744,7 +777,10 @@ mod tests {
         with_gone.push("no-such-file.txt".to_owned());
         let patched = stat_named_children(&canonical, with_gone).expect("stat with a missing name");
         assert!(
-            patched.last().expect("an answer for the missing name").is_none(),
+            patched
+                .last()
+                .expect("an answer for the missing name")
+                .is_none(),
             "a name that is not on disk is reported as gone"
         );
 

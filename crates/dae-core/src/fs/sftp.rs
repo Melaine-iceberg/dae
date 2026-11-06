@@ -288,6 +288,9 @@ impl SftpBackend {
                     path: parsed.join(&name),
                     kind,
                     modified_at: modified_millis(&attrs),
+                    // SFTP v3 exposes no birth time.
+                    created_at: None,
+                    created_fallback: false,
                     size: (kind == EntryKind::File).then(|| attrs.size.unwrap_or(0)),
                     hidden: name.starts_with('.'),
                     read_only: attrs.permissions.is_some_and(|mode| mode & 0o200 == 0),

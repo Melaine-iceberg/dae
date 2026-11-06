@@ -18,11 +18,7 @@ pub use crate::progress::{FileOperationKind, FileOperationPhase};
 
 const FILE_OPERATION_PROGRESS_INTERVAL: Duration = Duration::from_millis(60);
 
-pub fn emit_preparing(
-    host: &dyn Host,
-    operation_id: &str,
-    operation: FileOperationKind,
-) {
+pub fn emit_preparing(host: &dyn Host, operation_id: &str, operation: FileOperationKind) {
     emit_file_operation_progress(
         host,
         operation_id,
@@ -61,11 +57,7 @@ pub struct FileOperationProgressReporter {
 }
 
 impl FileOperationProgressReporter {
-    pub fn new(
-        host: Arc<dyn Host>,
-        operation_id: String,
-        operation: FileOperationKind,
-    ) -> Self {
+    pub fn new(host: Arc<dyn Host>, operation_id: String, operation: FileOperationKind) -> Self {
         Self {
             host,
             operation_id,
@@ -200,12 +192,17 @@ mod tests {
             panic!("expected a progress event");
         };
         assert!(
-            current_path.as_deref().is_some_and(|p| p.ends_with("a.txt")),
+            current_path
+                .as_deref()
+                .is_some_and(|p| p.ends_with("a.txt")),
             "got {current_path:?}"
         );
 
         // `finish` clamps to the total rather than trusting the last advance.
-        let UiEvent::FileOperationProgress { completed, total, .. } = &events[2] else {
+        let UiEvent::FileOperationProgress {
+            completed, total, ..
+        } = &events[2]
+        else {
             panic!("expected a progress event");
         };
         assert_eq!(*completed, 3);

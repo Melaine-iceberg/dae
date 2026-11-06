@@ -40,9 +40,7 @@ pub fn is_video_extension(extension: &str) -> bool {
 }
 
 /// See `commands::read_media_preview` for the contract; this half is engine-free.
-pub async fn read_media_preview(
-    path: String,
-) -> Result<MediaPreview, FileSystemError> {
+pub async fn read_media_preview(path: String) -> Result<MediaPreview, FileSystemError> {
     tokio::task::spawn_blocking(move || read_media_preview_sync(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -1157,6 +1155,164 @@ fn parse_avi(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
         preview.height = height;
     }
     Ok(preview)
+}
+
+/// The EXIF fields the preview pane shows for a photo. Everything is optional:
+/// a screenshot has no camera, a scanned photo has no GPS, and an EXIF-less
+/// JPEG still previews as an image.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageExif {
+    /// "Make Model", with a duplicated make folded away.
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    /// `DateTimeOriginal`, normalized to `YYYY-MM-DD HH:MM:SS`.
+    pub taken: Option<String>,
+    /// `1/250 s`, `2.8` → `f/2.8`, and the focal length in millimetres.
+    pub exposure: Option<String>,
+    pub aperture: Option<String>,
+    pub iso: Option<String>,
+    pub focal_length: Option<String>,
+    /// Pixel dimensions when the file records them.
+    pub dimensions: Option<(u32, u32)>,
+    /// Decimal degrees, signed for south/west.
+    pub gps: Option<String>,
+}
+
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "jpe", "jfif", "tif", "tiff", "png", "webp", "heic", "heif", "avif",
+];
+
+pub fn is_image_extension(extension: &str) -> bool {
+    IMAGE_EXTENSIONS.contains(&extension)
+}
+
+/// True when `name`'s extension is one the EXIF reader understands. The check
+/// is on the name rather than the path because cloud paths end in provider
+/// ids, and the preview resolves the display name first.
+pub fn is_image_path(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| is_image_extension(&extension.to_ascii_lowercase()))
+}
+
+/// Reads the image's EXIF block. A file without one is not an error the pane
+/// should show; the caller keeps the image and drops the metadata block.
+pub async fn read_image_exif(path: String) -> Result<ImageExif, FileSystemError> {
+    tokio::task::spawn_blocking(move || read_image_exif_sync(&path))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+fn read_image_exif_sync(path_string: &str) -> Result<ImageExif, FileSystemError> {
+    use exif::{In, Tag};
+
+    let path = Path::new(path_string);
+    let file = File::open(path).map_err(FileSystemError::from)?;
+    let mut reader = std::io::BufReader::new(file);
+    let exif = exif::Reader::new()
+        .read_from_container(&mut reader)
+        .map_err(|error| FileSystemError::Unsupported(format!("No EXIF metadata: {error}")))?;
+
+    let text = |tag: Tag| -> Option<String> {
+        let field = exif.get_field(tag, In::PRIMARY)?;
+        let value = field.display_value().with_unit(&exif).to_string();
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    };
+    let raw = |tag: Tag| -> Option<String> {
+        let field = exif.get_field(tag, In::PRIMARY)?;
+        let value = field.display_value().to_string();
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    };
+    let uint = |tag: Tag| -> Option<u32> {
+        exif.get_field(tag, In::PRIMARY)?.value.get_uint(0)
+    };
+
+    let make = raw(Tag::Make);
+    let model = raw(Tag::Model);
+    let camera = match (make, model) {
+        (Some(make), Some(model)) if model.starts_with(&make) => Some(model),
+        (Some(make), Some(model)) => Some(format!("{make} {model}")),
+        (Some(one), None) | (None, Some(one)) => Some(one),
+        (None, None) => None,
+    };
+
+    let aperture = raw(Tag::FNumber).map(|value| {
+        if value.starts_with("f/") {
+            value
+        } else {
+            format!("f/{value}")
+        }
+    });
+
+    let gps = match (
+        gps_coordinate(&exif, Tag::GPSLatitude, Tag::GPSLatitudeRef, b'S'),
+        gps_coordinate(&exif, Tag::GPSLongitude, Tag::GPSLongitudeRef, b'W'),
+    ) {
+        (Some(latitude), Some(longitude)) => Some(format!("{latitude:.5}, {longitude:.5}")),
+        _ => None,
+    };
+
+    let dimensions = match (
+        uint(Tag::PixelXDimension),
+        uint(Tag::PixelYDimension),
+    ) {
+        (Some(width), Some(height)) if width > 0 && height > 0 => Some((width, height)),
+        _ => None,
+    };
+
+    Ok(ImageExif {
+        camera,
+        lens: raw(Tag::LensModel),
+        taken: raw(Tag::DateTimeOriginal).map(|value| normalize_exif_date(&value)),
+        exposure: text(Tag::ExposureTime),
+        aperture,
+        iso: raw(Tag::PhotographicSensitivity),
+        focal_length: text(Tag::FocalLength),
+        dimensions,
+        gps,
+    })
+}
+
+/// EXIF dates are `YYYY:MM:DD HH:MM:SS`; the first two separators are date
+/// separators, and the time's own colons stay.
+fn normalize_exif_date(value: &str) -> String {
+    let mut out = value.to_owned();
+    for _ in 0..2 {
+        if let Some(index) = out.find(':') {
+            out.replace_range(index..index + 1, "-");
+        }
+    }
+    out
+}
+
+/// One GPS coordinate in decimal degrees. The reference tag decides the sign;
+/// a missing reference leaves the value positive, which is the northern and
+/// eastern hemisphere.
+fn gps_coordinate(exif: &exif::Exif, value: exif::Tag, reference: exif::Tag, negative: u8) -> Option<f64> {
+    use exif::{In, Value};
+
+    let field = exif.get_field(value, In::PRIMARY)?;
+    let Value::Rational(parts) = &field.value else {
+        return None;
+    };
+    if parts.len() < 3 {
+        return None;
+    }
+    let mut degrees = parts[0].to_f64() + parts[1].to_f64() / 60.0 + parts[2].to_f64() / 3600.0;
+
+    if let Some(field) = exif.get_field(reference, In::PRIMARY)
+        && let Value::Ascii(values) = &field.value
+        && let Some(bytes) = values.first()
+        && bytes.first() == Some(&negative)
+    {
+        degrees = -degrees;
+    }
+
+    Some(degrees)
 }
 
 #[cfg(test)]

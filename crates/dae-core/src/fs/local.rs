@@ -7,7 +7,7 @@ mod directory;
 mod ignores;
 mod operations;
 mod properties;
-mod search;
+pub(crate) mod search;
 
 #[cfg(windows)]
 mod windows_directory;
@@ -56,9 +56,10 @@ impl FileSystemBackend for LocalBackend {
         &self,
         root: &str,
         query: &str,
+        filters: &super::search::SearchFilters,
         is_current: &(dyn Fn() -> bool + Send + Sync),
     ) -> Result<SearchResponse, FileSystemError> {
-        search::search_directory_sync(PathBuf::from(root), query, is_current)
+        search::search_directory_sync(PathBuf::from(root), query, filters, is_current)
     }
 
     fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {

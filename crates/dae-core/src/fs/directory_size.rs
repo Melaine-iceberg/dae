@@ -90,9 +90,7 @@ pub fn start_directory_size_calculation(
 }
 
 /// See `commands::cancel_directory_size_calculation` for the contract; this half is engine-free.
-pub fn cancel_directory_size_calculation(
-    operation_id: String,
-)  {
+pub fn cancel_directory_size_calculation(operation_id: String) {
     state().cancel(&operation_id);
 }
 
@@ -105,12 +103,7 @@ fn state() -> &'static DirectorySizeState {
 
 /// Sums every file under `directory` with a parallel walk, streaming partial
 /// totals. Symlinks are never followed, so symlink loops cannot hang a scan.
-fn scan_directory(
-    host: &dyn Host,
-    operation_id: &str,
-    directory: &Path,
-    cancelled: &AtomicBool,
-) {
+fn scan_directory(host: &dyn Host, operation_id: &str, directory: &Path, cancelled: &AtomicBool) {
     let last_emit_ms = AtomicU64::new(0);
     let total = walk_directory_size(directory, cancelled, &|current| {
         emit_size(host, operation_id, directory, current, &last_emit_ms, false);
@@ -119,6 +112,14 @@ fn scan_directory(
     if !cancelled.load(AtomicOrdering::Relaxed) {
         emit_size(host, operation_id, directory, total, &last_emit_ms, true);
     }
+}
+
+/// Sums one directory without streaming progress, for callers that want the
+/// number for a whole selection at once (the listing's "calculate size").
+/// The cancellation flag is checked per entry, so a cancelled walk returns the
+/// partial total it had reached.
+pub fn measure_directory(directory: &Path, cancelled: &AtomicBool) -> u64 {
+    walk_directory_size(directory, cancelled, &|_| {})
 }
 
 /// Walks `directory` in parallel and sums the bytes of every regular file,

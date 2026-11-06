@@ -269,7 +269,9 @@ fn row_from_find_data(data: &WIN32_FIND_DATAW) -> ListingRow {
         // A child of the directory being listed: the packet names the base once.
         path: None,
         kind,
-        modified_at: modified_at_millis(&data.ftLastWriteTime),
+        modified_at: filetime_millis(&data.ftLastWriteTime),
+        created_at: filetime_millis(&data.ftCreationTime),
+        created_fallback: false,
         size,
         hidden: attributes & FILE_ATTRIBUTE_HIDDEN.0 != 0,
         read_only: attributes & FILE_ATTRIBUTE_READONLY.0 != 0,
@@ -288,10 +290,11 @@ fn name_of(data: &WIN32_FIND_DATAW) -> String {
     String::from_utf16_lossy(&data.cFileName[..end])
 }
 
-/// `Metadata::modified()` as milliseconds since the Unix epoch — the same answer
-/// `local::directory::modified_at_millis` computes from the same `FILETIME`,
-/// including the `None` for a timestamp before the epoch.
-fn modified_at_millis(written: &FILETIME) -> Option<u64> {
+/// A `FILETIME` as milliseconds since the Unix epoch — the same answer
+/// `local::directory::modified_at_millis` computes from `Metadata`, including
+/// the `None` for a timestamp before the epoch. The find data carries the
+/// creation time in the same shape, so both columns go through this.
+fn filetime_millis(written: &FILETIME) -> Option<u64> {
     let intervals = ((written.dwHighDateTime as u64) << 32) | written.dwLowDateTime as u64;
 
     intervals
@@ -502,12 +505,9 @@ mod tests {
             dwHighDateTime: (intervals >> 32) as u32,
         };
 
-        assert_eq!(modified_at_millis(&at(FILETIME_UNIX_EPOCH)), Some(0));
-        assert_eq!(
-            modified_at_millis(&at(FILETIME_UNIX_EPOCH + 12_345)),
-            Some(1)
-        );
-        assert_eq!(modified_at_millis(&at(FILETIME_UNIX_EPOCH - 1)), None);
-        assert_eq!(modified_at_millis(&at(0)), None);
+        assert_eq!(filetime_millis(&at(FILETIME_UNIX_EPOCH)), Some(0));
+        assert_eq!(filetime_millis(&at(FILETIME_UNIX_EPOCH + 12_345)), Some(1));
+        assert_eq!(filetime_millis(&at(FILETIME_UNIX_EPOCH - 1)), None);
+        assert_eq!(filetime_millis(&at(0)), None);
     }
 }

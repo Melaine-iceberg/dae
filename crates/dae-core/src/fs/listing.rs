@@ -38,7 +38,6 @@ pub const FIRST_BATCH_SIZE: usize = 512;
 /// grows large enough to stall the IPC.
 pub const MAX_BATCH_SIZE: usize = 8192;
 
-
 /// A batch of already-read listing rows, ready for delivery.
 pub struct Batch {
     pub stream_id: String,
@@ -133,9 +132,7 @@ impl DirectoryListingState {
 }
 
 /// See `commands::cancel_directory_listing` for the contract; this half is engine-free.
-pub fn cancel_directory_listing(
-    stream_id: String,
-)  {
+pub fn cancel_directory_listing(stream_id: String) {
     state().cancel(&stream_id);
 }
 
@@ -314,8 +311,8 @@ fn next_batch_size(current: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::EntryKind;
     use crate::host::testing::RecordingHost;
+    use crate::types::EntryKind;
     use std::fs;
 
     /// The events target feeds the sidebar and the Miller columns. It has to
@@ -331,6 +328,8 @@ mod tests {
             path: None,
             kind: EntryKind::File,
             modified_at: Some(1),
+            created_at: Some(1),
+            created_fallback: false,
             size: Some(2),
             hidden: false,
             read_only: false,

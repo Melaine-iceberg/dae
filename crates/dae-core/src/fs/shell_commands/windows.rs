@@ -933,12 +933,12 @@ fn build_menu(
             continue;
         }
 
-        let icon_data_url =
-            take_pwstr(unsafe { command.GetIcon(&array) }.ok()).and_then(|spec| cache.icon(&spec))
-                // A verb may declare no icon at all. The app's own logo is a
-                // better answer than an anonymous row, and it is what Explorer
-                // shows for a packaged command that has none.
-                .or_else(|| app_icon.clone());
+        let icon_data_url = take_pwstr(unsafe { command.GetIcon(&array) }.ok())
+            .and_then(|spec| cache.icon(&spec))
+            // A verb may declare no icon at all. The app's own logo is a
+            // better answer than an anonymous row, and it is what Explorer
+            // shows for a packaged command that has none.
+            .or_else(|| app_icon.clone());
 
         rows.push((
             app.clone(),
@@ -1349,8 +1349,7 @@ mod tests {
 
         for (what, primary) in [("file", file), ("directory", directory)] {
             let paths = vec![primary.clone()];
-            let items = block_on(list(paths, primary))
-                .expect("listing shell commands");
+            let items = block_on(list(paths, primary)).expect("listing shell commands");
             println!("\n{what}: {} commands", items.len());
             for item in items {
                 println!(
@@ -1384,8 +1383,7 @@ mod tests {
 
         let paths = vec![primary.clone()];
         let started = std::time::Instant::now();
-        let items =
-            block_on(list(paths, primary)).expect("listing shell commands");
+        let items = block_on(list(paths, primary)).expect("listing shell commands");
         let first_list = started.elapsed();
 
         println!(

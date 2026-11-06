@@ -50,8 +50,8 @@ use super::desktop_entry::{
 };
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
 use crate::error::FileSystemError;
-use crate::xdg::data_roots;
 use crate::fs::icons::named_icon_data_url;
+use crate::xdg::data_roots;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};

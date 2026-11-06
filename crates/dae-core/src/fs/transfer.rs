@@ -1080,9 +1080,10 @@ mod tests {
             &self,
             root: &str,
             query: &str,
+            filters: &crate::fs::search::SearchFilters,
             is_current: &(dyn Fn() -> bool + Send + Sync),
         ) -> Result<SearchResponse, FileSystemError> {
-            self.inner.search(root, query, is_current)
+            self.inner.search(root, query, filters, is_current)
         }
 
         fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {
@@ -1263,6 +1264,8 @@ mod tests {
             path: root.join("file.txt").to_string_lossy().into_owned(),
             kind: EntryKind::Symlink,
             modified_at: None,
+            created_at: None,
+            created_fallback: false,
             size: None,
             hidden: false,
             read_only: false,

@@ -336,9 +336,14 @@ pub(crate) fn split_authority(rest: &str) -> (&str, Option<&str>) {
     if let Some(stripped) = rest.strip_prefix('[')
         && let Some(end) = stripped.find(']')
     {
-        let host = &rest[..end + 2];
-        let remainder = &rest[end + 2..];
-        return (host, remainder.strip_prefix('/'));
+        // `[::1]:2121/pub`: the port belongs to the authority, so the split is
+        // at the first '/', not at the closing bracket. Splitting at the
+        // bracket would hand ":2121/pub" to the path parser and lose the port.
+        let after = &rest[end + 2..];
+        return match after.find('/') {
+            Some(slash) => (&rest[..end + 2 + slash], Some(&rest[end + 3 + slash..])),
+            None => (rest, None),
+        };
     }
 
     match rest.split_once('/') {
@@ -554,6 +559,8 @@ impl FileSystemBackend for SmbBackend {
                     name,
                     kind: EntryKind::Directory,
                     modified_at: None,
+                    created_at: None,
+                    created_fallback: false,
                     size: None,
                     // The smb2 crate exposes no DOS attributes; stay neutral.
                     hidden: false,
@@ -576,6 +583,9 @@ impl FileSystemBackend for SmbBackend {
                         EntryKind::File
                     },
                     modified_at: modified_millis(entry.modified),
+                    // SMB carries no creation time through this client.
+                    created_at: None,
+                    created_fallback: false,
                     size: if entry.is_directory {
                         None
                     } else {
@@ -955,9 +965,7 @@ fn map_smb_error(error: smb2::Error) -> FileSystemError {
 }
 
 /// See `commands::test_connection` for the contract; this half is engine-free.
-pub async fn test_connection(
-    input: SaveConnectionInput,
-) -> Result<(), FileSystemError> {
+pub async fn test_connection(input: SaveConnectionInput) -> Result<(), FileSystemError> {
     tokio::task::spawn_blocking(move || {
         let host = input.host.trim().to_owned();
         if host.is_empty() {
@@ -982,10 +990,18 @@ pub async fn test_connection(
                 input.username.as_deref(),
                 input.password.as_deref(),
             ),
-            other => Err(FileSystemError::InvalidInput(format!(
-                "The {} protocol is not supported in this build yet",
-                other.as_str()
-            ))),
+            Protocol::Ftp => super::ftp::test_backend(
+                &host,
+                input.port,
+                input.username.as_deref(),
+                input.password.as_deref(),
+            ),
+            Protocol::WebDav => super::webdav::test_backend(
+                &host,
+                input.port,
+                input.username.as_deref(),
+                input.password.as_deref(),
+            ),
         }
     })
     .await

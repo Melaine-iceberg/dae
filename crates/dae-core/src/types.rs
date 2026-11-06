@@ -27,6 +27,13 @@ pub struct DirectoryEntry {
     pub path: String,
     pub kind: EntryKind,
     pub modified_at: Option<u64>,
+    /// Creation (birth) time. `None` when the backend cannot report one —
+    /// every remote backend, and archives. On Linux a file system without
+    /// `STATX_BTIME` falls back to `ctime` and sets [`Self::created_fallback`].
+    pub created_at: Option<u64>,
+    /// `created_at` is the inode change time standing in for a birth time.
+    /// The UI labels such values rather than presenting a fallback as fact.
+    pub created_fallback: bool,
     pub size: Option<u64>,
     /// OS hidden marker (DOS attribute on Windows, dot prefix on Unix-like
     /// systems). Views dim such entries and hide them entirely when the
@@ -489,6 +496,8 @@ mod tests {
                 path: "zeta.txt".into(),
                 kind: EntryKind::File,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: None,
                 hidden: false,
                 read_only: false,
@@ -498,6 +507,8 @@ mod tests {
                 path: "alpha".into(),
                 kind: EntryKind::Directory,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: None,
                 hidden: false,
                 read_only: false,
@@ -507,6 +518,8 @@ mod tests {
                 path: "Beta".into(),
                 kind: EntryKind::Directory,
                 modified_at: None,
+                created_at: None,
+                created_fallback: false,
                 size: None,
                 hidden: false,
                 read_only: false,

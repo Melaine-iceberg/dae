@@ -13,17 +13,17 @@ use super::types::{
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome};
 use super::vfs::{self, SharedBackend};
-use std::collections::HashSet;
 use crate::fs::listing::{BatchTarget, EventsTarget};
 use crate::host::Host;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// See `commands::get_home_directory` for the contract; this half is engine-free.
 pub fn get_home_directory() -> Result<String, FileSystemError> {
-    home_dir()
-        .map(|path| path_to_string(&path))
-        .ok_or_else(|| FileSystemError::Internal("the environment carries no home directory".into()))
+    home_dir().map(|path| path_to_string(&path)).ok_or_else(|| {
+        FileSystemError::Internal("the environment carries no home directory".into())
+    })
 }
 
 /// The OS home directory.
@@ -36,11 +36,13 @@ pub fn get_home_directory() -> Result<String, FileSystemError> {
 fn home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        std::env::var_os("USERPROFILE").map(PathBuf::from).or_else(|| {
-            let drive = std::env::var_os("HOMEDRIVE")?;
-            let path = std::env::var_os("HOMEPATH")?;
-            Some(PathBuf::from(drive).join(path))
-        })
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(|| {
+                let drive = std::env::var_os("HOMEDRIVE")?;
+                let path = std::env::var_os("HOMEPATH")?;
+                Some(PathBuf::from(drive).join(path))
+            })
     }
     #[cfg(not(windows))]
     {
@@ -128,13 +130,7 @@ pub async fn read_directory_into(
     let listing_host = Arc::clone(&host);
     let listing_path = PathBuf::from(path);
     tokio::task::spawn_blocking(move || {
-        listing::open_streamed_listing(
-            listing_host,
-            listing_path,
-            stream_id,
-            watcher_id,
-            target,
-        )
+        listing::open_streamed_listing(listing_host, listing_path, stream_id, watcher_id, target)
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -151,8 +147,7 @@ pub async fn rename_entry(
         if let Some(to) = undo::renamed_path(&path, &new_name)
             && to != path
         {
-            undo::state()
-                .record(host.as_ref(), Operation::Rename { from: path, to });
+            undo::state().record(host.as_ref(), Operation::Rename { from: path, to });
         }
         Ok(())
     })
@@ -214,8 +209,11 @@ pub async fn rename_entries_batch(
             }
         }
 
-        let progress =
-            FileOperationProgressReporter::new(Arc::clone(&host), operation_id, FileOperationKind::Move);
+        let progress = FileOperationProgressReporter::new(
+            Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Move,
+        );
         let applied = undo::apply_rename_pairs(&pairs, &progress)?;
 
         // Report destinations in request order so the UI can reselect them;
@@ -235,8 +233,7 @@ pub async fn rename_entries_batch(
             .collect();
 
         if !applied.is_empty() {
-            undo::state()
-                .record(host.as_ref(), Operation::RenameBatch { pairs: applied });
+            undo::state().record(host.as_ref(), Operation::RenameBatch { pairs: applied });
         }
         progress.finish();
 
@@ -280,8 +277,11 @@ pub async fn copy_entries(
     tokio::task::spawn_blocking(move || {
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
-        let progress =
-            FileOperationProgressReporter::new(Arc::clone(&host), operation_id, FileOperationKind::Copy);
+        let progress = FileOperationProgressReporter::new(
+            Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Copy,
+        );
 
         // The journal records every entry that actually landed on disk, so a
         // partially failed copy still gets an undo record for its successes.
@@ -338,8 +338,11 @@ pub async fn move_entries(
     tokio::task::spawn_blocking(move || {
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
-        let progress =
-            FileOperationProgressReporter::new(Arc::clone(&host), operation_id, FileOperationKind::Move);
+        let progress = FileOperationProgressReporter::new(
+            Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Move,
+        );
 
         // The journal records every entry that actually moved, so a partially
         // failed move still gets an undo record for its successes.
@@ -365,8 +368,7 @@ pub async fn move_entries(
             )
         };
 
-        undo::state()
-            .record(host.as_ref(), Operation::Move { transfers: journal });
+        undo::state().record(host.as_ref(), Operation::Move { transfers: journal });
 
         result
     })
@@ -402,8 +404,11 @@ pub async fn delete_entries(
 
     tokio::task::spawn_blocking(move || {
         let targets = resolve_sources(paths)?;
-        let progress =
-            FileOperationProgressReporter::new(Arc::clone(&host), operation_id, FileOperationKind::Delete);
+        let progress = FileOperationProgressReporter::new(
+            Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Delete,
+        );
 
         if targets
             .iter()
@@ -500,8 +505,7 @@ pub async fn trash_entries(
 
         // Even when a later entry fails, the ones that did reach the trash
         // stay undoable.
-        undo::state()
-            .record(host.as_ref(), Operation::Trash { records });
+        undo::state().record(host.as_ref(), Operation::Trash { records });
         progress.finish();
 
         if let Some(error) = first_error {
@@ -618,8 +622,11 @@ pub async fn duplicate_entries(
 
     tokio::task::spawn_blocking(move || {
         let sources = resolve_sources(paths.clone())?;
-        let progress =
-            FileOperationProgressReporter::new(Arc::clone(&host), operation_id, FileOperationKind::Copy);
+        let progress = FileOperationProgressReporter::new(
+            Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Copy,
+        );
         let created = transfer::duplicate_sources(sources, &progress)?;
 
         undo::state().record(
@@ -680,11 +687,9 @@ pub async fn update_file_properties(
     path: String,
     changes: PropertyChanges,
 ) -> Result<(), FileSystemError> {
-    tokio::task::spawn_blocking(move || {
-        vfs::resolve(&path)?.update_properties(&path, &changes)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    tokio::task::spawn_blocking(move || vfs::resolve(&path)?.update_properties(&path, &changes))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// See `commands::update_file_properties_recursive` for the contract; this half is engine-free.
@@ -707,8 +712,11 @@ pub async fn update_file_properties_recursive(
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Properties);
 
     tokio::task::spawn_blocking(move || {
-        let progress =
-            FileOperationProgressReporter::new(Arc::clone(&host), operation_id, FileOperationKind::Properties);
+        let progress = FileOperationProgressReporter::new(
+            Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Properties,
+        );
         let outcome =
             vfs::resolve(&path)?.update_properties_recursive(&path, &changes, &progress)?;
         progress.finish();

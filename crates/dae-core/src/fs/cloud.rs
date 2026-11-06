@@ -413,6 +413,10 @@ impl FileSystemBackend for CloudBackend {
                 path: format!("{base}/{}", child.id),
                 kind: child.kind,
                 modified_at: child.modified_at,
+                // The provider's listing carries no birth time; a remote
+                // column would be an invented value.
+                created_at: None,
+                created_fallback: false,
                 size: (child.kind == EntryKind::File).then_some(child.size),
                 hidden: false,
                 read_only: false,

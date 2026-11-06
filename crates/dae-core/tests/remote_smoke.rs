@@ -1,4 +1,5 @@
-//! Opt-in smoke tests against a real SMB, SFTP or cloud backend.
+//! Opt-in smoke tests against a real SMB, SFTP, FTP/FTPS, WebDAV or cloud
+//! backend.
 //!
 //! They are ignored by default because they need a server (or an account)
 //! that CI does not have. Each test connects through the same `vfs` entry
@@ -16,12 +17,19 @@
 //! SFTP uses `DAE_SFTP_HOST`, `DAE_SFTP_PORT`, `DAE_SFTP_USER`,
 //! `DAE_SFTP_PASSWORD` and `DAE_SFTP_ROOT`; cloud uses `DAE_CLOUD_ROOT` with
 //! an account already authorized in this profile.
+//!
+//! FTP uses `DAE_FTP_HOST`, `DAE_FTP_PORT`, `DAE_FTP_USER`,
+//! `DAE_FTP_PASSWORD` and `DAE_FTP_ROOT`; the explicit-TLS leg swaps every
+//! `DAE_FTP_` prefix for `DAE_FTPS_` and expects an `ftps://` root. WebDAV
+//! uses `DAE_WEBDAV_HOST`, `DAE_WEBDAV_PORT`, `DAE_WEBDAV_USER`,
+//! `DAE_WEBDAV_PASSWORD` and `DAE_WEBDAV_ROOT`. The upload half of the flow is
+//! the reason these exist: it is the one path no unit test can fully cover.
 
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dae_core::fs::connections::{self, Protocol};
+use dae_core::fs::connections::{self, Protocol, SaveConnectionInput};
 use dae_core::fs::types::{ConflictAction, NewEntryKind, TransferItem};
 use dae_core::fs::vfs::{self, SharedBackend};
 use dae_core::fs::{preview, service, sftp, smb};
@@ -94,9 +102,59 @@ fn cloud_session() -> (SharedBackend, String) {
     (backend, root)
 }
 
+/// Saves the connection into the in-memory credential store first: `vfs`
+/// resolves credentials through the same registry the shell uses, and a smoke
+/// test must not need the OS keychain.
+fn save_session(
+    protocol: Protocol,
+    host: String,
+    port: Option<u16>,
+    username: Option<String>,
+    password: Option<String>,
+) {
+    connections::init().expect("initialize the connection store");
+    connections::save_connection(SaveConnectionInput {
+        protocol,
+        host,
+        port,
+        username,
+        password,
+        remember_password: false,
+    })
+    .expect("save the smoke connection");
+}
+
+fn ftp_session(tls: bool) -> (SharedBackend, String) {
+    let prefix = if tls { "DAE_FTPS" } else { "DAE_FTP" };
+    let host = required(&format!("{prefix}_HOST"));
+    let port = port(&format!("{prefix}_PORT"));
+    let user = optional(&format!("{prefix}_USER"));
+    let password = optional(&format!("{prefix}_PASSWORD"));
+    let root = required(&format!("{prefix}_ROOT"));
+
+    save_session(Protocol::Ftp, host, port, user, password);
+    let backend = vfs::resolve(&root).expect("FTP connection");
+    (backend, root)
+}
+
+fn webdav_session() -> (SharedBackend, String) {
+    let host = required("DAE_WEBDAV_HOST");
+    let port = port("DAE_WEBDAV_PORT");
+    let user = optional("DAE_WEBDAV_USER");
+    let password = optional("DAE_WEBDAV_PASSWORD");
+    let root = required("DAE_WEBDAV_ROOT");
+
+    save_session(Protocol::WebDav, host, port, user, password);
+    let backend = vfs::resolve(&root).expect("WebDAV connection");
+    (backend, root)
+}
+
 enum Backend {
     Smb,
     Sftp,
+    Ftp,
+    Ftps,
+    WebDav,
     Cloud,
 }
 
@@ -105,6 +163,9 @@ impl Backend {
         match self {
             Backend::Smb => "smb",
             Backend::Sftp => "sftp",
+            Backend::Ftp => "ftp",
+            Backend::Ftps => "ftps",
+            Backend::WebDav => "webdav",
             Backend::Cloud => "cloud",
         }
     }
@@ -113,6 +174,9 @@ impl Backend {
         match self {
             Backend::Smb => smb_session(),
             Backend::Sftp => sftp_session(),
+            Backend::Ftp => ftp_session(false),
+            Backend::Ftps => ftp_session(true),
+            Backend::WebDav => webdav_session(),
             Backend::Cloud => cloud_session(),
         }
     }
@@ -173,9 +237,12 @@ fn exercise(backend_kind: Backend) {
     );
 
     let search_error = runtime
-        .block_on(dae_core::fs::search::search_directory(
-            source_dir.clone(),
-            "hello".to_owned(),
+        .block_on(dae_core::fs::search::search(
+            dae_core::fs::search::SearchRequest {
+                text: "hello".to_owned(),
+                roots: vec![source_dir.clone()],
+                ..Default::default()
+            },
         ))
         .expect_err("name search is local-only");
     assert!(
@@ -250,4 +317,22 @@ fn sftp_connects_browses_and_copies() {
 #[ignore = "requires DAE_CLOUD_ROOT and an authorized cloud account"]
 fn cloud_connects_browses_and_copies() {
     exercise(Backend::Cloud);
+}
+
+#[test]
+#[ignore = "requires DAE_FTP_* and a reachable FTP server"]
+fn ftp_connects_browses_and_copies() {
+    exercise(Backend::Ftp);
+}
+
+#[test]
+#[ignore = "requires DAE_FTPS_* and a reachable explicit-TLS FTP server"]
+fn ftps_connects_browses_and_copies() {
+    exercise(Backend::Ftps);
+}
+
+#[test]
+#[ignore = "requires DAE_WEBDAV_* and a reachable WebDAV server"]
+fn webdav_connects_browses_and_copies() {
+    exercise(Backend::WebDav);
 }

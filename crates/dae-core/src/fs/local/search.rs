@@ -1,6 +1,7 @@
 use super::directory::{entry_kind, entry_state_flags, modified_at_millis};
 use super::ignores;
 use crate::fs::error::FileSystemError;
+use crate::fs::search::SearchFilters;
 use crate::fs::types::{
     EntryKind, SearchEntry, SearchResponse, canonical_path, entry_kind_rank, path_to_string,
 };
@@ -30,6 +31,7 @@ const MAX_SEARCH_CANDIDATES: usize = 5 * MAX_SEARCH_RESULTS;
 pub fn search_directory_sync(
     requested_path: PathBuf,
     query: &str,
+    filters: &SearchFilters,
     is_current: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<SearchResponse, FileSystemError> {
     let query = query.trim();
@@ -55,6 +57,7 @@ pub fn search_directory_sync(
         capped: AtomicBool::new(false),
         is_current,
     });
+    let filters = filters.clone();
     let root = Arc::new(path);
 
     let mut builder = WalkBuilder::new(root.as_path());
@@ -72,6 +75,7 @@ pub fn search_directory_sync(
             let shared = Arc::clone(&run_shared);
             let root = Arc::clone(&run_root);
             let folded_query = Arc::clone(&run_query);
+            let filters = filters.clone();
 
             Box::new(move |result| {
                 if shared.capped.load(AtomicOrdering::Relaxed) || !(shared.is_current)() {
@@ -99,8 +103,13 @@ pub fn search_directory_sync(
                     if entries.len() >= MAX_SEARCH_CANDIDATES {
                         true
                     } else {
-                        entries.push(build_search_entry(&entry, &name, &root));
-                        false
+                        let candidate = build_search_entry(&entry, &name, &root);
+                        if filters.keeps(&candidate) {
+                            entries.push(candidate);
+                            false
+                        } else {
+                            false
+                        }
                     }
                 };
 
@@ -176,7 +185,7 @@ fn build_search_entry(entry: &ignore::DirEntry, name: &str, root: &PathBuf) -> S
 /// the fold is what the *first* key is built from, so comparing computed it once
 /// per comparison before — several thousand `to_lowercase` allocations to order
 /// a few hundred rows.
-fn rank_and_truncate(candidates: Vec<SearchEntry>, query: &str) -> Vec<SearchEntry> {
+pub(crate) fn rank_and_truncate(candidates: Vec<SearchEntry>, query: &str) -> Vec<SearchEntry> {
     let mut ranked: Vec<(String, SearchEntry)> = candidates
         .into_iter()
         .map(|entry| (entry.name.to_lowercase(), entry))
@@ -223,8 +232,13 @@ mod tests {
         fs::write(&matching_file, "report").expect("create matching file");
         fs::write(&hidden_file, "draft").expect("create hidden matching file");
 
-        let response = search_directory_sync(directory.clone(), "report", &|| true)
-            .expect("search test directory");
+        let response = search_directory_sync(
+            directory.clone(),
+            "report",
+            &SearchFilters::default(),
+            &|| true,
+        )
+        .expect("search test directory");
         let names = response
             .entries
             .iter()
@@ -252,8 +266,13 @@ mod tests {
 
     #[test]
     fn returns_no_search_results_for_blank_queries() {
-        let response = search_directory_sync(PathBuf::from("missing"), "  ", &|| true)
-            .expect("blank search should not touch the file system");
+        let response = search_directory_sync(
+            PathBuf::from("missing"),
+            "  ",
+            &SearchFilters::default(),
+            &|| true,
+        )
+        .expect("blank search should not touch the file system");
 
         assert!(response.entries.is_empty());
         assert!(!response.truncated);
@@ -266,8 +285,13 @@ mod tests {
         fs::create_dir_all(&directory).expect("create test directory");
         fs::write(directory.join("report.txt"), "content").expect("create matching file");
 
-        let response = search_directory_sync(directory.clone(), "report", &|| false)
-            .expect("stale search should return an empty snapshot");
+        let response = search_directory_sync(
+            directory.clone(),
+            "report",
+            &SearchFilters::default(),
+            &|| false,
+        )
+        .expect("stale search should return an empty snapshot");
 
         assert!(response.entries.is_empty());
         assert!(!response.truncated);
@@ -292,7 +316,13 @@ mod tests {
         fs::write(directory.join("target").join("debug").join("index.d"), "").expect("write");
         fs::write(directory.join("src").join("index.js"), "").expect("write");
 
-        let response = search_directory_sync(directory.clone(), "index", &|| true).expect("search");
+        let response = search_directory_sync(
+            directory.clone(),
+            "index",
+            &SearchFilters::default(),
+            &|| true,
+        )
+        .expect("search");
 
         // Compared with `/` separators because `relative_path` is spelled by the
         // platform's path rules.
@@ -319,7 +349,8 @@ mod tests {
         fs::create_dir_all(root.join("dep")).expect("dependency tree");
         fs::write(root.join("dep").join("index.js"), "").expect("write");
 
-        let response = search_directory_sync(root, "index", &|| true).expect("search");
+        let response = search_directory_sync(root, "index", &SearchFilters::default(), &|| true)
+            .expect("search");
 
         assert_eq!(response.entries.len(), 1);
         assert_eq!(response.entries[0].name, "index.js");
@@ -341,8 +372,13 @@ mod tests {
         }
         fs::write(directory.join("report.txt"), "").expect("write the exact match");
 
-        let response =
-            search_directory_sync(directory.clone(), "report", &|| true).expect("search");
+        let response = search_directory_sync(
+            directory.clone(),
+            "report",
+            &SearchFilters::default(),
+            &|| true,
+        )
+        .expect("search");
 
         assert_eq!(response.entries.len(), MAX_SEARCH_RESULTS);
         assert_eq!(response.entries[0].name, "report.txt");
@@ -377,7 +413,10 @@ mod tests {
         let root = PathBuf::from(root);
         let query = std::env::var("DAE_SEARCH_BENCH_QUERY").unwrap_or_else(|_| "explorer".into());
 
-        let search = || search_directory_sync(root.clone(), &query, &|| true).expect("search");
+        let search = || {
+            search_directory_sync(root.clone(), &query, &SearchFilters::default(), &|| true)
+                .expect("search")
+        };
         let warmup = search();
 
         let mut samples: Vec<u128> = Vec::new();

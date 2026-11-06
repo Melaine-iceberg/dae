@@ -98,8 +98,7 @@ pub fn session_key(protocol: Protocol, host: &str, port: Option<u16>) -> String 
 }
 
 /// See `commands::list_connections` for the contract; this half is engine-free.
-pub fn list_connections(
-) -> Result<Vec<StoredConnection>, FileSystemError> {
+pub fn list_connections() -> Result<Vec<StoredConnection>, FileSystemError> {
     let registry = REGISTRY.lock().expect("connection registry poisoned");
     let mut connections = registry.saved.clone();
     connections.sort_by(|a, b| {
@@ -112,9 +111,7 @@ pub fn list_connections(
 }
 
 /// See `commands::save_connection` for the contract; this half is engine-free.
-pub fn save_connection(
-    input: SaveConnectionInput,
-) -> Result<StoredConnection, FileSystemError> {
+pub fn save_connection(input: SaveConnectionInput) -> Result<StoredConnection, FileSystemError> {
     let host = normalize_host(&input.host);
     if host.is_empty() {
         return Err(FileSystemError::InvalidInput(
@@ -150,9 +147,7 @@ pub fn save_connection(
 }
 
 /// See `commands::delete_connection` for the contract; this half is engine-free.
-pub fn delete_connection(
-    id: String,
-) -> Result<(), FileSystemError> {
+pub fn delete_connection(id: String) -> Result<(), FileSystemError> {
     let mut registry = REGISTRY.lock().expect("connection registry poisoned");
     registry.saved.retain(|existing| existing.id != id);
     registry.memory_passwords.remove(&id);

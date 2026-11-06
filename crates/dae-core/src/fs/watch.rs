@@ -84,10 +84,7 @@ impl DirectoryWatcher {
     /// the previous observation is replaced on the spot: the view navigated
     /// away, and its old directory is nobody's business any more.
     fn claim(&self, watcher_id: &str, path: &Path) -> Option<u64> {
-        let mut views = self
-            .views
-            .lock()
-            .expect("directory watcher lock poisoned");
+        let mut views = self.views.lock().expect("directory watcher lock poisoned");
 
         if let Some(current) = views.get(watcher_id)
             && current.path == path
@@ -112,10 +109,7 @@ impl DirectoryWatcher {
     /// generation already owns the entry, in which case the handle is dropped
     /// — nothing superseded may keep observing.
     fn install(&self, watcher_id: &str, generation: u64, handle: WatchHandle) {
-        let mut views = self
-            .views
-            .lock()
-            .expect("directory watcher lock poisoned");
+        let mut views = self.views.lock().expect("directory watcher lock poisoned");
 
         if let Some(current) = views.get_mut(watcher_id)
             && current.generation == generation
@@ -127,10 +121,7 @@ impl DirectoryWatcher {
     /// Drops the claim an arm failed to fill, so the next read retries instead
     /// of trusting an entry that watches nothing.
     fn abandon(&self, watcher_id: &str, generation: u64) {
-        let mut views = self
-            .views
-            .lock()
-            .expect("directory watcher lock poisoned");
+        let mut views = self.views.lock().expect("directory watcher lock poisoned");
 
         if let Some(current) = views.get(watcher_id)
             && current.generation == generation
@@ -150,9 +141,7 @@ impl DirectoryWatcher {
 }
 
 /// See `commands::unwatch_directory` for the contract; this half is engine-free.
-pub fn unwatch_directory(
-    watcher_id: String,
-)  {
+pub fn unwatch_directory(watcher_id: String) {
     registry().release(&watcher_id);
 }
 
@@ -317,6 +306,8 @@ mod tests {
             path: format!("remote:/dir/{name}"),
             kind: EntryKind::File,
             modified_at: Some(1),
+            created_at: None,
+            created_fallback: false,
             size: Some(10),
             hidden: false,
             read_only: false,
@@ -348,7 +339,9 @@ mod tests {
             "the steady-state refresh must not churn the OS watcher"
         );
         assert!(
-            watchers.claim("view", Path::new("/watched/other")).is_some(),
+            watchers
+                .claim("view", Path::new("/watched/other"))
+                .is_some(),
             "a navigation re-targets the same view"
         );
     }
@@ -361,7 +354,10 @@ mod tests {
 
         let generation = watchers.claim("view", path).expect("claim");
         watchers.install("view", generation, poll_handle(&stop));
-        assert!(!stop.load(AtomicOrdering::Relaxed), "the live observer runs");
+        assert!(
+            !stop.load(AtomicOrdering::Relaxed),
+            "the live observer runs"
+        );
 
         watchers.release("view");
         assert!(

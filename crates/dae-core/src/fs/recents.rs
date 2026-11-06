@@ -1,6 +1,6 @@
 use super::error::FileSystemError;
-use crate::fs::atomic::write_atomic;
 use super::types::{EntryKind, display_name_from_path};
+use crate::fs::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -96,8 +96,7 @@ impl RecentsState {
 }
 
 /// See `commands::list_recents` for the contract; this half is engine-free.
-pub fn list_recents(
-) -> Result<Vec<RecentItem>, FileSystemError> {
+pub fn list_recents() -> Result<Vec<RecentItem>, FileSystemError> {
     if let Some(recents) = super::prefetch::state().take_recents() {
         return Ok(recents);
     }
@@ -131,9 +130,7 @@ pub async fn record_recent(
 }
 
 /// See `commands::remove_recent` for the contract; this half is engine-free.
-pub async fn remove_recent(
-    path: String,
-) -> Result<Vec<RecentItem>, FileSystemError> {
+pub async fn remove_recent(path: String) -> Result<Vec<RecentItem>, FileSystemError> {
     tokio::task::spawn_blocking(move || {
         let store_path = recents_path()?;
         state().edit(&store_path, |items| {
@@ -146,8 +143,7 @@ pub async fn remove_recent(
 }
 
 /// See `commands::clear_recents` for the contract; this half is engine-free.
-pub async fn clear_recents(
-) -> Result<(), FileSystemError> {
+pub async fn clear_recents() -> Result<(), FileSystemError> {
     tokio::task::spawn_blocking(move || {
         let store_path = recents_path()?;
         state().edit(&store_path, |items| items.clear())

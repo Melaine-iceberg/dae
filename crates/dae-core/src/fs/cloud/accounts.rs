@@ -63,8 +63,7 @@ pub fn init() -> Result<(), FileSystemError> {
 }
 
 /// See `commands::list_cloud_accounts` for the contract; this half is engine-free.
-pub fn list_cloud_accounts(
-) -> Result<Vec<StoredCloudAccount>, FileSystemError> {
+pub fn list_cloud_accounts() -> Result<Vec<StoredCloudAccount>, FileSystemError> {
     let registry = REGISTRY.lock().expect("cloud registry poisoned");
     let mut accounts = registry.saved.clone();
     accounts.sort_by(|a, b| {
@@ -77,9 +76,7 @@ pub fn list_cloud_accounts(
 }
 
 /// See `commands::delete_cloud_account` for the contract; this half is engine-free.
-pub fn delete_cloud_account(
-    id: String,
-) -> Result<(), FileSystemError> {
+pub fn delete_cloud_account(id: String) -> Result<(), FileSystemError> {
     {
         let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
         registry.saved.retain(|existing| existing.id != id);

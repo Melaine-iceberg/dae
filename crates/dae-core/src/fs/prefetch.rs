@@ -13,7 +13,6 @@
 
 use std::sync::{Mutex, OnceLock};
 
-
 use super::recents::{self, RecentItem};
 use super::sidebar::{Favorite, SystemPlace};
 use super::spaces::{self, Space};

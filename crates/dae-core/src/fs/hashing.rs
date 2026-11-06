@@ -89,9 +89,7 @@ pub fn start_file_hash_calculation(
 }
 
 /// See `commands::cancel_file_hash_calculation` for the contract; this half is engine-free.
-pub fn cancel_file_hash_calculation(
-    operation_id: String,
-)  {
+pub fn cancel_file_hash_calculation(operation_id: String) {
     state().cancel(&operation_id);
 }
 
@@ -104,12 +102,7 @@ fn state() -> &'static FileHashState {
 
 /// Runs the digest pass and emits progress plus the final report. Cancelled
 /// runs end quietly — the requester is already gone.
-fn hash_and_report(
-    host: &dyn Host,
-    operation_id: &str,
-    path: &Path,
-    cancelled: &AtomicBool,
-) {
+fn hash_and_report(host: &dyn Host, operation_id: &str, path: &Path, cancelled: &AtomicBool) {
     let mut last_emit_ms = 0u64;
     let mut emit = |bytes_read: u64,
                     total_bytes: u64,
@@ -158,6 +151,26 @@ fn digests_len_hint(path: &Path) -> u64 {
     std::fs::metadata(path)
         .map(|metadata| metadata.len())
         .unwrap_or(0)
+}
+
+/// All three digests of one file, with no progress reporting. This is what
+/// "compare two files" needs: the answer is one boolean, and there is no
+/// dialog to stream into.
+pub fn digests(path: &Path) -> Result<FileHashDigests, FileSystemError> {
+    if !vfs::is_local_path(&path.to_string_lossy()) {
+        return Err(FileSystemError::Unsupported(
+            path.to_string_lossy().into_owned(),
+        ));
+    }
+    if !path.is_file() {
+        return Err(FileSystemError::NotFound(
+            path.to_string_lossy().into_owned(),
+        ));
+    }
+    let cancelled = AtomicBool::new(false);
+    hash_file(path, &cancelled, &mut |_, _| {})
+        .map_err(FileSystemError::from)?
+        .ok_or_else(|| FileSystemError::Internal("The hash run was cancelled".to_owned()))
 }
 
 /// Streams `path` through all three digesters in one pass, reporting the

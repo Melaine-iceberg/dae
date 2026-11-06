@@ -60,6 +60,11 @@ pub struct AppSettings {
     /// Other platforms ignore it; they either have one effect or none.
     pub window_material: String,
     pub default_file_manager: DefaultFileManagerState,
+    /// User-defined external actions, plus the built-in "open in IDE" entry.
+    /// A document written by an older build has no table and gets the default
+    /// list; an explicit empty list is honoured as "no external actions".
+    #[serde(default = "default_actions")]
+    pub actions: Vec<CustomAction>,
     /// Kept for compatibility with the Tauri shell's setting. The Qt shell
     /// never pre-builds a window (tear-off creates one on demand), so it reads
     /// this only to keep the document round-tripping unchanged.
@@ -74,6 +79,59 @@ pub struct AppSettings {
 
 /// Integrated-terminal appearance. `None` fields fall back to the frontend's
 /// built-in defaults (font stack, curated theme-aware ANSI palette).
+/// One user-defined command in the context menu.
+///
+/// Arguments travel as an array and are handed to the process directly — there
+/// is no shell to quote for and no string to split, which is what keeps a file
+/// named `a & rm -rf ~` a file name. Placeholders are expanded per argument:
+///
+/// * `%f` — the first selected path (the current directory when nothing is
+///   selected), `%F` — every selected path as its own argument, `%d` — the
+///   directory the menu was opened in, `%u` — the first selection as a `file:`
+///   URL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CustomAction {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    /// `windows`, `linux`, `macos`; empty means every platform.
+    pub platforms: Vec<String>,
+    /// `any`, `file`, `directory` or `multiple` — when the row is offered.
+    pub selection: String,
+    /// Extensions without the dot; empty means every extension.
+    pub extensions: Vec<String>,
+}
+
+impl Default for CustomAction {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            command: String::new(),
+            args: Vec::new(),
+            platforms: Vec::new(),
+            selection: "any".to_owned(),
+            extensions: Vec::new(),
+        }
+    }
+}
+
+/// The action the shell ships with. It is offered only when `code` is found on
+/// `PATH`, so a machine without VS Code does not get a menu row that fails.
+pub fn default_actions() -> Vec<CustomAction> {
+    vec![CustomAction {
+        id: "open-in-ide".to_owned(),
+        name: "在 IDE 中打开".to_owned(),
+        command: "code".to_owned(),
+        args: vec!["%d".to_owned()],
+        platforms: Vec::new(),
+        selection: "directory".to_owned(),
+        extensions: Vec::new(),
+    }]
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TerminalSettings {
@@ -106,6 +164,7 @@ impl Default for AppSettings {
             blur: true,
             window_material: "mica".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
+            actions: default_actions(),
             warm_tab_pool: true,
             shell_first: true,
         }
@@ -146,12 +205,22 @@ pub fn default_shortcuts() -> HashMap<String, String> {
     } else {
         ("Alt+Left", "Alt+Right")
     };
-    let entries: [(&str, &str); 22] = [
+    let entries: [(&str, &str); 35] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
         ("app.pathJump", "Mod+P"),
         ("app.toggleTerminal", "Control+`"),
         ("app.openSettings", "Mod+,"),
+        // Window and tab management. These were fixed chords in the shell
+        // until P1; keeping them out of the table meant the settings panel
+        // could not show them and a user could not unassign one.
+        ("app.newWindow", "Mod+N"),
+        ("app.newTab", "Mod+T"),
+        ("app.closeTab", "Mod+W"),
+        ("app.reopenTab", "Mod+Shift+T"),
+        ("app.nextTab", "Ctrl+Tab"),
+        ("app.previousTab", "Ctrl+Shift+Tab"),
+        ("app.toggleSidebar", "Mod+B"),
         // Explorer file operations (file-list.tsx)
         ("explorer.clearSelection", "Escape"),
         ("explorer.copy", "Mod+C"),
@@ -172,6 +241,13 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("explorer.goForward", go_forward),
         ("explorer.focusSearch", "Mod+F"),
         ("explorer.switchPane", "F6"),
+        // View and listing commands that had a menu row but no binding.
+        ("explorer.newFolder", "Mod+Shift+N"),
+        ("explorer.properties", "Alt+Return"),
+        ("explorer.refresh", "F5"),
+        ("explorer.toggleSplit", "Mod+Alt+S"),
+        ("explorer.displayOptions", "Mod+Alt+V"),
+        ("explorer.filters", "Mod+Alt+F"),
     ];
     entries
         .into_iter()
@@ -268,6 +344,7 @@ fn read_settings_file(path: &Path) -> Result<AppSettings, FileSystemError> {
 fn normalize(mut settings: AppSettings) -> AppSettings {
     settings.shortcuts = normalize_shortcuts(settings.shortcuts);
     settings.terminal = normalize_terminal(settings.terminal);
+    settings.actions = normalize_actions(settings.actions);
     if !["system", "light", "dark"].contains(&settings.theme.as_str()) {
         settings.theme = "system".to_string();
     }
@@ -281,6 +358,57 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
         settings.window_material = "mica".to_string();
     }
     settings
+}
+
+/// Keeps only usable actions: an id, a name and a command, one entry per id,
+/// a known selection mode, and extensions stored without their dot.
+fn normalize_actions(raw: Vec<CustomAction>) -> Vec<CustomAction> {
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::with_capacity(raw.len());
+    for action in raw {
+        let id = action.id.trim().to_owned();
+        let name = action.name.trim().to_owned();
+        let command = action.command.trim().to_owned();
+        if id.is_empty() || name.is_empty() || command.is_empty() || !seen.insert(id.clone()) {
+            continue;
+        }
+        let selection = match action.selection.trim() {
+            "file" => "file",
+            "directory" => "directory",
+            "multiple" => "multiple",
+            _ => "any",
+        };
+        let extensions = action
+            .extensions
+            .iter()
+            .map(|extension| {
+                extension
+                    .trim()
+                    .trim_start_matches('.')
+                    .to_ascii_lowercase()
+            })
+            .filter(|extension| !extension.is_empty())
+            .collect();
+        normalized.push(CustomAction {
+            id,
+            name,
+            command,
+            args: action
+                .args
+                .into_iter()
+                .filter(|argument| !argument.trim().is_empty())
+                .collect(),
+            platforms: action
+                .platforms
+                .into_iter()
+                .map(|platform| platform.trim().to_ascii_lowercase())
+                .filter(|platform| ["windows", "linux", "macos"].contains(&platform.as_str()))
+                .collect(),
+            selection: selection.to_owned(),
+            extensions,
+        });
+    }
+    normalized
 }
 
 fn normalize_shortcuts(raw: HashMap<String, String>) -> HashMap<String, String> {
@@ -373,6 +501,19 @@ mod tests {
             "explorer.goForward",
             "explorer.focusSearch",
             "explorer.switchPane",
+            "app.newWindow",
+            "app.newTab",
+            "app.closeTab",
+            "app.reopenTab",
+            "app.nextTab",
+            "app.previousTab",
+            "app.toggleSidebar",
+            "explorer.newFolder",
+            "explorer.properties",
+            "explorer.refresh",
+            "explorer.toggleSplit",
+            "explorer.displayOptions",
+            "explorer.filters",
         ];
         assert_eq!(ids.len(), expected.len(), "shortcut count drifted");
         for id in expected {

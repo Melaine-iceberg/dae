@@ -61,6 +61,12 @@ pub enum ArchiveFormat {
     TarGz,
     #[serde(rename = "7z")]
     SevenZip,
+    /// Read-only: extracted through an external tool (`unrar`, `7z` or
+    /// `bsdtar`). The UnRAR licence does not fit this project, so no library
+    /// is linked and a machine without a tool gets an explanation.
+    Rar,
+    /// Read-only: extracted through an external tool (`7z` or `bsdtar`).
+    Iso,
 }
 
 impl ArchiveFormat {
@@ -71,7 +77,15 @@ impl ArchiveFormat {
             ArchiveFormat::Tar => "tar",
             ArchiveFormat::TarGz => "tar.gz",
             ArchiveFormat::SevenZip => "7z",
+            ArchiveFormat::Rar => "rar",
+            ArchiveFormat::Iso => "iso",
         }
+    }
+
+    /// True when this format can only be handled by an external program: dae
+    /// cannot create it, and its built-in readers do not decode it.
+    pub fn needs_external_tool(self) -> bool {
+        matches!(self, ArchiveFormat::Rar | ArchiveFormat::Iso)
     }
 
     /// Detects the format of an existing file from its name (case-insensitive),
@@ -87,6 +101,10 @@ impl ArchiveFormat {
             Some(ArchiveFormat::Tar)
         } else if name.ends_with(".7z") {
             Some(ArchiveFormat::SevenZip)
+        } else if name.ends_with(".rar") {
+            Some(ArchiveFormat::Rar)
+        } else if name.ends_with(".iso") {
+            Some(ArchiveFormat::Iso)
         } else {
             None
         }
@@ -239,6 +257,28 @@ pub(super) fn extract_sync(
         ));
     }
 
+    // RAR and ISO have no in-process reader. The destination is decided the
+    // same way a built-in extraction decides it, then the tool does the work.
+    if format.needs_external_tool() {
+        let destination_root = match destination_dir {
+            Some(directory) => {
+                if vfs::scheme_of(directory)? != vfs::Scheme::Local {
+                    return Err(FileSystemError::InvalidInput(
+                        "Archives can only be extracted into local folders".into(),
+                    ));
+                }
+                let path = PathBuf::from(directory);
+                std::fs::create_dir_all(&path)?;
+                path
+            }
+            None => unique_destination_dir(&archive, &extraction_stem_of(&archive))?,
+        };
+        progress.start(0);
+        extract_external(&archive, format, &destination_root, password)?;
+        progress.finish();
+        return Ok(path_to_string(&destination_root));
+    }
+
     // Encrypted zips fail late (mid-read) without a password, so probe the
     // flags up front and ask for one before touching the destination.
     if password.is_none() && format == ArchiveFormat::Zip && zip_has_encrypted_entries(&archive)? {
@@ -246,6 +286,16 @@ pub(super) fn extract_sync(
             "fs.archive_wrong_password".into(),
         ));
     }
+
+    // Smart extraction: an archive that holds exactly one directory extracts
+    // into the archive's own folder, so the user gets `foo/` rather than
+    // `foo/foo`. Anything else keeps the "one new folder named after the
+    // archive" rule.
+    let single_root = if destination_dir.is_none() {
+        top_level_root(&archive, format, password)?
+    } else {
+        None
+    };
 
     // Sizing pass first: it also rejects unsafe entry names before any part of
     // the destination is created, so a malicious archive leaves nothing behind.
@@ -264,7 +314,14 @@ pub(super) fn extract_sync(
             std::fs::create_dir_all(&path)?;
             path
         }
-        None => unique_destination_dir(&archive, &extraction_stem_of(&archive))?,
+        None => match single_root {
+            Some(_) => archive
+                .parent()
+                .map(Path::to_path_buf)
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| PathBuf::from(".")),
+            None => unique_destination_dir(&archive, &extraction_stem_of(&archive))?,
+        },
     };
 
     match format {
@@ -275,6 +332,11 @@ pub(super) fn extract_sync(
         ArchiveFormat::SevenZip => {
             let sevenz_password = password.map(Password::new).unwrap_or_else(Password::empty);
             extract_sevenzip(&archive, &destination_root, &sevenz_password, progress)?
+        }
+        ArchiveFormat::Rar | ArchiveFormat::Iso => {
+            return Err(FileSystemError::Unsupported(
+                "fs.archive_needs_external_tool".into(),
+            ));
         }
     }
 
@@ -363,6 +425,12 @@ impl ArchiveSink {
                 }
                 Ok(ArchiveSink::SevenZip { writer })
             }
+            // Read-only formats: extraction is delegated to an external tool,
+            // and creating one is out of scope (the RAR encoder is
+            // proprietary and an ISO writer is a different product).
+            ArchiveFormat::Rar | ArchiveFormat::Iso => Err(FileSystemError::Unsupported(
+                "fs.archive_cannot_create".into(),
+            )),
         }
     }
 
@@ -754,7 +822,173 @@ fn measure_uncompressed_size(
             }
             Ok(total)
         }
+        ArchiveFormat::Rar | ArchiveFormat::Iso => Err(FileSystemError::Unsupported(
+            "fs.archive_needs_external_tool".into(),
+        )),
     }
+}
+
+/// The directory every entry of the archive lives under, when there is
+/// exactly one and no entry sits directly at the top level. This is what makes
+/// "extract here" land on the archive's own folder instead of nesting it.
+fn top_level_root(
+    archive_path: &Path,
+    format: ArchiveFormat,
+    password: Option<&str>,
+) -> Result<Option<String>, FileSystemError> {
+    let mut components: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut has_top_level_file = false;
+    let mut collect = |name: &str| -> Result<(), FileSystemError> {
+        let name = name.trim_matches('/');
+        if name.is_empty() {
+            return Ok(());
+        }
+        validated_components(name)?;
+        match name.split_once(['/', '\\']) {
+            Some((root, _)) => {
+                components.insert(root.to_ascii_lowercase());
+            }
+            None => has_top_level_file = true,
+        }
+        Ok(())
+    };
+
+    match format {
+        ArchiveFormat::Zip => {
+            let file = std::fs::File::open(archive_path)?;
+            let mut archive = zip::ZipArchive::new(file).map_err(zip_error)?;
+            for index in 0..archive.len() {
+                let entry = if let Some(password) = password {
+                    archive
+                        .by_index_decrypt(index, password.as_bytes())
+                        .map_err(zip_password_error)?
+                } else {
+                    archive.by_index(index).map_err(zip_error)?
+                };
+                collect(&entry.name().map_err(zip_error)?)?;
+            }
+        }
+        ArchiveFormat::Tar | ArchiveFormat::TarGz => {
+            let reader = open_tar_reader(archive_path, format)?;
+            let mut archive = tar::Archive::new(reader);
+            for entry in archive.entries().map_err(FileSystemError::from)? {
+                let entry = entry?;
+                collect(&entry.path()?.to_string_lossy())?;
+            }
+        }
+        ArchiveFormat::SevenZip => {
+            let sevenz_password = password.map(Password::new).unwrap_or_else(Password::empty);
+            let reader =
+                ArchiveReader::open(archive_path, sevenz_password).map_err(sevenz_error)?;
+            for entry in &reader.archive().files {
+                collect(&entry.name)?;
+            }
+        }
+        ArchiveFormat::Rar | ArchiveFormat::Iso => return Ok(None),
+    }
+
+    if has_top_level_file || components.len() != 1 {
+        return Ok(None);
+    }
+    Ok(components.into_iter().next())
+}
+
+/// External extraction for the formats dae does not decode. `7z` handles both
+/// RAR and ISO; `unrar` and `bsdtar` are the narrower fallbacks. The tool is
+/// chosen per call rather than cached, because installing one while the app is
+/// running is a normal thing to do.
+fn extract_external(
+    archive_path: &Path,
+    format: ArchiveFormat,
+    destination: &Path,
+    password: Option<&str>,
+) -> Result<(), FileSystemError> {
+    use crate::fs::actions::command_available;
+
+    let seven_zip = ["7z", "7zz", "7za"]
+        .into_iter()
+        .find(|program| command_available(program));
+    if let Some(program) = seven_zip {
+        let mut command = std::process::Command::new(program);
+        command
+            .arg("x")
+            .arg("-y")
+            .arg("-bd")
+            .arg(format!("-o{}", destination.to_string_lossy()))
+            .arg(archive_path);
+        if let Some(password) = password.filter(|value| !value.is_empty()) {
+            command.arg(format!("-p{password}"));
+        }
+        return run_extract_command(command, program);
+    }
+
+    if format == ArchiveFormat::Rar && command_available("unrar") {
+        let mut command = std::process::Command::new("unrar");
+        command
+            .arg("x")
+            .arg("-y")
+            .arg("-o+")
+            .arg(archive_path)
+            .arg(destination);
+        if let Some(password) = password.filter(|value| !value.is_empty()) {
+            command.arg(format!("-p{password}"));
+        }
+        return run_extract_command(command, "unrar");
+    }
+
+    if command_available("bsdtar") {
+        let mut command = std::process::Command::new("bsdtar");
+        command
+            .arg("x")
+            .arg("-f")
+            .arg(archive_path)
+            .arg("-C")
+            .arg(destination);
+        return run_extract_command(command, "bsdtar");
+    }
+
+    Err(FileSystemError::Unsupported(format!(
+        "fs.archive_missing_tool:{}",
+        format.extension()
+    )))
+}
+
+fn run_extract_command(
+    mut command: std::process::Command,
+    program: &str,
+) -> Result<(), FileSystemError> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command
+        .output()
+        .map_err(|error| FileSystemError::Internal(format!("{program}: {error}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(FileSystemError::Internal(if stderr.is_empty() {
+            format!("{program} exited with {}", output.status)
+        } else {
+            stderr
+        }));
+    }
+    Ok(())
+}
+
+/// The external formats this machine can open right now, for the menu gate.
+pub fn external_formats() -> Vec<&'static str> {
+    use crate::fs::actions::command_available;
+    let seven = ["7z", "7zz", "7za"].into_iter().any(command_available);
+    let mut formats = Vec::new();
+    if seven || command_available("unrar") || command_available("bsdtar") {
+        formats.push("rar");
+    }
+    if seven || command_available("bsdtar") {
+        formats.push("iso");
+    }
+    formats
 }
 
 fn open_tar_reader(
