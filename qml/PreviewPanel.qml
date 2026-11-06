@@ -23,6 +23,9 @@ Item {
     property bool inTrash: false
     property bool dark: true
     property color accent: Theme.interactive
+    /// Bumped by the tag store so `currentTags`/`allTags` re-read after a
+    /// write or a definition change.
+    property int tagRevision: 0
 
     readonly property color panelColor: Theme.canvas
     readonly property color sectionColor: Theme.canvasAlt
@@ -70,6 +73,9 @@ Item {
     signal propertiesRequested(string path)
 
     onDarkChanged: controller.setDark(root.dark)
+    /// A new single selection opens details for it; the controller drops the
+    /// previous hashes when it loads, so no digest can be attributed wrongly.
+    onPathsChanged: if (root.paths.length === 1) detailsController.open(root.paths[0])
     Component.onCompleted: controller.setDark(root.dark)
 
     function showPaths(next) {
@@ -79,6 +85,37 @@ Item {
             controller.open(paths[0])
         else
             controller.clear()
+    }
+
+    /// A one-line permission read-out. Unix keeps the mode in the low bits and
+    /// resolves the names in the properties controller; Windows reports the
+    /// DOS flags, which is the whole model it has.
+    function permissionSummary() {
+        if (detailsController.platformKind === "unix") {
+            const mode = (detailsController.mode & 0o7777).toString(8)
+            return "0" + ("000" + mode).slice(-4)
+        }
+        if (detailsController.platformKind === "windows") {
+            const flags = []
+            if (detailsController.readOnly)
+                flags.push("R")
+            if (detailsController.hidden)
+                flags.push("H")
+            if (detailsController.archive)
+                flags.push("A")
+            if (detailsController.system)
+                flags.push("S")
+            return flags.join(" ")
+        }
+        return ""
+    }
+
+    function ownerSummary() {
+        if (detailsController.platformKind !== "unix")
+            return ""
+        if (detailsController.userName === "" && detailsController.groupName === "")
+            return ""
+        return detailsController.userName + ":" + detailsController.groupName
     }
 
     function showTrash(item) {
@@ -91,9 +128,47 @@ Item {
         showPaths([])
     }
 
+    /// Scrolls the column by `dy` pixels. The quick-preview overlay maps its
+    /// arrow and page keys here: in the docked pane the flickable is reachable
+    /// with the pointer, but an overlay that traps focus has to move it too.
+    function scrollBy(dy) {
+        const maximum = Math.max(0, scroller.contentHeight - scroller.height)
+        scroller.contentY = Math.max(0, Math.min(maximum, scroller.contentY + dy))
+    }
+
     PreviewController {
         id: controller
     }
+
+    /// Details is a second read of the same entry, and it is the properties
+    /// controller rather than a copy: the created time, the mode and the
+    /// hashes are the answers the properties dialog already knows how to get.
+    PropertiesController {
+        id: detailsController
+    }
+
+    /// The tags of the selection: for one entry its own, for several the ones
+    /// they all share. Re-read whenever a write lands, so a chip toggled here
+    /// is reflected without reopening the pane.
+    readonly property var currentTags: {
+        if (root.tagRevision >= 0 && root.paths.length > 0) {
+            try {
+                return JSON.parse(TagStore.commonTagsJson(root.paths))
+            } catch (error) {
+                return []
+            }
+        }
+        return []
+    }
+    readonly property var allTags: {
+        try {
+            return JSON.parse(TagStore.tagsJson)
+        } catch (error) {
+            return []
+        }
+    }
+    readonly property string multiSize: root.paths.length > 1
+        ? Workspace.selectionSizeText(root.paths) : ""
 
     Rectangle {
         anchors.fill: parent
@@ -592,8 +667,11 @@ Item {
                         model: [
                             [qsTr("类型"), Localize.message(controller.kindText)],
                             [qsTr("大小"), controller.sizeText],
-                            [qsTr("修改时间"), controller.modifiedText]
-                        ]
+                            [qsTr("修改时间"), detailsController.modifiedText],
+                            [qsTr("创建时间"), detailsController.createdText],
+                            [qsTr("权限"), root.permissionSummary()],
+                            [qsTr("所有者"), root.ownerSummary()]
+                        ].filter(function (row) { return row[1] !== "" })
 
                         MetaRow {
                             width: details.width
@@ -601,6 +679,148 @@ Item {
                             key: modelData[0]
                             value: modelData[1]
                         }
+                    }
+                }
+
+                /// Hashes are on demand: a 4 GB file is a minute of I/O, so
+                /// the pane offers the action and reports progress rather than
+                /// starting one on selection.
+                Column {
+                    width: parent.width
+                    visible: root.single && detailsController.path !== ""
+                        && !detailsController.isDirectory
+                    spacing: 4
+
+                    TextAction {
+                        label: detailsController.hashing ? qsTr("正在计算…")
+                            : (detailsController.hashDone ? qsTr("重新计算哈希")
+                                                          : qsTr("计算哈希"))
+                        available: !detailsController.hashing
+                        onClicked: detailsController.startHashing()
+                    }
+
+                    Repeater {
+                        model: [
+                            ["MD5", detailsController.hashMd5],
+                            ["SHA-1", detailsController.hashSha1],
+                            ["SHA-256", detailsController.hashSha256]
+                        ].filter(function (row) { return row[1] !== "" })
+
+                        Text {
+                            width: parent.width
+                            required property var modelData
+                            text: modelData[0] + "  " + modelData[1]
+                            color: root.faintColor
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.typeMicro
+                            elide: Text.ElideMiddle
+                            textFormat: Text.PlainText
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: detailsController.hashError !== ""
+                        text: Localize.message(detailsController.hashError)
+                        color: Theme.danger
+                        font.pixelSize: Theme.typeMicro
+                        wrapMode: Text.Wrap
+                    }
+                }
+
+                /// Tags: every definition is a chip; the ones this entry (or
+                /// this whole selection) carries are filled. A click toggles
+                /// the tag over the whole selection.
+                Flow {
+                    width: parent.width
+                    visible: root.paths.length > 0 && root.allTags.length > 0
+                    spacing: 6
+
+                    Repeater {
+                        model: root.allTags
+
+                        Rectangle {
+                            id: tagChip
+                            required property var modelData
+                            readonly property bool on: {
+                                for (let index = 0; index < root.currentTags.length; index += 1) {
+                                    if (root.currentTags[index].id === modelData.id)
+                                        return true
+                                }
+                                return false
+                            }
+
+                            width: chipRow.implicitWidth + 16
+                            height: Theme.controlXs + 4
+                            radius: Theme.radiusXs
+                            color: on ? Theme.fill : "transparent"
+                            border.width: 1
+                            border.color: on ? Theme.hairlineStrong : Theme.hairline
+                            opacity: tagMouse.containsMouse ? 1 : (on ? 1 : 0.72)
+
+                            Row {
+                                id: chipRow
+                                anchors.centerIn: parent
+                                spacing: 5
+
+                                Rectangle {
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: tagChip.modelData.color
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: tagChip.modelData.name
+                                    color: tagChip.on ? Theme.ink : Theme.inkMuted
+                                    font.pixelSize: Theme.typeMicro
+                                    textFormat: Text.PlainText
+                                }
+                            }
+
+                            MouseArea {
+                                id: tagMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: TagStore.toggleTag(root.paths, tagChip.modelData.id)
+                            }
+                        }
+                    }
+                }
+
+                /// The aggregate row: count, the size of the files that can be
+                /// measured without walking a folder, and the tags they share.
+                Column {
+                    width: parent.width
+                    visible: root.paths.length > 1
+                    spacing: 4
+
+                    Text {
+                        width: parent.width
+                        text: qsTr("已选择 %1 项").arg(root.paths.length)
+                        color: root.textColor
+                        font.pixelSize: Theme.typeBody
+                        textFormat: Text.PlainText
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: root.multiSize !== ""
+                        text: qsTr("文件合计 %1").arg(root.multiSize)
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeMicro
+                        textFormat: Text.PlainText
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: root.currentTags.length === 0
+                        text: qsTr("没有共同标签")
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeMicro
                     }
                 }
 
@@ -800,6 +1020,18 @@ Item {
 
         function onPathChanged() {
             scroller.contentY = 0
+        }
+    }
+
+    Connections {
+        target: TagStore
+
+        function onTagsChanged(paths) {
+            root.tagRevision += 1
+        }
+
+        function onDefinitionsChanged() {
+            root.tagRevision += 1
         }
     }
 }

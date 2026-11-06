@@ -28,7 +28,12 @@ Item {
     property bool regex: false
     /// One of `typeOptions`' ids.
     property string typeId: "all"
+    /// Where the name search looks: `current`, `favorites`, `recent` or
+    /// `volumes`. Tag clicks use `volumes`, because a tag is a fact about
+    /// files across the disk rather than about this folder.
+    property string scope: "current"
     property bool busy: false
+    property bool hasHistory: false
     /// Rows (name mode) or files (content mode) the running query matched.
     property int matchCount: 0
     property string query: ""
@@ -38,6 +43,12 @@ Item {
     signal regexToggled()
     /// The chip's own top-left corner, in window coordinates.
     signal typeMenuRequested(real x, real y)
+    signal scopeRequested(string scope)
+    /// The field's history chip was pressed; the shell owns the popup.
+    signal historyRequested(real x, real y)
+    /// The name search's kind/date/size chips are the listing's own filter
+    /// menu: one vocabulary and one popup, opened from here.
+    signal filtersRequested(real x, real y)
 
     /// The categories a content query may be narrowed to. Each glob list is
     /// what the backend's file filter already accepts (`"*.ts, .rs"`), so this
@@ -146,6 +157,61 @@ Item {
             label: qsTr("文件名")
             active: root.mode === "name"
             onClicked: root.modeRequested("name")
+        }
+
+        /// Scope chips only exist for the name search: content search walks
+        /// one root by construction.
+        Chip {
+            label: qsTr("当前")
+            active: root.scope === "current"
+            visible: root.mode === "name"
+            onClicked: root.scopeRequested("current")
+        }
+
+        Chip {
+            label: qsTr("收藏")
+            active: root.scope === "favorites"
+            visible: root.mode === "name"
+            onClicked: root.scopeRequested("favorites")
+        }
+
+        Chip {
+            label: qsTr("最近")
+            active: root.scope === "recent"
+            visible: root.mode === "name"
+            onClicked: root.scopeRequested("recent")
+        }
+
+        Chip {
+            label: qsTr("筛选")
+            visible: root.mode === "name"
+            onClicked: {
+                const point = filterChip.mapToItem(null, 0, 0)
+                root.filtersRequested(point.x, point.y + filterChip.height + 4)
+            }
+
+            id: filterChip
+        }
+
+        /// The history lives in a menu rather than a popup under the field:
+        /// the nav bar clips its children, and a list drawn outside it would
+        /// be cut off at the first row.
+        Chip {
+            label: qsTr("历史")
+            visible: root.mode === "name" && root.hasHistory
+            onClicked: {
+                const point = historyChip.mapToItem(null, 0, 0)
+                root.historyRequested(point.x, point.y + historyChip.height + 4)
+            }
+
+            id: historyChip
+        }
+
+        Chip {
+            label: qsTr("所有卷")
+            active: root.scope === "volumes"
+            visible: root.mode === "name"
+            onClicked: root.scopeRequested("volumes")
         }
 
         Chip {

@@ -284,8 +284,26 @@ Item {
             root.command("sort-modified", qsTr("按修改时间排序"), "", "", qsTr("视图")),
             root.command("sort-type", qsTr("按类型排序"), "", "", qsTr("视图")),
             root.command("sort-size", qsTr("按大小排序"), "", "", qsTr("视图")),
+            root.command("sort-created", qsTr("按创建时间排序"), "", "", qsTr("视图")),
+            root.command("sort-path", qsTr("按路径排序"), "", "", qsTr("视图")),
+            root.command("sort-tag", qsTr("按标签排序"), "", "", qsTr("视图")),
             root.command("sort-order", qsTr("切换升降序"), "", "", qsTr("视图")),
             root.command("folders-first", qsTr("文件夹优先"), "", "folder", qsTr("视图")),
+            root.command("group-off", qsTr("不分组"), "", "", qsTr("视图")),
+            root.command("group-name", qsTr("按名称分组"), "", "", qsTr("视图")),
+            root.command("group-modified", qsTr("按修改时间分组"), "", "", qsTr("视图")),
+            root.command("group-created", qsTr("按创建时间分组"), "", "", qsTr("视图")),
+            root.command("group-size", qsTr("按大小分组"), "", "", qsTr("视图")),
+            root.command("group-type", qsTr("按类型分组"), "", "", qsTr("视图")),
+            root.command("group-tag", qsTr("按标签分组"), "", "", qsTr("视图")),
+            root.command("group-date-day", qsTr("日期分组：按日"), "", "", qsTr("视图")),
+            root.command("columns-type", qsTr("显示/隐藏类型列"), "", "", qsTr("视图")),
+            root.command("columns-size", qsTr("显示/隐藏大小列"), "", "", qsTr("视图")),
+            root.command("columns-modified", qsTr("显示/隐藏修改时间列"), "", "", qsTr("视图")),
+            root.command("columns-created", qsTr("显示/隐藏创建时间列"), "", "", qsTr("视图")),
+            root.command("columns-tags", qsTr("显示/隐藏标签列"), "", "", qsTr("视图")),
+            root.command("extensions-toggle", qsTr("显示/隐藏扩展名"), "", "", qsTr("视图")),
+            root.command("clear-tags", qsTr("清除所选标签"), "", "star", qsTr("文件")),
             root.command("hidden-files", qsTr("显示隐藏文件"),
                          root.shortcutHint("explorer.toggleHidden", "Ctrl+H"),
                          "", qsTr("视图")),
@@ -525,7 +543,9 @@ Item {
         const scope = root.scopePath !== "" ? root.scopePath : Workspace.homeDirectory
         if (scope === "")
             return
-        paletteSearchModel.search(scope, q)
+        // The palette searches one root (the current scope), so it uses the
+        // explicit-path form of the scope rather than a volume walk.
+        paletteSearchModel.search(scope, q, "current", "all", "any", "any")
     }
 
     function takeFocus() {

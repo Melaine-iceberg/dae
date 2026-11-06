@@ -29,6 +29,8 @@ const QML_FILES: &[(&str, &str)] = &[
     ),
     ("../../qml/ConflictSide.qml", "qml/ConflictSide.qml"),
     ("../../qml/TransferQueue.qml", "qml/TransferQueue.qml"),
+    ("../../qml/StatusCenter.qml", "qml/StatusCenter.qml"),
+    ("../../qml/QuickPreview.qml", "qml/QuickPreview.qml"),
     ("../../qml/GitPanel.qml", "qml/GitPanel.qml"),
     ("../../qml/Tab.qml", "qml/Tab.qml"),
     ("../../qml/TabStrip.qml", "qml/TabStrip.qml"),

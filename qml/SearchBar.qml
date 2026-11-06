@@ -32,6 +32,7 @@ Item {
     /// into its icon; the field itself does not own that state.
     signal dismissRequested()
 
+
     implicitWidth: 210
     implicitHeight: Theme.controlMd
 

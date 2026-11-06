@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Dialogs
 import dae 1.0
 import "Shortcut.js" as ShortcutJS
 import "DialogFocus.js" as DialogFocus
@@ -46,6 +47,34 @@ FocusScope {
     property string shortcutError: ""
     property string terminalError: ""
     property string terminalStatus: ""
+    property string tagError: ""
+    /// Bumped by the tag store; the definitions page reads it so a write made
+    /// in another window shows up here too.
+    property int tagRevision: 0
+
+    function createTag(name, color) {
+        root.tagError = ""
+        if (TagStore.createTag(name, color) === "") {
+            root.tagError = TagStore.note !== "" ? TagStore.note
+                : qsTr("无法创建标签（名称可能重复）")
+            return
+        }
+        draftName.text = ""
+    }
+
+    function updateTag(id, name, color) {
+        root.tagError = ""
+        const error = TagStore.updateTag(id, name, color)
+        if (error !== "")
+            root.tagError = error
+    }
+
+    function removeTag(id) {
+        root.tagError = ""
+        const error = TagStore.removeTag(id)
+        if (error !== "")
+            root.tagError = error
+    }
 
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -125,7 +154,21 @@ FocusScope {
                 { id: "app.toggleTerminal", label: qsTr("切换终端"),
                   detail: qsTr("显示或隐藏内嵌终端") },
                 { id: "app.openSettings", label: qsTr("打开设置"),
-                  detail: qsTr("打开这个设置面板") }
+                  detail: qsTr("打开这个设置面板") },
+                { id: "app.newWindow", label: qsTr("新建窗口"),
+                  detail: qsTr("在相同目录打开一个新窗口") },
+                { id: "app.newTab", label: qsTr("新建标签页"),
+                  detail: qsTr("在当前标签页之后新建一个") },
+                { id: "app.closeTab", label: qsTr("关闭标签页"),
+                  detail: qsTr("关闭当前标签页") },
+                { id: "app.reopenTab", label: qsTr("重新打开标签页"),
+                  detail: qsTr("恢复最近关闭的标签页") },
+                { id: "app.nextTab", label: qsTr("下一个标签页"),
+                  detail: qsTr("按顺序切换到下一个标签页") },
+                { id: "app.previousTab", label: qsTr("上一个标签页"),
+                  detail: qsTr("按顺序切换到上一个标签页") },
+                { id: "app.toggleSidebar", label: qsTr("切换侧栏"),
+                  detail: qsTr("显示或隐藏侧栏") }
             ]
         },
         {
@@ -148,7 +191,19 @@ FocusScope {
                 { id: "explorer.preview", label: qsTr("预览"),
                   detail: qsTr("打开或关闭当前项的预览") },
                 { id: "explorer.switchPane", label: qsTr("切换窗格"),
-                  detail: qsTr("在分屏的两个窗格之间移动焦点") }
+                  detail: qsTr("在分屏的两个窗格之间移动焦点") },
+                { id: "explorer.properties", label: qsTr("属性"),
+                  detail: qsTr("打开选中项的属性") },
+                { id: "explorer.refresh", label: qsTr("刷新"),
+                  detail: qsTr("重新读取当前目录") },
+                { id: "explorer.newFolder", label: qsTr("新建文件夹"),
+                  detail: qsTr("在当前位置新建文件夹") },
+                { id: "explorer.toggleSplit", label: qsTr("切换分屏"),
+                  detail: qsTr("打开或关闭双窗格") },
+                { id: "explorer.displayOptions", label: qsTr("显示选项"),
+                  detail: qsTr("打开视图、排序与列菜单") },
+                { id: "explorer.filters", label: qsTr("过滤"),
+                  detail: qsTr("打开类型、时间与大小过滤") }
             ]
         },
         {
@@ -224,6 +279,47 @@ FocusScope {
         heightInput.text = Workspace.terminalLineHeight.toFixed(2)
         familyInput.text = Workspace.terminalFontFamily
         shellInput.text = ExplorerPrefs.terminalShell
+    }
+
+    /// The stored actions, unfiltered: a row whose program is missing must
+    /// still be editable, and the menu is what hides it.
+    property var actionDefinitions: []
+    property string newActionName: ""
+    property string newActionCommand: "code"
+    property string newActionArgs: "%d"
+    property string newActionSelection: "directory"
+
+    /// True when the landing page hides `section`. The stored value is a
+    /// comma-separated list of hidden names, so an empty string means all four
+    /// widgets are on.
+    function homeSectionHidden(section) {
+        const parts = ExplorerPrefs.hiddenHomeSections.split(",")
+        for (let index = 0; index < parts.length; index += 1) {
+            if (parts[index].trim() === section)
+                return true
+        }
+        return false
+    }
+
+    function toggleHomeSection(section) {
+        const parts = []
+        const stored = ExplorerPrefs.hiddenHomeSections.split(",")
+        for (let index = 0; index < stored.length; index += 1) {
+            const value = stored[index].trim()
+            if (value !== "" && value !== section)
+                parts.push(value)
+        }
+        if (!root.homeSectionHidden(section))
+            parts.push(section)
+        ExplorerPrefs.setString("hiddenHomeSections", parts.join(","))
+    }
+
+    function refreshActions() {
+        try {
+            root.actionDefinitions = JSON.parse(Workspace.customActionDefinitions())
+        } catch (error) {
+            root.actionDefinitions = []
+        }
     }
 
     function bindingText(binding) {
@@ -445,7 +541,9 @@ FocusScope {
 
                 NavItem { label: qsTr("外观与语言"); value: "appearance" }
                 NavItem { label: qsTr("快捷键"); value: "shortcuts" }
+                NavItem { label: qsTr("动作"); value: "actions" }
                 NavItem { label: qsTr("终端"); value: "terminal" }
+                NavItem { label: qsTr("标签"); value: "tags" }
                 NavItem { label: qsTr("默认文件管理器"); value: "defaultManager" }
                 NavItem { label: qsTr("日志"); value: "logs" }
             }
@@ -746,10 +844,273 @@ FocusScope {
                     }
                 }
 
+                Text {
+                    id: unitsTitle
+                    x: 24
+                    y: startupRow.y + startupRow.height + 24
+                    text: qsTr("文件大小单位")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    id: unitsNote
+                    x: 24
+                    y: unitsTitle.y + 20
+                    width: content.width - 48
+                    text: qsTr("二进制按 1024 进位并写作 KiB/MiB；十进制按 1000 进位并写作 KB/MB。只影响显示，排序与比较仍用字节数。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    id: unitsRow
+                    x: 24
+                    y: unitsNote.y + unitsNote.height + 8
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: "binary", label: qsTr("二进制（KiB）") },
+                            { value: "decimal", label: qsTr("十进制（KB）") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: ExplorerPrefs.sizeUnits === modelData.value
+                            onClicked: ExplorerPrefs.setString("sizeUnits", modelData.value)
+                        }
+                    }
+                }
+
+                Text {
+                    id: homeTitle
+                    x: 24
+                    y: unitsRow.y + unitsRow.height + 24
+                    text: qsTr("主页小部件")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    id: homeNote
+                    x: 24
+                    y: homeTitle.y + 20
+                    width: content.width - 48
+                    text: qsTr("关闭一项后，概览页对应的分组整段隐藏；分组本身没有内容时也不会留下空标题。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    id: homeRow
+                    x: 24
+                    y: homeNote.y + homeNote.height + 8
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: "Projects", label: qsTr("项目") },
+                            { value: "Favorites", label: qsTr("收藏") },
+                            { value: "Recent", label: qsTr("最近") },
+                            { value: "Spaces", label: qsTr("空间") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: !root.homeSectionHidden(modelData.value)
+                            onClicked: root.toggleHomeSection(modelData.value)
+                        }
+                    }
+                }
+
+                Text {
+                    id: backgroundTitle
+                    x: 24
+                    y: homeRow.y + homeRow.height + 24
+                    text: qsTr("背景图")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    id: backgroundNote
+                    x: 24
+                    y: backgroundTitle.y + 20
+                    width: content.width - 48
+                    text: qsTr("图片铺在列表后面，列表用半透明画布盖住它；“遮罩”越高，文字越清楚。标题栏、侧栏和地址栏保持实色。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    id: backgroundRow
+                    x: 24
+                    y: backgroundNote.y + backgroundNote.height + 8
+                    spacing: 8
+
+                    Item {
+                        width: Math.max(120, content.width - 48 - 152)
+                        height: Theme.controlMd
+
+                        FieldFrame {
+                            anchors.fill: parent
+                        }
+                        TextInput {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: TextInput.AlignVCenter
+                            text: ExplorerPrefs.backgroundImage
+                            color: root.textColor
+                            selectionColor: root.accent
+                            selectedTextColor: Theme.onInteractive
+                            font.pixelSize: Theme.typeCaption
+                            selectByMouse: true
+                            clip: true
+                            onEditingFinished:
+                                ExplorerPrefs.setString("backgroundImage", text)
+                        }
+                    }
+
+                    Rectangle {
+                        width: 68
+                        height: Theme.controlMd
+                        radius: Theme.radiusSm
+                        color: chooseMouse.containsMouse ? root.hoverFill : "transparent"
+                        border.width: 1
+                        border.color: root.hairline
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: qsTr("选择…")
+                            color: root.textColor
+                            font.pixelSize: Theme.typeCaption
+                        }
+
+                        MouseArea {
+                            id: chooseMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: backgroundDialog.open()
+                        }
+                    }
+
+                    Rectangle {
+                        width: 68
+                        height: Theme.controlMd
+                        radius: Theme.radiusSm
+                        color: clearMouse.containsMouse ? root.hoverFill : "transparent"
+                        border.width: 1
+                        border.color: root.hairline
+                        enabled: ExplorerPrefs.backgroundImage !== ""
+                        opacity: enabled ? 1 : 0.45
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: qsTr("清除")
+                            color: root.mutedColor
+                            font.pixelSize: Theme.typeCaption
+                        }
+
+                        MouseArea {
+                            id: clearMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            enabled: parent.enabled
+                            onClicked: ExplorerPrefs.setString("backgroundImage", "")
+                        }
+                    }
+                }
+
+                Row {
+                    id: backgroundDimRow
+                    x: 24
+                    y: backgroundRow.y + backgroundRow.height + 8
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: 0, label: qsTr("无遮罩") },
+                            { value: 40, label: qsTr("轻") },
+                            { value: 70, label: qsTr("中") },
+                            { value: 90, label: qsTr("强") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: ExplorerPrefs.backgroundDim === modelData.value
+                            onClicked: ExplorerPrefs.setNumber("backgroundDim", modelData.value)
+                        }
+                    }
+                }
+
+                Text {
+                    id: toolbarTitle
+                    x: 24
+                    y: backgroundDimRow.y + backgroundDimRow.height + 24
+                    text: qsTr("工具栏")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    id: toolbarNote
+                    x: 24
+                    y: toolbarTitle.y + 20
+                    width: content.width - 48
+                    text: qsTr("拖动地址栏两侧的按钮可以调整顺序；导航按钮与右侧操作各自排序，重启后保留。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    id: toolbarRow
+                    x: 24
+                    y: toolbarNote.y + toolbarNote.height + 8
+                    spacing: 8
+
+                    Rectangle {
+                        width: 96
+                        height: Theme.controlMd
+                        radius: Theme.radiusSm
+                        color: toolbarResetMouse.containsMouse
+                            ? root.hoverFill : "transparent"
+                        border.width: 1
+                        border.color: root.hairline
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: qsTr("恢复默认")
+                            color: root.textColor
+                            font.pixelSize: Theme.typeCaption
+                        }
+
+                        MouseArea {
+                            id: toolbarResetMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                ExplorerPrefs.setString("toolbarLeading", "back,forward,up")
+                                ExplorerPrefs.setString("toolbarTrailing",
+                                                        "search,trash,view,more")
+                            }
+                        }
+                    }
+                }
+
                 Rectangle {
                     id: appearanceHairline
                     x: 24
-                    y: startupRow.y + startupRow.height + 20
+                    y: toolbarRow.y + toolbarRow.height + 20
                     width: content.width - 48
                     height: 1
                     color: root.hairline
@@ -760,7 +1121,7 @@ FocusScope {
                     x: 24
                     y: appearanceHairline.y + 20
                     width: content.width - 48
-                    text: qsTr("外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
+                    text: qsTr("外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml；大小单位与视图偏好保存在 explorer-qt.ini。")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
@@ -977,6 +1338,340 @@ FocusScope {
                 }
             }
 
+            // --------------------------------------------------------- actions
+            Flickable {
+                id: actionsPage
+                anchors.fill: parent
+                visible: root.page === "actions"
+                contentWidth: width
+                contentHeight: actionsColumn.height + 48
+                clip: true
+                flickableDirection: Flickable.VerticalFlick
+                boundsBehavior: Flickable.StopAtBounds
+
+                Column {
+                    id: actionsColumn
+                    x: 24
+                    y: 20
+                    width: actionsPage.width - 48
+                    spacing: 10
+
+                    Text {
+                        text: qsTr("动作")
+                        color: root.textColor
+                        font.pixelSize: Theme.typeTitle
+                        font.weight: Font.Medium
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: qsTr("动作把选中的文件或文件夹交给外部程序，参数逐个传递，不经过 shell。占位符：%f 首个选中项，%F 每一项（各成一个参数），%d 当前目录，%u 首个选中项的 file: 地址。参数每行一个。只列出程序在 PATH 上的动作。")
+                        color: root.mutedColor
+                        font.pixelSize: Theme.typeMicro
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Repeater {
+                        model: root.actionDefinitions
+
+                        delegate: Column {
+                            id: actionRow
+                            required property var modelData
+                            required property int index
+
+                            width: actionsColumn.width
+                            spacing: 6
+
+                            property string editName: modelData.name
+                            property string editCommand: modelData.command
+                            property string editArgs: modelData.args
+                            property string editSelection: modelData.selection
+
+                            Rectangle {
+                                width: parent.width
+                                height: 1
+                                color: root.hairline
+                            }
+
+                            Row {
+                                spacing: 8
+
+                                FieldFrame {
+                                    width: 160
+                                    height: Theme.controlMd
+                                }
+                                TextInput {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 152
+                                    height: Theme.controlMd
+                                    text: actionRow.editName
+                                    onTextEdited: actionRow.editName = text
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    color: root.textColor
+                                    selectionColor: root.accent
+                                    selectedTextColor: Theme.onInteractive
+                                    font.pixelSize: Theme.typeCaption
+                                    selectByMouse: true
+                                    clip: true
+                                }
+
+                                FieldFrame {
+                                    width: 180
+                                    height: Theme.controlMd
+                                }
+                                TextInput {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 172
+                                    height: Theme.controlMd
+                                    text: actionRow.editCommand
+                                    onTextEdited: actionRow.editCommand = text
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    color: root.textColor
+                                    selectionColor: root.accent
+                                    selectedTextColor: Theme.onInteractive
+                                    font.pixelSize: Theme.typeCaption
+                                    font.family: Theme.monoFamily
+                                    selectByMouse: true
+                                    clip: true
+                                }
+                            }
+
+                            Row {
+                                spacing: 6
+
+                                Repeater {
+                                    model: [
+                                        { value: "any", label: qsTr("任意") },
+                                        { value: "file", label: qsTr("文件") },
+                                        { value: "directory", label: qsTr("文件夹") },
+                                        { value: "multiple", label: qsTr("多选") }
+                                    ]
+                                    delegate: ChoiceChip {
+                                        required property var modelData
+                                        label: modelData.label
+                                        selected: actionRow.editSelection === modelData.value
+                                        onClicked: actionRow.editSelection = modelData.value
+                                    }
+                                }
+                            }
+
+                            FieldFrame {
+                                width: parent.width
+                                height: 46
+                            }
+                            TextInput {
+                                x: 8
+                                y: 6
+                                width: parent.width - 16
+                                height: parent.height - 12
+                                text: actionRow.editArgs
+                                onTextEdited: actionRow.editArgs = text
+                                color: root.textColor
+                                selectionColor: root.accent
+                                selectedTextColor: Theme.onInteractive
+                                font.pixelSize: Theme.typeCaption
+                                font.family: Theme.monoFamily
+                                selectByMouse: true
+                                clip: true
+                                wrapMode: TextInput.WrapAnywhere
+                            }
+
+                            Row {
+                                spacing: 10
+
+                                Text {
+                                    id: saveAction
+                                    text: qsTr("保存")
+                                    color: saveActionMouse.containsMouse
+                                        ? root.accent : root.textColor
+                                    font.pixelSize: Theme.typeMicro
+
+                                    MouseArea {
+                                        id: saveActionMouse
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        hoverEnabled: true
+                                        onClicked: {
+                                            Workspace.saveCustomAction(actionRow.modelData.id,
+                                                actionRow.editName, actionRow.editCommand,
+                                                actionRow.editArgs, actionRow.editSelection)
+                                            root.refreshActions()
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: qsTr("删除")
+                                    color: deleteActionMouse.containsMouse
+                                        ? Theme.danger : root.faintColor
+                                    font.pixelSize: Theme.typeMicro
+
+                                    MouseArea {
+                                        id: deleteActionMouse
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        hoverEnabled: true
+                                        onClicked: {
+                                            Workspace.removeCustomAction(actionRow.modelData.id)
+                                            root.refreshActions()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: root.hairline
+                    }
+
+                    Text {
+                        text: qsTr("新增动作")
+                        color: root.textColor
+                        font.pixelSize: Theme.typeCaption
+                        font.weight: Font.Medium
+                    }
+
+                    Text {
+                        text: qsTr("名称 · 程序 · 参数（每行一个）")
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeMicro
+                    }
+
+                    Row {
+                        spacing: 8
+
+                        FieldFrame {
+                            width: 160
+                            height: Theme.controlMd
+                        }
+                        TextInput {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 152
+                            height: Theme.controlMd
+                            text: root.newActionName
+                            onTextEdited: root.newActionName = text
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: root.textColor
+                            selectionColor: root.accent
+                            selectedTextColor: Theme.onInteractive
+                            font.pixelSize: Theme.typeCaption
+                            selectByMouse: true
+                            clip: true
+                        }
+
+                        FieldFrame {
+                            width: 180
+                            height: Theme.controlMd
+                        }
+                        TextInput {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 172
+                            height: Theme.controlMd
+                            text: root.newActionCommand
+                            onTextEdited: root.newActionCommand = text
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: root.textColor
+                            selectionColor: root.accent
+                            selectedTextColor: Theme.onInteractive
+                            font.pixelSize: Theme.typeCaption
+                            font.family: Theme.monoFamily
+                            selectByMouse: true
+                            clip: true
+                        }
+                    }
+
+                    Row {
+                        spacing: 6
+
+                        Repeater {
+                            model: [
+                                { value: "any", label: qsTr("任意") },
+                                { value: "file", label: qsTr("文件") },
+                                { value: "directory", label: qsTr("文件夹") },
+                                { value: "multiple", label: qsTr("多选") }
+                            ]
+                            delegate: ChoiceChip {
+                                required property var modelData
+                                label: modelData.label
+                                selected: root.newActionSelection === modelData.value
+                                onClicked: root.newActionSelection = modelData.value
+                            }
+                        }
+                    }
+
+                    FieldFrame {
+                        width: parent.width
+                        height: 46
+                    }
+                    TextInput {
+                        x: 8
+                        y: 6
+                        width: parent.width - 16
+                        height: parent.height - 12
+                        text: root.newActionArgs
+                        onTextEdited: root.newActionArgs = text
+                        color: root.textColor
+                        selectionColor: root.accent
+                        selectedTextColor: Theme.onInteractive
+                        font.pixelSize: Theme.typeCaption
+                        font.family: Theme.monoFamily
+                        selectByMouse: true
+                        clip: true
+                        wrapMode: TextInput.WrapAnywhere
+                    }
+
+                    Row {
+                        spacing: 10
+
+                        Text {
+                            text: qsTr("添加")
+                            color: addActionMouse.containsMouse
+                                ? root.accent : root.textColor
+                            font.pixelSize: Theme.typeMicro
+
+                            MouseArea {
+                                id: addActionMouse
+                                anchors.fill: parent
+                                anchors.margins: -4
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (root.newActionName.trim() === ""
+                                            || root.newActionCommand.trim() === "")
+                                        return
+                                    Workspace.saveCustomAction("", root.newActionName,
+                                        root.newActionCommand, root.newActionArgs,
+                                        root.newActionSelection)
+                                    root.newActionName = ""
+                                    root.newActionArgs = "%d"
+                                    root.refreshActions()
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: qsTr("恢复内置动作")
+                            color: resetActionsMouse.containsMouse
+                                ? root.accent : root.faintColor
+                            font.pixelSize: Theme.typeMicro
+
+                            MouseArea {
+                                id: resetActionsMouse
+                                anchors.fill: parent
+                                anchors.margins: -4
+                                hoverEnabled: true
+                                onClicked: {
+                                    Workspace.resetCustomActions()
+                                    root.refreshActions()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // -------------------------------------------------------- terminal
             Item {
                 anchors.fill: parent
@@ -1167,6 +1862,217 @@ FocusScope {
                         text: root.terminalStatus
                         color: Theme.success
                         font.pixelSize: Theme.typeMicro
+                    }
+                }
+            }
+
+            // ------------------------------------------------------------ tags
+            // Definitions only: which files carry a tag is edited in the
+            // listing, and the storage boundary (a stream on NTFS/APFS/ext4,
+            // an index elsewhere) is stated once, here, rather than in every
+            // row that writes a tag.
+            Item {
+                anchors.fill: parent
+                visible: root.page === "tags"
+
+                readonly property var tags: {
+                    if (root.tagRevision >= 0) {
+                        try {
+                            return JSON.parse(TagStore.tagsJson)
+                        } catch (error) {
+                            return []
+                        }
+                    }
+                    return []
+                }
+
+                Text {
+                    x: 24; y: 20
+                    text: qsTr("标签")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
+                }
+                Text {
+                    x: 24; y: 50
+                    width: content.width - 48
+                    text: qsTr("标签会写进文件本身（NTFS 数据流、xattr）；网络位置、压缩包以及不支持的文件系统改为保存在 dae 的索引里，不会随文件移动。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                    lineHeight: Theme.leadingBody
+                }
+
+                Row {
+                    x: 24; y: 96
+                    height: Theme.controlMd
+                    spacing: 8
+
+                    Rectangle {
+                        width: 170
+                        height: parent.height
+                        radius: Theme.radiusSm
+                        color: Theme.field
+                        border.width: 1
+                        border.color: draftName.activeFocus ? Theme.signal : Theme.hairlineStrong
+
+                        TextInput {
+                            id: draftName
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: Theme.ink
+                            font.pixelSize: Theme.typeBody
+                            selectByMouse: true
+                            activeFocusOnTab: true
+                            Accessible.name: qsTr("新标签名称")
+                            onAccepted: root.createTag(draftName.text, draftColor.text)
+                        }
+                    }
+
+                    Rectangle {
+                        width: 92
+                        height: parent.height
+                        radius: Theme.radiusSm
+                        color: Theme.field
+                        border.width: 1
+                        border.color: draftColor.activeFocus ? Theme.signal : Theme.hairlineStrong
+
+                        TextInput {
+                            id: draftColor
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            text: "#4c8dff"
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: Theme.ink
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.typeSmall
+                            selectByMouse: true
+                            activeFocusOnTab: true
+                            Accessible.name: qsTr("颜色")
+                            onAccepted: root.createTag(draftName.text, draftColor.text)
+                        }
+                    }
+
+                    PrimaryButton {
+                        label: qsTr("添加")
+                        onClicked: root.createTag(draftName.text, draftColor.text)
+                    }
+                }
+
+                Text {
+                    x: 24; y: 132
+                    width: content.width - 48
+                    visible: root.tagError !== ""
+                    text: root.tagError
+                    color: Theme.danger
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.Wrap
+                }
+
+                ListView {
+                    x: 24; y: 164
+                    width: content.width - 48
+                    height: content.height - 184
+                    clip: true
+                    model: parent.tags
+                    spacing: 2
+
+                    delegate: Rectangle {
+                        id: tagRow
+                        required property var modelData
+
+                        width: ListView.view.width
+                        height: Theme.controlLg
+                        radius: Theme.radiusSm
+                        color: "transparent"
+
+                        Rectangle {
+                            x: 0
+                            width: 8
+                            height: 8
+                            radius: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: tagRow.modelData.color
+                        }
+
+                        Rectangle {
+                            id: nameField
+                            x: 20
+                            width: 200
+                            height: Theme.controlMd
+                            anchors.verticalCenter: parent.verticalCenter
+                            radius: Theme.radiusXs
+                            color: Theme.field
+                            border.width: 1
+                            border.color: nameInput.activeFocus ? Theme.signal : Theme.hairline
+
+                            TextInput {
+                                id: nameInput
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: Theme.ink
+                                font.pixelSize: Theme.typeBody
+                                selectByMouse: true
+                                activeFocusOnTab: true
+                                Component.onCompleted: text = tagRow.modelData.name
+                            }
+                        }
+
+                        Rectangle {
+                            id: colorField
+                            x: nameField.x + nameField.width + 8
+                            width: 92
+                            height: Theme.controlMd
+                            anchors.verticalCenter: parent.verticalCenter
+                            radius: Theme.radiusXs
+                            color: Theme.field
+                            border.width: 1
+                            border.color: colorInput.activeFocus ? Theme.signal : Theme.hairline
+
+                            TextInput {
+                                id: colorInput
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: Theme.ink
+                                font.family: Theme.monoFamily
+                                font.pixelSize: Theme.typeSmall
+                                selectByMouse: true
+                                activeFocusOnTab: true
+                                Component.onCompleted: text = tagRow.modelData.color
+                            }
+                        }
+
+                        Text {
+                            x: colorField.x + colorField.width + 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("%1 项").arg(tagRow.modelData.count)
+                            color: Theme.inkFaint
+                            font.pixelSize: Theme.typeMicro
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 14
+
+                            SmallButton {
+                                label: qsTr("保存")
+                                onClicked: root.updateTag(tagRow.modelData.id,
+                                                          nameInput.text, colorInput.text)
+                            }
+
+                            SmallButton {
+                                label: qsTr("删除")
+                                onClicked: root.removeTag(tagRow.modelData.id)
+                            }
+                        }
                     }
                 }
             }
@@ -1485,6 +2391,8 @@ FocusScope {
                 root.syncTerminalFields()
             else if (nav.value === "defaultManager")
                 Workspace.refreshDefaultManager()
+            else if (nav.value === "actions")
+                root.refreshActions()
         }
 
         Text {
@@ -1521,6 +2429,8 @@ FocusScope {
                     root.syncTerminalFields()
                 else if (nav.value === "defaultManager")
                     Workspace.refreshDefaultManager()
+                else if (nav.value === "actions")
+                    root.refreshActions()
             }
         }
     }
@@ -1689,5 +2599,24 @@ FocusScope {
         color: root.fieldColor
         border.width: 1
         border.color: root.hairline
+    }
+
+    /// The dialog hands back a URL; the preference stores a native path so the
+    /// INI stays readable and `Image.source` can rebuild the URL.
+    function localPath(url) {
+        let text = String(url)
+        if (text.startsWith("file:///"))
+            text = text.substring(8)
+        else if (text.startsWith("file://"))
+            text = text.substring(7)
+        return decodeURIComponent(text)
+    }
+
+    FileDialog {
+        id: backgroundDialog
+        title: qsTr("选择背景图片")
+        nameFilters: [qsTr("图片") + " (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"]
+        onAccepted: ExplorerPrefs.setString("backgroundImage",
+                                            root.localPath(selectedFile))
     }
 }

@@ -61,6 +61,18 @@ QtObject {
     /// A second canvas for surfaces that sit *inside* a canvas — a grid card,
     /// the alternating plate, the palette's shortcut plate.
     readonly property color canvasAlt: dark ? "#1b1c20" : "#f4f4f1"
+    /// Whether a background image is set. The listing surfaces below switch
+    /// from the solid canvas to a translucent one so the image shows through;
+    /// chrome stays solid, which keeps the frame readable.
+    readonly property bool hasBackground: ExplorerPrefs.backgroundImage !== ""
+    /// How much canvas stays over the image: 1 is solid, 0.1 is the floor.
+    /// `backgroundDim` is the user-facing 0–90 contrast guard.
+    readonly property real contentAlpha: hasBackground
+        ? Math.max(0.1, 1 - ExplorerPrefs.backgroundDim / 100) : 1
+    /// The listing canvas. Identical to `canvas` without a background image.
+    readonly property color content: Qt.rgba(canvas.r, canvas.g, canvas.b, contentAlpha)
+    readonly property color contentAlt: Qt.rgba(canvasAlt.r, canvasAlt.g,
+                                               canvasAlt.b, contentAlpha)
     /// The window's frame: title, tabs, path bar, status bar, sidebar. This is
     /// the only surface the OS material is allowed to show through, and the
     /// shell currently asks for no material at all so this value is what paints.

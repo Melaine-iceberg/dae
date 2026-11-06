@@ -32,7 +32,7 @@ Item {
     /// 54 for the checkbox and the name gutter, 228 for what the three trailing
     /// columns need at their smallest.
     readonly property int nameColumnSpan: 282
-    readonly property color contentColor: Theme.canvas
+    readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color hairline: Theme.hairline

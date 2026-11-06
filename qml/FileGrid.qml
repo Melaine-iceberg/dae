@@ -35,10 +35,13 @@ Item {
     readonly property int padding: 16
     readonly property int gapX: 12
     readonly property int gapY: 14
-    readonly property int minCellWidth: 100
-    readonly property int tileHeight: 132
-    readonly property int thumbHeight: 76
-    readonly property int glyphSize: 38
+    /// One icon-size preference drives the tile, the thumbnail well and the
+    /// minimum cell width, so the slider cannot make a 96 px glyph overflow a
+    /// tile sized for 24.
+    readonly property int glyphSize: ExplorerPrefs.iconSize
+    readonly property int thumbHeight: Math.max(56, ExplorerPrefs.iconSize + 24)
+    readonly property int tileHeight: thumbHeight + 56
+    readonly property int minCellWidth: Math.max(96, ExplorerPrefs.iconSize + 40)
 
     readonly property int columns: {
         const available = Math.max(0, width - padding * 2)
@@ -233,7 +236,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: Theme.canvas
+        color: Theme.content
     }
 
     MouseArea {
@@ -260,12 +263,6 @@ Item {
         model: root.model
         clip: true
         focus: true
-        activeFocusOnTab: true
-        reuseItems: true
-        cacheBuffer: 1800
-        boundsBehavior: Flickable.StopAtBounds
-        currentIndex: -1
-
         Keys.onPressed: function (event) {
             root.keyboardCursor = true
             if (root.keyHandler !== null && root.keyHandler(event))
@@ -284,6 +281,7 @@ Item {
             required property string category
             required property string extension
             required property string thumbnailSource
+            required property string tagColors
 
             width: grid.cellWidth - root.gapX
             height: grid.cellHeight - root.gapY
@@ -332,7 +330,7 @@ Item {
                     anchors.fill: parent
                     visible: cell.hasThumbnail
                     radius: Theme.radiusXs
-                    color: Theme.canvasAlt
+                    color: Theme.contentAlt
                     border.width: 1
                     border.color: Theme.hairline
                 }
@@ -371,7 +369,13 @@ Item {
                 anchors.rightMargin: 4
                 anchors.top: thumb.bottom
                 anchors.topMargin: 7
-                text: cell.fileName
+                text: {
+                    if (ExplorerPrefs.showExtensions || cell.extension === "")
+                        return cell.fileName
+                    const suffix = "." + cell.extension
+                    return cell.fileName.endsWith(suffix)
+                        ? cell.fileName.slice(0, -suffix.length) : cell.fileName
+                }
                 color: cell.hidden ? Theme.inkFaint : Theme.ink
                 font.pixelSize: Theme.typeBody
                 lineHeight: Theme.leadingTight
@@ -380,6 +384,25 @@ Item {
                 wrapMode: Text.Wrap
                 maximumLineCount: 2
                 elide: Text.ElideRight
+            }
+
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: thumb.bottom
+                anchors.topMargin: 44
+                spacing: 3
+
+                Repeater {
+                    model: cell.tagColors.length > 0 ? cell.tagColors.split(",") : []
+
+                    Rectangle {
+                        required property string modelData
+                        width: 6
+                        height: 6
+                        radius: 3
+                        color: modelData
+                    }
+                }
             }
 
             MouseArea {

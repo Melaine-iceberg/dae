@@ -50,14 +50,161 @@ Item {
     /// columns, which is the width the reference's table occupies.
     readonly property int contentMaxWidth: 704
     readonly property int contentWidth: Math.min(width, contentMaxWidth)
-    /// Detail columns are dropped, not squeezed, when the pane is narrow: a
-    /// split pane at half of a 1180px window has room for the name and the
-    /// timestamp, not for four columns of ellipses.
-    readonly property bool showModified: width >= 360
-    readonly property bool showSize: width >= 470
-    readonly property bool showType: width >= 550
+    /// The details columns, in the order they sit from the right edge of the
+    /// name column. Their widths and visibility belong to the directory's
+    /// layout, so the header and the rows read one configuration instead of
+    /// two copies of four hard-coded constants.
+    readonly property var columnIds: ["type", "size", "modified", "created", "tags"]
+    readonly property var visibleColumns: {
+        const configured = (ExplorerPrefs.columns || "").split(",")
+        return root.columnIds.filter(function (id) {
+            return configured.indexOf(id) >= 0
+        })
+    }
+    /// A narrow pane drops trailing columns rather than squeezing labels into
+    /// ellipses. The thresholds are the widths at which the pane stops
+    /// carrying the column without clipping its own heading.
+    readonly property var columnMinWidth: ({
+        "type": 550, "size": 470, "modified": 360, "created": 360, "tags": 470
+    })
+    readonly property var shownColumns: {
+        const list = visibleColumns.slice()
+        while (list.length > 0
+               && root.width < (root.columnMinWidth[list[list.length - 1]] || 0))
+            list.pop()
+        return list
+    }
+    function columnWidthAt(index) {
+        const parts = (ExplorerPrefs.columnWidths || "").split(",")
+        const width = parseInt(parts[index])
+        return isNaN(width) ? 100 : width
+    }
+    function columnWidth(id) {
+        return root.columnWidthAt(root.columnIds.indexOf(id))
+    }
+    /// A resize drag updates the painted width here and only writes the
+    /// preference on release: a document write per pointer move is a write per
+    /// pixel, and the preference file is not a render target.
+    property var columnOverrides: ({})
+    function effectiveColumnWidth(id) {
+        const live = root.columnOverrides[id]
+        return live === undefined ? root.columnWidth(id) : live
+    }
+    function columnVisible(id) {
+        return root.shownColumns.indexOf(id) >= 0
+    }
+    function setColumnWidth(id, width, live) {
+        const index = root.columnIds.indexOf(id)
+        if (index < 0)
+            return
+        const clamped = Math.round(Math.max(60, Math.min(420, width)))
+        if (live === true) {
+            const overrides = {}
+            for (const key in root.columnOverrides)
+                overrides[key] = root.columnOverrides[key]
+            overrides[id] = clamped
+            root.columnOverrides = overrides
+            return
+        }
+        const parts = (ExplorerPrefs.columnWidths || "").split(",")
+        while (parts.length < root.columnIds.length)
+            parts.push("100")
+        parts[index] = String(clamped)
+        root.columnOverrides = ({})
+        ExplorerPrefs.setString("columnWidths", parts.join(","))
+    }
+    function toggleColumn(id) {
+        const configured = (ExplorerPrefs.columns || "").split(",").filter(function (value) {
+            return value.length > 0
+        })
+        const index = configured.indexOf(id)
+        if (index >= 0)
+            configured.splice(index, 1)
+        else
+            configured.push(id)
+        ExplorerPrefs.setString("columns", configured.join(","))
+    }
+    /// Double-click on a divider sizes the column to its heading plus the
+    /// widest sample it can paint — not to the longest visible value, which
+    /// would reflow the table every time a large file scrolled past.
+    function autoFitColumn(id) {
+        const samples = {
+            "type": qsTr("文件夹"),
+            "size": "888.8 MiB",
+            "modified": "2026-11-05 12:34",
+            "created": "2026-11-05 12:34",
+            "tags": qsTr("工作, 重要")
+        }
+        const label = root.columnLabel(id) + "  "
+        const sample = label.length > (samples[id] || "").length ? label : samples[id]
+        const metrics = Qt.createQmlObject(
+            "import QtQuick; Text { font.pixelSize: " + Theme.typeSmall + " }", root)
+        metrics.text = sample || ""
+        root.setColumnWidth(id, metrics.implicitWidth + 28)
+        metrics.destroy()
+    }
+    readonly property var columnLabels: ({
+        "type": qsTr("类型"),
+        "size": qsTr("大小"),
+        "modified": qsTr("修改时间"),
+        "created": qsTr("创建时间"),
+        "tags": qsTr("标签")
+    })
+    function columnLabel(id) {
+        return root.columnLabels[id] || id
+    }
+    /// Section headers are a rendering of the model's `groupLabel`, translated
+    /// here so the Rust side keeps language-neutral keys.
+    function groupLabelText(label) {
+        if (label === "")
+            return qsTr("无标签")
+        const key = ExplorerPrefs.groupKey
+        if (key === "type") {
+            const names = {
+                "folder": qsTr("文件夹"), "link": qsTr("链接"),
+                "image": qsTr("图片"), "video": qsTr("视频"),
+                "audio": qsTr("音频"), "document": qsTr("文档"),
+                "text": qsTr("文本"), "code": qsTr("代码"),
+                "archive": qsTr("压缩包"), "font": qsTr("字体"),
+                "executable": qsTr("程序"), "other": qsTr("其他"),
+                "file": qsTr("文件")
+            }
+            return names[label] || label
+        }
+        if (key === "modified")
+            return label + qsTr(" 修改")
+        if (key === "created")
+            return label + qsTr(" 创建")
+        return label
+    }
+    /// The name without its extension, for the "show extensions" preference.
+    /// The model still reports the full name, so sorting, search and rename
+    /// are unaffected.
+    function cellText(r, id) {
+        if (id === "type")
+            return r.isDir ? qsTr("文件夹")
+                : (r.extension !== "" ? r.extension.toUpperCase() : qsTr("文件"))
+        if (id === "size")
+            return r.sizeText
+        if (id === "modified")
+            return r.modifiedText
+        if (id === "created") {
+            if (!r.createdText || r.createdText.length === 0)
+                return "—"
+            return r.createdFallback ? r.createdText + qsTr("（回退）") : r.createdText
+        }
+        if (id === "tags")
+            return r.tagNames
+        return ""
+    }
+    function displayName(name, extension) {
+        if (ExplorerPrefs.showExtensions || extension === "")
+            return name
+        const suffix = "." + extension
+        return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+    }
     readonly property int listingTop: listHeaderVisible ? headerHeight : 0
-    readonly property color contentColor: Theme.canvas
+    readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color hairline: Theme.hairline
@@ -181,7 +328,8 @@ Item {
         if (root.tab === null)
             return
         root.tab.listing.setOrder(ExplorerPrefs.sortKey, ExplorerPrefs.sortOrder,
-                                  ExplorerPrefs.foldersFirst)
+                                  ExplorerPrefs.folderOrder)
+        root.tab.listing.setGroup(ExplorerPrefs.groupKey, ExplorerPrefs.groupDate)
         root.tab.listing.setFilters(ExplorerPrefs.showHiddenFiles, ExplorerPrefs.kindFilter,
                                     ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter)
     }
@@ -190,14 +338,61 @@ Item {
     Component.onCompleted: applyViewPreferences()
 
     Connections {
+        target: root.model
+        enabled: root.model !== null && root.tab !== null
+        function onLoadedChanged() { tagTimer.restart() }
+        function onFinishedChanged() { tagTimer.restart() }
+        function onSortApplied() { tagTimer.restart() }
+    }
+
+    Connections {
         target: ExplorerPrefs
         function onSortKeyChanged() { root.applyViewPreferences() }
         function onSortOrderChanged() { root.applyViewPreferences() }
-        function onFoldersFirstChanged() { root.applyViewPreferences() }
+        function onFolderOrderChanged() { root.applyViewPreferences() }
+        function onGroupKeyChanged() { root.applyViewPreferences() }
+        function onGroupDateChanged() { root.applyViewPreferences() }
         function onShowHiddenFilesChanged() { root.applyViewPreferences() }
         function onKindFilterChanged() { root.applyViewPreferences() }
         function onModifiedFilterChanged() { root.applyViewPreferences() }
         function onSizeFilterChanged() { root.applyViewPreferences() }
+    }
+
+    /// Asks the model for the tags of the rows currently on screen. The
+    /// listing itself never reads tags while enumerating, so this is the only
+    /// moment a tag is fetched for display.
+    function updateVisibleTags() {
+        if (root.model === null || root.searchModel !== null || root.tab === null)
+            return
+        const view = root.viewMode === "grid" ? root.gridView
+            : (root.viewMode === "list" ? list : null)
+        if (view === null || view.height <= 0 || root.model.loaded <= 0)
+            return
+        const top = view.contentY + 2
+        const bottom = view.contentY + view.height - 2
+        // `indexAt` is exact but returns -1 over a section header or past the
+        // last row. The arithmetic fallback over-approximates by the section
+        // heights, which is fine: reading tags for a row just below the fold
+        // is cheaper than a second request when it scrolls in.
+        let first = view.indexAt(4, top)
+        if (first < 0)
+            first = view.indexAt(4, top + root.headerHeight + 2)
+        if (first < 0)
+            first = Math.max(0, Math.floor(top / root.rowHeight) - 2)
+        let last = view.indexAt(4, bottom)
+        if (last < 0)
+            last = Math.min(root.model.loaded - 1,
+                            Math.floor(bottom / root.rowHeight) + 1)
+        if (last < first)
+            last = first
+        root.model.requestTags(first, last)
+    }
+
+    Timer {
+        id: tagTimer
+        interval: 60
+        repeat: false
+        onTriggered: root.updateVisibleTags()
     }
 
     /// Keyboard focus lives on the view that is showing, not on this container.
@@ -759,10 +954,61 @@ Item {
 
         property string label: ""
         property string sortKey: ""
+        property string columnId: ""
         property bool alignRight: false
         readonly property bool active: ExplorerPrefs.sortKey === cell.sortKey
 
         signal clicked()
+
+        /// The divider on the trailing edge. The label's own click area is
+        /// inset so a drag to resize never also sorts.
+        Rectangle {
+            id: divider
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            color: Theme.hairline
+        }
+
+        MouseArea {
+            id: dividerMouse
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 7
+            cursorShape: Qt.SplitHCursor
+            hoverEnabled: true
+            preventStealing: true
+            property real pressX: 0
+            property real pressWidth: 0
+            onPressed: function (mouse) {
+                dividerMouse.pressWidth = cell.width
+                dividerMouse.pressX = cell.mapToItem(null, mouse.x, mouse.y).x
+            }
+            onPositionChanged: function (mouse) {
+                if (!pressed || cell.columnId === "")
+                    return
+                const x = cell.mapToItem(null, mouse.x, mouse.y).x
+                root.setColumnWidth(cell.columnId,
+                                    dividerMouse.pressWidth + (x - dividerMouse.pressX),
+                                    true)
+            }
+            onReleased: {
+                if (cell.columnId !== "" && root.columnOverrides[cell.columnId] !== undefined)
+                    root.setColumnWidth(cell.columnId,
+                                        root.columnOverrides[cell.columnId], false)
+            }
+            onCanceled: {
+                if (cell.columnId !== "" && root.columnOverrides[cell.columnId] !== undefined)
+                    root.setColumnWidth(cell.columnId,
+                                        root.columnOverrides[cell.columnId], false)
+            }
+            onDoubleClicked: {
+                if (cell.columnId !== "")
+                    root.autoFitColumn(cell.columnId)
+            }
+        }
 
         Row {
             anchors.left: cell.alignRight ? undefined : parent.left
@@ -792,7 +1038,11 @@ Item {
 
         MouseArea {
             id: headerMouse
-            anchors.fill: parent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: 7
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: cell.clicked()
@@ -828,54 +1078,37 @@ Item {
                 anchors.leftMargin: 36
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: Math.max(0, (root.showType ? typeHeader.x
-                    : root.showSize ? sizeHeader.x
-                    : root.showModified ? modifiedHeader.x : parent.width) - 8 - x)
+                width: Math.max(0, detailsHeader.x - 8 - x)
                 label: qsTr("名称")
                 sortKey: "name"
                 onClicked: root.applySort("name")
             }
 
-            SortHeader {
-                id: typeHeader
-                anchors.right: root.showSize ? sizeHeader.left
-                    : (root.showModified ? modifiedHeader.left : parent.right)
-                anchors.rightMargin: 16
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: 108
-                visible: root.showType
-                label: qsTr("类型")
-                sortKey: "type"
-                onClicked: root.applySort("type")
-            }
-
-            SortHeader {
-                id: sizeHeader
-                anchors.right: root.showModified ? modifiedHeader.left : parent.right
-                anchors.rightMargin: root.showModified ? 24 : 16
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: 92
-                visible: root.showSize
-                label: qsTr("大小")
-                sortKey: "size"
-                alignRight: true
-                onClicked: root.applySort("size")
-            }
-
-            SortHeader {
-                id: modifiedHeader
+            /// The details columns are one right-anchored row, so their
+            /// order, widths and visibility come from the directory's layout
+            /// instead of four anchor rules that have to be edited together.
+            Row {
+                id: detailsHeader
                 anchors.right: parent.right
                 anchors.rightMargin: 16
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 142
-                visible: root.showModified
-                label: qsTr("修改时间")
-                sortKey: "modified"
-                alignRight: true
-                onClicked: root.applySort("modified")
+                spacing: 0
+
+                Repeater {
+                    model: root.shownColumns
+
+                    SortHeader {
+                        required property string modelData
+                        width: root.effectiveColumnWidth(modelData)
+                        height: detailsHeader.height
+                        label: root.columnLabel(modelData)
+                        sortKey: modelData
+                        alignRight: modelData !== "type"
+                        columnId: modelData
+                        onClicked: root.applySort(modelData)
+                    }
+                }
             }
         }
 
@@ -924,6 +1157,41 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             spacing: 0
             currentIndex: -1
+            /// Sections come from the model's precomputed `groupLabel`; an
+            /// empty property name is how a ListView is told to paint none.
+            section.property: root.searchModel === null
+                && ExplorerPrefs.groupKey !== "" ? "groupLabel" : ""
+            section.criteria: ViewSection.FullString
+            section.delegate: Item {
+                id: sectionRow
+
+                required property string section
+
+                width: list.width
+                height: ExplorerPrefs.groupKey === "" ? 0 : 26
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: root.contentColor
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 36
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 4
+                    text: root.groupLabelText(sectionRow.section)
+                    color: Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
+                    font.weight: Font.Medium
+                    font.letterSpacing: 0.4
+                    textFormat: Text.PlainText
+                }
+            }
+
+            onContentYChanged: tagTimer.restart()
+            onHeightChanged: tagTimer.restart()
+            onCountChanged: tagTimer.restart()
 
             /// Startup split, same contract as the overview: the model marks
             /// its publish point in Rust, this is the layout half, and the
@@ -971,6 +1239,12 @@ Item {
                 /// `added`, `modified`, `untracked`, or empty when the file is
                 /// clean. The search model answers empty for every row.
                 required property string gitStatus
+                required property string createdText
+                required property bool createdFallback
+                required property string tagNames
+                required property string tagIds
+                required property string tagColors
+                required property string groupLabel
 
                 /// The row stops at the column track's cap; ListView leaves the
                 /// rest of the viewport as background, exactly like the
@@ -1001,7 +1275,7 @@ Item {
                 /// the row. Press is the double click, so a reader has the same
                 /// one gesture a pointer does.
                 Accessible.role: Accessible.ListItem
-                Accessible.name: row.fileName
+                Accessible.name: root.displayName(row.fileName, row.extension)
                 Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
                 Accessible.selectable: true
                 Accessible.selected: row.selected
@@ -1096,9 +1370,7 @@ Item {
                 Row {
                     id: nameCell
                     x: 36
-                    width: Math.max(0, (root.showType ? typeTextItem.x
-                        : root.showSize ? sizeTextItem.x
-                        : root.showModified ? modifiedTextItem.x : row.width) - 8 - x)
+                    width: Math.max(0, detailsRow.x - 8 - x)
                     height: parent.height
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
@@ -1109,7 +1381,7 @@ Item {
                             Math.max(0, parent.width * 0.62 - (row.hasGitStatus ? 22 : 0)))
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
-                        text: row.fileName
+                        text: root.displayName(row.fileName, row.extension)
                         color: row.hidden ? Theme.inkFaint : root.textColor
                         font.pixelSize: Theme.typeName
                         textFormat: Text.PlainText
@@ -1151,50 +1423,81 @@ Item {
                     }
                 }
 
-                Text {
-                    id: typeTextItem
-                    anchors.right: root.showSize ? sizeTextItem.left
-                        : (root.showModified ? modifiedTextItem.left : parent.right)
-                    anchors.rightMargin: 16
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 108
-                    visible: root.showType
-                    text: row.isDir ? qsTr("文件夹")
-                        : (row.extension !== "" ? row.extension.toUpperCase() : qsTr("文件"))
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeSmall
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    id: sizeTextItem
-                    anchors.right: root.showModified ? modifiedTextItem.left : parent.right
-                    anchors.rightMargin: root.showModified ? 24 : 16
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 92
-                    visible: root.showSize
-                    horizontalAlignment: Text.AlignRight
-                    text: row.sizeText
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeSmall
-                    font.features: { "tnum": 1 }
-                    textFormat: Text.PlainText
-                }
-
-                Text {
-                    id: modifiedTextItem
+                /// The details columns, right-anchored in the order the
+                /// header paints them. A column the pane cannot afford is
+                /// dropped by `shownColumns`, and the name cell grows into
+                /// the space.
+                Row {
+                    id: detailsRow
                     anchors.right: parent.right
                     anchors.rightMargin: 16
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 142
-                    visible: root.showModified
-                    horizontalAlignment: Text.AlignRight
-                    text: row.modifiedText
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeSmall
-                    font.features: { "tnum": 1 }
-                    textFormat: Text.PlainText
+                    height: parent.height
+                    spacing: 0
+
+                    Repeater {
+                        model: root.shownColumns
+
+                        Item {
+                            id: cell
+
+                            required property string modelData
+                            width: root.effectiveColumnWidth(modelData)
+                            height: detailsRow.height
+
+                            Text {
+                                anchors.fill: parent
+                                visible: cell.modelData !== "tags"
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: cell.modelData === "type"
+                                    ? Text.AlignLeft : Text.AlignRight
+                                text: root.cellText(row, cell.modelData)
+                                color: cell.modelData === "created" && row.createdFallback
+                                    ? Theme.inkFaint : root.mutedColor
+                                font.pixelSize: Theme.typeSmall
+                                font.features: cell.modelData === "size"
+                                    || cell.modelData === "modified"
+                                    || cell.modelData === "created" ? { "tnum": 1 } : {}
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                            }
+
+                            Row {
+                                visible: cell.modelData === "tags"
+                                anchors.fill: parent
+                                anchors.leftMargin: 4
+                                spacing: 6
+
+                                Row {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 3
+
+                                    Repeater {
+                                        model: row.tagColors.length > 0
+                                            ? row.tagColors.split(",") : []
+
+                                        Rectangle {
+                                            required property string modelData
+                                            width: 6
+                                            height: 6
+                                            radius: 3
+                                            color: modelData
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    width: Math.max(0, parent.width - 14)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: row.tagNames
+                                    color: root.mutedColor
+                                    font.pixelSize: Theme.typeSmall
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
                 }
 
                 MouseArea {
@@ -1358,10 +1661,23 @@ Item {
                 let lastRow = -1
                 if (inBand) {
                     const currentContent = list.contentY + pointerY
-                    firstRow = Math.max(0, Math.floor(
-                        Math.min(startContentY, currentContent) / root.rowHeight))
-                    lastRow = Math.min(root.model.loaded - 1, Math.floor(
-                        Math.max(startContentY, currentContent) / root.rowHeight))
+                    const top = Math.min(startContentY, currentContent)
+                    const bottom = Math.max(startContentY, currentContent)
+                    // `indexAt` rather than row arithmetic: a section header
+                    // is taller than a row, and dividing the content offset
+                    // by the row height would drift one row per section.
+                    firstRow = list.indexAt(4, top + 2)
+                    if (firstRow < 0)
+                        firstRow = list.indexAt(4, top + root.headerHeight + 2)
+                    lastRow = list.indexAt(4, bottom - 2)
+                    if (lastRow < 0)
+                        lastRow = list.indexAt(4, bottom - root.rowHeight)
+                    if (firstRow < 0)
+                        firstRow = 0
+                    if (lastRow < 0)
+                        lastRow = root.model.loaded - 1
+                    firstRow = Math.max(0, firstRow)
+                    lastRow = Math.min(root.model.loaded - 1, lastRow)
                 }
                 if (inBand === appliedInBand && firstRow === appliedFirstRow
                         && lastRow === appliedLastRow)

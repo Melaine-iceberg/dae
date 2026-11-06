@@ -57,6 +57,37 @@ Item {
         { kind: "shellToggle", property: "terminalVisible", glyph: "terminal",
           label: qsTr("终端") },
         { kind: "sep" },
+        { kind: "label", label: qsTr("排序") },
+        { kind: "radio", group: "sortKey", value: "name", label: qsTr("名称") },
+        { kind: "radio", group: "sortKey", value: "modified", label: qsTr("修改时间") },
+        { kind: "radio", group: "sortKey", value: "created", label: qsTr("创建时间") },
+        { kind: "radio", group: "sortKey", value: "size", label: qsTr("大小") },
+        { kind: "radio", group: "sortKey", value: "type", label: qsTr("类型") },
+        { kind: "radio", group: "sortKey", value: "path", label: qsTr("路径") },
+        { kind: "radio", group: "sortKey", value: "tag", label: qsTr("标签") },
+        { kind: "sep" },
+        { kind: "label", label: qsTr("分组") },
+        { kind: "radio", group: "groupKey", value: "", label: qsTr("不分组") },
+        { kind: "radio", group: "groupKey", value: "name", label: qsTr("按名称") },
+        { kind: "radio", group: "groupKey", value: "modified", label: qsTr("按修改时间") },
+        { kind: "radio", group: "groupKey", value: "created", label: qsTr("按创建时间") },
+        { kind: "radio", group: "groupKey", value: "size", label: qsTr("按大小") },
+        { kind: "radio", group: "groupKey", value: "type", label: qsTr("按类型") },
+        { kind: "radio", group: "groupKey", value: "tag", label: qsTr("按标签") },
+        { kind: "sep" },
+        { kind: "label", label: qsTr("文件夹") },
+        { kind: "radio", group: "folderOrder", value: "foldersFirst", label: qsTr("文件夹优先") },
+        { kind: "radio", group: "folderOrder", value: "filesFirst", label: qsTr("文件优先") },
+        { kind: "radio", group: "folderOrder", value: "mixed", label: qsTr("混合排列") },
+        { kind: "sep" },
+        { kind: "label", label: qsTr("列") },
+        { kind: "column", value: "type", label: qsTr("类型") },
+        { kind: "column", value: "size", label: qsTr("大小") },
+        { kind: "column", value: "modified", label: qsTr("修改时间") },
+        { kind: "column", value: "created", label: qsTr("创建时间") },
+        { kind: "column", value: "tags", label: qsTr("标签") },
+        { kind: "toggle", property: "showExtensions", label: qsTr("显示扩展名") },
+        { kind: "sep" },
         { kind: "label", label: qsTr("密度") },
         { kind: "radio", group: "density", value: "compact", label: qsTr("紧凑") },
         { kind: "radio", group: "density", value: "comfortable", label: qsTr("舒适") },
@@ -69,7 +100,19 @@ Item {
           label: qsTr("行内显示缩略图") },
         { kind: "sep" },
         { kind: "toggle", property: "splitEnabled", glyph: "split",
-          label: qsTr("分屏") }
+          label: qsTr("分屏") },
+        { kind: "sep" },
+        { kind: "toggle", property: "syncLayout", glyph: "refresh",
+          label: qsTr("所有目录使用同一布局") },
+        { kind: "toggle", property: "adaptiveLayout", glyph: "grid",
+          label: qsTr("按内容自动选择布局") },
+        { kind: "sep" },
+        { kind: "label", label: qsTr("图标大小") },
+        { kind: "size", value: 24, label: "24" },
+        { kind: "size", value: 32, label: "32" },
+        { kind: "size", value: 48, label: "48" },
+        { kind: "size", value: 64, label: "64" },
+        { kind: "size", value: 96, label: "96" }
     ]
 
     function openAbove(x, y) {
@@ -92,6 +135,10 @@ Item {
             return ExplorerPrefs[item.property] === true
         if (item.kind === "radio")
             return ExplorerPrefs[item.group] === item.value
+        if (item.kind === "column")
+            return (ExplorerPrefs.columns || "").split(",").indexOf(item.value) >= 0
+        if (item.kind === "size")
+            return ExplorerPrefs.iconSize === item.value
         // Actions and labels never carry a tick; `undefined === undefined`
         // would otherwise mark the overview row.
         return false
@@ -115,6 +162,19 @@ Item {
         }
         if (item.kind === "radio")
             ExplorerPrefs.setString(item.group, item.value)
+        if (item.kind === "column") {
+            const configured = (ExplorerPrefs.columns || "").split(",").filter(function (value) {
+                return value.length > 0
+            })
+            const index = configured.indexOf(item.value)
+            if (index >= 0)
+                configured.splice(index, 1)
+            else
+                configured.push(item.value)
+            ExplorerPrefs.setString("columns", configured.join(","))
+        }
+        if (item.kind === "size")
+            ExplorerPrefs.setNumber("iconSize", item.value)
     }
 
     function normalized() {
@@ -129,7 +189,8 @@ Item {
                 glyph: entry.glyph || "",
                 checked: kind === "item" && root.checked(entry),
                 checkable: kind === "item" && (entry.kind === "radio"
-                    || entry.kind === "toggle" || entry.kind === "shellToggle")
+                    || entry.kind === "toggle" || entry.kind === "shellToggle"
+                    || entry.kind === "column" || entry.kind === "size")
             })
         }
         return mapped
@@ -147,7 +208,7 @@ Item {
         width: list.naturalWidth
         // Twenty-two rows do not fit a window; the list scrolls in what is
         // left of it.
-        height: Math.min(list.contentHeight + 8, root.height - 16)
+        height: Math.min(list.contentHeight + 42, root.height - 16)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: root.above
             ? Math.max(8, root.openY - height - 6)
@@ -157,13 +218,86 @@ Item {
         border.width: 1
         border.color: Theme.hairlineStrong
 
+        /// The icon size is a continuous value, so it is a slider rather than
+        /// five radio rows: the menu already lists enough discrete ticks.
+        Row {
+            id: iconSliderRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            height: 30
+            spacing: 10
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("图标大小")
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
+            }
+
+            Item {
+                id: iconSlider
+                width: Math.max(80, iconSliderRow.width - 120)
+                height: 20
+                anchors.verticalCenter: parent.verticalCenter
+
+                readonly property real ratio: (ExplorerPrefs.iconSize - 24) / 72
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 2
+                    radius: 1
+                    color: Theme.hairlineStrong
+                }
+
+                Rectangle {
+                    x: Math.max(0, Math.min(iconSlider.width - 10,
+                                            iconSlider.ratio * iconSlider.width - 5))
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 10
+                    height: 10
+                    radius: 5
+                    color: Theme.signal
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onPositionChanged: function (mouse) {
+                        if (!pressed)
+                            return
+                        const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
+                        ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
+                    }
+                    onPressed: function (mouse) {
+                        const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
+                        ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
+                    }
+                }
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: ExplorerPrefs.iconSize
+                color: Theme.inkMuted
+                font.pixelSize: Theme.typeMicro
+                font.features: { "tnum": 1 }
+                width: 24
+                horizontalAlignment: Text.AlignRight
+            }
+        }
+
         MenuList {
             id: list
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.topMargin: 4
-            anchors.bottom: parent.bottom
+            anchors.bottom: iconSliderRow.top
             anchors.bottomMargin: 4
             maxHeight: height
             items: root.normalized()

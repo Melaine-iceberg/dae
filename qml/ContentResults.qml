@@ -15,8 +15,8 @@ Item {
     property color headerColor: Theme.chrome
     property int currentIndex: -1
 
-    readonly property color contentColor: Theme.canvas
-    readonly property color alternateColor: Theme.canvasAlt
+    readonly property color contentColor: Theme.content
+    readonly property color alternateColor: Theme.contentAlt
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color hairline: Theme.hairline

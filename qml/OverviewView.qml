@@ -24,7 +24,7 @@ Item {
     signal openRequested(string kind, string path)
     signal commandPaletteRequested()
 
-    readonly property color contentColor: Theme.canvas
+    readonly property color contentColor: Theme.content
     readonly property color hoverColor: Theme.hover
 
     function takeFocus() {

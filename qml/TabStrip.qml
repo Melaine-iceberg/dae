@@ -48,6 +48,8 @@ Item {
     signal tabMoved(int from, int to)
     signal tabDroppedOnWindow(int index, string token, real localX)
     signal tabTornOff(int index, real globalX, real globalY)
+    /// Right-click on a chip, in strip coordinates.
+    signal tabContextRequested(int index, real x, real y)
 
     implicitHeight: Theme.shellTitle
     height: Theme.shellTitle
@@ -229,10 +231,22 @@ Item {
                     color: Theme.signal
                 }
 
+                Rectangle {
+                    readonly property bool pinned: tabItem.modelData
+                        ? tabItem.modelData.pinned === true : false
+                    visible: pinned
+                    x: 10
+                    width: 5
+                    height: 5
+                    radius: 2.5
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.signal
+                }
+
                 Text {
                     id: tabTitle
                     anchors.left: parent.left
-                    anchors.leftMargin: 10
+                    anchors.leftMargin: tabItem.modelData && tabItem.modelData.pinned ? 19 : 10
                     anchors.right: closeButton.left
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
@@ -284,9 +298,14 @@ Item {
                     anchors.fill: parent
                     anchors.rightMargin: 24
                     hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
 
                     onPressed: function (mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            const point = root.mapFromItem(tabMouse, mouse.x, mouse.y)
+                            root.tabContextRequested(tabItem.index, point.x, point.y)
+                            return
+                        }
                         root.dragArmed = true
                         root.dragSuppressClick = false
                         root.dragStartX = mouse.x

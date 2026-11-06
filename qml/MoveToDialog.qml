@@ -24,6 +24,10 @@ FocusScope {
     property string picked: ""
     /// The directory the menu was opened in, shown as one-click target.
     property string origin: ""
+    /// When set, the picker belongs to "extract to": the confirm hands this
+    /// archive to `extractArchive` instead of the transfer queue. Empty means
+    /// the normal move dialog.
+    property string extractSource: ""
 
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -40,6 +44,7 @@ FocusScope {
     Accessible.name: qsTr("移动到")
 
     function open(destination, moving) {
+        root.extractSource = ""
         root.paths = (moving || []).slice()
         root.origin = destination
         root.picked = ""
@@ -95,6 +100,11 @@ FocusScope {
     function accept() {
         const target = root.normalize(root.picked !== "" ? root.picked : pathInput.text)
         if (target === "" || target === root.origin || root.paths.length === 0) {
+            root.close()
+            return
+        }
+        if (root.extractSource !== "") {
+            Workspace.extractArchive(root.extractSource, target, "")
             root.close()
             return
         }

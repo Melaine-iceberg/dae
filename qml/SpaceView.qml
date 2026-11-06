@@ -19,7 +19,7 @@ Item {
     property color mutedColor: Theme.inkMuted
     property color hairline: Theme.hairline
 
-    readonly property color contentColor: Theme.canvas
+    readonly property color contentColor: Theme.content
     readonly property color hoverColor: Theme.hover
     readonly property string spaceName: {
         if (spaceId === "" || Spaces.revision < 0)

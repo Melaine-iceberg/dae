@@ -41,7 +41,13 @@ Item {
     readonly property color okColor: Theme.success
 
     function defaultPort() {
-        return root.protocol === "sftp" ? "22" : "445"
+        if (root.protocol === "sftp")
+            return "22"
+        if (root.protocol === "webdav")
+            return "80"
+        if (root.protocol === "ftp")
+            return "21"
+        return "445"
     }
 
     function open() {
@@ -230,6 +236,16 @@ Item {
             ProtocolButton {
                 protocol: "sftp"
                 label: "SFTP / SSH"
+            }
+
+            ProtocolButton {
+                protocol: "webdav"
+                label: "WebDAV"
+            }
+
+            ProtocolButton {
+                protocol: "ftp"
+                label: "FTP / FTPS"
             }
 
             Item {

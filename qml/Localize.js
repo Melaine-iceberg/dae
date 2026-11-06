@@ -60,15 +60,26 @@ function line(value) {
     match = /^Modified (.+)$/.exec(value)
     if (match)
         return qsTr("修改于 %1").arg(match[1])
-    match = /^(Duration|Dimensions|Bitrate|Title|Artist|Album|Genre): (.+)$/.exec(value)
+    match = /^(Duration|Dimensions|Bitrate|Title|Artist|Album|Genre|Camera|Lens|Taken|Exposure|Aperture|ISO|Focal length|GPS): (.+)$/.exec(value)
     if (match) {
-        const label = match[1] === "Duration" ? qsTr("时长")
-            : match[1] === "Dimensions" ? qsTr("分辨率")
-            : match[1] === "Bitrate" ? qsTr("码率")
-            : match[1] === "Title" ? qsTr("标题")
-            : match[1] === "Artist" ? qsTr("艺术家")
-            : match[1] === "Album" ? qsTr("专辑") : qsTr("流派")
-        return label + qsTr("：") + match[2]
+        const labels = {
+            "Duration": qsTr("时长"),
+            "Dimensions": qsTr("分辨率"),
+            "Bitrate": qsTr("码率"),
+            "Title": qsTr("标题"),
+            "Artist": qsTr("艺术家"),
+            "Album": qsTr("专辑"),
+            "Genre": qsTr("流派"),
+            "Camera": qsTr("相机"),
+            "Lens": qsTr("镜头"),
+            "Taken": qsTr("拍摄时间"),
+            "Exposure": qsTr("曝光"),
+            "Aperture": qsTr("光圈"),
+            "ISO": qsTr("ISO"),
+            "Focal length": qsTr("焦距"),
+            "GPS": qsTr("位置")
+        }
+        return (labels[match[1]] || match[1]) + qsTr("：") + match[2]
     }
     match = /^Switched to branch (.+)$/.exec(value)
     if (match)

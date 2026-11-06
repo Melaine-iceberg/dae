@@ -100,8 +100,10 @@ Item {
     function clearSelection() {
         for (let index = 0; index < panes.count; index += 1) {
             const pane = panes.itemAt(index)
-            if (pane !== null)
+            if (pane !== null) {
+                // qmllint disable missing-property
                 pane.listing.clearSelection()
+            }
         }
     }
 
@@ -113,7 +115,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: Theme.canvas
+        color: Theme.content
     }
 
     MouseArea {
@@ -232,7 +234,8 @@ Item {
             if (pane.depth === 0)
                 return
             listing.setOrder(ExplorerPrefs.sortKey, ExplorerPrefs.sortOrder,
-                             ExplorerPrefs.foldersFirst)
+                             ExplorerPrefs.folderOrder)
+            listing.setGroup(ExplorerPrefs.groupKey, ExplorerPrefs.groupDate)
             listing.setFilters(ExplorerPrefs.showHiddenFiles, ExplorerPrefs.kindFilter,
                                ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter)
         }
@@ -333,7 +336,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            color: Theme.canvas
+            color: Theme.content
         }
 
         Rectangle {

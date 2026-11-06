@@ -19,6 +19,17 @@ function unregister(token) {
         lastActiveToken = ""
 }
 
+// How many windows this process still has. The last one to close is what marks
+// the session clean, so the next launch does not report a crash.
+function count() {
+    var total = 0
+    for (var token in windows) {
+        if (Object.prototype.hasOwnProperty.call(windows, token))
+            total += 1
+    }
+    return total
+}
+
 function windowFor(token) {
     return token ? (windows[token] || null) : null
 }

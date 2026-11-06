@@ -13,6 +13,9 @@ QtObject {
     /// one stable identity while the body swaps.
     property string surface: "folder"
     property string spaceId: ""
+    /// Pinned tabs survive "close others" and "close left/right", and the strip
+    /// marks them with a signal dot. The flag is part of the session record.
+    property bool pinned: false
     readonly property bool folder: surface === "folder"
     readonly property bool trash: surface === "trash"
     readonly property bool overview: surface === "overview"

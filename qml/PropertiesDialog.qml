@@ -33,6 +33,22 @@ FocusScope {
     property bool recursive: false
     /// Which checksum row was copied last, for the one-line confirmation.
     property string copiedAlgorithm: ""
+    /// A checksum pasted to compare against. The dialog hashes the file and
+    /// answers here rather than shelling out to another tool.
+    property string expectedHash: ""
+    readonly property string expectedMatch: {
+        const known = [controller.hashMd5, controller.hashSha1, controller.hashSha256]
+        const labels = ["MD5", "SHA-1", "SHA-256"]
+        const expected = root.expectedHash.trim().toLowerCase()
+        if (expected === "" || !controller.hashDone)
+            return ""
+        for (let index = 0; index < known.length; index += 1) {
+            if (known[index] !== "" && known[index] === expected)
+                return labels[index]
+        }
+        return ""
+    }
+    readonly property bool expectedMatches: root.expectedMatch !== ""
 
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -58,6 +74,7 @@ FocusScope {
         root.tab = "general"
         root.recursive = false
         root.copiedAlgorithm = ""
+        root.expectedHash = ""
         controller.open(path)
         root.visible = true
         root.forceActiveFocus()
@@ -69,6 +86,17 @@ FocusScope {
             if (root.visible)
                 root.forceActiveFocus()
         })
+    }
+
+    /// The controller's stable token as the one sentence the tab shows.
+    function signatureStatusText() {
+        switch (controller.signatureStatus) {
+        case "valid": return qsTr("有效")
+        case "unsigned": return qsTr("未签名")
+        case "untrusted": return qsTr("不受信任")
+        case "invalid": return qsTr("无效")
+        }
+        return controller.signatureStatus
     }
 
     function close() {
@@ -191,6 +219,9 @@ FocusScope {
                             tabs.push({ key: "permissions", label: qsTr("权限") })
                         if (controller.platformKind === "windows" && controller.editable)
                             tabs.push({ key: "attributes", label: qsTr("属性") })
+                        if (controller.signatureSupported && !controller.remote
+                                && !controller.isDirectory)
+                            tabs.push({ key: "signature", label: qsTr("签名") })
                         if (!controller.isDirectory && !controller.remote)
                             tabs.push({ key: "checksum", label: qsTr("校验和") })
                         return tabs
@@ -441,6 +472,67 @@ FocusScope {
                         checked: root.draftSystem
                         onToggled: root.draftSystem = !root.draftSystem
                     }
+
+                    // The ACL is a read-only view: inheritance and deny
+                    // ordering are a different editor, and the DOS flags above
+                    // stay the writable surface. Empty when the platform has no
+                    // reader or the file has no DACL.
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: root.hairline
+                        visible: controller.aclSupported && controller.aclEntries !== ""
+                    }
+                    Text {
+                        width: parent.width
+                        visible: controller.aclSupported && controller.aclOwner !== ""
+                        text: qsTr("所有者：") + controller.aclOwner
+                            + (controller.aclGroup !== ""
+                                ? qsTr("　组：") + controller.aclGroup : "")
+                        color: root.mutedColor
+                        font.pixelSize: Theme.typeMicro
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        width: parent.width
+                        visible: controller.aclEntries !== ""
+                        text: controller.aclEntries
+                        color: root.mutedColor
+                        font.pixelSize: Theme.typeMicro
+                        font.family: Theme.monoFamily
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                // ---- Authenticode -------------------------------------------
+                Column {
+                    width: parent.width
+                    visible: root.tab === "signature"
+                    spacing: 8
+
+                    InfoRow {
+                        label: qsTr("状态")
+                        value: root.signatureStatusText()
+                    }
+                    InfoRow {
+                        label: qsTr("签名者")
+                        value: controller.signatureSigner
+                        visible: controller.signatureSigner !== ""
+                    }
+                    InfoRow {
+                        label: qsTr("颁发者")
+                        value: controller.signatureIssuer
+                        visible: controller.signatureIssuer !== ""
+                    }
+                    Text {
+                        width: parent.width
+                        visible: controller.signatureDetail !== ""
+                        text: Localize.message(controller.signatureDetail)
+                        color: controller.signatureStatus === "valid"
+                            ? root.mutedColor : root.dangerColor
+                        font.pixelSize: Theme.typeMicro
+                        wrapMode: Text.WordWrap
+                    }
                 }
 
                 // ---- Checksum -------------------------------------------------
@@ -470,6 +562,62 @@ FocusScope {
                     ChecksumRow {
                         algorithm: "SHA-256"
                         value: controller.hashSha256
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: Theme.controlMd
+                        radius: Theme.radiusSm
+                        color: root.fieldColor
+                        border.width: 1
+                        border.color: Theme.hairline
+
+                        TextInput {
+                            id: expectedInput
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: root.textColor
+                            selectionColor: root.accent
+                            selectedTextColor: Theme.onInteractive
+                            font.pixelSize: Theme.typeCaption
+                            font.family: Theme.monoFamily
+                            selectByMouse: true
+                            clip: true
+                            text: root.expectedHash
+                            onTextEdited: root.expectedHash = text
+                        }
+
+                        Text {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: Text.AlignVCenter
+                            visible: expectedInput.text === ""
+                            text: qsTr("粘贴已知的 MD5 / SHA-1 / SHA-256 以比对")
+                            color: root.mutedColor
+                            font.pixelSize: Theme.typeCaption
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: root.expectedHash.trim() !== ""
+                        text: {
+                            if (root.expectedHash.trim() === "")
+                                return ""
+                            if (!controller.hashDone)
+                                return qsTr("点击“开始校验”后比对")
+                            if (root.expectedMatches)
+                                return qsTr("与 %1 校验值相同").arg(root.expectedMatch)
+                            return qsTr("与任何校验值都不匹配")
+                        }
+                        color: root.expectedMatches ? Theme.success
+                            : (controller.hashDone ? root.dangerColor : root.mutedColor)
+                        font.pixelSize: Theme.typeMicro
+                        wrapMode: Text.WordWrap
                     }
 
                     Rectangle {

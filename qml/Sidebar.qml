@@ -32,11 +32,13 @@ Item {
 
     signal navigateRequested(string path)
     signal trashRequested()
+    /// A tag row was clicked. The shell turns this into a `tag:` search.
+    signal tagActivated(string name)
     signal spaceRequested(string id)
     signal createSpaceRequested()
     signal addRequested(string kind)
     signal restorePlacesRequested()
-    signal contextRequested(string kind, string path, real x, real y)
+    signal contextRequested(string kind, string path, bool removable, real x, real y)
     /// A folder row could not be expanded. The window owns the toast.
     signal errorRequested(string message)
 
@@ -273,7 +275,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: trashArea.top
+        anchors.bottom: tagsArea.top
         anchors.topMargin: 8
         model: sidebarModel
         clip: true
@@ -716,7 +718,7 @@ Item {
                             const point = row.mapToItem(null, event.x, event.y)
                             root.contextRequested(
                                 row.kind === "place" ? "place:" + row.icon : row.kind,
-                                row.path, point.x, point.y)
+                                row.path, row.removable === true, point.x, point.y)
                             return
                         }
                         row.activate()
@@ -752,7 +754,7 @@ Item {
                             root.navigateRequested(path)
                         }
                         onContextRequested: function (path, x, y) {
-                            root.contextRequested("tree", path, x, y)
+                            root.contextRequested("tree", path, false, x, y)
                         }
                         onErrorRequested: function (message) {
                             root.errorRequested(message)
@@ -763,6 +765,143 @@ Item {
                 onLoaded: {
                     if (item !== null)
                         (item as SidebarTree).rootPath = row.path
+                }
+            }
+        }
+    }
+
+    /// File tags are not paths, so they are not rows of `SidebarModel`: a
+    /// click runs a `tag:` search and a drop writes the tag onto the files.
+    /// The list is capped and scrolls, so a user with forty tags does not push
+    /// the bin off the column.
+    Item {
+        id: tagsArea
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: trashArea.top
+        visible: tags.length > 0
+        height: visible ? 26 + tagList.height + 10 : 0
+
+        readonly property var tags: {
+            try {
+                return JSON.parse(TagStore.tagsJson)
+            } catch (error) {
+                return []
+            }
+        }
+
+        function dropTag(drag, tagId) {
+            const paths = Workspace.localDropPaths(drag.urls)
+            if (paths.length === 0) {
+                drag.accepted = false
+                return
+            }
+            drag.accept(Qt.CopyAction)
+            TagStore.setTags(paths, [tagId])
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.hairline
+        }
+
+        Text {
+            x: 18
+            y: 8
+            text: qsTr("标签")
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.88
+        }
+
+        ListView {
+            id: tagList
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.topMargin: 24
+            height: Math.min(contentHeight, 6 * 24)
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            model: tagsArea.tags
+
+            delegate: Item {
+                id: tagRow
+                required property var modelData
+
+                width: ListView.view.width
+                height: 24
+
+                readonly property bool hovered: tagMouse.containsMouse
+                readonly property bool armed: tagDrop.containsDrag
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    radius: Theme.radiusSm
+                    color: tagRow.armed ? Theme.signalSoft
+                        : (tagRow.hovered ? Theme.hover : "transparent")
+                }
+
+                Rectangle {
+                    x: 20
+                    width: 8
+                    height: 8
+                    radius: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: tagRow.modelData.color
+                }
+
+                Text {
+                    x: 36
+                    anchors.right: countText.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: tagRow.modelData.name
+                    color: Theme.inkMuted
+                    font.pixelSize: Theme.typeBody
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    id: countText
+                    anchors.right: parent.right
+                    anchors.rightMargin: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: tagRow.modelData.count > 0
+                    text: tagRow.modelData.count
+                    color: Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                }
+
+                DropArea {
+                    id: tagDrop
+                    anchors.fill: parent
+                    keys: ["text/uri-list"]
+                    onDropped: function (drag) {
+                        tagsArea.dropTag(drag, tagRow.modelData.id)
+                    }
+                }
+
+                MouseArea {
+                    id: tagMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.tagActivated(tagRow.modelData.name)
                 }
             }
         }
