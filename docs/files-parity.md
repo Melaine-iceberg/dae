@@ -1,6 +1,6 @@
 # 对照 Files 的功能缺口与跨平台实施计划
 
-> 日期：2026-11-04 · 状态：规划稿
+> 日期：2026-11-04 · 状态：P0 已落地（2026-11-05），P1/P2 仍为规划
 > 对象：`apps/dae` + `crates/dae-core` + `crates/dae-qt` + `qml/`
 > 对照：Files v4（Windows）的功能面与命令面板
 > 前提：Windows 发布 MSIX/zip，Linux 发布 deb/rpm/zip，macOS 只保留可编译代码、不发布
@@ -455,3 +455,315 @@ Files 侧：
 - `docs/qt-platform-parity.md` — 三平台对齐清单与手测表
 - `docs/packaging.md` — MSIX/打包形态的限制
 - `README.md` — 发布矩阵与 macOS 只编译不发布的说明
+
+---
+
+## 10. P0 落地记录（2026-11-05）
+
+六项 P0 均已实现，跨 `dae-core`、`dae-qt` 与 `qml/`。这里只记录实际落地时
+做出的取舍，以及仍然存在的边界；没有在本文改动设计目标。
+
+### 10.1 文件标签（P0-1）
+
+- 定义存 `<config>/tags.toml`；文件关联先写文件本身（NTFS ADS `dae.tags`、
+  Linux `user.dae.tags`、macOS `com.dae.tags`），**同时**镜像进
+  `<config>/tags-index/<volume>-<hash>.json`。索引是 `tag:` 搜索、侧栏计数和
+  标签排序的真相；文件流是标签随文件移动的载体。
+- 卷能力按卷探测一次并缓存（临时文件写读一次流），失败即索引模式，界面用
+  `TagStore.note` 说明「此位置标签只在本机生效」。远程、压缩包直接索引模式。
+- 索引键是折叠路径（Windows/macOS 大小写折叠）；Unix 额外记录 `dev:ino`，
+  但外部改名仍不会被 watcher 关联回来 —— 这是明确边界，不是遗漏。
+- macOS 的 Finder 标签镜像（`kMDItemUserTags`）按原计划默认关闭，因此没有
+  写入代码；需要时另立任务，失败不得影响主存储。
+- 读标签只在列表完成后按可见行批量请求（`DirectoryListModel.requestTags`），
+  枚举热路径不读 xattr/ADS。按标签排序/分组时才读全量，仍在工作线程。
+- 删除定义会从索引里剥掉该 id，但不会回写每个文件的流；没有定义指向的 id
+  在读取时被忽略。
+
+### 10.2 排序与分组（P0-2）
+
+- `SortKey` 增加 `created`、`path`、`tag`；`foldersFirst` 迁移为
+  `folderOrder = foldersFirst | filesFirst | mixed`，旧的 `foldersFirst=false`
+  在首次读取时迁移为 `mixed`。
+- 分组键：名称首字母（数字归入 `#`）、修改时间、创建时间、大小桶、类型、标签；
+  日期桶可选年/月/日。标签分组按定义顺序排列名称，未打标签的一组排最后。
+- 分组在 Rust 侧把 `group_rank`/`group_label` 预计算到行上，worker 排序只读
+  两个值；QML 用 `ListView.section` 画分组头。**网格视图不画分组头**：
+  `GridView` 没有 `section`，排序仍按组进行，这是与 Files 的已知差异。
+- 列表的框选改为 `indexAt` 求首尾行，分组头的高度因此不会让选区错行。
+- 创建时间：Windows/macOS 取 birth time；Linux 取 `Metadata::created()`，
+  文件系统没有 `STATX_BTIME` 时回退 `ctime` 并在行上标记
+  `createdFallback`，列里显示「（回退）」。
+
+### 10.3 每目录布局（P0-3）
+
+- 每目录布局存 `<config>/views-qt.toml`（`[views."<折叠路径>"]`，LRU 512），
+  全局默认仍在 `explorer-qt.ini`。`syncLayout` 打开时只读写全局文档。
+- `currentPath` 写入即恢复该目录布局；没有记录时回到全局默认。
+- 自适应规则（Rust，可单测）：文件 ≥ 8 且图片占比 ≥ 60% → 网格；路径深度
+  ≥ 3 → 分栏；否则列表。只在「自适应开 + 每目录布局开 + 该目录没有记录」时
+  生效，改一次菜单即可覆盖。
+
+### 10.4 详情列、扩展名、图标大小（P0-4）
+
+- 列宽与可见性存进每目录布局（`columns`、`columnWidths`）；表头可拖动分隔线
+  改宽，双击按标题/样例自适应。窄窗按类型 > 大小 > 修改 > 创建 > 标签的顺序
+  依次隐藏。
+- 「显示扩展名」只影响绘制；排序、搜索、重命名仍用完整名称。
+- 图标大小 24–96 dp，列表缩略图与网格瓦片共用；视图菜单底部是滑杆，网格的
+  瓦片高度/最小宽度随它推导。
+- 「标签」列默认隐藏（默认 `type,size,modified`），可从视图菜单或命令面板打开。
+
+### 10.5 搜索（P0-5 阶段 1）
+
+- 范围：当前目录、收藏、最近、所有本地卷；多根在 Rust 侧合并、统一排序并
+  截断到 200。任何非本地根按原契约拒绝（`fs.search_local_only`）。
+- 过滤器：类型/修改时间/大小，与列表过滤器共用词表；修改时间在 Qt 侧换算成
+  本地午夜/7 天/30 天的毫秒边界，避免时区漂移。
+- `tag:` 语法（半角/全角冒号均可，逗号分隔多个）在 core 解析并解析成定义 id；
+  指向未定义标签时返回空结果而不是报错。`tags` 参数另供侧栏点击使用。
+- 搜索历史 20 条存 `explorer-qt.ini`（单行 JSON），搜索栏的「历史」chip 打开
+  菜单；阶段 2 的平台索引（Windows Search / Spotlight / tracker3）未做，仍是
+  并行遍历回退。
+
+### 10.6 信息面板（P0-6）
+
+- `PreviewPanel` 的详情复用 `PropertiesController`：类型、大小、修改、创建、
+  权限摘要、所有者、按需哈希（MD5/SHA-1/SHA-256）。
+- 标签编辑：面板列出全部定义，选中的标签为实心；点击对**整个选择**切换。
+  多选时显示数量、可测文件合计大小和共同标签；没有共同标签时标签仍以未选中
+  状态提供批量打标。
+- 远程条目沿用属性控制器的降级规则（不可读字段留空/不显示），不新增后端。
+
+### 10.7 验证
+
+- `cargo test -p dae-core --lib`：325 passed / 10 ignored（新增 tags、搜索过滤、
+  标签解析、创建时间编解码用例）。
+- `cargo test -p dae-qt --lib`：189 passed / 1 ignored（新增排序、分组、每目录
+  布局迁移、自适应规则用例）。
+- `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app`：通过（qmllint 零告警、
+  qmltc 通过）。
+- Windows 手测：标签写入 NTFS ADS + 索引；列表标签列、侧栏计数、按类型分组、
+  创建时间列、多选信息面板（数量/合计大小/标签编辑）均按上述行为显示。
+  Linux/macOS 运行时未在本轮验证；`qt-check` 的三平台编译仍是门槛。
+
+---
+
+## 11. P1 落地记录（2026-11-05）
+
+P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-integrations.md`。
+下表是实际状态：**完成**指界面入口、后端与降级规则都在；**部分**指能用的部分已落地、
+边界写在后面；**未做**不藏。
+
+| # | 项 | 状态 | 边界 |
+| --- | --- | --- | --- |
+| P1-1 | 驱动器工具 | 完成 | 弹出/卸载/挂载/格式化入口/存储清理/加密状态/上一版本按平台能力显示；Windows 弹出未在真实读卡器上验证 |
+| P1-2 | FTP/WebDAV | 部分 | FTP/FTPS 完整（浏览、下载、上传、改名、删除、建目录）；WebDAV 可浏览/下载/改名/删除/建目录，上传返回 `Unsupported`（缺流式 PUT）。两者都未对真实服务器冒烟 |
+| P1-3 | 自定义动作 + 快捷键 | 完成 | `[[actions]]`、argv 传参、PATH 探测、设置页增删改、内置「在 IDE 中打开」；快捷键 22 → 35，全部有分发点 |
+| P1-4 | 状态中心 | 完成 | 内存 200 条 / 持久化 50 条、失败徽章、传输与解压可重试、可清空 |
+| P1-5 | 属性增强 | 部分 | 两文件 SHA-256 比对（列表菜单）与已知值比对（属性对话框）；EXIF/签名/ACL 未做 |
+| P1-6 | 共享 / 上一版本 / BitLocker | 部分 | 磁盘加密状态（`manage-bde`/`fdesetup`/`cryptsetup`）与上一版本系统入口在驱动器菜单；系统共享未做 |
+| P1-7 | 标签页 + 会话恢复 | 完成 | 关闭栈 16、重开/复制/固定/关闭其他与左右；几何+标签+历史路径+分屏恢复，崩溃标记提示 |
+| P1-8 | 快速预览 | 完成 | 停靠面板关闭或窗口过窄时 Space 打开弹层；Esc/外点关闭，方向键与翻页滚动 |
+| P1-9 | 工具栏 / 主页小部件 | 部分 | 主页四个分组（项目/收藏/最近/空间）可开关并持久化；工具栏拖拽排序未做 |
+| P1-10 | 大小单位 + 按需文件夹大小 | 完成 | 二进制 KiB/MiB 与十进制 KB/MB 可切（修正了旧的 1024 进制写 KB 的错标）；列表菜单按需计算目录大小 |
+| P1-11 | 压缩格式 | 完成 | 智能解压（单根目录不套娃）、解压到新文件夹；RAR/ISO 经 7z/unrar/bsdtar，缺工具时入口隐藏并给出具体错误 |
+| P1-12 | 多语言 / RTL / 背景 | 部分 | `LayoutMirroring` 在窗口根开启并继承；语言为简中（源）、英文、繁体中文，非源语言先装英文兜底；新增语言仍是持续工作 |
+
+### 11.1 驱动器工具（P1-1）
+
+- `fs/drives.rs`：`capabilities()` 按平台声明能力；Windows 弹出走
+  `DeviceIoControl(IOCTL_STORAGE_EJECT_MEDIA)`（先 `FSCTL_LOCK_VOLUME`、
+  `FSCTL_DISMOUNT_VOLUME`，失败不阻断），格式化走 `SHFormatDrive`，清理打开
+  `ms-settings:storagesense`；Linux 用 `udisksctl` + `eject`/`gio`，格式化打开
+  `gnome-disks`；macOS 用 `diskutil`，格式化打开「磁盘工具」。
+- 加密状态只读：Windows `manage-bde -summary` 取三行，macOS `fdesetup status`，
+  Linux `cryptsetup status <dev>` 取 `type:`。上一版本只打开系统入口。
+- 侧栏驱动器行新增 `removable` 角色；右键菜单按 `Workspace.driveCapabilities`
+  过滤，Windows 无「卸载」、Linux/macOS 无「清理」即不建行。破坏性动作（格式化）
+  二次确认并由系统对话框执行。
+
+### 11.2 自定义动作与快捷键（P1-3）
+
+- `AppSettings.actions: Vec<CustomAction>`；`normalize_actions` 丢掉空 id/命令、
+  去重、收敛 selection 与扩展名。
+- `fs/actions.rs`：`command_available` 扫 `PATH`（Windows 试 `exe/cmd/bat/com`）；
+  参数按 argv 展开，`%f/%F/%d/%u` 不经过 shell；`selection_allows` 判
+  any/file/directory/multiple 与扩展名。
+- 菜单：行菜单第二页「自定义动作」子菜单，按当前选择过滤；执行失败走既有
+  `operationFailed`，进状态中心。
+- 设置页新增「动作」：逐条改名称/命令/参数/适用选择，支持新增、删除、恢复内置。
+- 快捷键：默认表 22 → 35 条，新增 `app.newWindow/newTab/closeTab/reopenTab/
+  nextTab/previousTab/toggleSidebar`、`explorer.newFolder/properties/refresh/
+  toggleSplit/displayOptions/filters`；QML 里原本写死的组合键改为
+  `shortcutSequence(<id>)`，设置页分组同步补齐。
+
+### 11.3 状态中心（P1-4）
+
+- `Workspace` 维护 `OperationRecord` 环形缓冲（200 条），`begin_operation` 压开始时间，
+  `finish_operation` 落记录并写 `<config>/operations-qt.json`（最近 50 条，原子写）。
+- `operationsJson` 按完成时间倒序；`failureCount` 为未读失败数，打开面板清零。
+- 重试只对 copy/move/extract 开放，参数随记录存 JSON；`retryOperation(id)` 重新发起。
+- `qml/StatusCenter.qml`：状态栏右侧时钟按钮 + 失败徽章；面板列出状态点、标签、
+  失败原因或时间、重试与「清除记录」。
+
+### 11.4 哈希比对与元数据（P1-5）
+
+- 列表菜单「比较 SHA-256」：恰好两个本地文件时可用，`hashing::digests` 各读一遍，
+  结果以 toast 给出。
+- 属性对话框校验页新增「粘贴已知的 MD5/SHA-1/SHA-256」：三种值都算完后按算法给
+  「与 X 校验值相同 / 都不匹配」，颜色跟随结果。
+- **EXIF**：`fs/media_meta.rs` 用 `kamadak-exif` 读图片头，预览面板的元数据块在
+  「分辨率」之外增加相机、镜头、拍摄时间、曝光、光圈、ISO、焦距与 GPS；
+  `qml/Localize.js` 负责这些标签的中英切换。没有 EXIF 的 JPEG 仍正常预览。
+- **文件签名**：`fs/security.rs` 调 `WinVerifyTrust`，内嵌签名返回 `TRUST_E_NOSIGNATURE`
+  时再按 SHA-256 哈希查系统 catalog（System32 的多数二进制是 catalog 签名），
+  状态收敛为 `valid/unsigned/untrusted/invalid`；属性对话框新增「签名」页显示
+  状态、签名者、颁发者与平台原因。Windows 独占，Linux/macOS 隐藏该页。
+- **ACL**：`fs/security.rs` 用 `GetNamedSecurityInfoW` 读 owner/group/DACL，ACE 按
+  `Allow/Deny <SID 名>: <权限>` 渲染成只读文本，放在属性对话框的「属性」页；
+  POSIX/DOS 属性仍是唯一可写入口。Windows 独占。
+- `security::signature_supported()` / `acl_supported()` 决定入口是否出现；
+  平台读取在 `spawn_blocking` 里与元数据并行，慢的证书链不会拖住对话框。
+- 单测：`fs::security` 对 `C:\Windows\System32\notepad.exe` 断言 `valid` 且有签名者，
+  对临时文件断言 `unsigned`；ACL 用例断言 owner 与 ACE 非空。
+
+### 11.5 标签页与会话恢复（P1-7）
+
+- 每个窗口 16 条已关闭标签（surface/path/spaceId/pinned/历史路径）；右键标签页有
+  复制、固定、关闭、关闭其他/左侧/右侧、重新打开；`Ctrl+Shift+T` 也在动作表内。
+- `Tab.pinned` 参与「关闭其他/左右」的保留规则；标签条用信号点标记。
+- `crates/dae-qt/src/session.rs`：`<config>/session-qt.json`，每窗口一条记录，
+  `clean` 标记区分正常退出与崩溃；启动时第一个窗口消费一次并恢复几何、标签、
+  历史路径与分屏开关；恢复后删掉旧 token 的记录，避免下一次启动出现重复窗口。
+
+### 11.6 快速预览（P1-8）
+
+- `qml/QuickPreview.qml`：遮罩 + 760×680 面板复用 `PreviewPanel`；Esc、左/右方向键、
+  空格或点击遮罩关闭；上/下/PageUp/PageDown 调 `PreviewPanel.scrollBy`。
+- `togglePreview(path)`：停靠面板可见且是同一路径时关闭它；否则当面板关闭、窗口
+  窄于 840 dp 或当前不是文件夹视图时打开弹层。`Space` 的语义因此不再改变布局。
+
+### 11.7 主页小部件与工具栏（P1-9）
+
+- `OverviewModel.setHiddenSections(csv)` 在重建时过滤分组；`ExplorerPrefs.hiddenHomeSections`
+  持久化到 `explorer-qt.ini`，设置页「主页小部件」四个开关即时生效。
+- 工具栏是模型：`toolbarLeading`（默认 `back,forward,up`）与 `toolbarTrailing`
+  （默认 `search,trash,view,more`）存进 `explorer-qt.ini`，路径栏用 `Repeater`
+  + `Loader` 按 id 实例化组件。存储值在 QML 里按本构建的 id 集合归一化：
+  未知 id 丢弃、缺失 id 追加，所以旧配置不会留下空位，新动作会自动出现。
+- 拖拽：每个 delegate 上的 `DragHandler` 在释放时按指针位置算插入点，调用
+  `moveToolbarItem` 重排并立即持久化；设置页「恢复默认」写回两组默认顺序。
+- 组件在路径栏末尾声明，Loader 的 `sourceComponent` 通过 `Qt.callLater` 延迟到
+  整棵树创建完成后再取，避免创建期读到尚未存在的 Component。
+
+### 11.8 大小单位与按需文件夹大小（P1-10）
+
+- `format::SizeUnits { Binary, Decimal }`：二进制写 `KiB/MiB`（修正旧标签），十进制按
+  1000 写 `KB/MB`。`dae_qt::init` 在第一次枚举前从 `explorer-qt.ini` 应用；
+  `setString("sizeUnits", …)` 立即切换并影响所有后续行。
+- 列表面板的文件夹大小仍是「—」，菜单「计算大小」调用 `Workspace.measureFolders`，
+  后台并行走目录、结果经 `folderSizesMeasured` 写回模型并按行 `dataChanged`；
+  再次调用会取消上一轮。取消入口 `cancelMeasureFolders`。
+
+### 11.9 压缩格式（P1-11）
+
+- `ArchiveFormat` 增加 `Rar`/`Iso`；识别只用于解压，创建返回明确错误。
+- `top_level_root` 判断「全部条目在同一顶层目录」，命中时解到压缩包所在目录；
+  「解压到新文件夹…」复用 `MoveToDialog` 的 `extractSource` 模式。
+- 外部工具顺序：`7z/7zz/7za` → `unrar`（仅 rar）→ `bsdtar`；`external_formats()`
+  把可用格式交给 QML，入口据此显示；缺失时报「缺哪个格式的工具」。
+
+### 11.10 平台入口（P1-6）
+
+- 驱动器菜单：加密状态（只读文本）、以前的版本（Windows 打开属性页、macOS 打开
+  Time Machine）。
+- **系统共享（Windows）**：`crates/dae-qt/src/share.rs` 走
+  `IDataTransferManagerInterop`——桌面进程没有 `CoreWindow`，所以用
+  `GetForWindow` / `ShowShareUIForWindow`。选中的文件先在 MTA 线程解析成
+  `StorageFile`（`StorageFile` 只收 Win32 反斜杠路径；列表里的正斜杠路径先归一化，
+  否则 `GetFileFromPathAsync` 报 `ERROR_BAD_PATHNAME`），以 `AgileReference` 交回
+  UI 线程，再由自定义 `IIterable<IStorageItem>` 交给 `DataPackage`。
+  `TypedEventHandler` 注册在窗口的 `DataTransferManager` 上，最后一次注册保存在
+  线程局部变量里，下一次共享替换它。
+- 右键「更多…」里的「共享…」只在 `Workspace.shareSupported`（Windows）且为本地
+  路径时出现；失败时 toast 报「无法打开系统共享面板」。macOS/Linux 隐藏。
+- 冒烟：在 Windows 上对 `README.md` 调 `Workspace.sharePaths` 返回 true，系统共享
+  面板实际弹出并显示文件与共享目标（就近共享、微信、WorkBuddy、记事本、Outlook）。
+
+### 11.11 RTL 与背景图（P1-12）
+
+- `ShellWindow` 根开启 `LayoutMirroring.enabled: Qt.application.layoutDirection ===
+  Qt.RightToLeft` 与 `childrenInherit`。侧栏、分屏、菜单等按 anchors 镜像；
+  方向性图标（chevron/返回箭头）不翻转，含义随布局。
+- **背景图**：`ExplorerPrefs.backgroundImage`（本地路径）与 `backgroundDim`（0–90）
+  存进 `explorer-qt.ini`。`ShellWindow` 在画布与内容之间铺一张
+  `Image { fillMode: PreserveAspectCrop }`；`Theme.content` / `Theme.contentAlt`
+  在设置图片后变成带 alpha 的 canvas/canvasAlt，列表、网格、分栏、概览、空间、
+  回收站与内容搜索结果都改用它，图片才会从内容后面透出来。chrome、侧栏与对话框
+  保持实色，这是对比度保护：文字始终落在实色或足够厚的半透明层上。
+- 设置页「背景图」有路径输入、`FileDialog` 选择、清除，以及「无遮罩/轻/中/强」
+  四档遮罩；`QtQuick.Dialogs` 是新增的 QML 依赖，发布时由
+  `windeployqt --qmldir qml` 一并部署。
+- 冒烟：用纯红测试图确认内容区、侧栏与路径栏都透出背景；清除后回到实色。
+
+### 11.12 FTP/FTPS 与 WebDAV（P1-2）
+
+**FTP/FTPS**（`fs/ftp.rs`）
+
+- 连接池：每服务器最多 8 条控制连接（一次同服务器复制并发 4 + 4），`Condvar`
+  等待上限 60 s；连接错误丢弃重开，只重放幂等的 `CWD`。单连接 + `Mutex` 会在
+  `par_iter` 的并发复制里互相等待。
+- 列表：`FEAT` 声明 `MLSD` 时用 MLSD，否则退回 `LIST`；两种格式都手写解析
+  （MLSX facts、`ls -l` 的名称含空格/符号链接/无组行、无年份时间戳的「未来即去年」规则）。
+- 传输：`retr_as_stream` / `put_with_stream` 包装成 `Read`/`Write`，不整文件缓冲。
+  数据连接最终的 `226` 在 drop 时读走：读失败记 `debug`，上传失败记 `warn`
+  （引擎先 flush 再 drop，`Write::flush` 不能既关数据连接又保持可写）。
+- 加密：21 明文、990 隐式 FTPS、`ftps://` 显式 `AUTH TLS`；信任锚用系统证书库
+  （`rustls-native-certs`），不做按主机 TOFU。
+- `stat` 依次试 `MLST` → `SIZE`+`MDTM` → `CWD` 目录探测；`remove` 对目录用
+  `RMDIR`、文件用 `DELE`；`rename_to` 是 `RNFR`/`RNTO` 并校验同 authority。
+
+**WebDAV**（`fs/webdav.rs`）
+
+- PROPFIND Depth 1/0、MKCOL、DELETE、MOVE、GET；quick-xml 按 local name 解析
+  （`d:`/`D:`/`ns0:`/无前缀都接受），href 解码一次，RFC 1123 手写解析。
+- **上传**：`open_write` 返回一个写适配器，把字节按 64 KiB 分块推进 4 深度的
+  有界通道；专用线程用 `reqwest::blocking::Body::new(ChannelReader)` 发流式 PUT，
+  `flush()` 关闭通道并等待服务器最终状态。队列满时 `write` 阻塞，所以大文件不会
+  被读进内存；`flush` 成功即代表服务器已收下文件。响应非 2xx 时保留服务器正文
+  并映射为既有错误类型。
+- 单测：进程内 HTTP/1.1 服务器验证 200 KiB 分块 PUT 的字节与顺序，以及 403 时
+  `flush` 把服务器原因带回。
+- 真实服务器冒烟：本地 WsgiDAV（匿名与 Basic 认证）跑通浏览、上传、同后端复制、
+  改名、删除；`DAE_TLS_CA_FILE` 是 FTP/FTPS 的私有 CA 补充信任锚。
+
+**接线**
+
+- `vfs::resolve` 接上 `Scheme::Ftp` 与 `Scheme::WebDav`；`split_scheme` 增加 `ftps`。
+- 连接对话框新增 WebDAV（默认端口 80，443 视为 `webdavs`）与 FTP/FTPS（默认 21，
+  990 隐式 TLS）；`smb::test_connection` 增加两个分支，用表单里的凭据在保存前探测。
+- `smb::split_authority` 修正带端口的 IPv6 authority（`[::1]:2121/pub` 之前把
+  `:2121/pub` 当成路径，端口丢失）。
+
+### 11.13 验证
+
+- `cargo test -p dae-core --lib`：356 passed / 10 ignored（新增 WebDAV 分块上传与
+  403 传递、Windows 签名/catalog 回退、ACL 读取；FTP/WebDAV 解析与连接池用例仍在）。
+- `cargo test -p dae-qt --lib`：193 passed / 1 ignored。
+- `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app`：通过（qmllint 与 qmltc
+  均通过；`Qt.application.layoutDirection` 的 qmllint 误报用行级 directive 抑制）。
+- Windows 运行时冒烟：
+  - 预置 `toolbarLeading=up,back,forward`、`toolbarTrailing=more,view,search,trash`，
+    路径栏按该顺序加载；调用 `finishToolbarDrag("trailing", 0, …)` 后顺序变为
+    `view,search,trash,more` 并写回 `explorer-qt.ini`。
+  - 预置红色测试背景图后，列表、侧栏与路径栏都透出图片；清除后回到实色。
+  - 对 `README.md` 调 `Workspace.sharePaths` 返回 true，系统共享面板实际弹出并显示
+    文件与共享目标。
+  - `drives::eject("E:")` 对真实 USB 卷返回 ok，`E:` 消失；格式化仍只打开系统对话框，
+    没有在应用内执行。
+- 真实服务器冒烟（本机临时服务）：FTP 明文、显式 FTPS、WsgiDAV 匿名与 Basic 认证
+  均跑通「浏览 → 写文件 → 预览 → 同后端复制 → 改名 → 删除」。隐式 FTPS（990）与
+  系统 catalog 之外的签名场景未覆盖。
+- 未验证：Linux/macOS 运行时；`qt-check` 的三平台编译仍是门槛；格式化对话框的
+  人工确认。

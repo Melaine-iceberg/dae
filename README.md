@@ -14,6 +14,10 @@ that shell; `git log` and the decision document are where it lives now.
 - **More than the local disk.** Mounted volumes, WSL distros, the trash,
   SSH/SFTP and SMB connections, and archives (`zip`, 7z) browsed in place.
 - **A terminal in the frame.** An xterm panel beside the listing.
+- **Tagged, sorted, grouped.** Colour tags that travel with the file where the
+  file system can carry them (NTFS streams, xattr) and live in dae's index
+  elsewhere, per-directory layouts, sections by name/date/size/type/tag, and
+  an info pane with permissions and on-demand hashes.
 - **Views for the job.** List, grid, column and split views, previews, content
   search, bulk rename, per-folder git status.
 - **System-native chrome.** The OS accent colour retints the shell, and window
