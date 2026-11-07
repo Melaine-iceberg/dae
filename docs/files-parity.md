@@ -1,10 +1,10 @@
 # 对照 Files 的功能缺口与跨平台实施计划
 
-> 日期：2026-11-04 · 状态：P0 已落地（2026-11-05），P1/P2 仍为规划
+> 日期：2026-11-04 · 状态：P0、P1、R-1…R-6 均已落地（2026-11-05/07）；剩余项与未验证项见 §12
 > 对象：`apps/dae` + `crates/dae-core` + `crates/dae-qt` + `qml/`
 > 对照：Files v4（Windows）的功能面与命令面板
-> 前提：Windows 发布 MSIX/zip，Linux 发布 deb/rpm/zip，macOS 只保留可编译代码、不发布
-> （`README.md`「Install」；`.github/workflows/qt-check.yml`）
+> 前提：Windows 发布 MSIX/zip，Linux 发布 deb/rpm/zip；macOS 只保留可编译代码、不发布，
+> 且没有可用设备，**运行时永远不验证**（`README.md`「Install」；`.github/workflows/qt-check.yml`）
 
 本文只回答三件事：**dae 现在缺什么、每项在三个平台怎么落、先做哪一项**。
 所有「现状」都指向本仓库的文件；所有「Files 有」都来自其文档或命令面板，不是印象。
@@ -23,9 +23,13 @@ dae 在「浏览、文件操作、多后端、终端、预览」上已经追平�
 3. **系统级集成**：驱动器弹出/格式化、FTP/WebDAV/NFS、共享、签名、ACL。
 4. **可扩展动作**：用户自定义命令、全量快捷键、状态中心。
 
-跨平台原则先于功能：**任何一项都必须在 Windows、Linux、macOS 上要么可用，要么明确降级并说明原因**；
-不允许「只在 Windows 生效且界面不提示」。macOS 虽然不发布，仍由 `qt-check` 每次 push 编译，
-新增代码必须保持可编译、可降级。
+P0、P1 与 §12.1 的 R-1…R-6 落地后，上表四类只剩验证尾巴：平台索引只验过未打包
+形态，动作面按需可继续加，ACL 仍只有 Windows 只读。**当前剩余项以 §12.3 为准**；
+本节其余内容保留为立项时的判断依据。
+
+跨平台原则先于功能：**任何一项都必须在 Windows、Linux 上要么可用，要么明确降级并说明原因**；
+不允许「只在 Windows 生效且界面不提示」。macOS 不发布、无设备，只要求由 `qt-check`
+每次 push 编译通过，新增代码保持可编译、入口按平台隐藏，运行时不验收（§7、§12.2）。
 
 ---
 
@@ -33,7 +37,7 @@ dae 在「浏览、文件操作、多后端、终端、预览」上已经追平�
 
 | 判据 | 含义 |
 | --- | --- |
-| 跨平台优先 | 能三平台做的先做；平台独占项必须 `cfg` 隔离并隐藏入口 |
+| 跨平台优先 | 能 Windows、Linux 都做的先做；平台独占项必须 `cfg` 隔离并隐藏入口；macOS 只保证编译 |
 | 能力探测 | 启动或首次使用时探测 xattr、索引、外部工具；失败给原因，不静默 |
 | 热路径不变 | 列表枚举不加逐条系统调用；标签/元数据按需加载（`docs/decisions/listing-shell-costs.md`） |
 | 可回退 | 外部工具缺失时保留内置实现或隐藏入口，不把功能做成硬依赖 |
@@ -105,6 +109,8 @@ dae 在「浏览、文件操作、多后端、终端、预览」上已经追平�
 ## 4. 跨平台能力矩阵
 
 这张表是每项设计的约束来源。实现时先查表，再决定入口是「可用」「降级」还是「隐藏」。
+macOS 列只是语义参考：该平台不发布、无设备，实现时只需按此列 `cfg` 隔离入口并保证编译
+（§12.2），不要求行为一致。
 
 | 能力 | Windows | Linux | macOS | 降级 |
 | --- | --- | --- | --- | --- |
@@ -150,8 +156,9 @@ EntryTags     { path, tag_ids: Vec<String>, source: Xattr | Ads | Index }
 
 2. **配置目录索引（回退，也是远程/压缩包/云盘的唯一存储）**
    - 位置：`<config>/tags-index/`，按卷/后端分片，避免单文件过大。
-   - 键：规范路径；本地卷尽量带文件标识（Unix `dev+ino`，Windows 卷序列号 + 文件索引）
-     以抵抗重命名；拿不到标识时退回路径 + watcher 更新。
+   - 键：规范路径；本地卷带文件标识（Unix `dev+ino`，Windows 卷序列号 + 文件索引）
+     以抵抗重命名。**已落地（2026-11-07）**：dae 内重命名直接迁移条目，dae 外重命名
+     在读取新路径时按标识找回；细节与边界见 `docs/decisions/tag-index-integrity.md`。
    - 值：标签 id 列表 + 最后写入时间。
    - 远程（SFTP/SMB/云盘）与压缩包只走这一层；标签不随文件离开 dae，界面要讲清楚。
    - 是否需要引入嵌入式数据库（如 `rusqlite`）先做决策记录与基准；v1 可以用分片 JSON +
@@ -225,6 +232,10 @@ EntryTags     { path, tag_ids: Vec<String>, source: Xattr | Ads | Index }
 
 **阶段 2：平台索引（能力探测，可选）**
 
+- **已落地（2026-11-07）**：索引只作为候选源，名字与过滤规则仍由 `fs::search`
+  统一执行；Windows 走 `ISearchQueryHelper` + `Search.CollatorDSO`（OLE DB，
+  `System.ItemUrl` 列绑定为 VARIANT），Linux 走 `tracker3`/`baloo` 的 CLI。
+  语义、失败回退与边界见 `docs/decisions/search-index.md`。
 - Windows：`ISearchQueryHelper`；MSIX 打包形态要先验证权限与索引可见性。
 - macOS：`mdfind`（Spotlight），实现成本最低。
 - Linux：`tracker3` 或 `baloo` 存在时调用，否则隐藏「使用系统索引」开关。
@@ -263,6 +274,9 @@ v1 不实现应用内格式化：破坏性操作交给系统工具，dae 只负�
   Linux `mount -t nfs`、macOS `mount_nfs`）。
 - **发现**：`mdns-sd` 浏览 `_smb._tcp`、`_sftp-ssh._tcp`、`_webdav._tcp`；
   Windows 可选 WS-Discovery。发现结果只填主机/端口，不自动带凭据。
+  **已落地（2026-11-07）**：一次性、有时限的探测（1.5 s），侧栏「网络」段列出结果，
+  点击只预填连接对话框；TXT 记录一律不信，WS-Discovery 仍未做
+  （`docs/decisions/network-discovery.md`）。
 - 在 `vfs.rs:79-80` 的 `unsupported_scheme` 移除之前，连接对话框不要放出 FTP/WebDAV 入口，
   避免「能填表但不能打开」。
 - macOS 不发布，但代码必须编译；SMB 走现有实现。
@@ -331,6 +345,8 @@ extensions = []           # 空表示不过滤
 
 - 工具栏项模型 + 拖拽排序 + 恢复默认；存 `settings.toml`。
 - 主页小部件：标签、驱动器、最近、收藏；每项可开关。
+  **已落地（2026-11-07）**：概览页新增「标签」「驱动器」两段，设置页的「主页小部件」
+  随之多两个开关；标签行点击进入 `tag:` 搜索（从概览先回到文件夹），驱动器行跳到挂载点。
 - 纯 QML/配置，无平台分支。
 
 ### 5.15 大小单位与文件夹大小（P1-10）
@@ -403,6 +419,7 @@ bun run lint:qml
 - Windows：`cargo build -p dae-app`；MSIX 形态单独冒烟（打包后 xattr/ADS、驱动器、共享）。
 - Linux：`qt-check` 的 ubuntu-26.04 构建；X11 与 Wayland 各跑一遍侧栏拖拽、标签、弹出。
 - macOS：`qt-check` 的 macos-latest 构建（不发布，但必须编译）；xattr 与 `diskutil` 分支至少编译通过。
+  没有可用设备，运行时不在验收范围内；新增 macOS 代码以「编译过」为唯一门槛。
 - 手测按 `docs/qt-platform-parity.md` §4 的清单增补对应行；平台专属项标注「不可用/隐藏」而不是空白。
 
 性能：
@@ -418,8 +435,10 @@ bun run lint:qml
 
 - 标签在 exFAT/FAT32、SMB、SFTP、云盘、压缩包上不可随文件保存；索引是唯一真相，
   必须让用户看见这个边界。
-- 索引与文件系统可能不一致（外部改名、双系统、同步工具）；需要 watcher 修补与
-  「重建索引」入口。
+- 索引与文件系统可能不一致（外部改名、双系统、同步工具）。**已缓解（2026-11-07）**：
+  文件身份让读取能找回外部改名，删除与路径复用不会继承旧标签，设置页有「重建索引」
+  （只遍历索引，不扫盘）。远程路径的外部改名仍在边界内
+  （`docs/decisions/tag-index-integrity.md` §6）。
 - Windows Search 在 MSIX 打包形态下可能受限；先验证再承诺。
 - 应用内格式化风险高；v1 明确交给系统工具。
 - RAR 解码涉及非自由许可；只做外部工具探测。
@@ -471,8 +490,10 @@ Files 侧：
   标签排序的真相；文件流是标签随文件移动的载体。
 - 卷能力按卷探测一次并缓存（临时文件写读一次流），失败即索引模式，界面用
   `TagStore.note` 说明「此位置标签只在本机生效」。远程、压缩包直接索引模式。
-- 索引键是折叠路径（Windows/macOS 大小写折叠）；Unix 额外记录 `dev:ino`，
-  但外部改名仍不会被 watcher 关联回来 —— 这是明确边界，不是遗漏。
+- 索引键是折叠路径（Windows/macOS 大小写折叠），条目另存文件身份
+  （Unix `dev:ino`，Windows 卷序列号 + 文件索引）。**2026-11-07 起**：外部改名在
+  读取新路径时按身份找回并迁移，dae 内改名直接迁移；此前那条「外部改名不会关联
+  回来」的边界已由 `docs/decisions/tag-index-integrity.md` 取代。
 - macOS 的 Finder 标签镜像（`kMDItemUserTags`）按原计划默认关闭，因此没有
   写入代码；需要时另立任务，失败不得影响主存储。
 - 读标签只在列表完成后按可见行批量请求（`DirectoryListModel.requestTags`），
@@ -553,22 +574,23 @@ Files 侧：
 
 P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-integrations.md`。
 下表是实际状态：**完成**指界面入口、后端与降级规则都在；**部分**指能用的部分已落地、
-边界写在后面；**未做**不藏。
+边界写在后面。括号里是完成度之外的限制（未覆盖的形态、比计划小的动作面），
+剩余待办统一在 §12。
 
 | # | 项 | 状态 | 边界 |
 | --- | --- | --- | --- |
-| P1-1 | 驱动器工具 | 完成 | 弹出/卸载/挂载/格式化入口/存储清理/加密状态/上一版本按平台能力显示；Windows 弹出未在真实读卡器上验证 |
-| P1-2 | FTP/WebDAV | 部分 | FTP/FTPS 完整（浏览、下载、上传、改名、删除、建目录）；WebDAV 可浏览/下载/改名/删除/建目录，上传返回 `Unsupported`（缺流式 PUT）。两者都未对真实服务器冒烟 |
-| P1-3 | 自定义动作 + 快捷键 | 完成 | `[[actions]]`、argv 传参、PATH 探测、设置页增删改、内置「在 IDE 中打开」；快捷键 22 → 35，全部有分发点 |
+| P1-1 | 驱动器工具 | 完成 | 弹出/卸载/挂载/格式化入口/存储清理/加密状态/上一版本按平台能力显示；Windows 弹出在真实 USB 卷上返回 ok。`CM_Request_Device_Eject` 回退按 `docs/decisions/p1-integrations.md` §1 不做 |
+| P1-2 | FTP/WebDAV | 完成（隐式 FTPS 未测） | FTP/FTPS 完整（浏览、下载、上传、改名、删除、建目录）；WebDAV 同样完整，上传走流式 PUT。对本地 FTP、显式 FTPS、WsgiDAV（匿名/Basic）冒烟通过；隐式 FTPS（990）与真实第三方服务器未覆盖 |
+| P1-3 | 自定义动作 + 快捷键 | 完成（动作面小于 Files） | `[[actions]]`、argv 传参、PATH 探测、设置页增删改、内置「在 IDE 中打开」；可重绑定快捷键 22 → 35，全部有分发点。未绑定的菜单命令仍多，没有补齐到 Files 的 150+ 动作面 |
 | P1-4 | 状态中心 | 完成 | 内存 200 条 / 持久化 50 条、失败徽章、传输与解压可重试、可清空 |
-| P1-5 | 属性增强 | 部分 | 两文件 SHA-256 比对（列表菜单）与已知值比对（属性对话框）；EXIF/签名/ACL 未做 |
-| P1-6 | 共享 / 上一版本 / BitLocker | 部分 | 磁盘加密状态（`manage-bde`/`fdesetup`/`cryptsetup`）与上一版本系统入口在驱动器菜单；系统共享未做 |
+| P1-5 | 属性增强 | 部分 | 哈希比对、图片 EXIF、音频/视频容器元数据、Windows 签名（含 catalog 回退）与 ACL 只读渲染均已落地；macOS 签名、Linux/macOS ACL、自定义图标未做 |
+| P1-6 | 共享 / 上一版本 / BitLocker | 部分 | 磁盘加密状态（`manage-bde`/`fdesetup`/`cryptsetup`）与上一版本系统入口在驱动器菜单；Windows 系统共享已实现并冒烟；macOS 共享、Linux 共享按平台隐藏 |
 | P1-7 | 标签页 + 会话恢复 | 完成 | 关闭栈 16、重开/复制/固定/关闭其他与左右；几何+标签+历史路径+分屏恢复，崩溃标记提示 |
 | P1-8 | 快速预览 | 完成 | 停靠面板关闭或窗口过窄时 Space 打开弹层；Esc/外点关闭，方向键与翻页滚动 |
-| P1-9 | 工具栏 / 主页小部件 | 部分 | 主页四个分组（项目/收藏/最近/空间）可开关并持久化；工具栏拖拽排序未做 |
+| P1-9 | 工具栏 / 主页小部件 | 完成（组件集与计划不同） | 主页四组（项目/收藏/最近/空间）可开关并持久化；工具栏模型 + 拖拽排序 + 恢复默认。计划里的「标签」「驱动器」部件未做 |
 | P1-10 | 大小单位 + 按需文件夹大小 | 完成 | 二进制 KiB/MiB 与十进制 KB/MB 可切（修正了旧的 1024 进制写 KB 的错标）；列表菜单按需计算目录大小 |
 | P1-11 | 压缩格式 | 完成 | 智能解压（单根目录不套娃）、解压到新文件夹；RAR/ISO 经 7z/unrar/bsdtar，缺工具时入口隐藏并给出具体错误 |
-| P1-12 | 多语言 / RTL / 背景 | 部分 | `LayoutMirroring` 在窗口根开启并继承；语言为简中（源）、英文、繁体中文，非源语言先装英文兜底；新增语言仍是持续工作 |
+| P1-12 | 多语言 / RTL / 背景 | 部分 | `LayoutMirroring` 在窗口根开启并继承，未做逐组件镜像审计；语言为简中（源）、英文、繁体中文；背景图与四档遮罩已落地。语言数是持续工作，远未到 Files 的量 |
 
 ### 11.1 驱动器工具（P1-1）
 
@@ -746,6 +768,9 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 - `smb::split_authority` 修正带端口的 IPv6 authority（`[::1]:2121/pub` 之前把
   `:2121/pub` 当成路径，端口丢失）。
 
+**网络发现**不在 P1-2 的落地范围内（当时侧栏只有已保存的连接）。它作为 R-2 于
+2026-11-07 补齐：`fs/discovery.rs` 的一次性 mDNS 探测 + 侧栏「网络」段，细节见 §12.7。
+
 ### 11.13 验证
 
 - `cargo test -p dae-core --lib`：356 passed / 10 ignored（新增 WebDAV 分块上传与
@@ -765,5 +790,144 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 - 真实服务器冒烟（本机临时服务）：FTP 明文、显式 FTPS、WsgiDAV 匿名与 Basic 认证
   均跑通「浏览 → 写文件 → 预览 → 同后端复制 → 改名 → 删除」。隐式 FTPS（990）与
   系统 catalog 之外的签名场景未覆盖。
-- 未验证：Linux/macOS 运行时；`qt-check` 的三平台编译仍是门槛；格式化对话框的
+- 未验证：Linux 运行时（见 §12.3）；macOS 无设备，按 §7 只验编译；格式化对话框的
   人工确认。
+
+---
+
+## 12. 剩余工作（2026-11-07）
+
+**交付平台收敛为 Windows 与 Linux。** macOS 无设备、不发布，代码保持可编译即可，
+运行时不进入验收（§7）。因此 §5 里所有「macOS 独占实现」从功能面移到 §12.2，
+不再是交付阻塞项。
+
+### 12.1 待办：Windows / Linux 交付面
+
+| # | 缺口 | 依据 | 落点 | 量 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| R-1 | 平台索引搜索 | §5.5 阶段 2 | Windows：`ISearchQueryHelper` + 索引可见性探测（MSIX 形态单独验）；Linux：`tracker3`/`baloo` 存在时调用，否则隐藏开关。结果与遍历结果合并去重，沿用现有取消令牌与 200 条上限 | L | **完成**（2026-11-07，`docs/decisions/search-index.md`；MSIX 形态未验） |
+| R-2 | 网络位置发现 | §5.8 | `mdns-sd` 浏览 `_smb._tcp`/`_sftp-ssh._tcp`/`_webdav._tcp`，结果只填主机与端口，不自动带凭据；侧栏新增「网络」段。Windows 的 WS-Discovery 后置 | S–M | **完成**（2026-11-07，`docs/decisions/network-discovery.md`） |
+| R-3 | 标签定义导入/导出 | §5.1 UI | `TagStore` 增加导出/导入（格式即 `tags.toml` 文本），设置页两个按钮 + 文件对话框。导入策略要在实现时定一条并写进决策文档：同 id 覆盖名称/颜色，未知 id 追加 | S | **完成**（2026-11-07，`docs/decisions/tag-index-integrity.md`） |
+| R-4 | 标签索引重建与外部改名修补 | §8 风险 | `tags.rs` 无 rebuild/repair API。重建入口放标签设置页，按卷分片重读；watcher 事件带 `dev:ino` 时把索引键从旧路径迁到新路径，补上「外部改名不关联」这条已知边界 | S–M | **完成**（2026-11-07，同上。实现改为按文件身份在读取时恢复，不依赖 watcher 的 rename 对） |
+| R-5 | 主页部件「标签」「驱动器」 | §5.14 | `OverviewModel` 当前只有项目/收藏/最近/空间；补两段并接入 `hiddenHomeSections`，计数分别来自 `TagStore.counts()` 与侧栏卷列表 | S | **完成**（2026-11-07） |
+| R-6 | 动作面补齐 | §3 P1-3 | 可重绑定快捷键 35 条，菜单命令仍多（标签、大小单位、测量大小、压缩、Git、打开方式、复制路径等）。按动作注册表逐项补 id 与分发点，冲突检测沿用现有逻辑 | M | **完成**（2026-11-07，13 条新动作，35 → 48；默认只给「复制路径」绑定 Ctrl+Shift+C，其余留空待用户绑定） |
+| R-7 | 自定义图标 | §5.11-5 | 三平台语义不一致，维持「暂缓」，不进待办 | — | 暂缓 |
+
+### 12.2 仅代码、不验收：macOS
+
+以下四项只在出现 macOS 发布计划时再做；做了也只要求 `qt-check` 的 `macos-latest`
+编译通过与入口按平台隐藏，**不承诺行为**：
+
+- `SecStaticCodeCheckValidity` 文件签名（属性对话框「签名」页）；
+- `NSSharingServicePicker` 系统共享（右键「共享…」）；
+- `kMDItemUserTags` Finder 标签镜像（binary plist，失败不得影响主存储）；
+- `QLPreviewPanel` 快速预览（`QuickPreview.qml` 的替代后端）。
+
+### 12.3 验证与测量尾巴
+
+- **Linux 运行时**：`docs/qt-platform-parity.md` §4 仍有七行标「Linux 待测」——标签
+  写入/搜索、排序与分组、每目录布局、详情列、搜索范围、信息面板。P0 的「三平台可用
+  或明确降级」目前只有 Windows 有运行时证据。
+- **M1 验收指标未测**：「12 万条目列表 p95 回退 ≤ 5%」。`bench/listing-pipeline` 没有
+  tag/group 路径，§10.7 只有单测数量，没有基准数字。
+- **MSIX 形态冒烟未记录**：§7 要求的打包后 ADS/驱动器/共享三项，`docs/packaging.md`
+  只记了「设为默认文件管理器在 MSIX 下不生效」。系统索引在打包形态下能否看到
+  `SystemIndex` 同样未验；探测失败时搜索自动退回遍历。
+- **隐式 FTPS（990）** 与格式化对话框的人工确认未覆盖（§11.13）。
+- **macOS 运行时**：不做，不是待办。
+
+### 12.4 维持不做
+
+紧凑覆盖窗、MTP/便携设备、Explorer 标签互操作、系统通知（原 P2）；应用内格式化；
+跨平台统一 ACL 编辑器；仅 ADS 的标签存储。
+
+### 12.5 剩余顺序
+
+§12.1 的功能项已全部落地，剩下的是验证与测量：
+
+1. Linux 真机手测（§12.3 的七项 + 标签维护、网络发现、系统索引）；
+2. Windows MSIX 形态冒烟（ADS、驱动器、共享、系统索引可见性）；
+3. M1 的 12 万条 p95 基准（标签读取不进热路径的验收指标）。
+
+### 12.6 R-3 / R-4 落地记录（2026-11-07）
+
+- **core**（`crates/dae-core/src/fs/tags.rs`）：`export_document`/`export_to`、
+  `import_document`/`import_from`、`repair_index`、`migrate`、`tags::note_rename`；
+  `TagDefinition.color` 加 `serde(default)`，手改的 `tags.toml` 少一个颜色字段不会
+  让整份定义读成空。
+- **文件身份**：索引条目新增 `file_id`——Windows 用
+  `GetFileInformationByHandle`（卷序列号 + 文件索引，目录带
+  `FILE_FLAG_BACKUP_SEMANTICS`），Unix 用 `dev:ino`。读取时用它做两件事：命中但
+  身份不同 → 视为未命中（路径被新文件复用）；未命中且身份匹配别的键 → 迁到新键
+  （dae 外改名）。
+- **重命名挂钩**：`service::rename_entry`、`undo::apply_rename_pairs`（含批量暂存
+  改名）、`undo_rename`/`redo_rename` 成功后迁移条目；目录按前缀迁移子项。
+- **重建索引**只遍历索引，不扫盘：丢弃失效路径、采用文件流里的 id、按身份去重、
+  损坏分片隔离为 `*.corrupt-<millis>`、按当前卷重新分片。
+- **bridge**（`crates/dae-qt/src/tags.rs`）：`exportDefinitions`、
+  `importDefinitions`、`rebuildIndex`，统一 `{"ok":…}` JSON 回复；回复构造是自由
+  函数，单测不需要 QML 引擎。
+- **UI**：设置 → 标签底部「导出… / 导入… / 重建索引」+ 一行结果说明（跳过项按
+  前三条列名展开）。
+- **验证**：`cargo test -p dae-core --lib fs::tags` 17 passed；
+  `cargo test -p dae-qt --lib tags` 3 passed；
+  `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app` 通过。
+- **Windows 运行时冒烟**（隔离 `APPDATA`）：预置一个指向已删除文件的索引分片 →
+  Ctrl+, 开设置 → UIA 选中「标签」页 → 按「重建索引」→ 状态行显示
+  「索引已重建：0 条记录，移除 1 条失效、0 条重复、0 个损坏分片」，该分片文件被删除。
+  导入/导出的文件对话框未自动点选，其桥接与合并语义由上面的单测覆盖。
+- 取舍与边界见 `docs/decisions/tag-index-integrity.md`（远程路径的外部改名不在
+  本轮范围内）。
+
+### 12.7 R-2 落地记录（2026-11-07）
+
+- **core**（`crates/dae-core/src/fs/discovery.rs`）：`discover(timeout)` 用
+  `mdns_sd::ServiceDaemon` 浏览三种服务类型，一次探测、到点关守护；结果按
+  协议 + 主机 + 端口去重，地址合并排序；主机名去掉尾点，没有主机名时回退到
+  第一个地址。守护起不来只记 debug 日志，返回空表——发现是附加项，不是门槛。
+- **不回退凭据**：TXT 记录不读，因此广告方能写的东西（用户名、路径、口令）不会
+  进入对话框；这也是「结果只填主机/端口」的实现含义。
+- **bridge**（`crates/dae-qt/src/network_discovery.rs`）：`NetworkDiscovery` 单例，
+  `servicesJson` / `busy` / `scanned`，`refresh()` 在共享 runtime 的阻塞池上跑。
+  `scanned` 让第二个窗口不再重复探测。
+- **UI**：侧栏在「标签」之上新增「网络」段（`qml/Sidebar.qml`），行显示实例名与
+  协议，右上角刷新；点击通过 `discoveredActivated(protocol, host, port)` 交给
+  `ShellWindow`，`ConnectDialog.openWith` 预填协议/主机/端口，账号与密码留空。
+  同时删掉了连接对话框里「FTP / WebDAV 即将支持」的过期说明。
+- **验证**：`cargo test -p dae-core --lib` 369 passed（新增 5 个发现用例：
+  去重合并、同主机不同协议、主机名缺失回退地址、丢弃空主机/零端口、实例名截断）；
+  `cargo test -p dae-qt --lib` 196 passed（新增单例默认态）；
+  `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app` 通过。
+- **Windows 运行时冒烟**（隔离 `APPDATA`，本机临时 mDNS 广告器注册
+  `Dae Smoke NAS._smb._tcp`）：侧栏出现「网络 / Dae Smoke NAS SMB」；点击后连接
+  对话框以 SMB、`dae-smoke.local`、`445` 打开，账号与密码为空（UIA 读到的
+  Edit 值为证）。冒烟同时修掉两处 qmltc 抓不到的运行时问题：重复的
+  `Component.onCompleted`（`Sidebar.qml`）与 `LazySurface` 缺 `openWith` 代理。
+- **边界**：只监听局域网组播，跨网段/防火墙拦截时无结果（与系统文件管理器一致）；
+  Windows 的 WS-Discovery 未做；结果不持久化，重启后再探一次。
+
+### 12.8 R-1 / R-5 / R-6 落地记录（2026-11-07）
+
+- **R-1 平台索引**（`crates/dae-core/src/fs/search_index.rs`）：Windows 用
+  `ISearchQueryHelper` 生成 SQL、`Search.CollatorDSO` OLE DB 执行；列绑定是
+  VARIANT（0xc），取 `System.ItemUrl`（`ItemPathDisplay` 会本地化目录名），
+  行句柄数组由提供方分配、`CoTaskMemFree` 归还。Linux 用 `tracker3`/`baloo`
+  的 CLI。索引只贡献候选，`fs::search` 仍按名字、根与过滤器统一筛，并与遍历结果
+  按折叠路径去重。详细取舍与实机调试结论见 `docs/decisions/search-index.md`。
+- **R-5 主页部件**（`overview_model.rs`）：新增 `Tags`/`Drives` 两段，行构造抽成
+  `tag_rows`/`drive_rows` 以便单测；设置页「主页小部件」多两个开关。标签行点击
+  先回到文件夹再 `tag:` 搜索（`searchTag` 现在自己处理「不在文件夹」的情况），
+  驱动器行跳到挂载点。
+- **R-6 动作面**（`settings.rs`、`SettingsPanel.qml`、`ShellWindow.qml`）：可重绑定
+  动作 35 → 48，新增复制路径/复制名称/打开方式/压缩 ZIP/解压到此处/计算大小/
+  比较 SHA-256/创建副本/创建快捷方式/移动到/批量重命名/切换视图/切换大小单位。
+  默认只绑定 `Mod+Shift+C`（复制路径），其余留空由用户在设置里分配；快捷键作用于
+  **当前焦点窗格的选择**，不复用右键菜单的上下文捕获。
+- **验证**：`cargo test -p dae-core --lib` 374 passed（新增索引解析/URL 换算用例）；
+  `cargo test -p dae-qt --lib` 199 passed（新增标签/驱动器行映射用例）；
+  `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app` 通过。
+- **Windows 运行时冒烟**（隔离 `APPDATA`）：概览页显示「标签」（Work/Home）与
+  「驱动器」（C:\ / Develop，含 NTFS/ReFS 与可用/总容量）；点击标签行进入
+  `tag:Work` 的「所有卷」搜索；`Ctrl+Shift+C` 把当前目录写入剪贴板（读回一致，
+  且界面弹出「已复制路径」）。
+- **未验证**：Linux 运行时（tracker3/baloo 的实际输出）、MSIX 形态的索引可见性。
