@@ -186,7 +186,10 @@ pub fn save_hidden_places(places: Vec<PlaceKind>) -> Result<(), FileSystemError>
     write_atomic(&path, contents.as_bytes())
 }
 
-pub(super) fn list_disks_sync() -> Vec<DiskVolume> {
+/// The mounted volumes, synchronously. The overview's drive widget and the
+/// sidebar both need this on a thread that already owns the work; callers that
+/// cannot block use [`list_disks`].
+pub fn list_disks_sync() -> Vec<DiskVolume> {
     let mut volumes: Vec<DiskVolume> = Disks::new_with_refreshed_list()
         .iter()
         .filter(|disk| {

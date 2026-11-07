@@ -205,7 +205,7 @@ pub fn default_shortcuts() -> HashMap<String, String> {
     } else {
         ("Alt+Left", "Alt+Right")
     };
-    let entries: [(&str, &str); 35] = [
+    let entries: [(&str, &str); 48] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
         ("app.pathJump", "Mod+P"),
@@ -248,6 +248,22 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("explorer.toggleSplit", "Mod+Alt+S"),
         ("explorer.displayOptions", "Mod+Alt+V"),
         ("explorer.filters", "Mod+Alt+F"),
+        // Rows that used to be menu-only. Only "copy path" gets a chord of its
+        // own (the one Windows Explorer trained people to use); the rest are
+        // bindable from settings, and an empty string means "unbound".
+        ("explorer.copyPath", "Mod+Shift+C"),
+        ("explorer.copyName", ""),
+        ("explorer.openWith", ""),
+        ("explorer.compressZip", ""),
+        ("explorer.extractHere", ""),
+        ("explorer.measureSize", ""),
+        ("explorer.compareHashes", ""),
+        ("explorer.duplicate", ""),
+        ("explorer.createShortcut", ""),
+        ("explorer.moveTo", ""),
+        ("explorer.bulkRename", ""),
+        ("explorer.cycleView", ""),
+        ("explorer.toggleSizeUnits", ""),
     ];
     entries
         .into_iter()
@@ -514,6 +530,19 @@ mod tests {
             "explorer.toggleSplit",
             "explorer.displayOptions",
             "explorer.filters",
+            "explorer.copyPath",
+            "explorer.copyName",
+            "explorer.openWith",
+            "explorer.compressZip",
+            "explorer.extractHere",
+            "explorer.measureSize",
+            "explorer.compareHashes",
+            "explorer.duplicate",
+            "explorer.createShortcut",
+            "explorer.moveTo",
+            "explorer.bulkRename",
+            "explorer.cycleView",
+            "explorer.toggleSizeUnits",
         ];
         assert_eq!(ids.len(), expected.len(), "shortcut count drifted");
         for id in expected {

@@ -147,6 +147,10 @@ pub async fn rename_entry(
         if let Some(to) = undo::renamed_path(&path, &new_name)
             && to != path
         {
+            // Tags live in a path-keyed index; move the entry with the file
+            // before recording the undo step, so an index-only tag (a network
+            // or exFAT path) is not left behind under the old name.
+            super::tags::note_rename(&path, &to);
             undo::state().record(host.as_ref(), Operation::Rename { from: path, to });
         }
         Ok(())

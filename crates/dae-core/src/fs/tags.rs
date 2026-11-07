@@ -16,10 +16,13 @@
 //! them queryable.
 //!
 //! The association is keyed by the folded path (case-folded on Windows and
-//! macOS) and the entry keeps the original spelling. Renaming a file outside
-//! dae therefore moves it out of its tag until it is tagged again; the roadmap
-//! records that as a known boundary rather than pretending a watcher can see
-//! every rename.
+//! macOS) and the entry keeps the original spelling. Renames made through dae
+//! move the entry (`note_rename`); a rename made outside dae is recovered from
+//! the stored file identity (volume serial + file index on Windows, `dev:ino`
+//! on Unix) the next time the new path is read, because that identity is what
+//! survives the rename. A file replaced in place by a different file does not
+//! inherit the old entry: the identity mismatch makes the read fall back to the
+//! file's own stream.
 //!
 //! Nothing here touches the listing hot path. [`tags_for`] is meant to be called
 //! for the visible rows (or, for a tag sort, on a worker), never per enumerated
@@ -55,7 +58,10 @@ const STREAM_NAME: &str = "user.dae.tags";
 pub struct TagDefinition {
     pub id: String,
     pub name: String,
-    /// `#rrggbb`, normalised on the way in.
+    /// `#rrggbb`, normalised on the way in. Defaulted so a hand-edited or
+    /// older document without a colour still parses instead of losing every
+    /// definition to one missing field.
+    #[serde(default)]
     pub color: String,
 }
 
@@ -95,6 +101,41 @@ pub struct TagWriteReport {
     /// file. The editor uses this to say "these tags stay in dae" instead of
     /// silently pretending they travel.
     pub file_store_unavailable: bool,
+}
+
+/// What importing a `tags.toml` document did. `skipped` carries one line per
+/// definition the merge refused, so the settings page can say why instead of
+/// dropping it silently.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagImportReport {
+    /// Definitions the local list did not have.
+    pub added: usize,
+    /// Definitions whose id was already known; name and colour now come from
+    /// the imported document.
+    pub updated: usize,
+    /// Definitions the merge refused: empty id/name, a name over the length
+    /// limit, or a name another id already owns.
+    pub skipped: Vec<String>,
+}
+
+/// What rebuilding the index did. The rebuild reads only what the index
+/// already mentions — it never walks a directory tree.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexRepairReport {
+    /// Entries left in the index.
+    pub entries: usize,
+    /// Entries whose file no longer exists at that path.
+    pub dropped_missing: usize,
+    /// Entries that named the same file identity as a newer entry.
+    pub dropped_duplicate: usize,
+    /// Entries whose ids were re-read from the file's own stream, which is
+    /// the truth when the index and the file disagree.
+    pub adopted_from_file: usize,
+    /// Shard documents that could not be parsed and were moved aside as
+    /// `*.corrupt-<millis>` instead of being deleted.
+    pub corrupt_shards: usize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -314,6 +355,13 @@ impl TagStore {
     /// Tags for a batch of paths. The index is consulted first, one shard parse
     /// per volume; a path with no index entry falls back to the stream on the
     /// file, which is what a file copied in from elsewhere carries.
+    ///
+    /// Two identity checks keep the index honest without a watcher. An entry
+    /// whose stored file identity no longer matches the file at that path is
+    /// treated as a miss — the name was reused by a different file, which must
+    /// not inherit the old tags. A miss whose identity matches an entry under
+    /// another path is adopted under the new path: that is a rename made
+    /// outside dae, and identity is what survives it.
     pub fn tags_for(&self, paths: &[String]) -> Vec<EntryTags> {
         let mut shard_cache: HashMap<PathBuf, IndexShard> = HashMap::new();
         let mut answers = Vec::with_capacity(paths.len());
@@ -324,25 +372,61 @@ impl TagStore {
                 .or_insert_with(|| read_shard(&shard_path).unwrap_or_default());
             let key = index_key(path);
             if let Some(entry) = shard.entries.get(&key) {
+                let replaced = match (&entry.file_id, file_identity(path)) {
+                    (Some(stored), Some(current)) => stored != &current,
+                    _ => false,
+                };
+                if !replaced {
+                    answers.push(EntryTags {
+                        path: path.clone(),
+                        tag_ids: entry.tag_ids.clone(),
+                        source: stored_source(path),
+                    });
+                    continue;
+                }
+            }
+            if let Ok(Some(ids)) = read_stream(path)
+                && !ids.is_empty()
+            {
                 answers.push(EntryTags {
                     path: path.clone(),
-                    tag_ids: entry.tag_ids.clone(),
+                    tag_ids: ids,
+                    source: stream_source(),
+                });
+                continue;
+            }
+            if let Some(identity) = file_identity(path)
+                && let Some((old_key, mut entry)) = shard
+                    .entries
+                    .iter()
+                    .find(|(other, entry)| {
+                        *other != &key && entry.file_id.as_deref() == Some(identity.as_str())
+                    })
+                    .map(|(other, entry)| (other.clone(), entry.clone()))
+            {
+                shard.entries.remove(&old_key);
+                entry.path = path.clone();
+                entry.file_id = Some(identity);
+                let ids = entry.tag_ids.clone();
+                shard.entries.insert(key, entry);
+                if let Err(error) = write_shard(&shard_path, shard) {
+                    log::warn!(
+                        target: "dae::tags",
+                        "could not move a renamed entry to {path}: {error}"
+                    );
+                }
+                answers.push(EntryTags {
+                    path: path.clone(),
+                    tag_ids: ids,
                     source: stored_source(path),
                 });
                 continue;
             }
-            match read_stream(path) {
-                Ok(Some(ids)) if !ids.is_empty() => answers.push(EntryTags {
-                    path: path.clone(),
-                    tag_ids: ids,
-                    source: stream_source(),
-                }),
-                _ => answers.push(EntryTags {
-                    path: path.clone(),
-                    tag_ids: Vec::new(),
-                    source: TagSource::Index,
-                }),
-            }
+            answers.push(EntryTags {
+                path: path.clone(),
+                tag_ids: Vec::new(),
+                source: TagSource::Index,
+            });
         }
         answers
     }
@@ -488,6 +572,308 @@ impl TagStore {
         }
         counts
     }
+
+    /// The definitions as a `tags.toml` document. Export is the same format
+    /// the config directory holds, so an export can be dropped in as
+    /// `tags.toml`, edited by hand, or imported on another machine.
+    pub fn export_document(&self) -> Result<String, FileSystemError> {
+        let document = DefinitionsFile {
+            tags: self.definitions(),
+        };
+        toml::to_string_pretty(&document)
+            .map_err(|error| FileSystemError::Internal(format!("tags.export_failed: {error}")))
+    }
+
+    /// Writes the definitions document to `path`, atomically.
+    pub fn export_to(&self, path: &Path) -> Result<(), FileSystemError> {
+        write_atomic(path, self.export_document()?.as_bytes())
+    }
+
+    /// Merges a `tags.toml` document into the local definitions. A known id
+    /// overwrites name and colour; an unknown id is appended. A name another
+    /// id already owns is refused rather than renamed — the caller sees it in
+    /// `skipped` and nothing is guessed.
+    pub fn import_document(&self, document: &str) -> Result<TagImportReport, FileSystemError> {
+        let incoming: DefinitionsFile = toml::from_str(document).map_err(|error| {
+            FileSystemError::InvalidInput(format!("tags.import_invalid: {error}"))
+        })?;
+        let mut definitions = self.definitions();
+        let mut report = TagImportReport::default();
+        for tag in incoming.tags {
+            let id = tag.id.trim();
+            let name = tag.name.trim();
+            if id.is_empty() || name.is_empty() {
+                report
+                    .skipped
+                    .push(format!("{:?}: empty id or name", tag.id));
+                continue;
+            }
+            if name.chars().count() > 32 {
+                report
+                    .skipped
+                    .push(format!("{id}: name over 32 characters"));
+                continue;
+            }
+            if definitions
+                .iter()
+                .any(|other| other.id != id && other.name.eq_ignore_ascii_case(name))
+            {
+                report
+                    .skipped
+                    .push(format!("{id}: the name {name} belongs to another tag"));
+                continue;
+            }
+            match definitions.iter().position(|other| other.id == id) {
+                Some(index) => {
+                    definitions[index].name = name.to_owned();
+                    definitions[index].color = normalise_color(&tag.color, index);
+                    report.updated += 1;
+                }
+                None => {
+                    let color = normalise_color(&tag.color, definitions.len());
+                    definitions.push(TagDefinition {
+                        id: id.to_owned(),
+                        name: name.to_owned(),
+                        color,
+                    });
+                    report.added += 1;
+                }
+            }
+        }
+        self.write_definitions(&definitions)?;
+        Ok(report)
+    }
+
+    /// Reads and merges a `tags.toml` document from `path`.
+    pub fn import_from(&self, path: &Path) -> Result<TagImportReport, FileSystemError> {
+        let document = fs::read_to_string(path)?;
+        self.import_document(&document)
+    }
+
+    /// Reconciles the index with the files it names. Only paths the index
+    /// already mentions are visited: a rebuild is not a disk walk, so it can
+    /// never cost more than the index itself.
+    ///
+    /// It fixes what the read path cannot: entries for deleted files, entries
+    /// left under an old key, entries whose ids disagree with the file's own
+    /// stream, and shard documents that no longer parse (moved aside as
+    /// `*.corrupt-<millis>`, never deleted).
+    pub fn repair_index(&self) -> Result<IndexRepairReport, FileSystemError> {
+        let _guard = INDEX_LOCK.lock().expect("tag index poisoned");
+        let shard_files = self.shard_paths();
+        let mut report = IndexRepairReport::default();
+        let mut groups: BTreeMap<String, IndexShard> = BTreeMap::new();
+
+        for shard_file in &shard_files {
+            let shard = match read_shard(shard_file) {
+                Ok(shard) => shard,
+                Err(error) => {
+                    log::warn!(
+                        target: "dae::tags",
+                        "index shard {} does not parse: {error}",
+                        shard_file.display()
+                    );
+                    report.corrupt_shards += 1;
+                    let name = shard_file
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(INDEX_DIR);
+                    let quarantine =
+                        shard_file.with_file_name(format!("{name}.corrupt-{}", now_millis()));
+                    if let Err(error) = fs::rename(shard_file, &quarantine) {
+                        log::warn!(
+                            target: "dae::tags",
+                            "could not quarantine {}: {error}",
+                            shard_file.display()
+                        );
+                    }
+                    continue;
+                }
+            };
+            for entry in shard.entries.into_values() {
+                let mut entry = entry;
+                let path = entry.path.trim().to_owned();
+                if path.is_empty() || !Path::new(&path).exists() {
+                    report.dropped_missing += 1;
+                    continue;
+                }
+                entry.file_id = file_identity(&path);
+                // The file's own stream is the truth when it carries ids; the
+                // index may be stale after a write from another machine.
+                if let Ok(Some(ids)) = read_stream(&path)
+                    && !ids.is_empty()
+                    && ids != entry.tag_ids
+                {
+                    entry.tag_ids = ids;
+                    report.adopted_from_file += 1;
+                }
+                let volume = volume_key(&path);
+                let key = index_key(&path);
+                let group = groups.entry(volume).or_default();
+                let keep_new = group
+                    .entries
+                    .get(&key)
+                    .is_none_or(|existing| existing.updated_at <= entry.updated_at);
+                if keep_new {
+                    group.entries.insert(key, entry);
+                }
+            }
+        }
+
+        // The same file identity under two keys means a rename was recorded
+        // both ways; keep the newest entry.
+        for shard in groups.values_mut() {
+            let mut by_identity: HashMap<String, String> = HashMap::new();
+            let mut losers: Vec<String> = Vec::new();
+            let keys: Vec<String> = shard.entries.keys().cloned().collect();
+            for key in keys {
+                let Some(entry) = shard.entries.get(&key) else {
+                    continue;
+                };
+                let Some(identity) = entry.file_id.clone() else {
+                    continue;
+                };
+                let Some(owner) = by_identity.get(&identity).cloned() else {
+                    by_identity.insert(identity, key);
+                    continue;
+                };
+                let owner_newer = shard
+                    .entries
+                    .get(&owner)
+                    .is_some_and(|owner| owner.updated_at >= entry.updated_at);
+                if owner_newer {
+                    losers.push(key);
+                } else {
+                    losers.push(owner);
+                    by_identity.insert(identity, key);
+                }
+            }
+            for key in losers {
+                if shard.entries.remove(&key).is_some() {
+                    report.dropped_duplicate += 1;
+                }
+            }
+        }
+
+        let mut written: Vec<PathBuf> = Vec::new();
+        for (volume, shard) in &groups {
+            if shard.entries.is_empty() {
+                continue;
+            }
+            report.entries += shard.entries.len();
+            let path = shard_path(&self.config_dir, volume);
+            write_shard(&path, shard)?;
+            written.push(path);
+        }
+        // Shards whose entries moved to another volume's file, and the ones
+        // left empty, are removed; a quarantined file is already renamed.
+        for stale in shard_files {
+            if !written.contains(&stale) {
+                let _ = fs::remove_file(&stale);
+            }
+        }
+        Ok(report)
+    }
+
+    /// Moves index entries after a rename, including everything under a
+    /// renamed directory. Called by the rename paths once the backend has
+    /// reported success; a path with no index entry costs one shard read and
+    /// nothing else. Renames made outside dae are recovered by
+    /// [`Self::tags_for`] through the stored file identity instead.
+    pub fn migrate(&self, from: &str, to: &str) {
+        if from == to {
+            return;
+        }
+        let from_key = index_key(from);
+        let to_key = index_key(to);
+        if from_key == to_key {
+            return;
+        }
+        let _guard = INDEX_LOCK.lock().expect("tag index poisoned");
+
+        let from_shard_path = shard_path(&self.config_dir, &volume_key(from));
+        let to_shard_path = shard_path(&self.config_dir, &volume_key(to));
+        let Ok(mut from_shard) = read_shard(&from_shard_path) else {
+            return;
+        };
+
+        let mut moved: Vec<(String, IndexEntry)> = Vec::new();
+        if let Some(entry) = from_shard.entries.remove(&from_key) {
+            moved.push((to_key.clone(), entry));
+        }
+        let separator = std::path::MAIN_SEPARATOR;
+        let from_prefix = format!("{from_key}{separator}");
+        let to_prefix = format!("{to_key}{separator}");
+        let keys: Vec<String> = from_shard.entries.keys().cloned().collect();
+        for key in keys {
+            if !key.starts_with(&from_prefix) {
+                continue;
+            }
+            let Some(entry) = from_shard.entries.get(&key) else {
+                continue;
+            };
+            // The stored spelling keeps the user's capitals; the folded key is
+            // the fallback when the two differ in case on a case-insensitive
+            // volume.
+            let renamed = match entry.path.strip_prefix(from) {
+                Some(suffix) => format!("{to}{suffix}"),
+                None => format!("{to}{separator}{}", &key[from_prefix.len()..]),
+            };
+            let mut entry = from_shard
+                .entries
+                .remove(&key)
+                .expect("the entry was just read");
+            entry.path = renamed;
+            moved.push((format!("{to_prefix}{}", &key[from_prefix.len()..]), entry));
+        }
+        if moved.is_empty() {
+            return;
+        }
+
+        if from_shard_path == to_shard_path {
+            for (key, mut entry) in moved {
+                entry.file_id = file_identity(&entry.path);
+                from_shard.entries.insert(key, entry);
+            }
+            if let Err(error) = write_shard(&from_shard_path, &from_shard) {
+                log::warn!(
+                    target: "dae::tags",
+                    "could not move tags for {from}: {error}"
+                );
+            }
+            return;
+        }
+
+        // A move across volumes: the entry changes shard documents. A leftover
+        // entry at the destination (the path was deleted and recreated) keeps
+        // both sets of ids.
+        let mut to_shard = read_shard(&to_shard_path).unwrap_or_default();
+        for (key, mut entry) in moved {
+            entry.file_id = file_identity(&entry.path);
+            if let Some(existing) = to_shard.entries.remove(&key) {
+                for id in existing.tag_ids {
+                    if !entry.tag_ids.contains(&id) {
+                        entry.tag_ids.push(id);
+                    }
+                }
+            }
+            to_shard.entries.insert(key, entry);
+        }
+        if let Err(error) = write_shard(&to_shard_path, &to_shard) {
+            log::warn!(
+                target: "dae::tags",
+                "could not write the destination shard for {to}: {error}"
+            );
+        }
+        if from_shard.entries.is_empty() {
+            let _ = fs::remove_file(&from_shard_path);
+        } else if let Err(error) = write_shard(&from_shard_path, &from_shard) {
+            log::warn!(
+                target: "dae::tags",
+                "could not write the source shard for {from}: {error}"
+            );
+        }
+    }
 }
 
 /// Process-wide convenience: definitions at the app's config directory.
@@ -522,6 +908,15 @@ pub fn counts() -> HashMap<String, u64> {
     TagStore::app()
         .map(|store| store.counts())
         .unwrap_or_default()
+}
+
+/// Moves index entries after a rename made through dae. Safe to call for any
+/// path: one with no index entry does nothing. Callers are the rename paths in
+/// `fs::service` and `fs::undo`, after the backend reported success.
+pub fn note_rename(from: &str, to: &str) {
+    if let Some(store) = TagStore::app() {
+        store.migrate(from, to);
+    }
 }
 
 fn now_millis() -> u64 {
@@ -673,19 +1068,45 @@ fn write_shard(path: &Path, shard: &IndexShard) -> Result<(), FileSystemError> {
     write_atomic(path, &bytes)
 }
 
-/// Unix `dev`+`ino`, which survives a rename. Windows has no stable
-/// cross-process identifier here, so the key stays the path and the index
-/// follows the file only through dae's own renames.
+/// Windows: volume serial number plus the file index the file system assigns,
+/// which is stable across a rename within the volume — the same pair
+/// `BY_HANDLE_FILE_INFORMATION` exposes. Unix: `dev`+`ino`.
 fn file_identity(path: &str) -> Option<String> {
+    if !crate::fs::vfs::is_local_path(path) {
+        return None;
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         let metadata = fs::metadata(path).ok()?;
         return Some(format!("{}:{}", metadata.dev(), metadata.ino()));
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        let _ = path;
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, GetFileInformationByHandle,
+        };
+
+        // `FILE_FLAG_BACKUP_SEMANTICS` is what lets the open name a directory:
+        // a renamed folder moves its children's index entries too, so its
+        // identity is as useful as a file's.
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
+            .open(path)
+            .ok()?;
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }.ok()?;
+        Some(format!(
+            "{}:{:08x}{:08x}",
+            info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow
+        ))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
         None
     }
 }
@@ -1112,5 +1533,232 @@ mod tests {
         assert_eq!(normalise_color("a1b2c3", 0), "#a1b2c3");
         assert_eq!(normalise_color("red", 1), "#e0524d");
         assert_eq!(normalise_color("", 8), "#4c8dff");
+    }
+
+    #[test]
+    fn export_is_a_tags_document_and_import_merges_it() {
+        let (_dir, store, _file) = fixture();
+        let (work, _) = store.create_tag("Work", "#112233").expect("create");
+        store.create_tag("Home", "").expect("create");
+
+        let document = store.export_document().expect("export");
+        let parsed: DefinitionsFile = toml::from_str(&document).expect("export parses");
+        assert_eq!(parsed.tags.len(), 2);
+        assert!(document.contains("[[tags]]"));
+
+        // `work` is renamed, a new id is appended, `home` tries to take the
+        // name the rename just claimed, and an empty id is refused.
+        let incoming = format!(
+            r##"
+[[tags]]
+id = "{work_id}"
+name = "Job"
+color = "#AABBCC"
+
+[[tags]]
+id = "urgent"
+name = "Urgent"
+color = "#123456"
+
+[[tags]]
+id = "home"
+name = "Job"
+color = "#000000"
+
+[[tags]]
+id = ""
+name = "Nameless"
+"##,
+            work_id = work.id
+        );
+        let report = store.import_document(&incoming).expect("import");
+        assert_eq!(report.added, 1);
+        assert_eq!(report.updated, 1);
+        assert_eq!(report.skipped.len(), 2);
+
+        let definitions = store.definitions();
+        assert_eq!(definitions.len(), 3);
+        let job = definitions
+            .iter()
+            .find(|tag| tag.id == work.id)
+            .expect("known id updated");
+        assert_eq!(job.name, "Job");
+        assert_eq!(job.color, "#aabbcc");
+        assert!(
+            definitions
+                .iter()
+                .any(|tag| tag.id == "urgent" && tag.name == "Urgent"),
+            "an unknown id is appended"
+        );
+        assert!(
+            definitions
+                .iter()
+                .any(|tag| tag.id == "home" && tag.name == "Home"),
+            "the refused import did not take the name"
+        );
+    }
+
+    #[test]
+    fn export_and_import_round_trip_through_a_file() {
+        let (dir, store, _file) = fixture();
+        store.create_tag("Work", "#102030").expect("create");
+        let export = dir.path().join("library.tags.toml");
+        store.export_to(&export).expect("export");
+
+        let other = TagStore::new(dir.path().join("other-config"));
+        let report = other.import_from(&export).expect("import");
+        assert_eq!(report.added, 1);
+        assert_eq!(report.updated, 0);
+        assert!(report.skipped.is_empty());
+        assert_eq!(other.definitions().len(), 1);
+    }
+
+    #[test]
+    fn a_malformed_import_is_refused_without_touching_the_definitions() {
+        let (_dir, store, _file) = fixture();
+        store.create_tag("Work", "").expect("create");
+        let error = store
+            .import_document("this is not toml")
+            .expect_err("invalid document");
+        assert!(matches!(error, FileSystemError::InvalidInput(_)));
+        assert_eq!(store.definitions().len(), 1);
+    }
+
+    #[test]
+    fn an_index_only_tag_follows_a_rename_made_outside_the_app() {
+        let (_dir, store, file) = fixture();
+        let (work, _) = store.create_tag("Work", "").expect("create");
+        let old = file.to_string_lossy().into_owned();
+        store
+            .set_tags(std::slice::from_ref(&old), std::slice::from_ref(&work.id))
+            .expect("set");
+        // Drop the stream so the only place the ids can come from is the
+        // index — the situation of a volume that cannot carry tags with the
+        // file.
+        let _ = remove_stream(&old);
+
+        let renamed = file.with_file_name(format!(
+            "{}.moved",
+            file.file_stem().expect("stem").to_string_lossy()
+        ));
+        fs::rename(&file, &renamed).expect("rename");
+        let new = renamed.to_string_lossy().into_owned();
+
+        let read = store.tags_for(std::slice::from_ref(&new));
+        assert_eq!(
+            read[0].tag_ids,
+            vec![work.id.clone()],
+            "identity is what survives the rename"
+        );
+        // The entry moved rather than being duplicated or left behind.
+        assert!(store.tags_for(&[old])[0].tag_ids.is_empty());
+        assert_eq!(store.counts().get(&work.id), Some(&1));
+    }
+
+    #[test]
+    fn a_recreated_path_does_not_inherit_the_old_tags() {
+        let (_dir, store, file) = fixture();
+        let (work, _) = store.create_tag("Work", "").expect("create");
+        let path = file.to_string_lossy().into_owned();
+        store
+            .set_tags(&[path.clone()], std::slice::from_ref(&work.id))
+            .expect("set");
+        let before = file_identity(&path);
+        fs::remove_file(&file).expect("delete");
+        fs::write(&file, b"replacement").expect("recreate");
+        if before == file_identity(&path) {
+            // The file system handed the same identity to the new file; there
+            // is nothing to distinguish and nothing to assert.
+            return;
+        }
+        assert!(
+            store.tags_for(&[path])[0].tag_ids.is_empty(),
+            "a different file at the same name starts untagged"
+        );
+    }
+
+    #[test]
+    fn repair_drops_missing_files_and_adopts_the_stream() {
+        let (_dir, store, file) = fixture();
+        let (work, _) = store.create_tag("Work", "").expect("create");
+        let (home, _) = store.create_tag("Home", "").expect("create");
+        let path = file.to_string_lossy().into_owned();
+        let written = store
+            .set_tags(&[path.clone()], std::slice::from_ref(&work.id))
+            .expect("set");
+
+        if written.saved_with_file > 0 {
+            // The index says Work, the file says Home: on rebuild the file
+            // wins, because the stream travels with it.
+            write_stream(&path, std::slice::from_ref(&home.id)).expect("write stream");
+            let report = store.repair_index().expect("repair");
+            assert_eq!(report.adopted_from_file, 1);
+            assert_eq!(report.entries, 1);
+            assert_eq!(
+                store.tags_for(&[path.clone()])[0].tag_ids,
+                vec![home.id.clone()]
+            );
+        }
+
+        fs::remove_file(&file).expect("delete");
+        let report = store.repair_index().expect("repair");
+        assert_eq!(report.dropped_missing, 1);
+        assert_eq!(report.entries, 0);
+    }
+
+    #[test]
+    fn repair_quarantines_a_corrupt_shard_instead_of_deleting_it() {
+        let (_dir, store, file) = fixture();
+        let (work, _) = store.create_tag("Work", "").expect("create");
+        let path = file.to_string_lossy().into_owned();
+        store.set_tags(&[path], &[work.id]).expect("set");
+        let shard = store
+            .shard_paths()
+            .into_iter()
+            .next()
+            .expect("one shard was written");
+        fs::write(&shard, b"{ this is not json").expect("corrupt");
+
+        let report = store.repair_index().expect("repair");
+        assert_eq!(report.corrupt_shards, 1);
+        let quarantined = fs::read_dir(store.config_dir.join(INDEX_DIR))
+            .expect("index dir")
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"));
+        assert!(quarantined, "the corrupt shard is kept for inspection");
+        assert!(store.counts().is_empty());
+    }
+
+    #[test]
+    fn migrating_a_directory_moves_the_entries_beneath_it() {
+        let (dir, store, _file) = fixture();
+        let (work, _) = store.create_tag("Work", "").expect("create");
+        let folder = dir.path().join("folder");
+        fs::create_dir(&folder).expect("mkdir");
+        let first = folder.join("a.txt");
+        let second = folder.join("b.txt");
+        fs::write(&first, b"a").expect("write");
+        fs::write(&second, b"b").expect("write");
+        let paths: Vec<String> = [&first, &second]
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        store
+            .set_tags(&paths, std::slice::from_ref(&work.id))
+            .expect("set");
+
+        let moved = dir.path().join("moved");
+        fs::rename(&folder, &moved).expect("rename");
+        store.migrate(&folder.to_string_lossy(), &moved.to_string_lossy());
+
+        for name in ["a.txt", "b.txt"] {
+            let path = moved.join(name).to_string_lossy().into_owned();
+            assert_eq!(
+                store.tags_for(&[path])[0].tag_ids,
+                vec![work.id.clone()],
+                "{name} kept its tags"
+            );
+        }
+        assert_eq!(store.counts().get(&work.id), Some(&2));
     }
 }

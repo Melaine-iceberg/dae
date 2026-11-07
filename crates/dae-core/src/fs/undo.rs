@@ -16,6 +16,7 @@
 
 use super::error::FileSystemError;
 use super::progress::{FileOperationKind, FileOperationProgressReporterTrait};
+use super::tags;
 use super::transfer::{self, TransferSource};
 use super::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
 use super::vfs;
@@ -480,7 +481,9 @@ fn undo_rename(from: &str, to: &str) -> Result<(), FileSystemError> {
     }
 
     let name = last_segment_of(from)?;
-    vfs::resolve(to)?.rename_entry(to, &name)
+    vfs::resolve(to)?.rename_entry(to, &name)?;
+    tags::note_rename(to, from);
+    Ok(())
 }
 
 fn redo_rename(from: &str, to: &str) -> Result<(), FileSystemError> {
@@ -492,7 +495,9 @@ fn redo_rename(from: &str, to: &str) -> Result<(), FileSystemError> {
     }
 
     let name = last_segment_of(to)?;
-    vfs::resolve(from)?.rename_entry(from, &name)
+    vfs::resolve(from)?.rename_entry(from, &name)?;
+    tags::note_rename(from, to);
+    Ok(())
 }
 
 // -- Batch rename ----------------------------------------------------------
@@ -568,8 +573,9 @@ pub fn apply_rename_pairs(
             if current[index] == *destination || spot_taken(destination, &current[index])? {
                 continue;
             }
-            vfs::resolve(&current[index])?
-                .rename_entry(&current[index], &last_segment_of(destination)?)?;
+            let source = current[index].clone();
+            vfs::resolve(&source)?.rename_entry(&source, &last_segment_of(destination)?)?;
+            tags::note_rename(&source, destination);
             current[index] = destination.clone();
             done[index] = true;
             progressed = true;
@@ -623,6 +629,7 @@ fn stage_sibling(path: &str, counter: &mut usize) -> Result<String, FileSystemEr
             continue;
         }
         backend.rename_entry(path, &candidate)?;
+        tags::note_rename(path, &staged);
         return Ok(staged);
     }
 }

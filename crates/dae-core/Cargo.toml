@@ -31,6 +31,9 @@ kamadak-exif = "0.6"
 keyring = "4.1.6"
 log = "0.4"
 md-5 = "0.11.0"
+# `fs::discovery` browses `_smb._tcp` / `_sftp-ssh._tcp` / `_webdav._tcp` for
+# the sidebar's network section; results fill host and port only.
+mdns-sd = "0.21"
 minisign-verify = "0.3"
 notify = "8.2.0"
 portable-pty = "0.9"
@@ -103,6 +106,10 @@ windows = { version = "0.62.2", features = [
   "Win32_Security_Cryptography_Catalog",
   "Win32_Security_Cryptography_Sip",
   "Win32_Security_WinTrust",
+  # `fs::search_index` queries the Windows Search catalog through the
+  # `Search.CollatorDSO` OLE DB provider.
+  "Win32_System_Search",
+  "Win32_System_Variant",
   # `fs::drives` ejects a volume through `DeviceIoControl` and hands the
   # format dialog to `SHFormatDrive`; neither is a shell string round trip.
   "Win32_System_Ioctl",

@@ -10,6 +10,7 @@ use super::tags;
 use super::types::{ContentSearchResponse, EntryKind, SearchEntry, SearchResponse};
 use super::vfs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -170,6 +171,37 @@ fn search_local(
         }
     }
 
+    // The platform index contributes paths the walk may not have reached (a
+    // scope of several volumes), and it answers even while the walk is still
+    // running. Its hits are held to the same meaning as the walk's: the file
+    // name must contain the query, and the entry has to survive the filters.
+    if text.chars().count() >= 2 {
+        let mut seen: HashSet<String> = candidates
+            .iter()
+            .map(|entry| path_key(&entry.path))
+            .collect();
+        let mut added = 0usize;
+        for path in super::search_index::query(&text, MAX_RESULTS) {
+            if added >= MAX_RESULTS {
+                break;
+            }
+            if !seen.insert(path_key(&path)) {
+                continue;
+            }
+            let Some(root) = request.roots.iter().find(|root| path_is_under(&path, root)) else {
+                continue;
+            };
+            let Some(entry) = index_entry(&path, root, &text, &request.filters) else {
+                continue;
+            };
+            candidates.push(entry);
+            added += 1;
+        }
+        if added > 0 {
+            log::debug!(target: "dae::search", "index added {added} result(s)");
+        }
+    }
+
     if !tag_ids.is_empty() {
         let paths: Vec<String> = candidates.iter().map(|entry| entry.path.clone()).collect();
         let tagged: Vec<Vec<String>> = tags::tags_for(&paths)
@@ -207,28 +239,8 @@ fn tagged_search(
         let Some(root) = request.roots.iter().find(|root| path_is_under(&path, root)) else {
             continue;
         };
-        let backend = vfs::resolve(&path)?;
-        let Ok(stat) = backend.stat(&path) else {
-            // The index outlived the file; a tag search reports what exists.
-            continue;
-        };
-        let name = super::types::display_name_from_path(&path);
-        let relative = path
-            .strip_prefix(root.as_str())
-            .map(|rest| rest.trim_start_matches(['/', '\\']))
-            .unwrap_or(path.as_str())
-            .to_owned();
-        let entry = SearchEntry {
-            name,
-            path: path.clone(),
-            relative_path: relative,
-            kind: stat.kind,
-            modified_at: stat.modified_at,
-            size: (stat.kind == EntryKind::File).then_some(stat.size),
-            hidden: false,
-            read_only: false,
-        };
-        if request.filters.keeps(&entry) {
+        // The index outlived the file; a tag search reports what exists.
+        if let Some(entry) = index_entry(&path, root, "", &request.filters) {
             entries.push(entry);
         }
     }
@@ -240,11 +252,66 @@ fn tagged_search(
     })
 }
 
+/// One result row for a path the tag store or the platform index named.
+///
+/// `text` empty means "no name filter" (tag-only results). The row is stat-ed
+/// once for the columns the list paints; a path that vanished contributes
+/// nothing. Hidden/read-only flags are left false: the walk is the only source
+/// that fills them, and a result row uses them for nothing but a badge.
+fn index_entry(path: &str, root: &str, text: &str, filters: &SearchFilters) -> Option<SearchEntry> {
+    let name = super::types::display_name_from_path(path);
+    if !text.is_empty() && !name.to_lowercase().contains(&text.to_lowercase()) {
+        return None;
+    }
+    let backend = vfs::resolve(path).ok()?;
+    let stat = backend.stat(path).ok()?;
+    let relative = relative_to(path, root);
+    let entry = SearchEntry {
+        name,
+        path: path.to_owned(),
+        relative_path: relative,
+        kind: stat.kind,
+        modified_at: stat.modified_at,
+        size: (stat.kind == EntryKind::File).then_some(stat.size),
+        hidden: false,
+        read_only: false,
+    };
+    filters.keeps(&entry).then_some(entry)
+}
+
 fn path_is_under(path: &str, root: &str) -> bool {
     let root = root.trim_end_matches(['/', '\\']);
+    // The platform index answers in its own casing (`System.ItemUrl`
+    // lower-cases the profile name); on a case-insensitive file system that is
+    // the same directory, so the comparison folds too.
+    if cfg!(any(windows, target_os = "macos")) {
+        let path = path.to_lowercase();
+        let root = root.to_lowercase();
+        return path
+            .strip_prefix(&root)
+            .is_some_and(|rest| rest.starts_with(['/', '\\']))
+            || path == root;
+    }
     path.strip_prefix(root)
         .is_some_and(|rest| rest.starts_with(['/', '\\']))
         || path == root
+}
+
+/// `path` relative to `root`, with the platform's casing rules. The caller has
+/// already established that the path is under the root; a spelling difference
+/// only changes how the slice is found.
+fn relative_to(path: &str, root: &str) -> String {
+    let root = root.trim_end_matches(['/', '\\']);
+    if let Some(rest) = path.strip_prefix(root) {
+        return rest.trim_start_matches(['/', '\\']).to_owned();
+    }
+    let folded_root = root.to_lowercase();
+    if path.to_lowercase().starts_with(&folded_root) {
+        return path[root.len().min(path.len())..]
+            .trim_start_matches(['/', '\\'])
+            .to_owned();
+    }
+    path.to_owned()
 }
 
 /// Splits `tag:` tokens out of the query. Both colons are accepted: a CJK
@@ -289,6 +356,15 @@ fn split_tag_tokens(text: &str) -> (String, Vec<String>) {
         }
     }
     (words.join(" "), tags)
+}
+
+/// The key two spellings of one path share on this platform.
+fn path_key(path: &str) -> String {
+    if cfg!(any(windows, target_os = "macos")) {
+        path.to_lowercase()
+    } else {
+        path.to_owned()
+    }
 }
 
 fn is_image_name(name: &str) -> bool {
