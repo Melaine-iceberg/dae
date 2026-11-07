@@ -271,7 +271,9 @@ fn encryption_native(mount_point: &str) -> Result<String, FileSystemError> {
             "Not a drive letter".to_owned(),
         ));
     }
-    run("manage-bde", &["-status", &drive, "-summary"])
+    // `-summary` is not a manage-bde switch on Windows 11 24H2; the plain
+    // `-status` output carries the same lines summarize_bde keeps.
+    run("manage-bde", &["-status", &drive])
         .map(|output| summarize_bde(&output))
         .map_err(|error| tool_error("manage-bde", error))
 }
@@ -316,7 +318,7 @@ fn is_drive_letter(path: &str) -> bool {
 
 #[cfg(windows)]
 fn summarize_bde(output: &str) -> String {
-    // `manage-bde -summary` prints "Conversion Status: Fully Decrypted" (or
+    // `manage-bde -status` prints "Conversion Status: Fully Decrypted" (or
     // "Fully Encrypted", "Encryption in Progress", …). Keep that line and the
     // protection status; the rest is dialogue about the volume.
     let mut lines = Vec::new();
