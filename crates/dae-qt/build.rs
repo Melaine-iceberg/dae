@@ -175,7 +175,6 @@ fn main() {
             "src/startup.rs",
             "src/overview_model.rs",
             "src/tags.rs",
-            "src/tags.rs",
             "src/terminal.rs",
             "src/trash_model.rs",
             "src/updater.rs",
