@@ -1299,6 +1299,31 @@ fn set_row_tags(
         .join(", ");
 }
 
+/// Stamps the tags already read onto a batch, without building any row's path:
+/// a row under `base` is matched by name, and only a row that spells its own
+/// path pays that lookup. A refresh keeps the cache, so a per-row `full_path`
+/// here would charge a 120,000-entry re-listing one allocation per entry.
+fn decorate_tags(
+    rows: &mut [StoredRow],
+    cache: &HashMap<String, Vec<String>>,
+    definitions: &[dae_core::fs::tags::TagDefinition],
+    base: &str,
+) {
+    let by_name: HashMap<&str, &[String]> = cache
+        .iter()
+        .filter_map(|(path, ids)| path.strip_prefix(base).map(|name| (name, ids.as_slice())))
+        .collect();
+    for row in rows.iter_mut() {
+        let ids = match &row.path {
+            Some(path) => cache.get(path).map(Vec::as_slice),
+            None => by_name.get(row.name.as_str()).copied(),
+        };
+        if let Some(ids) = ids {
+            set_row_tags(row, ids, definitions);
+        }
+    }
+}
+
 /// A date bucket's rank and label. The rank is `YYYYMMDD`-shaped so
 /// lexicographic and numeric order agree; a missing timestamp sorts last.
 fn date_group(timestamp: Option<u64>, granularity: GroupDate) -> (i64, String) {
@@ -3064,13 +3089,12 @@ impl qobject::DirectoryListModel {
             assign_groups(rows, grouping);
         }
         if !self.tags_cache.is_empty() {
-            let base = self.base.to_string();
-            for row in rows.iter_mut() {
-                let path = row.full_path(&base);
-                if let Some(ids) = self.tags_cache.get(&path) {
-                    set_row_tags(row, ids, &self.tag_definitions);
-                }
-            }
+            decorate_tags(
+                rows,
+                &self.tags_cache,
+                &self.tag_definitions,
+                &self.base.to_string(),
+            );
             if grouping.active() {
                 assign_groups(rows, grouping);
             }
@@ -4833,6 +4857,32 @@ mod tests {
     }
 
     #[test]
+    fn decorate_tags_matches_by_name_and_by_stored_path() {
+        use dae_core::fs::tags::TagDefinition;
+        let definitions = vec![TagDefinition {
+            id: "work".into(),
+            name: "Work".into(),
+            color: "#111111".into(),
+        }];
+        let relative = stored("a.txt", EntryKind::File, 1, 1, false);
+        let mut outside = stored("b.txt", EntryKind::File, 1, 1, false);
+        outside.path = Some("D:/other/b.txt".to_owned());
+        let untagged = stored("c.txt", EntryKind::File, 1, 1, false);
+        let mut rows = vec![relative, outside, untagged];
+        let cache = HashMap::from([
+            ("C:/dir/a.txt".to_owned(), vec!["work".to_owned()]),
+            ("D:/other/b.txt".to_owned(), vec!["work".to_owned()]),
+        ]);
+
+        decorate_tags(&mut rows, &cache, &definitions, "C:/dir/");
+
+        assert_eq!(rows[0].tag_ids, ["work"], "rows under the base match by name");
+        assert_eq!(rows[0].tag_sort, "Work");
+        assert_eq!(rows[1].tag_ids, ["work"], "rows with a path match on it");
+        assert!(rows[2].tag_ids.is_empty());
+    }
+
+    #[test]
     fn folders_interleave_when_the_preference_is_off() {
         let mut rows = vec![
             stored("b.txt", EntryKind::File, 10, 1, false),
@@ -4978,5 +5028,217 @@ mod tests {
         assert_eq!(category_of(EntryKind::File, "README"), "file");
         assert_eq!(extension_of("README"), "");
         assert_eq!(extension_of("a.tar.gz"), "gz");
+    }
+
+    /// M1 acceptance: the tag work must stay out of the 120,000-entry listing's
+    /// hot path, and the listing's p95 must stay within 5% of the same pipeline
+    /// without it. Two hot-path variants are measured because they are the ones
+    /// the model actually runs: the default listing (cold tag cache, where
+    /// `decorate_rows` is a no-op) and a re-listing with a warm cache, where
+    /// `decorate_rows` builds every row's path, looks it up and stamps a hit.
+    /// Grouping is opt-in (`GroupKey::None` by default), so its cost is reported
+    /// without the listing budget; the tag read of the visible rows happens
+    /// after the listing on the blocking pool and is measured on its own.
+    ///
+    /// Runs the real code paths — `open_canonical_listing` + growing batches,
+    /// `StoredRow::from_listing`, `decorate_tags`, `assign_groups`, the worker
+    /// sort trio — not a mirror.
+    ///
+    /// Fixture: `bench/listing-pipeline prepare <dir> 120000`, then
+    /// `DAE_LISTING_BENCH_DIR=<dir> cargo test -p dae-qt --lib --release -- \
+    ///   --ignored --nocapture reports_the_tag_group_listing_regression`
+    ///
+    /// The test binary runs on the system heap (no mimalloc), so absolute
+    /// numbers differ from the app; every arm shares the heap, which is what
+    /// the regression ratio needs.
+    #[test]
+    #[ignore = "needs DAE_LISTING_BENCH_DIR pointing at a 120,000-entry fixture"]
+    fn reports_the_tag_group_listing_regression() {
+        use std::collections::HashMap;
+        use std::time::{Duration, Instant};
+
+        let Ok(dir) = std::env::var("DAE_LISTING_BENCH_DIR") else {
+            eprintln!("DAE_LISTING_BENCH_DIR not set; skipping");
+            return;
+        };
+        let path = std::path::PathBuf::from(&dir);
+
+        // The enumeration half of `open_streamed_listing`: the head batch,
+        // then the reader's doubling batches up to MAX_BATCH_SIZE.
+        fn enumerate(path: &std::path::Path) -> (Vec<StoredRow>, String, Duration) {
+            let started = Instant::now();
+            let listing =
+                dae_core::fs::local::open_canonical_listing(path.to_path_buf(), 512)
+                    .expect("fixture listing");
+            // The model builds rows against `base_of(view.path)`, the string
+            // that makes `base + name` the iterator's own path.
+            let base = dae_core::fs::entry_codec::base_of(&listing.view.path);
+            let mut rows: Vec<StoredRow> = listing
+                .view
+                .entries
+                .iter()
+                .cloned()
+                .map(|entry| StoredRow::from_entry(&entry, &base))
+                .collect();
+            if let Some(mut cursor) = listing.cursor {
+                let mut batch = 512usize;
+                loop {
+                    let (chunk, done) = cursor.take_rows(batch);
+                    rows.extend(chunk.into_iter().map(StoredRow::from_listing));
+                    if done {
+                        break;
+                    }
+                    batch = (batch * 2).min(8192);
+                }
+            }
+            (rows, base, started.elapsed())
+        }
+
+        fn worker_sort(rows: Vec<StoredRow>, order: &ViewOrder) -> Vec<StoredRow> {
+            let entries = sort_snapshot(&rows);
+            let perm = sort_permutation(&entries, order);
+            apply_permutation(rows, &perm).expect("permutation")
+        }
+
+        let (probe, base, _) = enumerate(&path);
+        assert!(
+            probe.len() >= 100_000,
+            "fixture has {} entries; prepare one with 120,000",
+            probe.len()
+        );
+        let visible_count = 512.min(probe.len());
+        let visible_paths: Vec<String> = probe[..visible_count]
+            .iter()
+            .map(|row| row.full_path(&base))
+            .collect();
+        drop(probe);
+
+        // A re-listing after the first screen has painted: the model's cache
+        // holds those rows' tags, and every row in the new listing pays a path
+        // build plus a lookup.
+        let definitions = dae_core::fs::tags::definitions();
+        let stamp = definitions
+            .first()
+            .map(|definition| definition.id.clone())
+            .unwrap_or_else(|| "smoke".to_owned());
+        let cache: HashMap<String, Vec<String>> = visible_paths
+            .iter()
+            .map(|path| (path.clone(), vec![stamp.clone()]))
+            .collect();
+
+        let plain = ViewOrder::default();
+        let by_name = ViewOrder {
+            grouping: Grouping {
+                key: GroupKey::Name,
+                date: GroupDate::Month,
+            },
+            ..ViewOrder::default()
+        };
+        let by_month = ViewOrder {
+            grouping: Grouping {
+                key: GroupKey::Modified,
+                date: GroupDate::Month,
+            },
+            ..ViewOrder::default()
+        };
+
+        let mut samples: [Vec<Duration>; 4] = Default::default();
+        let mut walk_samples: Vec<Duration> = Vec::new();
+        let mut tag_samples: Vec<Duration> = Vec::new();
+        let passes = 12;
+        for pass in 0..passes + 3 {
+            let measured = pass >= 3;
+            // Rotate the arm order so a warming cache cannot favor one arm.
+            for slot in 0..4 {
+                let arm = (slot + pass) % 4;
+                let (mut rows, base_now, walk) = enumerate(&path);
+                let started = Instant::now();
+                match arm {
+                    // The listing as it ships: no grouping, no cache hits.
+                    0 => rows = worker_sort(rows, &plain),
+                    // A re-listing with the first screen's tags cached.
+                    1 => {
+                        // `decorate_rows` runs this exact pass per batch.
+                        decorate_tags(&mut rows, &cache, &definitions, &base_now);
+                        rows = worker_sort(rows, &plain);
+                    }
+                    2 => {
+                        assign_groups(&mut rows, by_name.grouping);
+                        rows = worker_sort(rows, &by_name);
+                    }
+                    _ => {
+                        assign_groups(&mut rows, by_month.grouping);
+                        rows = worker_sort(rows, &by_month);
+                    }
+                }
+                let total = walk + started.elapsed();
+                if measured {
+                    samples[arm].push(total);
+                    if arm == 0 {
+                        walk_samples.push(walk);
+                    }
+                }
+                drop(rows);
+            }
+            if measured {
+                // The post-listing tag phase: visible rows only, exactly what
+                // `requestTags` asks for once the listing lands.
+                let started = Instant::now();
+                let tags = dae_core::fs::tags::tags_for(&visible_paths);
+                tag_samples.push(started.elapsed());
+                assert_eq!(tags.len(), visible_paths.len());
+            }
+        }
+
+        fn median(values: &mut [Duration]) -> Duration {
+            values.sort();
+            values[values.len() / 2]
+        }
+        fn p95(values: &mut [Duration]) -> Duration {
+            values.sort();
+            values[(values.len() * 95).div_ceil(100) - 1]
+        }
+        let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+
+        let labels = [
+            "listing (baseline)",
+            "listing + warm tags",
+            "name groups (opt-in)",
+            "month groups (opt-in)",
+        ];
+        println!("\n{} entries, {passes} measured passes:", probe_len(&path));
+        for arm in 0..4 {
+            println!(
+                "  {:<22} median {:7.2} ms   p95 {:7.2} ms",
+                labels[arm],
+                ms(median(&mut samples[arm])),
+                ms(p95(&mut samples[arm])),
+            );
+        }
+        println!(
+            "  {:<22} median {:7.2} ms (walk + row build, shared by every arm)",
+            "enumeration",
+            ms(median(&mut walk_samples))
+        );
+        println!(
+            "  tags, {visible_count} visible rows after listing: median {:.2} ms, p95 {:.2} ms",
+            ms(median(&mut tag_samples)),
+            ms(p95(&mut tag_samples)),
+        );
+        let baseline = p95(&mut samples[0]);
+        let tagged = p95(&mut samples[1]);
+        let regression = (tagged.as_secs_f64() / baseline.as_secs_f64() - 1.0) * 100.0;
+        println!("  warm-tag p95 regression: {regression:+.2}% (budget +5%)");
+        assert!(
+            tagged.as_secs_f64() <= baseline.as_secs_f64() * 1.05,
+            "warm-cache tag decoration regressed p95 by {regression:.2}%"
+        );
+        // Grouping is a view the user opts into; its numbers are printed above
+        // so a change that makes it pathological is visible, without applying
+        // the listing budget to a deliberately heavier order.
+
+        fn probe_len(path: &std::path::Path) -> usize {
+            std::fs::read_dir(path).map(|it| it.count()).unwrap_or(0)
+        }
     }
 }
