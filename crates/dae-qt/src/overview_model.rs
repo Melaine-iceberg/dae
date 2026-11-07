@@ -20,6 +20,7 @@ use dae_core::fs::git::{self, GitEntryStatusKind};
 use dae_core::fs::recents::{self, RecentItem};
 use dae_core::fs::sidebar::{self, PlaceKind, SystemPlace};
 use dae_core::fs::spaces;
+use dae_core::fs::tags;
 use dae_core::fs::vfs;
 use dae_core::types::{EntryKind, display_name_from_path};
 
@@ -30,8 +31,12 @@ const SECTION_PROJECTS: &str = "Projects";
 const SECTION_FAVORITES: &str = "Favorites";
 const SECTION_RECENTS: &str = "Recent";
 const SECTION_SPACES: &str = "Spaces";
+const SECTION_TAGS: &str = "Tags";
+const SECTION_DRIVES: &str = "Drives";
 
 const MAX_RECENTS: usize = 8;
+const MAX_TAGS: usize = 6;
+const MAX_DRIVES: usize = 6;
 const MAX_PROJECTS: usize = 4;
 const MAX_CANDIDATES: usize = 8;
 
@@ -412,6 +417,8 @@ impl qobject::OverviewModel {
             }
         }
 
+        rows.extend(tag_rows(tags::definitions(), &tags::counts()));
+        rows.extend(drive_rows(sidebar::list_disks_sync()));
         (rows, candidates)
     }
 
@@ -427,6 +434,63 @@ impl qobject::OverviewModel {
             self.as_mut().end_reset_model();
         }
     }
+}
+
+/// The overview's tag widget: every definition, with how many files carry it.
+/// Name goes into `path` because that is what the tag search entry point takes.
+fn tag_rows(
+    definitions: Vec<tags::TagDefinition>,
+    counts: &std::collections::HashMap<String, u64>,
+) -> Vec<OverviewRow> {
+    definitions
+        .into_iter()
+        .take(MAX_TAGS)
+        .map(|definition| {
+            let count = counts.get(&definition.id).copied().unwrap_or(0);
+            OverviewRow {
+                section: SECTION_TAGS,
+                kind: "tag",
+                name: definition.name.clone(),
+                // The row opens the tag's search, whose query is built from the
+                // display name; the id stays internal.
+                path: definition.name,
+                detail: format!("{count} item{}", if count == 1 { "" } else { "s" }),
+                icon: "tag",
+                is_directory: false,
+                branch: String::new(),
+                change_text: String::new(),
+                time_text: String::new(),
+            }
+        })
+        .collect()
+}
+
+/// The overview's drive widget, formatted like the sidebar's volume rows.
+fn drive_rows(volumes: Vec<sidebar::DiskVolume>) -> Vec<OverviewRow> {
+    volumes
+        .into_iter()
+        .take(MAX_DRIVES)
+        .map(|volume| {
+            let free = format::size(volume.available_bytes);
+            let total = format::size(volume.total_bytes);
+            OverviewRow {
+                section: SECTION_DRIVES,
+                kind: "drive",
+                name: if volume.name.is_empty() {
+                    volume.mount_point.clone()
+                } else {
+                    volume.name
+                },
+                path: volume.mount_point,
+                detail: format!("{} · {} / {}", volume.file_system, free, total),
+                icon: "drive",
+                is_directory: true,
+                branch: String::new(),
+                change_text: String::new(),
+                time_text: String::new(),
+            }
+        })
+        .collect()
 }
 
 fn push_place(rows: &mut Vec<OverviewRow>, seen: &mut HashSet<String>, place: &SystemPlace) {
@@ -668,5 +732,57 @@ mod tests {
             },
         ];
         assert_eq!(count_entries(&entries), (1, 1, 1));
+    }
+
+    #[test]
+    fn the_tag_widget_maps_one_definition_to_one_row() {
+        let definitions = vec![tags::TagDefinition {
+            id: "work".to_owned(),
+            name: "Work".to_owned(),
+            color: "#4c8dff".to_owned(),
+        }];
+        let mut counts = std::collections::HashMap::new();
+        counts.insert("work".to_owned(), 3u64);
+        let rows = tag_rows(definitions, &counts);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].section, SECTION_TAGS);
+        assert_eq!(rows[0].kind, "tag");
+        assert_eq!(rows[0].name, "Work");
+        assert_eq!(rows[0].path, "Work");
+        assert_eq!(rows[0].detail, "3 items");
+        assert!(!rows[0].is_directory);
+    }
+
+    #[test]
+    fn the_drive_widget_formats_free_and_total_space() {
+        let rows = drive_rows(vec![sidebar::DiskVolume {
+            mount_point: "C:\\".to_owned(),
+            name: "System".to_owned(),
+            file_system: "NTFS".to_owned(),
+            total_bytes: 500 * 1024 * 1024 * 1024,
+            available_bytes: 200 * 1024 * 1024 * 1024,
+            is_removable: false,
+        }]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].section, SECTION_DRIVES);
+        assert_eq!(rows[0].kind, "drive");
+        assert_eq!(rows[0].name, "System");
+        assert_eq!(rows[0].path, "C:\\");
+        assert!(rows[0].detail.starts_with("NTFS · "));
+        assert!(rows[0].detail.contains(" / "));
+        assert!(rows[0].is_directory);
+    }
+
+    #[test]
+    fn a_nameless_volume_falls_back_to_its_mount_point() {
+        let rows = drive_rows(vec![sidebar::DiskVolume {
+            mount_point: "E:\\".to_owned(),
+            name: String::new(),
+            file_system: "exFAT".to_owned(),
+            total_bytes: 1024,
+            available_bytes: 512,
+            is_removable: true,
+        }]);
+        assert_eq!(rows[0].name, "E:\\");
     }
 }

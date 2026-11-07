@@ -52,6 +52,7 @@ mod linux_desktop;
 pub mod logging;
 pub mod material;
 pub mod model;
+pub mod network_discovery;
 pub mod open_with_model;
 pub mod overview_model;
 pub mod platform;

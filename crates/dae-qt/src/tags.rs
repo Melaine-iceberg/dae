@@ -10,6 +10,7 @@
 //! per-volume index — is `dae_core::fs::tags`; this file only carries its
 //! answers across the bridge.
 
+use std::path::Path;
 use std::pin::Pin;
 
 use cxx_qt_lib::{QString, QStringList};
@@ -85,6 +86,30 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "commonTagsJson"]
         fn common_tags_json(self: Pin<&mut TagStore>, paths: &QStringList) -> QString;
+
+        /// Writes the definitions to `path` in the same `tags.toml` format the
+        /// config directory holds. Answers `{"ok":true}` or
+        /// `{"ok":false,"error":"…"}`.
+        #[qinvokable]
+        #[cxx_name = "exportDefinitions"]
+        fn export_definitions(self: Pin<&mut TagStore>, path: &QString) -> QString;
+
+        /// Merges a `tags.toml` document at `path` into the definitions: a
+        /// known id overwrites name and colour, an unknown one is appended.
+        /// Answers `{"ok":true,"added":n,"updated":n,"skipped":[…]}` or
+        /// `{"ok":false,"error":"…"}`.
+        #[qinvokable]
+        #[cxx_name = "importDefinitions"]
+        fn import_definitions(self: Pin<&mut TagStore>, path: &QString) -> QString;
+
+        /// Reconciles the tag index with the files it names: drops entries for
+        /// deleted files, adopts ids from the file's own stream, follows
+        /// renames, and quarantines shard documents that no longer parse.
+        /// Answers `{"ok":true,"entries":n,"droppedMissing":n,…}` or
+        /// `{"ok":false,"error":"…"}`.
+        #[qinvokable]
+        #[cxx_name = "rebuildIndex"]
+        fn rebuild_index(self: Pin<&mut TagStore>) -> QString;
 
         /// Emitted after a definition or a count changed. Listings answer it
         /// by re-reading `tags.toml`; the sidebar answers by re-reading
@@ -350,6 +375,103 @@ impl qobject::TagStore {
             Err(error) => failure(error.to_string()),
         }
     }
+
+    fn export_definitions(self: Pin<&mut Self>, path: &QString) -> QString {
+        let Some(store) = store() else {
+            return json_error("无法定位配置目录");
+        };
+        export_reply(&store, &path.to_string())
+    }
+
+    fn import_definitions(mut self: Pin<&mut Self>, path: &QString) -> QString {
+        let Some(store) = store() else {
+            return json_error("无法定位配置目录");
+        };
+        let reply = import_reply(&store, &path.to_string());
+        if reply_ok(&reply) {
+            self.as_mut().set_tags_json(snapshot());
+            self.as_mut().set_note(QString::default());
+            self.as_mut().definitions_changed();
+        }
+        reply
+    }
+
+    fn rebuild_index(mut self: Pin<&mut Self>) -> QString {
+        let Some(store) = store() else {
+            return json_error("无法定位配置目录");
+        };
+        let reply = rebuild_reply(&store);
+        if reply_ok(&reply) {
+            // Counts and names can move, so the sidebar and every open listing
+            // re-read the definitions after a rebuild.
+            self.as_mut().set_tags_json(snapshot());
+            self.as_mut().set_note(QString::default());
+            self.as_mut().definitions_changed();
+        }
+        reply
+    }
+}
+
+/// The three replies below are free functions over a store so the JSON
+/// contract can be tested without a QML engine; the invokables only add the
+/// signals. Every reply is `{"ok":true,…}` or `{"ok":false,"error":"…"}`.
+fn export_reply(store: &tag_core::TagStore, path: &str) -> QString {
+    match store.export_to(Path::new(path)) {
+        Ok(()) => json_ok(serde_json::json!({ "ok": true })),
+        Err(error) => json_error(&error.to_string()),
+    }
+}
+
+fn import_reply(store: &tag_core::TagStore, path: &str) -> QString {
+    match store.import_from(Path::new(path)) {
+        Ok(report) => json_ok(serde_json::json!({
+            "ok": true,
+            "added": report.added,
+            "updated": report.updated,
+            "skipped": report.skipped,
+        })),
+        Err(error) => json_error(&error.to_string()),
+    }
+}
+
+fn rebuild_reply(store: &tag_core::TagStore) -> QString {
+    match store.repair_index() {
+        Ok(report) => json_ok(serde_json::json!({
+            "ok": true,
+            "entries": report.entries,
+            "droppedMissing": report.dropped_missing,
+            "droppedDuplicate": report.dropped_duplicate,
+            "adoptedFromFile": report.adopted_from_file,
+            "corruptShards": report.corrupt_shards,
+        })),
+        Err(error) => json_error(&error.to_string()),
+    }
+}
+
+fn reply_ok(reply: &QString) -> bool {
+    serde_json::from_str::<serde_json::Value>(&reply.to_string())
+        .ok()
+        .and_then(|value| value.get("ok").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+}
+
+/// The one success shape the settings page parses. `json!` rather than a
+/// struct because each call answers different counters, and a second mirror
+/// of the core's report types would be a second definition to keep in sync.
+fn json_ok(value: serde_json::Value) -> QString {
+    QString::from(
+        serde_json::to_string(&value)
+            .unwrap_or_else(|_| "{\"ok\":true}".to_owned())
+            .as_str(),
+    )
+}
+
+fn json_error(message: &str) -> QString {
+    QString::from(
+        serde_json::json!({ "ok": false, "error": message })
+            .to_string()
+            .as_str(),
+    )
 }
 
 /// Rebuilds the `QStringList` the signal carries from the paths the core
@@ -373,5 +495,55 @@ mod tests {
         let json = snapshot().to_string();
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(parsed.is_array());
+    }
+
+    #[test]
+    fn the_import_and_export_replies_are_json() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = tag_core::TagStore::new(dir.path().join("config"));
+        store.create_tag("Work", "").expect("create");
+
+        let export = dir.path().join("library.toml");
+        assert!(reply_ok(&export_reply(&store, &export.to_string_lossy())));
+        assert!(export.exists());
+
+        // A path whose parent does not exist is an error, and the error still
+        // arrives as the one reply shape.
+        let unwritable = dir.path().join("no/such/directory/x.toml");
+        let reply = export_reply(&store, &unwritable.to_string_lossy());
+        let parsed: serde_json::Value = serde_json::from_str(&reply.to_string()).expect("json");
+        assert_eq!(parsed["ok"], false);
+        assert!(
+            parsed["error"]
+                .as_str()
+                .is_some_and(|error| !error.is_empty())
+        );
+
+        let incoming = dir.path().join("incoming.toml");
+        std::fs::write(&incoming, "[[tags]]\nid = \"urgent\"\nname = \"Urgent\"\n").expect("write");
+        let reply = import_reply(&store, &incoming.to_string_lossy());
+        let parsed: serde_json::Value = serde_json::from_str(&reply.to_string()).expect("json");
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["added"], 1);
+        assert_eq!(parsed["updated"], 0);
+        assert_eq!(store.definitions().len(), 2);
+    }
+
+    #[test]
+    fn the_rebuild_reply_reports_the_repair_counters() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = tag_core::TagStore::new(dir.path().join("config"));
+        let (work, _) = store.create_tag("Work", "").expect("create");
+        let file = dir.path().join("note.txt");
+        std::fs::write(&file, b"hello").expect("write");
+        let path = file.to_string_lossy().into_owned();
+        store.set_tags(&[path], &[work.id]).expect("set");
+        std::fs::remove_file(&file).expect("delete");
+
+        let reply = rebuild_reply(&store);
+        let parsed: serde_json::Value = serde_json::from_str(&reply.to_string()).expect("json");
+        assert_eq!(parsed["ok"], true);
+        assert_eq!(parsed["entries"], 0);
+        assert_eq!(parsed["droppedMissing"], 1);
     }
 }

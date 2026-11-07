@@ -80,3 +80,7 @@ windows-future = "0.3"
 [build-dependencies]
 cc = "1"
 cxx-qt-build = "0.10"
+
+[dev-dependencies]
+# The tag bridge tests build a store over a throwaway config directory.
+tempfile = "3"

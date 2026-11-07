@@ -160,6 +160,7 @@ fn main() {
             "src/icons.rs",
             "src/ime.rs",
             "src/model.rs",
+            "src/network_discovery.rs",
             "src/open_with_model.rs",
             "src/preferences.rs",
             "src/preview.rs",
