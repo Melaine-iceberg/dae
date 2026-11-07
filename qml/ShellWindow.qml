@@ -6035,6 +6035,13 @@ Window {
             }
         }
 
+        // A tab created with its path already set never fires the path-change
+        // signal the layout sync listens for; without this a launch straight
+        // into a folder started from the defaults and ignored that folder's
+        // saved layout until the next navigation. Restored session tabs take
+        // the same path.
+        root.syncLayoutForActiveTab()
+
         if (root.activePath !== "")
             Workspace.recordRecent(root.activePath, true, false)
 

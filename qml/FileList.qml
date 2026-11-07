@@ -67,11 +67,24 @@ Item {
     readonly property var columnMinWidth: ({
         "type": 550, "size": 470, "modified": 360, "created": 360, "tags": 470
     })
+    /// The name column keeps this much room. The track caps at
+    /// `contentMaxWidth`, so even a wide pane cannot carry every enabled
+    /// detail column plus a readable name; without this floor, turning on
+    /// both created and tags collapsed the name column to zero.
+    readonly property int nameMinWidth: 100
     readonly property var shownColumns: {
         const list = visibleColumns.slice()
         while (list.length > 0
                && root.width < (root.columnMinWidth[list[list.length - 1]] || 0))
             list.pop()
+        let used = 0
+        for (let index = 0; index < list.length; index += 1)
+            used += root.columnWidth(list[index])
+        while (list.length > 0
+               && root.contentWidth - 16 - 8 - 36 - used < root.nameMinWidth) {
+            used -= root.columnWidth(list[list.length - 1])
+            list.pop()
+        }
         return list
     }
     function columnWidthAt(index) {
