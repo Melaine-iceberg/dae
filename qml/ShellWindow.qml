@@ -1497,8 +1497,13 @@ Window {
     /// A tag is a fact about the disk, not about the open folder, so its
     /// search runs over every local volume with the tag filter already typed.
     function searchTag(name) {
-        if (!root.folderActive || root.remoteLocation)
+        if (root.remoteLocation)
             return
+        if (!root.folderActive) {
+            // The overview and a space have no listing to search in; open the
+            // folder the tab came from first, then run the tag search there.
+            root.navigate(root.activePath)
+        }
         const query = "tag:" + name
         root.openSearch()
         root.searchMode = "name"
@@ -1758,6 +1763,38 @@ Window {
             return paths
         const path = root.contextPath !== "" ? root.contextPath : list.currentPath()
         return path !== "" ? [path] : []
+    }
+
+
+    /// The selection a window-level shortcut acts on. Deliberately not
+    /// `currentSelection()`: that one may still point at the row whose context
+    /// menu was open, and a shortcut must never act on a stale menu target.
+    function shortcutSelection() {
+        const list = root.splitActive && root.splitFocused ? splitList : fileList
+        return list.selectedPathList()
+    }
+
+    function shortcutPath() {
+        const paths = root.shortcutSelection()
+        return paths.length > 0 ? paths[0] : root.activePath
+    }
+
+    function shortcutDirectory() {
+        if (root.activeTab !== null && root.activeTab.listing !== null)
+            return root.activeTab.listing.path
+        return root.activePath
+    }
+
+    /// List → grid → columns, the same order the view menu shows them in.
+    function cycleViewMode() {
+        const order = ["list", "grid", "column"]
+        const next = (order.indexOf(ExplorerPrefs.viewMode) + 1) % order.length
+        ExplorerPrefs.setString("viewMode", order[next])
+    }
+
+    function toggleSizeUnits() {
+        ExplorerPrefs.setString("sizeUnits",
+                                ExplorerPrefs.sizeUnits === "binary" ? "decimal" : "binary")
     }
 
     function contextDirectory() {
@@ -4106,6 +4143,9 @@ Window {
                 onContextRequested: function (kind, path, removable, x, y) {
                     root.showSidebarMenu(kind, path, removable, x, y)
                 }
+                onDiscoveredActivated: function (protocol, host, port) {
+                    connectDialog.openWith(protocol, host, port)
+                }
                 onErrorRequested: function (message) {
                     toast.show(root.localizeBackend(message), true)
                 }
@@ -4427,6 +4467,8 @@ Window {
                         onOpenRequested: function (kind, path) {
                             if (kind === "space")
                                 root.openSpace(path)
+                            else if (kind === "tag")
+                                root.searchTag(path)
                             else if (kind === "file")
                                 Workspace.openPath(path)
                             else
@@ -5486,6 +5528,11 @@ Window {
         function open() {
             instantiate().open();
         }
+        /// A discovered server opens the dialog with protocol, host and port
+        /// already filled; the surface is created on this first use.
+        function openWith(protocol, host, port) {
+            instantiate().openWith(protocol, host, port);
+        }
         function close() {
             if (content !== null)
                 content.close();
@@ -5791,6 +5838,112 @@ Window {
             if (root.activeTab !== null)
                 root.activeTab.listing.reload()
         }
+    }
+
+
+    // Rows that used to be menu-only. The dispatchers reuse the same bridge
+    // calls the context menu makes; the guards keep a shortcut from acting on
+    // an empty selection or a modal.
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.copyPath")
+        enabled: !root.modalOpen && sequence !== ""
+        onActivated: {
+            const path = root.shortcutPath()
+            if (path === "")
+                return
+            if (Workspace.copyText(path))
+                toast.show(qsTr("已复制路径"), false)
+            else
+                toast.show(qsTr("无法写入剪贴板"), true)
+        }
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.copyName")
+        enabled: !root.modalOpen && sequence !== ""
+        onActivated: {
+            const path = root.shortcutPath()
+            if (path === "")
+                return
+            const name = path.split(/[\\/]/).pop()
+            if (Workspace.copyText(name))
+                toast.show(qsTr("已复制名称"), false)
+            else
+                toast.show(qsTr("无法写入剪贴板"), true)
+        }
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.openWith")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length === 1
+        onActivated: {
+            const path = root.shortcutPath()
+            if (Workspace.openWithPickerSupported)
+                openWithDialog.open(path)
+            else
+                Workspace.openWith(path)
+        }
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.compressZip")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length > 0
+        onActivated: root.startCompress("zip", false)
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.extractHere")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length === 1
+        onActivated: root.startExtract(root.shortcutPath())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.measureSize")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length > 0
+        onActivated: Workspace.measureFolders(root.shortcutSelection())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.compareHashes")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length === 2
+        onActivated: Workspace.compareHashes(root.shortcutSelection())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.duplicate")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length > 0
+        onActivated: Workspace.duplicateEntries(root.shortcutSelection())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.createShortcut")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length > 0
+        onActivated: Workspace.createShortcuts(root.shortcutSelection(),
+                                                root.shortcutDirectory())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.moveTo")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length > 0
+        onActivated: moveToDialog.open(root.shortcutDirectory(), root.shortcutSelection())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.bulkRename")
+        enabled: !root.modalOpen && sequence !== "" && root.shortcutSelection().length > 0
+        onActivated: bulkRenameDialog.open(root.shortcutSelection())
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.cycleView")
+        enabled: !root.modalOpen && sequence !== ""
+        onActivated: root.cycleViewMode()
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.toggleSizeUnits")
+        enabled: !root.modalOpen && sequence !== ""
+        onActivated: root.toggleSizeUnits()
     }
 
     /// One Escape handler for whichever overlay is on top. Per-overlay

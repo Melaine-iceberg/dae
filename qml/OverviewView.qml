@@ -48,6 +48,8 @@ Item {
         case "favorite": return "star"
         case "space": return "diamond"
         case "project": return "folder"
+        case "tag": return "tag"
+        case "drive": return "drive"
         case "file": return "file"
         default: return "folder"
         }
@@ -58,6 +60,8 @@ Item {
     function openRow(kind, path, isDir) {
         if (kind === "space")
             root.openRequested("space", path)
+        else if (kind === "tag")
+            root.openRequested("tag", path)
         else if (kind === "recent" && !isDir)
             root.openRequested("file", path)
         else
@@ -80,6 +84,8 @@ Item {
         case "Favorites": return qsTr("收藏")
         case "Recent": return qsTr("最近")
         case "Spaces": return qsTr("空间")
+        case "Tags": return qsTr("标签")
+        case "Drives": return qsTr("驱动器")
         default: return value
         }
     }

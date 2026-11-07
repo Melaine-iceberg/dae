@@ -39,6 +39,9 @@ Item {
     signal addRequested(string kind)
     signal restorePlacesRequested()
     signal contextRequested(string kind, string path, bool removable, real x, real y)
+    /// A discovered server was clicked. The shell pre-fills the connect dialog
+    /// with protocol, host and port; credentials stay the user's to type.
+    signal discoveredActivated(string protocol, string host, string port)
     /// A folder row could not be expanded. The window owns the toast.
     signal errorRequested(string message)
 
@@ -56,8 +59,20 @@ Item {
 
     readonly property color panelColor: Theme.backdropTint(material, dark, true)
 
-    /// The row a file drag is hovering, by path. Empty when nothing is over the
-    /// sidebar, so a row asks one question to decide whether it is lit.
+    /// mDNS answers, as the bridge publishes them. Empty until the first scan
+    /// finishes; a malformed string is treated as "nothing found" rather than
+    /// breaking the column.
+    readonly property var discovered: {
+        const raw = NetworkDiscovery.servicesJson
+        if (!raw || raw === "[]")
+            return []
+        try {
+            return JSON.parse(raw)
+        } catch (error) {
+            return []
+        }
+    }
+
     property string dropTargetPath: ""
 
     SidebarModel {
@@ -227,6 +242,10 @@ Item {
     Component.onCompleted: {
         Spaces.refresh()
         sidebarModel.refresh()
+        // One probe per process: a second window reuses the answer and lets
+        // the header's refresh affordance ask again.
+        if (!NetworkDiscovery.scanned)
+            NetworkDiscovery.refresh()
     }
 
     Connections {
@@ -275,7 +294,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: tagsArea.top
+        anchors.bottom: discoveryArea.top
         anchors.topMargin: 8
         model: sidebarModel
         clip: true
@@ -765,6 +784,149 @@ Item {
                 onLoaded: {
                     if (item !== null)
                         (item as SidebarTree).rootPath = row.path
+                }
+            }
+        }
+    }
+
+    /// mDNS advertisers, above the tags. These are not saved connections: a
+    /// click only pre-fills the connect dialog with protocol, host and port,
+    /// because credentials — and whether this is the server the user means —
+    /// are still theirs to confirm. The list is capped like the tag list so a
+    /// noisy network cannot push the bin off the column.
+    Item {
+        id: discoveryArea
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: tagsArea.top
+        visible: root.discovered.length > 0
+        height: visible ? 26 + serverList.height + 10 : 0
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.hairline
+        }
+
+        Text {
+            x: 18
+            y: 8
+            text: qsTr("网络")
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.88
+        }
+
+        Glyph {
+            id: refreshMark
+            anchors.right: parent.right
+            anchors.rightMargin: 14
+            y: 8
+            width: 12
+            height: 12
+            visible: !NetworkDiscovery.busy
+            kind: "refresh"
+            tint: refreshMouse.containsMouse ? Theme.inkMuted : Theme.inkFaint
+
+            MouseArea {
+                id: refreshMouse
+                anchors.fill: parent
+                anchors.margins: -4
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: NetworkDiscovery.refresh()
+            }
+        }
+
+        Text {
+            anchors.right: parent.right
+            anchors.rightMargin: 14
+            y: 8
+            visible: NetworkDiscovery.busy
+            text: qsTr("搜索中…")
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
+        }
+
+        ListView {
+            id: serverList
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.topMargin: 24
+            height: Math.min(contentHeight, 3 * 24)
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            model: root.discovered
+
+            delegate: Item {
+                id: serverRow
+                required property var modelData
+
+                width: ListView.view.width
+                height: 24
+
+                readonly property bool hovered: serverMouse.containsMouse
+                readonly property string label: modelData.name !== ""
+                    ? modelData.name : modelData.host
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    radius: Theme.radiusSm
+                    color: serverRow.hovered ? Theme.hover : "transparent"
+                }
+
+                Glyph {
+                    x: 18
+                    width: 12
+                    height: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    kind: "network"
+                    tint: Theme.inkFaint
+                }
+
+                Text {
+                    x: 36
+                    anchors.right: protocolText.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: serverRow.label
+                    color: Theme.inkMuted
+                    font.pixelSize: Theme.typeBody
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    id: protocolText
+                    anchors.right: parent.right
+                    anchors.rightMargin: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: String(serverRow.modelData.protocol).toUpperCase()
+                    color: Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                }
+
+                MouseArea {
+                    id: serverMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.discoveredActivated(serverRow.modelData.protocol,
+                                                         serverRow.modelData.host,
+                                                         String(serverRow.modelData.port))
                 }
             }
         }

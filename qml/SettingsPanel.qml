@@ -48,6 +48,11 @@ FocusScope {
     property string terminalError: ""
     property string terminalStatus: ""
     property string tagError: ""
+    /// Outcome of the last export/import/rebuild. `tagTaskFailed` only picks
+    /// the colour; the text says what happened, including the skipped
+    /// definitions an import refused.
+    property string tagTaskStatus: ""
+    property bool tagTaskFailed: false
     /// Bumped by the tag store; the definitions page reads it so a write made
     /// in another window shows up here too.
     property int tagRevision: 0
@@ -74,6 +79,60 @@ FocusScope {
         const error = TagStore.removeTag(id)
         if (error !== "")
             root.tagError = error
+    }
+
+    /// The tag store's one reply shape: JSON, with `ok` deciding whether the
+    /// other keys are counters or an `error`.
+    function tagReply(raw) {
+        try {
+            return JSON.parse(String(raw))
+        } catch (error) {
+            return { ok: false, error: String(raw) }
+        }
+    }
+
+    function exportTags(path) {
+        const reply = root.tagReply(TagStore.exportDefinitions(path))
+        root.tagTaskFailed = !reply.ok
+        root.tagTaskStatus = reply.ok
+            ? qsTr("已导出到 %1").arg(path)
+            : String(reply.error)
+    }
+
+    function importTags(path) {
+        const reply = root.tagReply(TagStore.importDefinitions(path))
+        if (!reply.ok) {
+            root.tagTaskFailed = true
+            root.tagTaskStatus = String(reply.error)
+            return
+        }
+        root.tagTaskFailed = false
+        let text = qsTr("新增 %1，更新 %2").arg(reply.added).arg(reply.updated)
+        const skipped = reply.skipped || []
+        if (skipped.length > 0) {
+            text += qsTr("；跳过 %1 条：").arg(skipped.length)
+                    + skipped.slice(0, 3).join("；")
+                    + (skipped.length > 3 ? "…" : "")
+        }
+        root.tagTaskStatus = text
+    }
+
+    function rebuildTagIndex() {
+        const reply = root.tagReply(TagStore.rebuildIndex())
+        if (!reply.ok) {
+            root.tagTaskFailed = true
+            root.tagTaskStatus = String(reply.error)
+            return
+        }
+        root.tagTaskFailed = false
+        let text = qsTr("索引已重建：%1 条记录，移除 %2 条失效、%3 条重复、%4 个损坏分片")
+                .arg(reply.entries)
+                .arg(reply.droppedMissing)
+                .arg(reply.droppedDuplicate)
+                .arg(reply.corruptShards)
+        if (reply.adoptedFromFile > 0)
+            text += qsTr("；%1 条以文件流为准").arg(reply.adoptedFromFile)
+        root.tagTaskStatus = text
     }
 
     readonly property color textColor: Theme.ink
@@ -203,7 +262,11 @@ FocusScope {
                 { id: "explorer.displayOptions", label: qsTr("显示选项"),
                   detail: qsTr("打开视图、排序与列菜单") },
                 { id: "explorer.filters", label: qsTr("过滤"),
-                  detail: qsTr("打开类型、时间与大小过滤") }
+                  detail: qsTr("打开类型、时间与大小过滤") },
+                { id: "explorer.cycleView", label: qsTr("切换视图"),
+                  detail: qsTr("在列表、网格与分栏之间循环") },
+                { id: "explorer.toggleSizeUnits", label: qsTr("切换大小单位"),
+                  detail: qsTr("在 KB/MB 与 KiB/MiB 之间切换") }
             ]
         },
         {
@@ -225,6 +288,28 @@ FocusScope {
                   detail: qsTr("把选中项移到回收站") },
                 { id: "explorer.deletePermanent", label: qsTr("永久删除"),
                   detail: qsTr("不经过回收站直接删除") },
+                { id: "explorer.copyPath", label: qsTr("复制路径"),
+                  detail: qsTr("把选中项的完整路径复制到剪贴板") },
+                { id: "explorer.copyName", label: qsTr("复制名称"),
+                  detail: qsTr("只复制选中项的名称") },
+                { id: "explorer.openWith", label: qsTr("打开方式"),
+                  detail: qsTr("选择用哪个程序打开选中项") },
+                { id: "explorer.compressZip", label: qsTr("压缩为 ZIP"),
+                  detail: qsTr("把选中项压缩成一个 ZIP") },
+                { id: "explorer.extractHere", label: qsTr("解压到此处"),
+                  detail: qsTr("就地解开选中的压缩包") },
+                { id: "explorer.measureSize", label: qsTr("计算大小"),
+                  detail: qsTr("统计选中文件夹占用的空间") },
+                { id: "explorer.compareHashes", label: qsTr("比较 SHA-256"),
+                  detail: qsTr("比较两个本地文件的 SHA-256") },
+                { id: "explorer.duplicate", label: qsTr("创建副本"),
+                  detail: qsTr("在同目录创建选中项的副本") },
+                { id: "explorer.createShortcut", label: qsTr("创建快捷方式"),
+                  detail: qsTr("为选中项创建快捷方式") },
+                { id: "explorer.moveTo", label: qsTr("移动到…"),
+                  detail: qsTr("把选中项移动到另一个文件夹") },
+                { id: "explorer.bulkRename", label: qsTr("批量重命名"),
+                  detail: qsTr("用规则重命名当前选择") },
                 { id: "explorer.openSystemTerminal", label: qsTr("在终端中打开"),
                   detail: qsTr("在系统终端中打开当前目录") }
             ]
@@ -917,7 +1002,9 @@ FocusScope {
                             { value: "Projects", label: qsTr("项目") },
                             { value: "Favorites", label: qsTr("收藏") },
                             { value: "Recent", label: qsTr("最近") },
-                            { value: "Spaces", label: qsTr("空间") }
+                            { value: "Spaces", label: qsTr("空间") },
+                            { value: "Tags", label: qsTr("标签") },
+                            { value: "Drives", label: qsTr("驱动器") }
                         ]
                         delegate: ChoiceChip {
                             required property var modelData
@@ -1975,7 +2062,7 @@ FocusScope {
                 ListView {
                     x: 24; y: 164
                     width: content.width - 48
-                    height: content.height - 184
+                    height: content.height - 248
                     clip: true
                     model: parent.tags
                     spacing: 2
@@ -2073,6 +2160,39 @@ FocusScope {
                                 onClicked: root.removeTag(tagRow.modelData.id)
                             }
                         }
+                    }
+                }
+
+                Text {
+                    x: 24
+                    y: content.height - 82
+                    width: content.width - 48
+                    height: 34
+                    visible: root.tagTaskStatus !== ""
+                    text: root.tagTaskStatus
+                    color: root.tagTaskFailed ? Theme.danger : root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+
+                Row {
+                    x: 24
+                    y: content.height - 42
+                    spacing: 8
+
+                    SecondaryButton {
+                        label: qsTr("导出…")
+                        onClicked: tagExportDialog.open()
+                    }
+                    SecondaryButton {
+                        label: qsTr("导入…")
+                        onClicked: tagImportDialog.open()
+                    }
+                    SecondaryButton {
+                        label: qsTr("重建索引")
+                        onClicked: root.rebuildTagIndex()
                     }
                 }
             }
@@ -2618,5 +2738,23 @@ FocusScope {
         nameFilters: [qsTr("图片") + " (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"]
         onAccepted: ExplorerPrefs.setString("backgroundImage",
                                             root.localPath(selectedFile))
+    }
+
+    /// Tag definitions are the same `tags.toml` document the config directory
+    /// holds, so both dialogs offer exactly one filter.
+    FileDialog {
+        id: tagImportDialog
+        title: qsTr("导入标签定义")
+        nameFilters: [qsTr("标签定义") + " (*.toml)"]
+        onAccepted: root.importTags(root.localPath(selectedFile))
+    }
+
+    FileDialog {
+        id: tagExportDialog
+        title: qsTr("导出标签定义")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "toml"
+        nameFilters: [qsTr("标签定义") + " (*.toml)"]
+        onAccepted: root.exportTags(root.localPath(selectedFile))
     }
 }

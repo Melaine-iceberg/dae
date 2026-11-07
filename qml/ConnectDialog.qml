@@ -73,6 +73,17 @@ Item {
         root.visible = false
     }
 
+    /// Opens with protocol, host and port filled — the shape a discovered
+    /// server arrives in. Credentials are never pre-filled: nothing an
+    /// advertiser publishes is trusted as a secret.
+    function openWith(protocol, host, port) {
+        root.open()
+        root.protocol = protocol
+        hostField.value = host
+        portField.value = port
+        root.clearStatus()
+    }
+
     function dismiss() {
         if (root.saving)
             return
@@ -246,19 +257,6 @@ Item {
             ProtocolButton {
                 protocol: "ftp"
                 label: "FTP / FTPS"
-            }
-
-            Item {
-                width: note.implicitWidth
-                height: Theme.controlLg
-
-                Text {
-                    id: note
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("FTP / WebDAV 即将支持")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                }
             }
         }
 
