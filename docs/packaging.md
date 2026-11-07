@@ -339,6 +339,28 @@ Get-AppxPackage -Name dae | Remove-AppxPackage
   PowerShell 7 的该 cmdlet 没有 `-Cert` 参数（`-Cert` 会前缀匹配到
   `-CertStoreLocation`）；信任写错了存储层级（用户级 → 机器级，并在非提权时给出
   可执行的提示而不是让用户对着 `0x800B0109` 猜。
+- **打包形态冒烟已跑（2026-11-07，`dae_0.5.1.5_x64.msix`）**：隔离 `APPDATA` +
+  `DAE_LOG=debug` 拉起打包实例，四项逐一点过——
+  - **ADS 标签**：设置里新建 `smoke` 标签，右键 C:\ 下的 `hello.txt` →「标签」
+    子菜单打上；包外 `Get-Item -Stream` 看到 NTFS 的 `dae.tags` 流（内容
+    `["smoke"]`），隔离 `APPDATA` 下的 `tags.toml` 与索引分片同步落盘。
+  - **驱动器菜单**：右键 C:\ 盘符，Eject / Format… 按能力禁用（固定盘），
+    Storage cleanup… / Disk encryption status / Previous versions… 可用。
+  - **系统共享**：右键 → 更多… → Share… 拉起 Windows 共享弹出窗口（标题
+    「你正在共享 dae」、附件 hello.txt），即 `IDataTransferManagerInterop`
+    在打包形态下可用。
+  - **系统索引**：全卷搜索 `dll`，日志出现
+    `[dae::search] index added 91 result(s)`，结果含只有索引能补出的路径——
+    打包进程读得到 `SystemIndex`，不是退回遍历的假象。
+  冒烟顺带抓到一个真 bug：`manage-bde -status <盘符> -summary` 在 Windows 11
+  24H2 上报 Invalid Syntax（`-summary` 不是合法开关），已改为裸 `-status`
+  （`crates/dae-core/src/fs/drives.rs`）；非提权时该命令返回「需要管理员权限」，
+  对话框按设计原样展示工具自己的话。
+- **重打包复验（0.5.1.6，2026-11-07）**：同一入口的对话框改为显示
+  「An attempt to access a required resource was denied … administrative rights」
+  ——说明 `-status` 已被接受、走到权限判断；`Add-AppxPackage` 用新版本替换旧包
+  （旧安装目录消失、只注册一个版本），标签索引与 `hello.txt` 的 NTFS `dae.tags`
+  流跨升级保留（侧栏仍显示 `smoke 1`）。
 - **未决**：`dae.folder` 在打包形态下写不进真实注册表（§3.1 第 3 条），
   即 MSIX 版「设为默认文件管理器」不生效。细节与候选方案见
   [`decisions/engine-qt-quick.md`](decisions/engine-qt-quick.md) §9.15。

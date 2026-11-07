@@ -174,3 +174,45 @@ The one thing the flag does **not** help is the part the user waits for first: t
 512-entry head gains 29 µs (0.135 ms -> 0.106 ms), which is inside a frame. What
 it buys is the listing finishing — 4.97 ms off 35,803 entries and 17.5 ms off
 120,000 before the ordering is touched at all.
+
+## M1 acceptance: the tag work in the Qt listing (2026-11-07)
+
+The 120,000-entry listing the Qt shell runs is accepted against one number: its
+p95 may not regress by more than 5% against the same pipeline without the tag
+work (parity §5.1). That measurement lives with the code rather than in this
+mirror — `crates/dae-qt/src/model.rs`,
+`reports_the_tag_group_listing_regression` — and runs the real
+`open_canonical_listing` batches, `StoredRow::from_listing`, `decorate_tags`,
+`assign_groups` and the worker sort trio:
+
+```bash
+./target/release/listing-pipeline prepare K:/dae-listing-bench/huge 120000
+DAE_LISTING_BENCH_DIR=K:/dae-listing-bench/huge \
+  cargo test -p dae-qt --lib --release -- --ignored --nocapture \
+  reports_the_tag_group_listing_regression
+```
+
+The arms are the paths the model actually takes. `listing (baseline)` is the
+default view: grouping is off, so `decorate_rows` finds an empty cache and does
+nothing. `listing + warm tags` is a refresh — the cache still holds the first
+screen's tags, so every row pays a lookup. Grouping is opt-in (`GroupKey::None`
+by default), so those two arms are reported without the listing budget. The tag
+read of the visible rows happens after the listing, on the blocking pool, and is
+timed on its own.
+
+Same machine as above, K: ReFS, release, system heap (a test binary has no
+mimalloc, so absolute numbers run above the app's), 12 measured passes after 3
+warmups, arm order rotated:
+
+| arm | median | p95 |
+|---|---|---|
+| listing (baseline) | 98.83 ms | 121.77 ms |
+| listing + warm tags | 96.86 ms | 126.05 ms (**+3.52%**, budget +5%) |
+| name groups (opt-in) | 115.35 ms | 139.28 ms |
+| month groups (opt-in) | 147.54 ms | 187.97 ms |
+
+Enumeration — walk plus row build, shared by every arm — is 74.16 ms of that;
+the 512 visible rows' tag read is 25.06 ms median *after* the listing lands, so
+it is a post-step, not part of the wait. An earlier revision rebuilt every row's
+path for the warm-cache lookup, measured +10.9% p95, and was replaced by the
+name/path-borrowed lookups in `decorate_tags`.

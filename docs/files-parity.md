@@ -828,11 +828,20 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 - **Linux 运行时**：`docs/qt-platform-parity.md` §4 仍有七行标「Linux 待测」——标签
   写入/搜索、排序与分组、每目录布局、详情列、搜索范围、信息面板。P0 的「三平台可用
   或明确降级」目前只有 Windows 有运行时证据。
-- **M1 验收指标未测**：「12 万条目列表 p95 回退 ≤ 5%」。`bench/listing-pipeline` 没有
-  tag/group 路径，§10.7 只有单测数量，没有基准数字。
-- **MSIX 形态冒烟未记录**：§7 要求的打包后 ADS/驱动器/共享三项，`docs/packaging.md`
-  只记了「设为默认文件管理器在 MSIX 下不生效」。系统索引在打包形态下能否看到
-  `SystemIndex` 同样未验；探测失败时搜索自动退回遍历。
+- **M1 验收指标已测（2026-11-07）**：12 万条目列表 p95 相对同管线（不含标签
+  工作）为 **+3.52%**，预算 +5%，达标。测量是 `crates/dae-qt/src/model.rs` 的
+  ignored 测试 `reports_the_tag_group_listing_regression`，跑真实路径
+  （`open_canonical_listing` 批次、`from_listing`、`decorate_tags`、工作线程排序
+  三件套）；跑法与数字见 `bench/listing-pipeline/README.md`「M1 acceptance」。
+  基准先量出一处真回退：刷新时缓存已有首屏标签，`decorate_rows` 仍逐行重建
+  `full_path`（+10.9%），已改为按名/按 path 借用查找（`decorate_tags`）。分组是
+  可选视图（默认 `GroupKey::None`），成本单列：名字分组 median 115 ms、月份分组
+  148 ms，不吃列表预算；512 可见行的标签读取发生在列表之后（median 25 ms），
+  不在等待里。测量过程中修掉 `crates/dae-qt/build.rs` 重复加入 `src/tags.rs`
+  导致同一 `.o` 被并行编译两次的间歇 C1083。
+- **MSIX 形态冒烟已记录（2026-11-07）**：§7 的 ADS / 驱动器 / 共享三项与系统索引
+  可见性全过，0.5.1.6 重打包后复验；步骤与输出见 `docs/packaging.md` §3.3。冒烟
+  修掉 `manage-bde -summary` 的非法开关（24H2 报 Invalid Syntax）。
 - **隐式 FTPS（990）** 与格式化对话框的人工确认未覆盖（§11.13）。
 - **macOS 运行时**：不做，不是待办。
 
@@ -845,9 +854,10 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 
 §12.1 的功能项已全部落地，剩下的是验证与测量：
 
-1. Linux 真机手测（§12.3 的七项 + 标签维护、网络发现、系统索引）；
-2. Windows MSIX 形态冒烟（ADS、驱动器、共享、系统索引可见性）；
-3. M1 的 12 万条 p95 基准（标签读取不进热路径的验收指标）。
+1. ~~Windows MSIX 形态冒烟~~（2026-11-07 完成，见 §12.3）；
+2. ~~M1 的 12 万条 p95 基准~~（2026-11-07 测得 +3.52%，见 §12.3）；
+3. Linux 真机手测（§12.3 的七项 + 标签维护、网络发现、系统索引）——由用户在
+   Linux 机器上执行。
 
 ### 12.6 R-3 / R-4 落地记录（2026-11-07）
 
