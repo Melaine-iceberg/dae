@@ -67,7 +67,8 @@ Windows，隔离 `APPDATA`，本机临时广告器注册 `Dae Smoke NAS._smb._tc
 - `cargo test -p dae-core --lib` 覆盖去重、协议区分、主机回退、丢弃无效条目与
   实例名截断；`cargo test -p dae-qt --lib` 覆盖单例默认态。
 
-Linux 运行时仍待真机按 `docs/qt-platform-parity.md` §4 的「网络发现」行补测。
+Linux 运行时已随 2026-11-08 的真机复验通过（`docs/qt-platform-parity.md` §4
+的「网络发现」行，CachyOS 物理机）。
 
 ## 6. 仍然存在的边界
 

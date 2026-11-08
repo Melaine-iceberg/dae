@@ -1338,7 +1338,7 @@ Qt Online Installer 装在 `K:/Qt`：
 | # | 项 | 现状与证据 | 验收 |
 |---|---|---|---|
 | 4 | 日志与 panic 不落盘 | 旧壳 `src-tauri/src/lib.rs:350` 起配 `tauri-plugin-log`（4 MB 轮转、留 5 份、本地时区），`:429` 的 `install_panic_logger` 把 panic 写进文件。Qt 侧 `crates/dae-qt/Cargo.toml` 没有日志依赖，`config.rs:238` 的 `log()` 只写 stderr，而 release 是 GUI 子系统、没有 stderr；`workspace.rs:2781` 的 `app_log_directory()` 只服务设置页 | **已补**，见 §9.6 |
-| 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 13 项手测全部「待目标平台」 | **已完成**（2026-11-01，见 §9.14）：Linux 真机按 §4 逐项跑完，可执行的 11 项全部符合期望（Wayland 与 X11 两种会话、fcitx5 输入法、`.rpm`）。两项 macOS 专属项（原生菜单、红绿灯 chrome）标为不适用——没有 Mac 设备，且 macOS 产物已随 §9.12.4 撤项 |
+| 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 13 项手测全部「待目标平台」 | **已完成**（2026-11-01 真机；2026-11-08 全表复验，见 §9.14）：Linux 真机按 §4 逐项跑完，可执行的 11 项全部符合期望（Wayland 与 X11 两种会话、fcitx5 输入法、`.rpm`），后续功能行经 WSL2 预验后在 CachyOS 物理机复验通过。两项 macOS 专属项（原生菜单、红绿灯 chrome）标为不适用——没有 Mac 设备，且 macOS 产物已随 §9.12.4 撤项 |
 | 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | **机制已端到端跑通**（2026-11-01，见 §9.13.2）：上一版部署树上完成 下载→验签→解包→PS 脚本换树→重启，新进程日志报新版本；篡改产物被拒且安装树未动。**但真实发布物这一层仍缺一环**：仓库至今没有任何 Qt 发布产物，且所有 release 都是 prerelease，`releases/latest/download/latest-qt.json` 实测 **404**。详见 §9.13.2 末尾。**2026-11-02 已按「永久预览版」的决定改掉发现方式**（§9.16）：首选 URL 失败时回退到 releases API，`release.yml` 的草稿默认带 `--prerelease`。代码与单测通过，真实资产上的端到端验证等下一个 tag |
 | 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | **已补**，见 §9.13.1：守卫三平台统一，Windows 仍走 IMM，macOS/Linux 走 `QInputMethod::reset()`（两平台的该实现均按源码核对为「取消」），只在 `preeditText` 非空时触发。**Linux 已在 fcitx5 下实测通过**（§9.14）；macOS 不发布，无从实测 |
 | 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | **已定案并落地**，见 §9.13.1：绿灯 = 原生全屏，hover 显示绘制字形，双击读 `AppleActionOnDoubleClick`（每次双击现读，无需重启）。**运行时无法验收**：没有 Mac 设备，且 macOS 产物已撤（§9.12.4）——`qt-check` 的 `macos-latest` 腿保证它仍能编译链接 |
@@ -1985,6 +1985,12 @@ qml/ShellWindow.qml` 会报 76 条 `unqualified`，全部落在 360 行以后的
 不是工程项，而是产品决策：更新链路的真实发布物（§9.13.2 末尾那个 404）。**这个
 决策也已落地**（2026-11-02）：发版路线固定为预览版，更新器改走 releases API 发现，
 见 §9.16。
+
+**2026-11-08 真机复验。** 用户在物理机（CachyOS，Arch 系）上按 parity §4 全表
+重跑，全部符合期望：11-07 WSL2 预验留下的拖放、列宽拖拽/双击自适应、标签
+导入/导出文件对话框三项补上；此前修掉的 Name 列挤压、启动路径不恢复每目录
+布局、缺失英文文案与单行目录分组头刷新也一并确认。Linux 运行时回归至此没有
+开口项，macOS 仍按不适用处理（§9.12.4）。
 
 ### 9.15 记录：MSIX 真机安装、升级与深链，以及一条写不出去的注册（2026-11-01）
 
