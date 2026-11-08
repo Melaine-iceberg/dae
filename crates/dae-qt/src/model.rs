@@ -2422,6 +2422,7 @@ impl qobject::DirectoryListModel {
             return;
         }
         let needs_tags = next.key == SortKey::Tag || next.grouping.key == GroupKey::Tag;
+        let regrouped = self.order.grouping != next.grouping;
         {
             let mut rust = self.as_mut().rust_mut();
             rust.order = next;
@@ -2431,6 +2432,9 @@ impl qobject::DirectoryListModel {
             self.as_mut().start_full_tag_load();
         }
         if self.rows.len() < 2 || rows_are_sorted(&self.rows, &next) {
+            if regrouped {
+                self.as_mut().emit_group_role();
+            }
             return;
         }
         if self.rows.len() < WORKER_SORT_MIN_ROWS {
@@ -2624,6 +2628,24 @@ impl qobject::DirectoryListModel {
             roles.append(ROLE_TAGS);
             roles.append(ROLE_TAG_IDS);
             roles.append(ROLE_TAG_COLORS);
+            roles.append(ROLE_GROUP);
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
+    }
+
+    /// Repaints the section role for every row. A grouping change that keeps
+    /// the row order emits no reset, so without this signal the headers keep
+    /// the labels `assign_groups` just overwrote.
+    fn emit_group_role(mut self: Pin<&mut Self>) {
+        let count = self.rows.len();
+        if count == 0 {
+            return;
+        }
+        unsafe {
+            let parent = QModelIndex::default();
+            let top = self.as_mut().model_index(0, 0, &parent);
+            let bottom = self.as_mut().model_index(count as i32 - 1, 0, &parent);
+            let mut roles = QList::<i32>::default();
             roles.append(ROLE_GROUP);
             self.as_mut().data_changed(&top, &bottom, &roles);
         }

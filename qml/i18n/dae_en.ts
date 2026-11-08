@@ -2538,6 +2538,16 @@
             <translation>Space</translation>
         </message>
         <message>
+            <location filename="../OverviewView.qml" line="87" />
+            <source>标签</source>
+            <translation>Tags</translation>
+        </message>
+        <message>
+            <location filename="../OverviewView.qml" line="88" />
+            <source>驱动器</source>
+            <translation>Drives</translation>
+        </message>
+        <message>
             <location filename="../OverviewView.qml" line="89" />
             <source>主目录</source>
             <translation>Home</translation>
@@ -3302,6 +3312,21 @@
             <translation>Simplified Chinese</translation>
         </message>
         <message>
+            <location filename="../SettingsPanel.qml" line="98" />
+            <source>已导出到 %1</source>
+            <translation>Exported to %1</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="110" />
+            <source>新增 %1，更新 %2</source>
+            <translation>%1 added, %2 updated</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="113" />
+            <source>；跳过 %1 条：</source>
+            <translation>; %1 skipped: </translation>
+        </message>
+        <message>
             <location filename="../SettingsPanel.qml" line="122" />
             <source>繁體中文</source>
             <translation>Traditional Chinese</translation>
@@ -3352,6 +3377,11 @@
             <translation>Open this settings panel</translation>
         </message>
         <message>
+            <location filename="../SettingsPanel.qml" line="128" />
+            <source>索引已重建：%1 条记录，移除 %2 条失效、%3 条重复、%4 个损坏分片</source>
+            <translation>Index rebuilt: %1 entries; removed %2 stale, %3 duplicate, %4 corrupt shards</translation>
+        </message>
+        <message>
             <location filename="../SettingsPanel.qml" line="131" />
             <source>浏览与选择</source>
             <translation>Browsing and selection</translation>
@@ -3365,6 +3395,11 @@
             <location filename="../SettingsPanel.qml" line="134" />
             <source>取消当前所有选中项</source>
             <translation>Deselect all selected items</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="134" />
+            <source>；%1 条以文件流为准</source>
+            <translation>; %1 resolved from file streams</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="139" />
@@ -3562,9 +3597,139 @@
             <translation>macOS does not let an app unset itself as the default; choose another app in Finder settings.</translation>
         </message>
         <message>
+            <location filename="../SettingsPanel.qml" line="266" />
+            <source>切换视图</source>
+            <translation>Switch view</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="267" />
+            <source>在列表、网格与分栏之间循环</source>
+            <translation>Cycle between list, grid and column views</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="268" />
+            <source>切换大小单位</source>
+            <translation>Switch size units</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="269" />
+            <source>在 KB/MB 与 KiB/MiB 之间切换</source>
+            <translation>Switch between KB/MB and KiB/MiB</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="291" />
+            <source>复制路径</source>
+            <translation>Copy path</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="292" />
+            <source>把选中项的完整路径复制到剪贴板</source>
+            <translation>Copy the full path of the selected items to the clipboard</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="293" />
+            <source>复制名称</source>
+            <translation>Copy name</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="294" />
+            <source>只复制选中项的名称</source>
+            <translation>Copy only the names of the selected items</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="295" />
+            <source>打开方式</source>
+            <translation>Open With</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="296" />
+            <source>选择用哪个程序打开选中项</source>
+            <translation>Choose which app opens the selected items</translation>
+        </message>
+        <message>
             <location filename="../SettingsPanel.qml" line="297" />
             <source>“%1”已分配给“%2”</source>
             <translation>“%1” is already assigned to “%2”</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="297" />
+            <source>压缩为 ZIP</source>
+            <translation>Compress to ZIP</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="298" />
+            <source>把选中项压缩成一个 ZIP</source>
+            <translation>Compress the selected items into a ZIP</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="299" />
+            <source>解压到此处</source>
+            <translation>Extract here</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="300" />
+            <source>就地解开选中的压缩包</source>
+            <translation>Extract the selected archives in place</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="301" />
+            <source>计算大小</source>
+            <translation>Calculate size</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="302" />
+            <source>统计选中文件夹占用的空间</source>
+            <translation>Measure the space used by the selected folders</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="303" />
+            <source>比较 SHA-256</source>
+            <translation>Compare SHA-256</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="304" />
+            <source>比较两个本地文件的 SHA-256</source>
+            <translation>Compare the SHA-256 of two local files</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="305" />
+            <source>创建副本</source>
+            <translation>Create duplicate</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="306" />
+            <source>在同目录创建选中项的副本</source>
+            <translation>Create duplicates of the selected items in the same folder</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="307" />
+            <source>创建快捷方式</source>
+            <translation>Create shortcut</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="308" />
+            <source>为选中项创建快捷方式</source>
+            <translation>Create shortcuts for the selected items</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="309" />
+            <source>移动到…</source>
+            <translation>Move to…</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="310" />
+            <source>把选中项移动到另一个文件夹</source>
+            <translation>Move the selected items to another folder</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="311" />
+            <source>批量重命名</source>
+            <translation>Batch rename</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="312" />
+            <source>用规则重命名当前选择</source>
+            <translation>Rename the current selection with rules</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="333" />
@@ -3629,6 +3794,11 @@
             <location filename="../SettingsPanel.qml" line="994" />
             <source>外观写入 settings.toml，两个桌面壳共用同一组值。</source>
             <translation>Appearance is stored in settings.toml and shared by both desktop shells.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1007" />
+            <source>驱动器</source>
+            <translation>Drives</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="1102" />
@@ -4230,6 +4400,21 @@
             <translation>%1 items</translation>
         </message>
         <message>
+            <location filename="../SettingsPanel.qml" line="2186" />
+            <source>导出…</source>
+            <translation>Export…</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2190" />
+            <source>导入…</source>
+            <translation>Import…</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2194" />
+            <source>重建索引</source>
+            <translation>Rebuild index</translation>
+        </message>
+        <message>
             <location filename="../SettingsPanel.qml" line="2616" />
             <source>选择背景图片</source>
             <translation>Choose a background image</translation>
@@ -4238,6 +4423,22 @@
             <location filename="../SettingsPanel.qml" line="2617" />
             <source>图片</source>
             <translation>Images</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2747" />
+            <source>导入标签定义</source>
+            <translation>Import tag definitions</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2748" />
+            <location filename="../SettingsPanel.qml" line="2757" />
+            <source>标签定义</source>
+            <translation>Tag definitions</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="2754" />
+            <source>导出标签定义</source>
+            <translation>Export tag definitions</translation>
         </message>
     </context>
     <context>
@@ -5651,6 +5852,16 @@
             <location filename="../Sidebar.qml" line="817" />
             <source>标签</source>
             <translation>Tags</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="819" />
+            <source>网络</source>
+            <translation>Network</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="852" />
+            <source>搜索中…</source>
+            <translation>Searching…</translation>
         </message>
     </context>
     <context>
