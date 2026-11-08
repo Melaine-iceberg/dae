@@ -203,8 +203,8 @@ Window {
                                         : activeTab.nameSearch.loaded
     }
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
-    /// System accent follows the OS; the brand accent is the app's own blue
-    /// pair, one shade per theme. `accent` is the only colour views consume,
+    /// System accent follows the OS; the brand accent is the app's own signal
+    /// orange, one shade per theme. `accent` is the only colour views consume,
     /// so switching the preference retints the whole shell.
     readonly property color accent: Appearance.accent === "brand"
         ? Theme.brand
@@ -3513,7 +3513,7 @@ Window {
                     visible: !root.folderActive
                     text: root.surfaceTitle
                     color: root.textColor
-                    font.pixelSize: Theme.typeName
+                    font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                 }
 

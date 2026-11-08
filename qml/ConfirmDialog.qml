@@ -192,7 +192,7 @@ FocusScope {
             width: parent.width - 32
             text: root.message
             color: Theme.inkMuted
-            font.pixelSize: Theme.typeName
+            font.pixelSize: Theme.typeBody
             lineHeight: Theme.leadingBody
             wrapMode: Text.Wrap
         }

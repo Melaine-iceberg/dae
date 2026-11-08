@@ -280,7 +280,7 @@ Item {
                 visible: root.empty
                 text: qsTr("未选择文件")
                 color: root.mutedColor
-                font.pixelSize: Theme.typeName
+                font.pixelSize: Theme.typeBody
                 wrapMode: Text.Wrap
             }
 

@@ -34,11 +34,11 @@ QtObject {
     // ── Interaction ─────────────────────────────────────────────────────────
     /// The brand pair: the instrument signal orange. Used when the user has not
     /// asked to follow the OS.
-    readonly property color brand: dark ? "#f0a24a" : "#b45309"
+    readonly property color brand: dark ? "#f0925e" : "#c2410c"
     /// The window's one signal colour, independent of the accent preference.
     /// Selection tracks, focus rings and the active tab underline take this so
     /// the shell keeps its instrument character even when the OS accent is on.
-    readonly property color signal: dark ? "#f0a24a" : "#b45309"
+    readonly property color signal: dark ? "#f0925e" : "#c2410c"
     /// The only saturated colour in the window. It marks what can be acted on,
     /// so it must not also be used as decoration: a tinted panel reads as a
     /// button to anyone who has used the app for a minute.
@@ -49,7 +49,7 @@ QtObject {
     readonly property color interactiveHover: Qt.lighter(interactive, 1.15)
     /// Ink on top of `interactive`. Dark ink on the pale orange dark theme, the
     /// way the page uses a warm accent rather than a dark one.
-    readonly property color onInteractive: dark ? "#1b1306" : "#ffffff"
+    readonly property color onInteractive: dark ? "#1a0e08" : "#ffffff"
     /// Ink on a fill that is saturated in both themes and belongs to someone
     /// else: a provider tile, the Windows close button, an error toast. Always
     /// white, because none of those surfaces follow the theme.
@@ -57,10 +57,10 @@ QtObject {
 
     // ── Surfaces ────────────────────────────────────────────────────────────
     /// Where content lives: the listing, the editor, the preview text.
-    readonly property color canvas: dark ? "#151619" : "#fbfbf9"
+    readonly property color canvas: dark ? "#0f1012" : "#ffffff"
     /// A second canvas for surfaces that sit *inside* a canvas — a grid card,
     /// the alternating plate, the palette's shortcut plate.
-    readonly property color canvasAlt: dark ? "#1b1c20" : "#f4f4f1"
+    readonly property color canvasAlt: dark ? "#16181b" : "#f4f4f2"
     /// Whether a background image is set. The listing surfaces below switch
     /// from the solid canvas to a translucent one so the image shows through;
     /// chrome stays solid, which keeps the frame readable.
@@ -76,13 +76,13 @@ QtObject {
     /// The window's frame: title, tabs, path bar, status bar, sidebar. This is
     /// the only surface the OS material is allowed to show through, and the
     /// shell currently asks for no material at all so this value is what paints.
-    readonly property color chrome: dark ? "#101114" : "#efefec"
+    readonly property color chrome: dark ? "#0b0c0e" : "#ecece9"
     /// A surface that floats above everything else: menus, dialogs, the
     /// command palette. There is exactly one elevation, so there is exactly
     /// one value.
-    readonly property color raised: dark ? "#202125" : "#ffffff"
+    readonly property color raised: dark ? "#1c1e22" : "#ffffff"
     /// An input well: text fields, search, the rename box.
-    readonly property color field: dark ? "#17181b" : "#e9e9e5"
+    readonly property color field: dark ? "#131518" : "#e8e8e5"
 
     // ── Material tint ───────────────────────────────────────────────────────
     /// The veil painted over a native backdrop, by backdrop kind.
@@ -115,47 +115,47 @@ QtObject {
 
     // ── Ink ─────────────────────────────────────────────────────────────────
     /// Names and primary content.
-    readonly property color ink: dark ? "#ecedef" : "#161719"
+    readonly property color ink: dark ? "#eaebed" : "#121316"
     /// Secondary: column headers, metadata, timestamps, hints. Kept above
     /// 4.5:1 against `canvas` in both themes so it stays readable.
-    readonly property color inkMuted: dark ? "#9ba0a8" : "#5c6066"
+    readonly property color inkMuted: dark ? "#9da2a9" : "#55595f"
     /// Tertiary: group labels, disabled glyphs, metadata. Above 4.5:1 against
     /// chrome, canvas and field in both themes, so it can carry the 11 px group
     /// labels and meta text — not just icons as the previous palette allowed.
-    readonly property color inkFaint: dark ? "#8b9098" : "#646970"
+    readonly property color inkFaint: dark ? "#858a91" : "#63666d"
 
     // ── Lines ───────────────────────────────────────────────────────────────
     /// Row separators and the edge of an unfocused control.
     /// Note the order: Qt reads eight digits as `#AARRGGBB`, so a translucent
-    /// white is `#14ffffff`, never `#ffffff14` — the CSS order parses as a
+    /// white is `#24ffffff`, never `#ffffff24` — the CSS order parses as a
     /// nearly opaque yellow and it does not fail, it just paints.
-    readonly property color hairline: dark ? "#16ffffff" : "#14000000"
+    readonly property color hairline: dark ? "#24ffffff" : "#24000000"
     /// The edge of something that holds: a field, a menu, a raised plate.
-    readonly property color hairlineStrong: dark ? "#25ffffff" : "#25000000"
+    readonly property color hairlineStrong: dark ? "#3bffffff" : "#3d000000"
     /// The hairline between list rows: lighter than a structural line.
-    readonly property color rowRule: dark ? "#0bffffff" : "#09000000"
+    readonly property color rowRule: dark ? "#12ffffff" : "#0f000000"
 
     // ── State ───────────────────────────────────────────────────────────────
     /// Pointer is over a row or a quiet control. Deliberately below the
     /// threshold where it could be confused with selection.
-    readonly property color hover: dark ? "#0dffffff" : "#0c000000"
+    readonly property color hover: dark ? "#10ffffff" : "#0d000000"
     /// A state fill: a hovered menu item, an active chip, a row selected while
     /// the pane is unfocused. One step above `hover` so a menu can show both.
-    readonly property color fill: dark ? "#14ffffff" : "#12000000"
+    readonly property color fill: dark ? "#1affffff" : "#17000000"
     /// Behind a modal. Never opaque: the window has to stay legible so the
     /// user keeps their place.
     readonly property color scrim: dark ? "#61000000" : "#1a181816"
 
     // ── Accent-derived ──────────────────────────────────────────────────────
-    /// The signal at 10 % (light) / 16 % (dark). This is the selected row, not
+    /// The signal at 8 % (light) / 12 % (dark). This is the selected row, not
     /// a saturated plate, and it stays orange even when the system accent wins
     /// the interactive role.
     readonly property color selection: Qt.rgba(signal.r, signal.g, signal.b,
-                                               dark ? 0.16 : 0.10)
+                                               dark ? 0.12 : 0.08)
     /// The wash behind an active chip or a focused drop target.
-    readonly property color signalSoft: dark ? "#1af0a24a" : "#1ab45309"
+    readonly property color signalSoft: dark ? "#1ff0925e" : "#14c2410c"
     /// One step stronger: a drop edge or a focused search field.
-    readonly property color signalSoft2: dark ? "#29f0a24a" : "#2eb45309"
+    readonly property color signalSoft2: dark ? "#30f0925e" : "#2ec2410c"
     /// The ring around a focused control, and the edge of a drop target.
     readonly property color focusRing: Qt.rgba(interactive.r, interactive.g,
                                                interactive.b, 0.30)
@@ -176,7 +176,7 @@ QtObject {
     /// the core per snapshot (`dae-core::pty`), and these are the matching
     /// panel, header plate and header ink: near-black on the dark canvas, the
     /// same paper as the rest of the window in light.
-    readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
+    readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
     readonly property color terminalHeader: dark ? "#141518" : "#f4f4f1"
     readonly property color terminalInk: dark ? "#8b9099" : "#5c6066"
     readonly property color terminalInkStrong: dark ? "#e8eaf0" : "#161719"
@@ -204,26 +204,24 @@ QtObject {
         : "DejaVu Sans Mono"
 
     // ── Geometry ────────────────────────────────────────────────────────────
-    /// The only corner radii the shell draws — four steps, no more, and the
-    /// same four numbers the Web shell's `App.css` spends (`--radius-xs` 4,
-    /// `--radius-md` 6, `--radius-xl` 12, `--radius-panel` 16).
+    /// The only corner radii the shell draws — four steps, no more.
     ///
-    /// The Qt shell used to run 2 / 4 / 8 / 12, a full step below, on the
-    /// argument that a denser surface wants tighter corners. It does not
-    /// survive two shells side by side: the same button changed shape when the
-    /// window switched shells, which reads as a rendering fault rather than as
-    /// a density choice, and 2 px on a 16 px plate is a corner nobody can see.
-    /// The two ladders now share their numbers, and `radiusLg` is the Web
-    /// shell's `panel` step — dialogs, the palette's plate, the settings
-    /// surface — so `panel` needs no separate name here.
+    /// The Qt shell used to run 2 / 4 / 8 / 12, a full step below the Web
+    /// shell's `App.css` ladder (4 / 6 / 12 / 16), and two shells side by side
+    /// made the same button change shape. It was first aligned with the Web
+    /// shell; the 2026-11-08 "ink line" pass tightens it one step to
+    /// 4 / 6 / 8 / 12 instead. The listing is the main work surface, and squarer
+    /// corners read as structure rather than as softness. Menus and dialogs
+    /// follow `radiusLg` down together, so there is still one ladder and no
+    /// separate "panel" step.
     ///
-    /// Anything that squares off a corner by painting over it has to clear the
-    /// larger radius: `SettingsPanel`'s nav column covers 16 px of its own
-    /// right edge, not the 10 it needed when this step was 12.
+    /// Anything that squares off a corner by painting over it has to follow
+    /// `radiusLg`: `SettingsPanel`'s nav column covers what its own right edge
+    /// rounds, and that width is bound to the token, not written out.
     readonly property int radiusXs: 4
     readonly property int radiusSm: 6
-    readonly property int radiusMd: 12
-    readonly property int radiusLg: 16
+    readonly property int radiusMd: 8
+    readonly property int radiusLg: 12
     /// Row heights; the header is always the paired value.
     readonly property int rowCompact: 28
     readonly property int rowDefault: 32
@@ -262,7 +260,7 @@ QtObject {
     readonly property int shellStatus: 28
 
     // ── Type scale ──────────────────────────────────────────────────────────
-    /// Six real steps, every one of them an integer.
+    /// Seven real steps, every one of them an integer.
     ///
     /// `font.pixelSize` is an **int** in Qt — it lands on
     /// `QFont::setPixelSize(int)` — so a half-pixel rung is not a smaller step,
@@ -276,11 +274,10 @@ QtObject {
     /// inside it look measured by two different rulers.
     ///
     /// The rungs are integers now, with a visible gap between the ones that
-    /// have to be told apart. The three retired names survive as aliases so a
-    /// stale call site cannot reintroduce a half step: `small` is `caption` and
-    /// `name` is `body`. Those pairs were never distinguishable in paint, and a
-    /// second name for one size is how the halves got invented in the first
-    /// place.
+    /// have to be told apart. `name` is one rung above `body` for listing
+    /// names; `small` survives as an alias of `caption` so a stale call site
+    /// cannot reintroduce a half step for metadata that never needed its own
+    /// size.
     ///
     /// `title` moved 14 → 17 because 14 was the one rung nothing else could
     /// reach: a dialog head is 44 dp tall and the largest text in it was
@@ -292,7 +289,7 @@ QtObject {
     readonly property int typeCaption: 12
     readonly property int typeSmall: 12 /* retired alias → caption */
     readonly property int typeBody: 13
-    readonly property int typeName: 13 /* retired alias → body */
+    readonly property int typeName: 14 /* one rung above body, for listing names */
     readonly property int typeEmphasis: 15
     readonly property int typeTitle: 17
     readonly property int typeDisplay: 22

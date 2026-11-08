@@ -381,7 +381,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.displayName
                 color: root.textColor
-                font.pixelSize: Theme.typeName
+                font.pixelSize: Theme.typeBody
                 elide: Text.ElideRight
             }
 

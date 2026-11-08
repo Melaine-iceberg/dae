@@ -46,7 +46,7 @@ Item {
             width: parent.width
             text: root.title
             color: Theme.ink
-            font.pixelSize: Theme.typeName
+            font.pixelSize: Theme.typeBody
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
