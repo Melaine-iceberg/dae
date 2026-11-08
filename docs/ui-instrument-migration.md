@@ -60,23 +60,23 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 
 | 角色 | 亮色 | 暗色 | 用途 |
 | --- | --- | --- | --- |
-| `canvas` | `#fbfbf9` | `#151619` | 列表、预览正文、内容面 |
-| `canvasAlt` | `#f4f4f1` | `#1b1c20` | 次级内容面、成组区域 |
-| `chrome` | `#efefec` | `#101114` | 标题栏、导航条、侧栏、状态条 |
-| `raised` | `#ffffff` | `#202125` | 菜单、对话框、命令面板 |
-| `field` | `#e9e9e5` | `#17181b` | 搜索框、路径编辑、重命名 |
-| `ink` | `#161719` | `#ecedef` | 文件名、正文 |
-| `inkMuted` | `#5c6066` | `#9ba0a8` | 次级信息、列头、状态 |
-| `inkFaint` | `#646970` | `#8b9098` | 分组标签、弱提示；两套都 ≥4.5:1 |
-| `hairline` | `#14000000` | `#16ffffff` | 结构线、未聚焦控件边 |
-| `hairlineStrong` | `#25000000` | `#25ffffff` | 输入框、浮层、抬起面的边 |
-| `hover` | `#0c000000` | `#0dffffff` | 指针悬停 |
-| `fill` | `#12000000` | `#14ffffff` | 激活 chip、当前标签、菜单悬停 |
-| `rowRule` | `#09000000` | `#0bffffff` | 列表行分隔；比 hairline 更轻 |
-| `signal` | `#b45309` | `#f0a24a` | 全窗口唯一信号色 |
-| `signalSoft` | `#1ab45309` | `#1af0a24a` | 选中行、激活菜单项 |
-| `signalSoft2` | `#2eb45309` | `#29f0a24a` | 拖放边、搜索框聚焦底 |
-| `onInteractive` | `#ffffff` | `#1b1306` | 信号色上的字（即原型里的 `signalInk`） |
+| `canvas` | `#ffffff` | `#0f1012` | 列表、预览正文、内容面 |
+| `canvasAlt` | `#f4f4f2` | `#16181b` | 次级内容面、成组区域 |
+| `chrome` | `#ecece9` | `#0b0c0e` | 标题栏、导航条、侧栏、状态条 |
+| `raised` | `#ffffff` | `#1c1e22` | 菜单、对话框、命令面板 |
+| `field` | `#e8e8e5` | `#131518` | 搜索框、路径编辑、重命名 |
+| `ink` | `#121316` | `#eaebed` | 文件名、正文 |
+| `inkMuted` | `#55595f` | `#9da2a9` | 次级信息、列头、状态 |
+| `inkFaint` | `#6b6f76` | `#858a91` | 分组标签、弱提示；两套都 ≥4.5:1 |
+| `hairline` | `#24000000` | `#24ffffff` | 结构线、未聚焦控件边 |
+| `hairlineStrong` | `#3d000000` | `#3bffffff` | 输入框、浮层、抬起面的边 |
+| `hover` | `#0d000000` | `#10ffffff` | 指针悬停 |
+| `fill` | `#17000000` | `#1affffff` | 激活 chip、当前标签、菜单悬停 |
+| `rowRule` | `#0f000000` | `#12ffffff` | 列表行分隔；比 hairline 更轻 |
+| `signal` | `#c2410c` | `#f0925e` | 全窗口唯一信号色 |
+| `signalSoft` | `#14c2410c` | `#1ff0925e` | 选中行、激活菜单项 |
+| `signalSoft2` | `#2ec2410c` | `#30f0925e` | 拖放边、搜索框聚焦底 |
+| `onInteractive` | `#ffffff` | `#1a0e08` | 信号色上的字（即原型里的 `signalInk`） |
 | `danger` | `#b42318` | `#f0918a` | 破坏性文字 |
 | `dangerSolid` | `#c62c26` | `#c6403a` | 破坏性主按钮 |
 | `warn` | `#9a6700` | `#e0a340` | 容量 >90%、冲突 |
@@ -88,10 +88,10 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 
 - **默认强调色改为 `brand`，brand 就是上表的信号橙。** 这样新装用户看到的是仪器感橙色；「系统强调色」仍保留在设置里。需要改 `crates/dae-core/src/settings.rs` 的默认值（当前是 `"system"`）和对应测试。`Theme.brand` 与 `Theme.signal` 取同一对值，`Theme.interactive` 仍按 `Appearance.accent` 在 brand / 系统色之间选择。
 - 设置面板的「dae 蓝」改为「信号橙」。原型里的青/蓝只是演示色板，**不新增**到 Rust 设置枚举。
-- `Theme.selection` 改为信号色 10%（亮）/16%（暗）；`focusRing` 保持 30%。
+- `Theme.selection` 改为信号色 8%（亮）/12%（暗）；`focusRing` 保持 30%。
 - 同步改 `Theme.qml` 里 `inkFaint` 的注释：旧注释写着「低于 4.5:1，只做图标」；新值两套主题都过 4.5:1，可以承载 11px 分组标签与元数据。
 - 一屏内信号色最多 3 处：当前行左轨、焦点环、一个主按钮/激活 chip。不要给图标、卡片、分组标题上色。
-- 左侧当前行是 `signalSoft` 底 + 2px `signal` 左轨；不要用整行饱和填充。
+- 左侧当前行是 `signalSoft` 底 + 3px `signal` 左轨；不要用整行饱和填充。
 - 文件类型图标全部单色化；颜色只留给 git 状态小徽章（M 用 `warn`，U 用 `link`）、容量告警和危险操作。
 - **材质**：设置里的「背景效果」默认开启。Windows 默认 Mica，可切换 Acrylic；系统关闭透明效果或版本不支持时自动回退为实色。Linux Wayland 通过 `ext-background-effect-v1` 模糊背景，合成器未提供该协议时保持实色；macOS 使用 `NSVisualEffectView` 的系统毛玻璃并跟随窗口深浅色。半透明 chrome 使用 `chromeTint`，实色回退仍用 `Theme.chrome`。
 
@@ -179,9 +179,12 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 > **2026-11 修订：圆角与控件高度。** 本节原先写圆角 `2 / 4 / 8 / 12`——比 Web 壳
 > （`App.css` 的 `--radius-xs` 4 / `--radius-md` 6 / `--radius-xl` 12 / `--radius-panel` 16）
 > 整体低一档。两个壳并排看时，同一个按钮换壳就变形状，那读起来是渲染故障而不是密度
-> 选择；且 2px 在 16px 的小件上是一个看不见的角。现已对齐为 `4 / 6 / 12 / 16`，其中
-> `radiusLg` 就承担 Web 壳的 `panel` 角色，不再单独设档。依赖具体半径做补偿的布局要
-> 同步——`SettingsPanel` 侧栏压平内角的矩形宽度已从 10 改为 `Theme.radiusLg`。
+> 选择；且 2px 在 16px 的小件上是一个看不见的角。曾对齐为 `4 / 6 / 12 / 16`。
+>
+> 2026-11-08 的「墨线」方向再收紧一档为 `4 / 6 / 8 / 12`：列表是主要工作面，
+> 更方的角读作结构而不是柔软；菜单与对话框都随 `radiusLg` 一起收，不再单独设档。
+> 依赖具体半径做补偿的布局要同步——`SettingsPanel` 侧栏压平内角的矩形宽度绑定
+> `Theme.radiusLg`，不要写死数值。
 >
 > 控件高度原先散落 `18 / 20 / 22 / 24 / 26 / 28 / 30 / 34`，其中一半不是 4 的倍数。
 > 22 与 24、26 与 28、30 与 32、34 与 36 相差 2px，正是「本应对齐却差一点」的来源，而
@@ -198,8 +201,8 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 ```qml
 readonly property int radiusXs: 4
 readonly property int radiusSm: 6
-readonly property int radiusMd: 12
-readonly property int radiusLg: 16
+readonly property int radiusMd: 8
+readonly property int radiusLg: 12
 readonly property int rowCompact: 28
 readonly property int rowDefault: 32
 readonly property int rowSpacious: 40
@@ -215,15 +218,15 @@ readonly property int typeMicro: 11
 readonly property int typeCaption: 12
 readonly property int typeSmall: 12 /* retired alias → caption */
 readonly property int typeBody: 13
-readonly property int typeName: 13 /* retired alias → body */
+readonly property int typeName: 14 /* one rung above body, for listing names */
 readonly property int typeEmphasis: 15
 readonly property int typeTitle: 17
 readonly property int typeDisplay: 22
 readonly property real leadingTight: 1.35
 readonly property real leadingBody: 1.45
 readonly property real leadingProse: 1.6
-readonly property color rowRule: dark ? "#0bffffff" : "#09000000"
-readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
+readonly property color rowRule: dark ? "#12ffffff" : "#0f000000"
+readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
 ```
 
 ### 3.4 动效
@@ -399,7 +402,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 - 高 132，内容区内嵌，不覆盖列表。
 - 头部 28：`终端 · zsh / bash / PowerShell`，右侧关闭 20×20。
-- 背景随明暗主题（`Theme.terminalCanvas`：深 `#0b0b0c` / 浅 `#fbfbf9`），网格调色板由 `dae-core::pty` 在取快照时按主题解析；文字 11 等宽，提示符用 `signal`。
+- 背景随明暗主题（`Theme.terminalCanvas`：深 `#0f1012` / 浅 `#ffffff`），网格调色板由 `dae-core::pty` 在取快照时按主题解析；文字 11 等宽，提示符用 `signal`。
 - mac 提示符 `%`，Linux `$`，Windows `PS …>`；shell 名按配置的后端/平台显示。
 - 设置页「终端」可填写 shell 可执行文件（留空按平台默认），新会话启动时生效。
 - 保留真实终端焦点、复制粘贴、滚动；不要用演示文本替换。
