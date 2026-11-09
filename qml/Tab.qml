@@ -167,10 +167,11 @@ QtObject {
     /// instead of reaching through `terminal` itself: on a tab switch the
     /// panel's derived `session` binding may not have re-evaluated yet, and
     /// starting the previous tab's shell twice would leave this one dead.
-    function startTerminal() {
+    function startTerminal(cols, rows) {
         if (terminal.running)
             return
-        terminal.start(folder ? listing.path : "", 80, 24, ExplorerPrefs.terminalShell)
+        terminal.start(folder ? listing.path : "", cols > 0 ? cols : 80,
+                       rows > 0 ? rows : 24, ExplorerPrefs.terminalShell)
     }
 
     function cancelSearch() {

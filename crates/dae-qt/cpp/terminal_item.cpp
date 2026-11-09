@@ -117,19 +117,13 @@ void TerminalItem::setSession(QObject* session)
 
     if (m_updateConnection)
         QObject::disconnect(m_updateConnection);
-    if (m_runningConnection)
-        QObject::disconnect(m_runningConnection);
     m_session = session;
     if (m_session) {
         m_updateConnection = connect(m_session.data(), SIGNAL(updated()), this, SLOT(refresh()));
-        // A tab's shell starts after the panel has already sized the item, so
-        // the resize sent before `start()` had no PTY to reach.
-        m_runningConnection = connect(m_session.data(), SIGNAL(runningChanged()), this,
-                                      SLOT(resetSize()));
     }
     emit sessionChanged();
-    // The previous session's grid size says nothing about this one; a shell
-    // started in another window may still be 80x24.
+    // The previous session's grid size says nothing about this one; the size
+    // is re-sent so a session bound after a tab switch still learns it.
     m_lastCols = -1;
     m_lastRows = -1;
     clearSelection();
@@ -203,13 +197,6 @@ void TerminalItem::measureCells()
     m_ascent = metrics.ascent();
 }
 
-void TerminalItem::resetSize()
-{
-    m_lastCols = -1;
-    m_lastRows = -1;
-    applySizeToSession();
-}
-
 void TerminalItem::applySizeToSession()
 {
     if (m_cellWidth <= 0.0 || m_cellHeight <= 0.0)
@@ -220,6 +207,7 @@ void TerminalItem::applySizeToSession()
         return;
     m_lastCols = cols;
     m_lastRows = rows;
+    emit gridSizeChanged();
     if (m_session) {
         QMetaObject::invokeMethod(m_session.data(), "resize", Q_ARG(int, cols), Q_ARG(int, rows));
     }

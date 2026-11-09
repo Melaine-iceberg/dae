@@ -7,7 +7,7 @@ import dae.terminal 1.0
 // while the panel is hidden, which is the behaviour the previous shell already
 // had: hiding a terminal is not closing it.
 //
-// 132 px high and embedded in the content column, so the listing above it keeps
+// 240 px high and embedded in the content column, so the listing above it keeps
 // its rows and the terminal never covers them. See
 // docs/ui-instrument-migration.md §7.2.
 Item {
@@ -21,7 +21,7 @@ Item {
     property bool dark: true
     property string material: "none"
     property bool active: false
-    property int panelHeight: 132
+    property int panelHeight: 240
 
     signal exited()
 
@@ -42,8 +42,16 @@ Item {
     clip: true
 
     function start() {
-        if (tab !== null)
-            tab.startTerminal()
+        if (tab === null || !root.active)
+            return
+        // Starting the shell before the item has its size would create the PTY
+        // at the placeholder size; the resize that follows makes PowerShell
+        // redraw its prompt further down and leaves blank rows above it.
+        if (view.columns <= 1 || view.rows <= 1) {
+            Qt.callLater(root.start)
+            return
+        }
+        tab.startTerminal(view.columns, view.rows)
     }
 
     function focusTerminal() {
@@ -57,10 +65,8 @@ Item {
     }
 
     onActiveChanged: {
-        if (active) {
-            start()
+        if (active)
             Qt.callLater(root.focusTerminal)
-        }
     }
 
     // The panel stays open across folder tabs; the new tab's shell starts the

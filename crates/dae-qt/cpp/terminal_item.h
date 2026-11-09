@@ -1,6 +1,6 @@
 // The terminal's self-drawn grid.
 //
-// `alacritty_terminal` owns the cells in Rust; this item receives a compact
+// `libghostty-vt` owns the cells in Rust; this item receives a compact
 // frame (see `crates/dae-qt/src/terminal.rs`) and paints it with QPainter.
 // Painting is deliberately cell-oriented: a monospaced grid, background runs,
 // then text runs with one style each, so a full screen costs a handful of calls
@@ -47,6 +47,10 @@ class TerminalItem : public QQuickPaintedItem
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
     Q_PROPERTY(qreal lineHeight READ lineHeight WRITE setLineHeight NOTIFY fontChanged)
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY fontChanged)
+    /// The grid size this item can show. The panel starts the shell with it so
+    /// the PTY never has to be resized right after the first prompt.
+    Q_PROPERTY(int columns READ columns NOTIFY gridSizeChanged)
+    Q_PROPERTY(int rows READ rows NOTIFY gridSizeChanged)
 
 public:
     explicit TerminalItem(QQuickItem* parent = nullptr);
@@ -66,6 +70,9 @@ public:
     QString fontFamily() const { return m_fontFamily; }
     void setFontFamily(const QString& family);
 
+    int columns() const { return qMax(1, int(width() / m_cellWidth)); }
+    int rows() const { return qMax(1, int(height() / m_cellHeight)); }
+
     void paint(QPainter* painter) override;
 
 public slots:
@@ -79,6 +86,7 @@ signals:
     void sessionChanged();
     void darkChanged();
     void fontChanged();
+    void gridSizeChanged();
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -92,11 +100,6 @@ protected:
     void geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) override;
     void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
-
-private slots:
-    /// Re-sends the grid size after the shell starts; the resize attempted
-    /// before `start()` had no PTY behind it.
-    void resetSize();
 
 private:
     static constexpr quint8 FlagBold = 1 << 0;
@@ -141,7 +144,6 @@ private:
 
     QPointer<QObject> m_session;
     QMetaObject::Connection m_updateConnection;
-    QMetaObject::Connection m_runningConnection;
     bool m_dark = true;
     QFont m_font;
     QFontMetricsF m_primaryMetrics{m_font};

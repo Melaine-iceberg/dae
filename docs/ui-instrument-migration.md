@@ -168,7 +168,7 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 | 数据型对话框 | 现有功能宽度 | 属性/批量重命名等可保持 600，但圆角 12、标题区 44 |
 | Toast | 36 高 | 底部 38，圆角 6 |
 | 传输浮层 | 326 宽 | 底部 32，圆角 12 |
-| 终端 | 132 高 | 内容区内嵌 |
+| 终端 | 240 高 | 内容区内嵌 |
 | 圆角 | 4 / 6 / 8 / 12 | xs / sm / md / lg，全部进 Theme |
 | 控件高度 | 20 / 24 / 28 / 32 / 36 | xs / sm / md / lg / xl，4px 网格 |
 
@@ -400,7 +400,7 @@ readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
 
 ### 7.2 终端 `qml/TerminalPanel.qml`
 
-- 高 132，内容区内嵌，不覆盖列表。
+- 高 240，内容区内嵌，不覆盖列表。
 - 头部 28：`终端 · zsh / bash / PowerShell`，右侧关闭 20×20。
 - 背景随明暗主题（`Theme.terminalCanvas`：深 `#0f1012` / 浅 `#ffffff`），网格调色板由 `dae-core::pty` 在取快照时按主题解析；文字 11 等宽，提示符用 `signal`。
 - mac 提示符 `%`，Linux `$`，Windows `PS …>`；shell 名按配置的后端/平台显示。
@@ -525,7 +525,7 @@ readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
 | 分栏 | `ColumnView.qml` | 列宽、选中、表头 |
 | 搜索结果 | `ContentResults.qml` | 复用列表行样式 |
 | 预览 | `PreviewPanel.qml`、`MediaPreview.qml` | 300 宽、头部 32、元数据 |
-| 终端 | `TerminalPanel.qml` | 132 高、平台 shell、黑色底 |
+| 终端 | `TerminalPanel.qml` | 240 高、平台 shell、黑色底 |
 | 传输 | `TransferQueue.qml` | 326 浮层、行样式 |
 | 命令面板 | `CommandPalette.qml` | 560 宽、分组、chord |
 | 菜单 | `ContextMenu.qml`、`DisplayMenu.qml`、`FilterMenu.qml` | 212–286、32 行、危险色 |
@@ -574,7 +574,7 @@ readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
 ### 阶段 4：预览 / 终端 / 传输 / 状态细节
 
 - `PreviewPanel` 300/头部 32/元数据/文件夹/图片；grip 260–420。
-- `TerminalPanel` 132/平台 shell/黑色底。
+- `TerminalPanel` 240/平台 shell/黑色底。
 - `TransferQueue` 326/行/进度。
 - 状态条传输胶囊与分支显示。
 - 验收：预览拖宽、关闭、图片/文本/文件夹/回收站四种状态；终端真实输入；传输浮层不遮列表关键区域。
