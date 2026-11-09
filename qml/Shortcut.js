@@ -181,11 +181,13 @@ function display(binding, isMac) {
     case "right": pieces.push("→"); break
     case "pageup": pieces.push("PgUp"); break
     case "pagedown": pieces.push("PgDn"); break
-    case "delete": pieces.push("Del"); break
+    // The mac keyboards have no forward-delete key and print Return as a
+    // symbol; a menu that says "Del" on macOS names a key that is not there.
+    case "delete": pieces.push(isMac ? "⌫" : "Del"); break
     case "insert": pieces.push("Ins"); break
     case "escape": pieces.push("Esc"); break
-    case "enter": pieces.push("Enter"); break
-    case "backspace": pieces.push("Backspace"); break
+    case "enter": pieces.push(isMac ? "↩" : "Enter"); break
+    case "backspace": pieces.push(isMac ? "⌫" : "Backspace"); break
     case "space": pieces.push("Space"); break
     default: pieces.push(parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key)
     }

@@ -213,7 +213,7 @@ Item {
         y: root.above
             ? Math.max(8, root.openY - height - 6)
             : Math.min(root.openY, root.height - height - 8)
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong

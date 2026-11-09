@@ -164,7 +164,7 @@ Item {
         height: Math.min(list.contentHeight + 8, root.height - 16)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, Math.min(root.openY, root.height - height - 8))
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -198,7 +198,7 @@ Item {
         height: Math.min(submenuList.contentHeight + 8, root.height - 16)
         x: Math.max(8, Math.min(root.submenuX, root.width - width - 8))
         y: Math.max(8, Math.min(root.submenuY, root.height - height - 8))
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong

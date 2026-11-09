@@ -102,7 +102,7 @@ Item {
         color: Theme.hairline
     }
 
-    /// One chip: 22 high, 11 px, corner 2. A chip is a switch, not a button —
+    /// One chip: 24 high, 11 px, corner 4. A chip is a switch, not a button —
     /// its pressed state is the fill the shell uses everywhere for "this is the
     /// current one", never the signal colour.
     component Chip: Rectangle {
@@ -159,6 +159,15 @@ Item {
             onClicked: root.modeRequested("name")
         }
 
+        /// The mode pair stays adjacent: who is answering is one decision, and
+        /// the scope and content controls to its right only apply to one mode.
+        Chip {
+            label: qsTr("内容")
+            active: root.contentMode
+            available: root.contentEnabled
+            onClicked: root.modeRequested("content")
+        }
+
         /// Scope chips only exist for the name search: content search walks
         /// one root by construction.
         Chip {
@@ -212,13 +221,6 @@ Item {
             active: root.scope === "volumes"
             visible: root.mode === "name"
             onClicked: root.scopeRequested("volumes")
-        }
-
-        Chip {
-            label: qsTr("内容")
-            active: root.contentMode
-            available: root.contentEnabled
-            onClicked: root.modeRequested("content")
         }
 
         Chip {

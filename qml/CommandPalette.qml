@@ -15,7 +15,7 @@ import "Shortcut.js" as ShortcutJS
 // back into sections so a section header never floats over an unrelated row.
 //
 // Geometry follows the prototype: 560 wide, 64 down from the top of the
-// window, 8 px corners, a 44 px input band and 30 px rows. The older version
+// window, 12 px corners, a 44 px input band and 32 px rows. The older version
 // was 680 wide with 40 px rows and a tinted plate behind every mark, which made
 // a list of sixty one-line commands read like a grid of tiles.
 Item {
@@ -248,7 +248,9 @@ Item {
             root.command("select-all", qsTr("全选"),
                          root.shortcutHint("explorer.selectAll", "Ctrl+A"),
                          "check", qsTr("文件")),
-            root.command("refresh", qsTr("刷新"), "F5", "", qsTr("文件")),
+            root.command("refresh", qsTr("刷新"),
+                         root.shortcutHint("explorer.refresh", "F5"),
+                         "", qsTr("文件")),
             root.command("go-back", qsTr("后退"),
                          root.shortcutHint("explorer.goBack", "Alt+Left"),
                          "", qsTr("文件")),
@@ -639,7 +641,7 @@ Item {
         y: 64
         width: Math.min(560, root.width - 32)
         height: Math.min(430, root.height - y - 96)
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -859,7 +861,7 @@ Item {
                     root.activateCurrent()
                 }
 
-                // The active row is the shell's selection wash plus a 2 px
+                // The active row is the shell's selection wash plus a 3 px
                 // rail, the same pair the listing uses: hover alone is too
                 // weak for the row Enter is about to run.
                 Rectangle {
@@ -875,7 +877,7 @@ Item {
                         anchors.bottom: parent.bottom
                         anchors.topMargin: 6
                         anchors.bottomMargin: 6
-                        width: 2
+                        width: 3
                         radius: Theme.radiusXs
                         color: Theme.signal
                     }

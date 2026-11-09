@@ -354,7 +354,10 @@ Item {
         target: root.model
         enabled: root.model !== null && root.tab !== null
         function onLoadedChanged() { tagTimer.restart() }
-        function onFinishedChanged() { tagTimer.restart() }
+        function onFinishedChanged() {
+            tagTimer.restart()
+            root.syncSearchSelection()
+        }
         function onSortApplied() { tagTimer.restart() }
     }
 
@@ -476,6 +479,30 @@ Item {
         root.model.selectOnly(index)
         if (root.tab !== null)
             root.tab.selectionAnchor = path
+        root.selectionChanged()
+    }
+
+    /// A running query rebuilds its rows on every keystroke and every filter
+    /// change, and the model drops the selection with them. The row the reader
+    /// had chosen is kept when it survived the new query; otherwise the first
+    /// visible result takes the anchor, so the preview can never describe a
+    /// file the results no longer show.
+    function syncSearchSelection() {
+        const results = root.searchModel
+        if (results === null || !results.finished || results.loaded === 0)
+            return
+        if (results.selectedCount > 0)
+            return
+        const anchor = root.tab !== null ? root.tab.selectionAnchor : ""
+        let index = anchor === "" ? -1 : results.indexOfPath(anchor)
+        if (index < 0)
+            index = 0
+        results.selectOnly(index)
+        const path = results.pathAt(index)
+        if (root.tab !== null && path !== "")
+            root.tab.selectionAnchor = path
+        list.currentIndex = index
+        list.positionViewAtIndex(index, ListView.Contain)
         root.selectionChanged()
     }
 

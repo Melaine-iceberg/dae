@@ -3,8 +3,8 @@ import QtQuick
 // One line of feedback, used for operation results and errors. Long operations
 // already have the status bar's progress row; this is only for the outcome.
 //
-// The plate is the one raised surface in the window's bottom margin: 34 high,
-// 38 up from the edge, 4 px corners, no drop shadow. It used to be a dark pill
+// The plate is the one raised surface in the window's bottom margin: 36 high,
+// 38 up from the edge, 6 px corners, no drop shadow. It used to be a dark pill
 // in the middle of the window with 2.6 seconds of life, which made an error as
 // easy to miss as a success. A toast now sits where the eye already goes for
 // transient state, stays for 4.8 seconds, and offers the undo when the outcome

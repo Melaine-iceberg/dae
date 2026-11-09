@@ -2108,7 +2108,8 @@ Window {
     /// the sort keys that kept the view menu too tall.
     function moreMenuItems() {
         const items = [
-            { id: "refresh", glyph: "refresh", label: qsTr("刷新"), shortcut: "F5" },
+            { id: "refresh", glyph: "refresh", label: qsTr("刷新"),
+              shortcut: root.shortcutDisplay("explorer.refresh") },
             { id: "toggleHidden",
               glyph: "eye",
               label: qsTr("显示隐藏文件"),
@@ -2343,7 +2344,7 @@ Window {
         return [
             { id: "open", glyph: isDir ? "folder" : "external",
               label: isDir ? qsTr("打开") : qsTr("用默认应用打开"),
-              enabled: hasPath && (!remote || isDir), shortcut: "Enter" },
+              enabled: hasPath && (!remote || isDir), shortcut: root.chord("Enter") },
             { id: "openTab", glyph: "plus", label: qsTr("在新标签页打开"),
               enabled: hasPath && isDir },
             { id: "openWindow", glyph: "window", label: qsTr("在新窗口打开"),
@@ -2366,7 +2367,8 @@ Window {
               shortcut: root.shortcutDisplay("explorer.trash"),
               enabled: hasPath && !remote, danger: true },
             { separator: true },
-            { id: "properties", glyph: "info", label: qsTr("属性"), shortcut: "Alt+Enter",
+            { id: "properties", glyph: "info", label: qsTr("属性"),
+              shortcut: root.shortcutDisplay("explorer.properties"),
               enabled: hasPath && !many },
             { id: "tags", glyph: "star", label: qsTr("标签"),
               enabled: hasPath, submenu: root.tagSubmenu() },
@@ -2613,12 +2615,13 @@ Window {
         root.contextTrashId = id
         root.contextTrashParent = originalParent
         menu.openAt(x, y, [
-            { id: "trashRestore", glyph: "undo", label: qsTr("恢复"), shortcut: "Enter" },
+            { id: "trashRestore", glyph: "undo", label: qsTr("恢复"),
+              shortcut: root.chord("Enter") },
             { id: "trashOpenOriginal", glyph: "external", label: qsTr("打开原位置"),
               enabled: originalParent !== "" },
             { separator: true },
             { id: "trashPurge", glyph: "trash", label: qsTr("永久删除"),
-              shortcut: "Delete", danger: true }
+              shortcut: root.chord("Delete"), danger: true }
         ])
     }
 
@@ -2651,7 +2654,8 @@ Window {
               enabled: Workspace.clipboardMode !== "" && !remote },
             { id: "selectAll", glyph: "check", label: qsTr("全选"),
               shortcut: root.shortcutDisplay("explorer.selectAll") },
-            { id: "refresh", glyph: "refresh", label: qsTr("刷新"), shortcut: "F5" },
+            { id: "refresh", glyph: "refresh", label: qsTr("刷新"),
+              shortcut: root.shortcutDisplay("explorer.refresh") },
             { separator: true },
             { id: "terminal", glyph: "terminal", label: qsTr("在终端中打开"),
               enabled: !remote }

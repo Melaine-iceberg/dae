@@ -124,7 +124,7 @@ Item {
                          root.height - 16)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
