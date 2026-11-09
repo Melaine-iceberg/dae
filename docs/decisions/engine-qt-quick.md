@@ -2259,3 +2259,25 @@ Windows 本机证据。
 接收修复。`refactor/qt-quick` 已在 2026-11-02 删除（本地与远程一并删）——它当时与
 main 完全同内容（同为 `a6491a9`），留着只会让人犹豫该往哪条推。本文下面几节引用这条
 分支的地方（如 §7 的 `perf-check.yml` 记录）是当时的事实，不再改写。
+
+## 终端引擎改用 libghostty-vt（2026-11-09）
+
+`crates/dae-core/src/pty.rs` 的 VT 引擎从 `alacritty_terminal` 换成 vendored 的
+libghostty-vt（`1.1.0-dev+711702d`，C API，静态库）。只换引擎而不是整个
+libghostty：PTY 仍归 `portable-pty`，`TerminalSnapshot`、`DAET` v2 帧与
+`QQuickPaintedItem` 一行未改，QML、按键转义与 IME 都不受影响。
+
+- 绑定在 `crates/dae-core/src/ghostty_vt.rs`（手写 FFI，只声明 `pty.rs` 用到的那部分）；
+  `pty.rs` 只把 `GhosttyStyle` / `GhosttyCell` 映射回原有的 `CellSnapshot`。
+- `visit_rows` 的输出就是视口顺序；`GhosttyTerminalScrollbar` 的 `total - len` 与
+  `history - offset` 正好对应 painter 已有的 `historySize` / `displayOffset`，
+  滚轮与滚动条无需改动。
+- 两条容易踩的 C API 约定：`GHOSTTY_TERMINAL_OPT_WRITE_PTY` 的 `const void*`
+  里放的是**函数指针值**，不是指向它的指针（传后者会在 shell 查询光标位置时
+  跳到栈地址并崩溃）；空单元格的 codepoint 是 0，要映射成空格而非 `'\0'`。
+- 产物随仓：`crates/dae-core/ghostty-vt/{include,lib/<rust-target>,VERSION}`；
+  `scripts/build-ghostty-vt.ps1` / `.sh` 从固定版本源码重建（Windows 上绕开
+  `zig fetch` 的缓存问题，把依赖落到 `local-deps/`，并在版本漂移时直接报错）。
+- 验证：`crates/dae-core/tests/terminal_smoke.rs` 起真实 shell，覆盖提示符、
+  回显、滚动与 resize；Windows 实机确认提示符、输入回显与语法高亮按主题
+  调色板绘制。

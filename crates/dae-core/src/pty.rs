@@ -1,27 +1,27 @@
-//! PTY-backed terminal sessions with an alacritty grid.
+//! PTY-backed terminal sessions with a libghostty-vt grid.
 //!
-//! The shell's terminal is not a string buffer: `alacritty_terminal` parses the
-//! escape sequences and owns the cell grid, scrollback, cursor and modes, while
-//! `portable-pty` owns the platform PTY. This module is the engine-free half —
-//! it produces a [`TerminalSnapshot`] of styled cells and knows nothing about
-//! Qt or any other renderer. `crates/dae-qt` paints that snapshot.
+//! The shell's terminal is not a string buffer: libghostty-vt parses the
+//! escape sequences and owns the cell grid, scrollback, cursor and modes,
+//! while `portable-pty` owns the platform PTY. This module is the engine-free
+//! half — it produces a [`TerminalSnapshot`] of styled cells and knows nothing
+//! about Qt or any other renderer. `crates/dae-qt` paints that snapshot.
 //!
-//! Why not alacritty's own event loop: it is built around one terminal per
-//! process and a window-id event proxy. A file manager needs several sessions
-//! whose lifetime follows tabs and windows, so the reader thread here feeds
-//! `vte::ansi::Processor` directly. That is the same parser alacritty uses.
+//! The VT engine is the vendored libghostty-vt static library (see
+//! `ghostty-vt/VERSION`); the raw C bindings live in `crate::ghostty_vt`.
+//! Terminal queries (`CSI 6n`, device attributes, text-area size) are answered
+//! by the library itself through the write-pty callback, which writes the
+//! replies back to the same PTY the user's keystrokes go to.
 
+use std::ffi::c_void;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use alacritty_terminal::event::{Event, EventListener, WindowSize};
-use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::term::{Config, Term};
-use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+
+use crate::ghostty_vt::{self, GhosttyStyle, GhosttyStyleColor, Vt};
 
 const SCROLLBACK_LINES: usize = 10_000;
 
@@ -98,7 +98,6 @@ pub type TerminalNotifier = Arc<dyn Fn(TerminalEvent) + Send + Sync>;
 pub struct TerminalSession {
     inner: Arc<Mutex<TerminalState>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    size: Arc<Mutex<(u16, u16)>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     notify: TerminalNotifier,
@@ -106,65 +105,31 @@ pub struct TerminalSession {
     exit_code: Arc<AtomicI32>,
 }
 
-/// The terminal's side of the conversation.
-///
-/// `alacritty_terminal` answers terminal queries (`CSI 6n`, device attributes,
-/// text-area size) by sending `Event::PtyWrite` to this listener. Dropping
-/// those answers leaves a shell such as PowerShell waiting forever for a cursor
-/// position before it draws its first prompt, so the listener writes them back
-/// to the same PTY the user's keystrokes go to.
-struct PtyListener {
+/// Context for the library's write-pty callback. The callback fires inside
+/// `Vt::write` while the session mutex is held, so the writer lock is only
+/// ever taken in one order (session then writer).
+struct WritePtyUserdata {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    size: Arc<Mutex<(u16, u16)>>,
 }
 
-impl EventListener for PtyListener {
-    fn send_event(&self, event: Event) {
-        let response = match event {
-            Event::PtyWrite(text) => text,
-            Event::TextAreaSizeRequest(format) => {
-                let (rows, cols) = *self.size.lock().unwrap_or_else(|error| error.into_inner());
-                format(WindowSize {
-                    num_lines: rows,
-                    num_cols: cols,
-                    cell_width: 0,
-                    cell_height: 0,
-                })
-            }
-            _ => return,
-        };
-        if let Ok(mut writer) = self.writer.lock() {
-            let _ = writer.write_all(response.as_bytes());
-            let _ = writer.flush();
-        }
+unsafe extern "C" fn write_pty_callback(
+    _terminal: ghostty_vt::GhosttyTerminal,
+    userdata: *mut c_void,
+    data: *const u8,
+    len: usize,
+) {
+    let userdata = unsafe { &*(userdata as *const WritePtyUserdata) };
+    if let Ok(mut writer) = userdata.writer.lock() {
+        let data = unsafe { std::slice::from_raw_parts(data, len) };
+        let _ = writer.write_all(data);
+        let _ = writer.flush();
     }
 }
 
 struct TerminalState {
-    term: Term<PtyListener>,
-    processor: Processor,
+    vt: Vt<WritePtyUserdata>,
     cols: usize,
     rows: usize,
-}
-
-#[derive(Clone, Copy)]
-struct Size {
-    cols: usize,
-    rows: usize,
-}
-
-impl Dimensions for Size {
-    fn total_lines(&self) -> usize {
-        self.rows
-    }
-
-    fn screen_lines(&self) -> usize {
-        self.rows
-    }
-
-    fn columns(&self) -> usize {
-        self.cols
-    }
 }
 
 impl TerminalSession {
@@ -217,24 +182,17 @@ impl TerminalSession {
         // Dropping the slave keeps reads from hanging once the shell exits.
         drop(pair.slave);
 
-        let size = Arc::new(Mutex::new((rows, cols)));
-        let term = Term::new(
-            Config {
-                scrolling_history: SCROLLBACK_LINES,
-                ..Config::default()
-            },
-            &Size {
-                cols: usize::from(cols),
-                rows: usize::from(rows),
-            },
-            PtyListener {
+        let vt = Vt::new(
+            cols,
+            rows,
+            SCROLLBACK_LINES,
+            write_pty_callback,
+            Box::new(WritePtyUserdata {
                 writer: Arc::clone(&writer),
-                size: Arc::clone(&size),
-            },
-        );
+            }),
+        )?;
         let inner = Arc::new(Mutex::new(TerminalState {
-            term,
-            processor: Processor::default(),
+            vt,
             cols: usize::from(cols),
             rows: usize::from(rows),
         }));
@@ -251,10 +209,7 @@ impl TerminalSession {
                         Ok(0) => break,
                         Ok(read) => {
                             if let Ok(mut state) = inner.lock() {
-                                let TerminalState {
-                                    term, processor, ..
-                                } = &mut *state;
-                                processor.advance(term, &buffer[..read]);
+                                state.vt.write(&buffer[..read]);
                             }
                             notify(TerminalEvent::Output);
                         }
@@ -283,7 +238,6 @@ impl TerminalSession {
         Ok(Self {
             inner,
             writer,
-            size,
             master: Mutex::new(pair.master),
             killer: Mutex::new(killer),
             notify,
@@ -315,15 +269,9 @@ impl TerminalSession {
                 .inner
                 .lock()
                 .map_err(|_| "term.state_unavailable".to_string())?;
-            state.term.resize(Size {
-                cols: usize::from(cols),
-                rows: usize::from(rows),
-            });
+            state.vt.resize(cols, rows);
             state.cols = usize::from(cols);
             state.rows = usize::from(rows);
-        }
-        if let Ok(mut size) = self.size.lock() {
-            *size = (rows, cols);
         }
         let master = self
             .master
@@ -342,7 +290,7 @@ impl TerminalSession {
     /// Moves the viewport through scrollback. Positive scrolls up.
     pub fn scroll(&self, lines: i32) {
         if let Ok(mut state) = self.inner.lock() {
-            state.term.scroll_display(Scroll::Delta(lines));
+            state.vt.scroll_delta(-(lines as isize));
         }
     }
 
@@ -350,10 +298,13 @@ impl TerminalSession {
     /// bottom. A scrollbar drag cannot be expressed as a fixed delta because
     /// output may land between two pointer events and shift the history.
     pub fn scroll_to(&self, offset: usize) {
-        if let Ok(mut state) = self.inner.lock() {
-            let current = state.term.grid().display_offset() as i64;
-            let delta = (offset as i64 - current).clamp(i64::from(i32::MIN), i64::from(i32::MAX));
-            state.term.scroll_display(Scroll::Delta(delta as i32));
+        if let Ok(mut state) = self.inner.lock()
+            && let Some((total, _current, len)) = state.vt.scrollbar()
+        {
+            let history = total.saturating_sub(len);
+            state
+                .vt
+                .scroll_to_row(history.saturating_sub(offset as u64) as usize);
         }
     }
 
@@ -361,38 +312,52 @@ impl TerminalSession {
     /// renderer is drawing against; the cells carry resolved colours, so a
     /// theme flip is a fresh snapshot rather than a repaint of stale ones.
     pub fn snapshot(&self, dark: bool) -> Option<TerminalSnapshot> {
-        let state = self.inner.lock().ok()?;
-        let content = state.term.renderable_content();
+        let mut state = self.inner.lock().ok()?;
+        if !state.vt.update() {
+            return None;
+        }
         let cols = state.cols;
         let rows = state.rows;
+        let palette = palette(dark);
+
+        let (history_size, display_offset) = state
+            .vt
+            .scrollbar()
+            .map(|(total, offset, len)| {
+                let history = total.saturating_sub(len);
+                (history as usize, history.saturating_sub(offset) as usize)
+            })
+            .unwrap_or((0, 0));
+
         let mut cells = vec![CellSnapshot::blank(dark); cols.saturating_mul(rows)];
-
-        for indexed in content.display_iter {
-            let row = indexed.point.line.0 + content.display_offset as i32;
-            let column = indexed.point.column.0;
-            if row < 0 || row as usize >= rows || column >= cols {
-                continue;
+        state.vt.visit_rows(|y, mut row| {
+            if y < 0 || y as usize >= rows {
+                return;
             }
-            cells[row as usize * cols + column] = cell_snapshot(indexed.cell, dark);
-        }
+            while let Some((x, raw, style)) = row.next_cell() {
+                if usize::from(x) >= cols {
+                    break;
+                }
+                cells[y as usize * cols + usize::from(x)] = cell_snapshot(raw, &style, palette);
+            }
+        });
 
-        let cursor = content.cursor;
-        let cursor_row = cursor.point.line.0 + content.display_offset as i32;
-        let cursor_col = cursor.point.column.0;
-        let in_view = cursor_row >= 0
-            && (cursor_row as usize) < rows
-            && cursor_col < cols
-            && cursor.shape != CursorShape::Hidden;
+        let (cursor_col, cursor_row, cursor_shape, cursor_visible) = match state.vt.cursor() {
+            Some((x, y, shape)) if usize::from(x) < cols && usize::from(y) < rows => {
+                (usize::from(x), usize::from(y), shape, true)
+            }
+            _ => (0, 0, 0, false),
+        };
 
         Some(TerminalSnapshot {
             cols,
             rows,
             cursor_col,
-            cursor_row: cursor_row.max(0) as usize,
-            cursor_visible: in_view,
-            cursor_shape: cursor_shape_code(cursor.shape),
-            display_offset: content.display_offset,
-            history_size: state.term.history_size(),
+            cursor_row,
+            cursor_visible,
+            cursor_shape,
+            display_offset,
+            history_size,
             cells,
         })
     }
@@ -424,114 +389,82 @@ impl Drop for TerminalSession {
     }
 }
 
-fn cell_snapshot(cell: &alacritty_terminal::term::cell::Cell, dark: bool) -> CellSnapshot {
-    use alacritty_terminal::term::cell::Flags;
-
-    let mut fg = resolve_color(cell.fg, dark);
-    let mut bg = resolve_color(cell.bg, dark);
+fn cell_snapshot(raw: u64, style: &GhosttyStyle, palette: &[Rgb; 19]) -> CellSnapshot {
+    let mut fg = resolve_color(style.fg_color, palette[16], palette);
+    let mut bg = resolve_color(style.bg_color, palette[17], palette);
     let mut flags = 0u8;
 
-    if cell.flags.contains(Flags::BOLD) {
+    if style.flags & ghostty_vt::STYLE_FLAG_BOLD != 0 {
         flags |= FLAG_BOLD;
     }
-    if cell.flags.intersects(Flags::ITALIC | Flags::BOLD_ITALIC) {
+    if style.flags & ghostty_vt::STYLE_FLAG_ITALIC != 0 {
         flags |= FLAG_ITALIC;
     }
-    if cell.flags.intersects(Flags::ALL_UNDERLINES) {
+    if style.flags & ghostty_vt::STYLE_UNDERLINE_MASK != 0 {
         flags |= FLAG_UNDERLINE;
     }
-    if cell.flags.contains(Flags::STRIKEOUT) {
+    if style.flags & ghostty_vt::STYLE_FLAG_STRIKETHROUGH != 0 {
         flags |= FLAG_STRIKEOUT;
     }
-    if cell.flags.contains(Flags::INVERSE) {
+    if style.flags & ghostty_vt::STYLE_FLAG_INVERSE != 0 {
         flags |= FLAG_INVERSE;
         std::mem::swap(&mut fg, &mut bg);
     }
-    if cell.flags.contains(Flags::HIDDEN) {
+    if style.flags & ghostty_vt::STYLE_FLAG_INVISIBLE != 0 {
         flags |= FLAG_HIDDEN;
         fg = bg;
     }
-    if cell.flags.contains(Flags::WIDE_CHAR) {
-        flags |= FLAG_WIDE;
+    match ghostty_vt::cell_wide(raw) {
+        ghostty_vt::CELL_WIDE_WIDE => flags |= FLAG_WIDE,
+        ghostty_vt::CELL_WIDE_SPACER_TAIL | ghostty_vt::CELL_WIDE_SPACER_HEAD => {
+            flags |= FLAG_SPACER;
+        }
+        _ => {}
     }
-    if cell
-        .flags
-        .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-    {
-        flags |= FLAG_SPACER;
-    }
-    if cell.flags.contains(Flags::DIM | Flags::DIM_BOLD) {
+    if style.flags & ghostty_vt::STYLE_FLAG_FAINT != 0 {
         fg = dim(fg);
     }
 
-    CellSnapshot {
-        ch: if flags & FLAG_HIDDEN != 0 {
-            ' '
+    let ch = if flags & FLAG_HIDDEN != 0 {
+        ' '
+    } else {
+        // Empty cells report codepoint 0; the grid stores blanks as spaces.
+        match char::from_u32(ghostty_vt::cell_codepoint(raw)) {
+            Some('\0') | None => ' ',
+            Some(ch) => ch,
+        }
+    };
+
+    CellSnapshot { ch, fg, bg, flags }
+}
+
+fn resolve_color(color: GhosttyStyleColor, default: Rgb, palette: &[Rgb; 19]) -> u32 {
+    if let Some(index) = color.palette_index() {
+        let rgb = if index < 16 {
+            palette[usize::from(index)]
         } else {
-            cell.c
-        },
-        fg,
-        bg,
-        flags,
+            indexed(index)
+        };
+        return pack(rgb);
     }
+    if let Some(rgb) = color.rgb() {
+        return pack(Rgb {
+            r: rgb.r,
+            g: rgb.g,
+            b: rgb.b,
+        });
+    }
+    pack(default)
 }
 
-fn cursor_shape_code(shape: CursorShape) -> u8 {
-    match shape {
-        CursorShape::Block => 0,
-        CursorShape::Underline => 1,
-        CursorShape::Beam => 2,
-        CursorShape::HollowBlock => 3,
-        CursorShape::Hidden => 0,
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Rgb {
+    r: u8,
+    g: u8,
+    b: u8,
 }
 
-fn resolve_color(color: Color, dark: bool) -> u32 {
-    match color {
-        Color::Spec(rgb) => pack(rgb),
-        Color::Indexed(index) => pack(indexed(index, dark)),
-        Color::Named(named) => pack(named_color(named, dark)),
-    }
-}
-
-fn named_color(color: NamedColor, dark: bool) -> Rgb {
-    let palette = palette(dark);
-    match color {
-        NamedColor::Black => palette[0],
-        NamedColor::Red => palette[1],
-        NamedColor::Green => palette[2],
-        NamedColor::Yellow => palette[3],
-        NamedColor::Blue => palette[4],
-        NamedColor::Magenta => palette[5],
-        NamedColor::Cyan => palette[6],
-        NamedColor::White => palette[7],
-        NamedColor::BrightBlack => palette[8],
-        NamedColor::BrightRed => palette[9],
-        NamedColor::BrightGreen => palette[10],
-        NamedColor::BrightYellow => palette[11],
-        NamedColor::BrightBlue => palette[12],
-        NamedColor::BrightMagenta => palette[13],
-        NamedColor::BrightCyan => palette[14],
-        NamedColor::BrightWhite => palette[15],
-        NamedColor::Foreground | NamedColor::BrightForeground => palette[16],
-        NamedColor::DimForeground => dim_rgb(palette[16]),
-        NamedColor::Background => palette[17],
-        NamedColor::Cursor => palette[18],
-        NamedColor::DimBlack => dim_rgb(palette[0]),
-        NamedColor::DimRed => dim_rgb(palette[1]),
-        NamedColor::DimGreen => dim_rgb(palette[2]),
-        NamedColor::DimYellow => dim_rgb(palette[3]),
-        NamedColor::DimBlue => dim_rgb(palette[4]),
-        NamedColor::DimMagenta => dim_rgb(palette[5]),
-        NamedColor::DimCyan => dim_rgb(palette[6]),
-        NamedColor::DimWhite => dim_rgb(palette[7]),
-    }
-}
-
-fn indexed(index: u8, dark: bool) -> Rgb {
-    if index < 16 {
-        return palette(dark)[usize::from(index)];
-    }
+fn indexed(index: u8) -> Rgb {
     if index >= 232 {
         let level = 8 + (usize::from(index) - 232) * 10;
         let level = level as u8;
@@ -617,14 +550,6 @@ fn dim(argb: u32) -> u32 {
     (argb & 0xff00_0000) | (r << 16) | (g << 8) | b
 }
 
-fn dim_rgb(rgb: Rgb) -> Rgb {
-    Rgb {
-        r: rgb.r * 2 / 3,
-        g: rgb.g * 2 / 3,
-        b: rgb.b * 2 / 3,
-    }
-}
-
 fn home_directory() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
@@ -690,13 +615,11 @@ mod tests {
 
     #[test]
     fn ansi_palette_covers_the_three_ranges() {
-        assert_eq!(indexed(1, true), palette(true)[1]);
-        assert_eq!(indexed(1, false), palette(false)[1]);
-        assert_eq!(indexed(16, true), Rgb { r: 0, g: 0, b: 0 });
-        assert_eq!(indexed(196, true), Rgb { r: 255, g: 0, b: 0 });
-        assert_eq!(indexed(232, true), Rgb { r: 8, g: 8, b: 8 });
+        assert_eq!(indexed(16), Rgb { r: 0, g: 0, b: 0 });
+        assert_eq!(indexed(196), Rgb { r: 255, g: 0, b: 0 });
+        assert_eq!(indexed(232), Rgb { r: 8, g: 8, b: 8 });
         assert_eq!(
-            indexed(255, true),
+            indexed(255),
             Rgb {
                 r: 238,
                 g: 238,

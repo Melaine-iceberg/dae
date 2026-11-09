@@ -23,6 +23,7 @@
 //! because emitting is the one thing that is genuinely engine-specific.
 pub mod error;
 pub mod fs;
+mod ghostty_vt;
 pub mod hashing;
 pub mod host;
 pub mod package;

@@ -1,6 +1,6 @@
 //! The QML side of one terminal session.
 //!
-//! `dae_core::pty` owns the PTY and the alacritty grid; this object only turns
+//! `dae_core::pty` owns the PTY and the libghostty-vt grid; this object only turns
 //! its snapshots into a compact byte frame and coalesces output wakes before
 //! they cross the Qt thread. The painter (`cpp/terminal_item.h`) reads the
 //! frame; nothing here knows how a cell is drawn.
