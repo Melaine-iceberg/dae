@@ -125,7 +125,7 @@ Item {
                     height: parent.height
                     radius: Theme.radiusSm
                     color: node.current
-                        ? Theme.fill
+                        ? Theme.signalSoft
                         : (nodeMouse.containsMouse ? Theme.hover : "transparent")
                 }
 
@@ -133,7 +133,7 @@ Item {
                     visible: node.current
                     x: 0
                     y: 6
-                    width: 2
+                    width: 3
                     height: parent.height - 12
                     radius: 1
                     color: Theme.signal

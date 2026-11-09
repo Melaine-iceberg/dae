@@ -484,7 +484,7 @@ Item {
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    width: 2
+                    width: 3
                     color: Theme.signal
                     visible: row.selected
                 }

@@ -2726,18 +2726,6 @@ Window {
             ])
             return
         }
-        if (kind === "space") {
-            const preset = Spaces.isPresetOfId(path)
-            menu.openAt(x, y, [
-                { id: "spaceOpen", glyph: "diamond", label: qsTr("打开空间") },
-                { id: "spaceTab", glyph: "plus", label: qsTr("在新标签页打开") },
-                { separator: true },
-                { id: "spaceRename", glyph: "pencil", label: qsTr("重命名空间") },
-                { id: "spaceDelete", glyph: "trash", label: qsTr("删除空间"),
-                  enabled: !preset, danger: true }
-            ])
-            return
-        }
         // Place rows carry their icon name after `place:`; the menu needs the
         // kind itself so it can offer "hide" and the model can resolve it back.
         const placeKind = kind.indexOf("place:") === 0
@@ -2838,18 +2826,6 @@ Window {
             return
         }
         switch (id) {
-        case "spaceOpen":
-            root.openSpace(path)
-            break
-        case "spaceTab":
-            root.addSurfaceTab("space", path)
-            break
-        case "spaceRename":
-            root.promptSpaceRename(path, Spaces.nameOfId(path))
-            break
-        case "spaceDelete":
-            root.requestSpaceDelete(path, Spaces.nameOfId(path))
-            break
         case "open":
             if (isDir)
                 root.navigatePane(root.contextTab, path)
@@ -4118,8 +4094,6 @@ Window {
                 activePath: root.activePath
                 trashActive: root.trashActive
                 trashCount: trashModel.count
-                spaceActive: root.spaceActive
-                activeSpaceId: root.activeSpaceId
                 onNavigateRequested: function (path) {
                     root.navigate(path)
                 }
@@ -4127,15 +4101,9 @@ Window {
                 onTagActivated: function (name) {
                     root.searchTag(name)
                 }
-                onSpaceRequested: function (id) {
-                    root.openSpace(id)
-                }
-                onCreateSpaceRequested: root.promptSpaceCreate()
                 onAddRequested: function (kind) {
                     if (kind === "cloud")
                         root.openCloudDialog()
-                    else if (kind === "space")
-                        root.promptSpaceCreate()
                     else
                         root.openConnectDialog()
                 }

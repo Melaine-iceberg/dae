@@ -5183,16 +5183,6 @@
             <translation>Remove cloud account</translation>
         </message>
         <message>
-            <location filename="../ShellWindow.qml" line="1833" />
-            <source>打开空间</source>
-            <translation>Open space</translation>
-        </message>
-        <message>
-            <location filename="../ShellWindow.qml" line="1837" />
-            <source>删除空间</source>
-            <translation>Delete space</translation>
-        </message>
-        <message>
             <location filename="../ShellWindow.qml" line="1848" />
             <source>从收藏移除</source>
             <translation>Remove from favorites</translation>
@@ -5728,11 +5718,6 @@
             <translation>Favorites</translation>
         </message>
         <message>
-            <location filename="../Sidebar.qml" line="143" />
-            <source>空间</source>
-            <translation>Space</translation>
-        </message>
-        <message>
             <location filename="../Sidebar.qml" line="144" />
             <source>磁盘</source>
             <translation>Drives</translation>
@@ -5786,11 +5771,6 @@
             <location filename="../Sidebar.qml" line="161" />
             <source>视频</source>
             <translation>Videos</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="162" />
-            <source>新建空间…</source>
-            <translation>New space…</translation>
         </message>
         <message>
             <location filename="../Sidebar.qml" line="163" />

@@ -7,10 +7,9 @@
 //! each scroll independently.
 //!
 //! Section order is deliberate: the five primary places first, then the extra
-//! places and favourites, then volumes and spaces (a disk is closer to "where
-//! am I" than a saved space), then the network group — WSL distros are network
-//! locations too — and finally cloud accounts. The trash is not a row here;
-//! the sidebar parks it at the bottom itself.
+//! places and favourites, then volumes, then the network group — WSL distros
+//! are network locations too — and finally cloud accounts. The trash is not a
+//! row here; the sidebar parks it at the bottom itself.
 
 use core::pin::Pin;
 use std::path::Path;
@@ -21,14 +20,12 @@ use dae_core::fs::cloud::accounts::{StoredCloudAccount, list_cloud_accounts};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, StoredConnection};
 use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
-use dae_core::fs::spaces::list_spaces;
 
 use crate::format;
 use crate::runtime;
 
 const SECTION_PLACES: &str = "Places";
 const SECTION_FAVORITES: &str = "Favorites";
-const SECTION_SPACES: &str = "Spaces";
 const SECTION_VOLUMES: &str = "Disks";
 const SECTION_NETWORK: &str = "Network Storage";
 const SECTION_CLOUD: &str = "Cloud Storage";
@@ -243,34 +240,6 @@ impl qobject::SidebarModel {
             }
         }
 
-        // Spaces are first-class destinations, not folders: the `path` field
-        // carries the space id and the shell opens the space surface instead of
-        // navigating. The action row stays below the list so the section is
-        // still discoverable before the user has anything pinned. An empty
-        // space carries no meta text: "空" on every row said nothing the place
-        // itself did not.
-        let mut spaces = Vec::new();
-        for space in list_spaces().unwrap_or_default() {
-            spaces.push(SidebarRow {
-                section: SECTION_SPACES.to_owned(),
-                name: space.name,
-                path: space.id,
-                kind: "space".to_owned(),
-                detail: if space.items.is_empty() {
-                    String::new()
-                } else {
-                    let count = space.items.len();
-                    format!("{count} item{}", if count == 1 { "" } else { "s" })
-                },
-                icon: "space".to_owned(),
-                is_dir: true,
-                fill: 0.0,
-                file_system: String::new(),
-                removable: false,
-            });
-        }
-        spaces.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
-
         let mut network = Vec::new();
         for connection in connections::list_connections().unwrap_or_default() {
             network.push(connection_row(connection));
@@ -323,7 +292,6 @@ impl qobject::SidebarModel {
                     removable: volume.is_removable,
                 });
             }
-            rows.extend(spaces);
             for distro in distros {
                 rows.push(distro_row(distro));
             }

@@ -3,7 +3,7 @@ import QtQuick
 import dae 1.0
 
 // The navigation column: the five places people reach for, then extra places
-// and favourites, volumes, spaces, network storage and cloud accounts. The
+// and favourites, volumes, network storage and cloud accounts. The
 // trash is parked at the bottom, where a bin belongs, instead of sharing a
 // header with the overview. `SidebarModel` decides the order and resolves the
 // rows; this file decides what a row looks like and where a click goes.
@@ -15,8 +15,6 @@ Item {
     property string activePath: ""
     property bool trashActive: false
     property int trashCount: 0
-    property bool spaceActive: false
-    property string activeSpaceId: ""
 
     /// The volume tree expansion lives on the sidebar, not in the delegate:
     /// ListView recycles delegates, and a collapsed-then-restored volume must
@@ -34,8 +32,6 @@ Item {
     signal trashRequested()
     /// A tag row was clicked. The shell turns this into a `tag:` search.
     signal tagActivated(string name)
-    signal spaceRequested(string id)
-    signal createSpaceRequested()
     signal addRequested(string kind)
     signal restorePlacesRequested()
     signal contextRequested(string kind, string path, bool removable, real x, real y)
@@ -53,7 +49,6 @@ Item {
     /// Narrow columns drop the "used / total" pair for the percentage: at 184 px
     /// the full pair is the first thing that would collide with the name.
     readonly property bool narrow: width < 200
-    readonly property bool surfaceActive: trashActive || spaceActive
     readonly property string trashLabel: Qt.platform.os === "osx"
         ? qsTr("废纸篓") : qsTr("回收站")
 
@@ -157,7 +152,6 @@ Item {
         switch (value) {
         case "Places": return qsTr("位置")
         case "Favorites": return qsTr("收藏")
-        case "Spaces": return qsTr("空间")
         case "Disks": return Qt.platform.os === "osx" ? qsTr("宗卷") : qsTr("磁盘")
         case "Network Storage": return qsTr("网络存储")
         case "Cloud Storage": return qsTr("云存储")
@@ -176,7 +170,6 @@ Item {
         case "Pictures": return qsTr("图片")
         case "Music": return qsTr("音乐")
         case "Videos": return qsTr("视频")
-        case "New space…": return qsTr("新建空间…")
         case "Connect network storage…": return qsTr("连接网络存储…")
         case "Add cloud account…": return qsTr("添加网盘账户…")
         case "Drop folders here to favorite them": return qsTr("将文件夹拖到这里加入收藏")
@@ -213,7 +206,6 @@ Item {
         case "wsl": return "network"
         case "server": return "network"
         case "cloud": return "cloud"
-        case "space": return "diamond"
         case "add": return "plus"
         case "eye": return "eye"
         default: return "file"
@@ -240,20 +232,11 @@ Item {
     }
 
     Component.onCompleted: {
-        Spaces.refresh()
         sidebarModel.refresh()
         // One probe per process: a second window reuses the answer and lets
         // the header's refresh affordance ask again.
         if (!NetworkDiscovery.scanned)
             NetworkDiscovery.refresh()
-    }
-
-    Connections {
-        target: Spaces
-
-        function onChanged() {
-            sidebarModel.refresh()
-        }
     }
 
     Connections {
@@ -363,7 +346,7 @@ Item {
             readonly property bool lit: favoriteSection && root.favoriteDropActive
 
             width: ListView.view.width
-            height: Theme.controlSm
+            height: Theme.controlXs
 
             Text {
                 x: 18
@@ -433,12 +416,10 @@ Item {
 
             readonly property bool isVolume: row.kind === "volume"
             readonly property bool treeOpen: row.isVolume && root.volumeExpanded(row.path)
-            readonly property bool current: !root.surfaceActive
+            readonly property bool current: !root.trashActive
                 && root.pathEquals(row.path, root.activePath)
-            readonly property bool spaceCurrent: root.spaceActive
-                && row.kind === "space" && row.path === root.activeSpaceId
             readonly property bool isAction: row.kind === "addConnection"
-                || row.kind === "addCloud" || row.kind === "addSpace"
+                || row.kind === "addCloud"
                 || row.kind === "restorePlaces"
             readonly property bool builtInName: row.isAction
                 || row.kind === "favoriteHint"
@@ -450,7 +431,7 @@ Item {
             /// target would light every one of them at once.
             readonly property bool armed: root.dropTargetPath !== ""
                 && root.dropTargetPath === row.path
-            readonly property bool focused: row.current || row.spaceCurrent
+            readonly property bool focused: row.current
             /// The keyboard cursor, drawn only while the column holds focus:
             /// an always-visible ring would claim focus the sidebar does not have.
             readonly property bool cursor: list.activeFocus
@@ -487,20 +468,12 @@ Item {
                     root.addRequested("cloud")
                     return
                 }
-                if (row.kind === "addSpace") {
-                    root.createSpaceRequested()
-                    return
-                }
                 if (row.kind === "restorePlaces") {
                     root.restorePlacesRequested()
                     return
                 }
                 if (row.kind === "favoriteHint")
                     return
-                if (row.kind === "space") {
-                    root.spaceRequested(row.path)
-                    return
-                }
                 root.navigateRequested(row.path)
             }
 
@@ -520,11 +493,9 @@ Item {
                     width: rowBody.width - 16
                     height: rowBody.height
                     radius: Theme.radiusSm
-                    color: row.armed
+                    color: row.armed || row.focused
                         ? Theme.signalSoft
-                        : (row.focused
-                            ? Theme.fill
-                            : (rowMouse.containsMouse ? Theme.hover : "transparent"))
+                        : (rowMouse.containsMouse ? Theme.hover : "transparent")
                     border.width: row.armed || row.cursor ? 1 : 0
                     border.color: row.cursor ? Theme.signal : Theme.hairlineStrong
 
@@ -561,7 +532,7 @@ Item {
                     visible: row.focused
                     x: 0
                     y: row.isVolume ? 7 : 6
-                    width: 2
+                    width: 3
                     height: rowBody.height - (row.isVolume ? 14 : 12)
                     radius: 1
                     color: Theme.signal
@@ -1097,7 +1068,7 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.trashActive
-                ? Theme.fill
+                ? Theme.signalSoft
                 : (trashMouse.containsMouse ? Theme.hover : "transparent")
 
             Accessible.role: Accessible.Button
@@ -1110,7 +1081,7 @@ Item {
                 // on the plate's 8 px inset.
                 x: -8
                 y: 6
-                width: 2
+                width: 3
                 height: 16
                 radius: 1
                 color: Theme.signal

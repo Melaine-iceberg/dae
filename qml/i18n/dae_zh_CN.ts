@@ -5183,16 +5183,6 @@
             <translation>移除云盘账户</translation>
         </message>
         <message>
-            <location filename="../ShellWindow.qml" line="1833" />
-            <source>打开空间</source>
-            <translation>打开空间</translation>
-        </message>
-        <message>
-            <location filename="../ShellWindow.qml" line="1837" />
-            <source>删除空间</source>
-            <translation>删除空间</translation>
-        </message>
-        <message>
             <location filename="../ShellWindow.qml" line="1848" />
             <source>从收藏移除</source>
             <translation>从收藏移除</translation>
@@ -5728,11 +5718,6 @@
             <translation>收藏</translation>
         </message>
         <message>
-            <location filename="../Sidebar.qml" line="143" />
-            <source>空间</source>
-            <translation>空间</translation>
-        </message>
-        <message>
             <location filename="../Sidebar.qml" line="144" />
             <source>磁盘</source>
             <translation>磁盘</translation>
@@ -5786,11 +5771,6 @@
             <location filename="../Sidebar.qml" line="161" />
             <source>视频</source>
             <translation>视频</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="162" />
-            <source>新建空间…</source>
-            <translation>新建空间…</translation>
         </message>
         <message>
             <location filename="../Sidebar.qml" line="163" />
