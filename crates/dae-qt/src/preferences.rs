@@ -237,7 +237,7 @@ impl Default for StoredPrefs {
             // column of full-colour shell icons broke that on the first screen.
             // The desktop's own icons stay one menu click away.
             icon_style: "themed".to_owned(),
-            icon_size: 72,
+            icon_size: 38,
             row_thumbnails: false,
             show_extensions: true,
             columns: "type,size,modified".to_owned(),
@@ -1289,7 +1289,7 @@ mod tests {
         assert!(prefs.show_hidden_files);
         assert!(prefs.show_extensions);
         assert!(prefs.sync_layout);
-        assert_eq!(prefs.icon_size, 72);
+        assert_eq!(prefs.icon_size, 38);
     }
 
     #[test]

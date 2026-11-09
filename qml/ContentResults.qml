@@ -10,18 +10,13 @@ Item {
     id: root
 
     property var model: null
-    property bool dark: true
-    property color accent: Theme.interactive
-    property color headerColor: Theme.chrome
+    property color headerColor: Theme.canvas
     property int currentIndex: -1
 
     readonly property color contentColor: Theme.content
-    readonly property color alternateColor: Theme.contentAlt
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color hairline: Theme.hairline
-    readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
-                                                   dark ? 0.30 : 0.18)
 
     signal previewRequested(string path)
 
@@ -54,8 +49,10 @@ Item {
             x: 16
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("内容匹配")
-            color: root.mutedColor
-            font.pixelSize: Theme.typeCaption
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.55
         }
 
         Text {
@@ -136,10 +133,21 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                color: row.index === list.currentIndex ? root.selectionColor
-                    : (row.isHeader
-                        ? Theme.canvasAlt
-                        : (row.index % 2 === 0 ? root.contentColor : root.alternateColor))
+                // Group headers keep a quiet plate; result rows use only hover
+                // and selection, never zebra stripes.
+                color: !row.isHeader && row.index === list.currentIndex
+                    ? Theme.signalSoft
+                    : (rowMouse.containsMouse ? Theme.hover
+                        : (row.isHeader ? Theme.canvasAlt : "transparent"))
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 3
+                color: Theme.signal
+                visible: !row.isHeader && row.index === list.currentIndex
             }
 
             Text {
@@ -225,7 +233,9 @@ Item {
             }
 
             MouseArea {
+                id: rowMouse
                 anchors.fill: parent
+                hoverEnabled: true
                 acceptedButtons: Qt.LeftButton
                 onClicked: {
                     list.forceActiveFocus()

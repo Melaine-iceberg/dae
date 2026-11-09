@@ -4364,8 +4364,6 @@ Window {
                         anchors.fill: parent
                         visible: root.folderActive && root.contentSearchActive
                         model: root.activeTab !== null ? root.activeTab.contentSearch : null
-                        dark: root.dark
-                        accent: root.accent
 
                         onPreviewRequested: function (path) {
                             previewPanel.showPaths([path])
@@ -4383,9 +4381,7 @@ Window {
                             TrashView {
                                 anchors.fill: parent
                                 model: trashModel
-                                dark: root.dark
-                                accent: root.accent
-                                headerColor: root.chromeColor
+                                headerColor: Theme.canvas
 
                                 onRestoreRequested: function (ids) {
                                     root.restoreTrash(ids)

@@ -12,9 +12,7 @@ Item {
     id: root
 
     property var model: null
-    property bool dark: true
-    property color accent: Theme.interactive
-    property color headerColor: Theme.chrome
+    property color headerColor: Theme.canvas
 
     /// id -> true. Ids are the system trash ids; a restored entry no longer
     /// exists, so selection is never allowed to outlive a reload.
@@ -36,9 +34,9 @@ Item {
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color hairline: Theme.hairline
-    readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
-                                                   dark ? 0.30 : 0.18)
-    readonly property color cursorColor: Theme.canvasAlt
+    /// Set while an arrow key owns the cursor, so the focus ring only shows
+    /// for keyboard movement, never for a click — the same rule as the list.
+    property bool keyboardCursor: false
 
     readonly property int selectionCount: {
         const version = root.selectionVersion
@@ -189,6 +187,7 @@ Item {
     function handleClick(index, shift) {
         if (root.model === null)
             return
+        root.keyboardCursor = false
         root.takeFocus()
         list.currentIndex = index
         const id = root.idAt(index)
@@ -366,9 +365,9 @@ Item {
             height: 14
             radius: Theme.radiusSm
             border.width: 1
-            border.color: root.allSelected ? root.accent
+            border.color: root.allSelected ? Theme.signal
                 : Theme.hairlineStrong
-            color: root.allSelected ? root.accent : "transparent"
+            color: root.allSelected ? Theme.signal : "transparent"
 
             Text {
                 anchors.centerIn: parent
@@ -397,8 +396,10 @@ Item {
                 : Math.round(columnHeader.width * 0.32)
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("名称")
-            color: root.mutedColor
+            color: Theme.inkFaint
             font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.55
             elide: Text.ElideRight
         }
 
@@ -409,8 +410,10 @@ Item {
                             - nameHeader.width - 14)
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("原位置")
-            color: root.mutedColor
+            color: Theme.inkFaint
             font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.55
             elide: Text.ElideRight
         }
 
@@ -422,8 +425,10 @@ Item {
             width: 118
             horizontalAlignment: Text.AlignRight
             text: qsTr("删除时间")
-            color: root.mutedColor
+            color: Theme.inkFaint
             font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.55
         }
 
         Text {
@@ -434,8 +439,10 @@ Item {
             width: 68
             horizontalAlignment: Text.AlignRight
             text: qsTr("大小")
-            color: root.mutedColor
+            color: Theme.inkFaint
             font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.55
         }
     }
 
@@ -483,6 +490,10 @@ Item {
         }
 
         Keys.onPressed: function (event) {
+            if (event.key === Qt.Key_Up || event.key === Qt.Key_Down
+                    || event.key === Qt.Key_Home || event.key === Qt.Key_End
+                    || event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown)
+                root.keyboardCursor = true
             if (root.handleKey(event))
                 event.accepted = true
         }
@@ -516,10 +527,25 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 color: row.selected
-                    ? root.selectionColor
-                    : (list.currentIndex === row.index ? root.cursorColor
-                        : (rowMouse.containsMouse
-                            ? Theme.chrome : "transparent"))
+                    ? (rowMouse.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                    : (rowMouse.containsMouse ? Theme.hover : "transparent")
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 3
+                color: Theme.signal
+                visible: row.selected
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                visible: root.keyboardCursor && list.currentIndex === row.index
+                color: "transparent"
+                border.width: 1
+                border.color: Theme.signal
             }
 
             Rectangle {
@@ -529,9 +555,9 @@ Item {
                 height: 14
                 radius: Theme.radiusSm
                 border.width: 1
-                border.color: row.selected ? root.accent
+                border.color: row.selected ? Theme.signal
                     : Theme.hairlineStrong
-                color: row.selected ? root.accent : "transparent"
+                color: row.selected ? Theme.signal : "transparent"
 
                 Text {
                     anchors.centerIn: parent
@@ -560,7 +586,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.fileName
                 color: root.textColor
-                font.pixelSize: Theme.typeCaption
+                font.pixelSize: Theme.typeName
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
             }
@@ -573,7 +599,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.originalParent !== "" ? row.originalParent : qsTr("原位置未知")
                 color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeSmall
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText
             }
@@ -587,7 +613,8 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.deletedText
                 color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeSmall
+                font.features: { "tnum": 1 }
                 textFormat: Text.PlainText
             }
 
@@ -600,7 +627,8 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.sizeText
                 color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeSmall
+                font.features: { "tnum": 1 }
                 textFormat: Text.PlainText
             }
 
@@ -612,6 +640,7 @@ Item {
                 onClicked: function (mouse) {
                     if (mouse.button === Qt.RightButton) {
                         list.forceActiveFocus()
+                        root.keyboardCursor = false
                         list.currentIndex = row.index
                         root.anchorIndex = row.index
                         if (!root.isSelected(row.entryId))

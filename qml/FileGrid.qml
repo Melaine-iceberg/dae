@@ -39,23 +39,25 @@ Item {
     /// minimum cell width, so the slider cannot make a 96 px glyph overflow a
     /// tile sized for 24.
     readonly property int glyphSize: ExplorerPrefs.iconSize
-    readonly property int thumbHeight: Math.max(56, ExplorerPrefs.iconSize + 24)
+    /// The thumbnail well follows the tile width at 4:3, which keeps the
+    /// column rhythm the same as the prototype whatever the icon slider says.
+    readonly property int thumbHeight: Math.max(56, Math.round((tileWidth - 8) * 0.75))
     readonly property int tileHeight: thumbHeight + 56
-    readonly property int minCellWidth: Math.max(96, ExplorerPrefs.iconSize + 40)
+    readonly property int minCellWidth: Math.max(100, ExplorerPrefs.iconSize + 40)
 
     readonly property int columns: {
         const available = Math.max(0, width - padding * 2)
         return Math.max(1, Math.floor((available + gapX) / (minCellWidth + gapX)))
     }
     readonly property real tileWidth: {
-        const available = Math.max(0, width - padding * 2 - gapX * (columns - 1))
+        const available = Math.max(0, width - padding * 2 - gapX * columns)
         return Math.max(72, available / Math.max(1, columns))
     }
-    /// The tiles `GridView` actually fits per row. It flows on `cellWidth`,
-    /// which is `tileWidth + gapX`, so the even split above leaves a remainder
-    /// and fits one fewer than `columns` whenever that remainder is smaller
-    /// than the gap. A marquee has to address rows by this number, not by
-    /// `columns`, or a band selects the row below the one under the pointer.
+    /// The tiles `GridView` actually fits per row. Every cell carries its own
+    /// trailing gap, so the width reserved above has to account for `columns`
+    /// gaps, not `columns - 1`; otherwise the row loses a whole column to the
+    /// leftover. A marquee addresses rows by this number, not by `columns`,
+    /// or a band selects the row below the one under the pointer.
     readonly property int flowColumns: Math.max(1, Math.floor(
         Math.max(0, width - padding * 2) / (tileWidth + gapX)))
 
@@ -104,6 +106,16 @@ Item {
         if (model === null || grid.currentIndex < 0)
             return ""
         return model.pathAt(grid.currentIndex)
+    }
+
+    /// The listing asks the visible surface for its scroll offset and the
+    /// index under a point when it fetches tags. Without these two the grid
+    /// threw a TypeError the first time a tagged directory was shown. The
+    /// caller's point is inset from the pane's left edge, so add the padding
+    /// back before hitting the grid's own content coordinates.
+    readonly property real contentY: grid.contentY
+    function indexAt(x, y) {
+        return grid.indexAt(x + root.padding, y)
     }
 
     function cursorIndex() {
