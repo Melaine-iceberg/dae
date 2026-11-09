@@ -13,6 +13,14 @@ that shell; `git log` and the decision document are where it lives now.
   window on demand.
 - **More than the local disk.** Mounted volumes, WSL distros, the trash,
   SSH/SFTP and SMB connections, and archives (`zip`, 7z) browsed in place.
+- **Transfers you can steer.** Pause, cancel and continue a copy — continuing
+  merges into what already landed instead of starting over — and one
+  process-wide speed limit for slow links. Both apply to the running transfer
+  the moment you click, because the core holds a control per operation rather
+  than the window holding a flag. When a path needs rights this process does not
+  have, that *one operation* is replayed by an elevated copy of the binary
+  instead of elevating the whole app; and a delete that fails because a program
+  holds the file names the program instead of only saying "access denied".
 - **A terminal in the frame.** An xterm panel beside the listing.
 - **Tagged, sorted, grouped.** Colour tags that travel with the file where the
   file system can carry them (NTFS streams, xattr) and live in dae's index

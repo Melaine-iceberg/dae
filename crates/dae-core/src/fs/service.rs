@@ -6,6 +6,7 @@ use super::progress::{
     emit_preparing,
 };
 use super::transfer::{self, TransferSource};
+use super::transfer_control::{self, ControlRegistration};
 use super::types::{
     ConflictAction, DirectoryEntry, DirectoryView, FileProperties, NewEntryKind, PropertyChanges,
     RecursivePropertyUpdateOutcome, RenameRequest, TransferConflict, TransferItem, TransferPair,
@@ -279,12 +280,18 @@ pub async fn copy_entries(
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Copy);
 
     tokio::task::spawn_blocking(move || {
+        // Registered before any byte moves: the shell's pause button can only
+        // find a control that already exists, and a transfer that started
+        // without one would ignore the first click.
+        let (_registration, control) = ControlRegistration::new(&operation_id);
+
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
-        let progress = FileOperationProgressReporter::new(
+        let progress = FileOperationProgressReporter::with_control(
             Arc::clone(&host),
             operation_id,
             FileOperationKind::Copy,
+            control,
         );
 
         // The journal records every entry that actually landed on disk, so a
@@ -340,12 +347,15 @@ pub async fn move_entries(
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Move);
 
     tokio::task::spawn_blocking(move || {
+        let (_registration, control) = ControlRegistration::new(&operation_id);
+
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
-        let progress = FileOperationProgressReporter::new(
+        let progress = FileOperationProgressReporter::with_control(
             Arc::clone(&host),
             operation_id,
             FileOperationKind::Move,
+            control,
         );
 
         // The journal records every entry that actually moved, so a partially
@@ -407,14 +417,18 @@ pub async fn delete_entries(
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 
     tokio::task::spawn_blocking(move || {
+        let (_registration, control) = ControlRegistration::new(&operation_id);
+
         let targets = resolve_sources(paths)?;
-        let progress = FileOperationProgressReporter::new(
+        let probe: Vec<String> = targets.iter().map(|target| target.path.clone()).collect();
+        let progress = FileOperationProgressReporter::with_control(
             Arc::clone(&host),
             operation_id,
             FileOperationKind::Delete,
+            control,
         );
 
-        if targets
+        let result = if targets
             .iter()
             .all(|target| vfs::is_local_path(&target.path))
         {
@@ -425,10 +439,80 @@ pub async fn delete_entries(
             local::delete_entries_with_progress(paths, &progress)
         } else {
             transfer::delete_entries(targets, &progress)
-        }
+        };
+
+        // A permanent delete fails for the same reason a move to the trash
+        // does — someone has the file open — so it gets the same annotation.
+        result.map_err(|error| super::occupancy::annotate_lock_error(&probe, error))
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Pauses the transfer registered as `operation_id`.
+///
+/// False means "there is nothing to pause" — the id never ran, or the transfer
+/// already returned — which is the answer a button that was clicked one frame
+/// too late needs, rather than a silent no-op that leaves it stuck on "Pause".
+pub fn pause_transfer(operation_id: &str) -> bool {
+    match transfer_control::control_for(operation_id) {
+        Some(control) => {
+            control.pause();
+            true
+        }
+        None => false,
+    }
+}
+
+pub fn resume_transfer(operation_id: &str) -> bool {
+    match transfer_control::control_for(operation_id) {
+        Some(control) => {
+            control.resume();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Stops the transfer at its next checkpoint. The partial file it was writing
+/// is removed by the engine, and the entries that already landed are reported
+/// back in the journal, which is what makes "continue" able to skip them.
+pub fn cancel_transfer(operation_id: &str) -> bool {
+    match transfer_control::control_for(operation_id) {
+        Some(control) => {
+            control.cancel();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Whether the transfer is paused, `None` when it is not running.
+pub fn transfer_is_paused(operation_id: &str) -> Option<bool> {
+    transfer_control::control_for(operation_id).map(|control| control.is_paused())
+}
+
+/// Sets the process-wide transfer limit in bytes per second; `None` clears it.
+/// Running transfers adopt it on their next chunk.
+pub fn set_transfer_speed_limit(bytes_per_second: Option<u64>) {
+    transfer_control::set_global_rate_limit(bytes_per_second);
+}
+
+pub fn transfer_speed_limit() -> Option<u64> {
+    transfer_control::global_rate_limit()
+}
+
+/// Runs one file operation with administrator rights in a separate process.
+///
+/// See [`super::elevated`] for why the operation and not the app is elevated.
+/// The caller shows an indeterminate row: the elevated child reports its
+/// outcome through a file, not through this process's event loop.
+pub async fn run_elevated(
+    job: super::elevated::ElevatedJob,
+) -> Result<(), FileSystemError> {
+    tokio::task::spawn_blocking(move || super::elevated::run(job))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystemError> {
@@ -501,7 +585,13 @@ pub async fn trash_entries(
                     progress.advance(entry_path);
                 }
                 Err(error) => {
-                    first_error = Some(FileSystemError::Internal(error.to_string()));
+                    // The usual reason a move to the trash fails is a program
+                    // holding the file; naming it turns "Access is denied" into
+                    // something the user can act on.
+                    first_error = Some(super::occupancy::annotate_lock_error(
+                        &paths,
+                        FileSystemError::Internal(error.to_string()),
+                    ));
                     break;
                 }
             }

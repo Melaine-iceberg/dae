@@ -164,6 +164,7 @@ pub fn copy_entries(
                     destination_backend.as_ref(),
                     &entry.destination,
                     progress,
+                    entry.source.on_conflict == ConflictAction::Merge,
                 )?;
                 completed.push(
                     index,
@@ -257,6 +258,7 @@ pub fn move_entries(
                     destination_backend.as_ref(),
                     &entry.destination,
                     progress,
+                    entry.source.on_conflict == ConflictAction::Merge,
                 )?;
                 delete_node(
                     entry.source.backend.as_ref(),
@@ -486,6 +488,7 @@ pub fn duplicate_sources(
                     source.backend.as_ref(),
                     &destination,
                     progress,
+                    false,
                 )?;
 
                 created.push(index, destination);
@@ -642,6 +645,9 @@ fn build_plan(
                 }
                 ConflictAction::Skip => continue,
                 ConflictAction::Replace => (target, Some(target_stat)),
+                // Merging keeps the existing entry: `copy_node` decides per
+                // file whether it still has to be written.
+                ConflictAction::Merge => (target, None),
                 ConflictAction::KeepBoth => {
                     let kept = unique_sibling_path(
                         destination_backend.as_ref(),
@@ -739,6 +745,12 @@ fn child_stat(
 ///
 /// A file or symlink streams as content; a symlink materializes as a regular
 /// file on the destination, which is the only portable mapping.
+///
+/// `merge` is the "continue a cancelled copy" mode: an existing directory is
+/// kept and entered instead of being replaced, and a file whose destination
+/// already matches the source byte count and modification time is counted as
+/// done without being read. Everything else still goes through the normal
+/// write path, so a file that changed since the interrupted run is re-copied.
 fn copy_node(
     source: &dyn FileSystemBackend,
     source_path: &str,
@@ -746,14 +758,43 @@ fn copy_node(
     destination_backend: &dyn FileSystemBackend,
     destination_path: &str,
     progress: &dyn FileOperationProgressReporterTrait,
+    merge: bool,
 ) -> Result<(), FileSystemError> {
-    if stat.kind != EntryKind::Directory {
-        let mut reader = source.open_read(source_path)?;
-        let writer = destination_backend.open_write(destination_path)?;
-        return copy_stream(reader.as_mut(), writer, source_path, progress);
+    // One checkpoint per entry: a paused tree stops before the next file
+    // instead of after it, and a cancelled one stops before it starts.
+    if let Some(control) = progress.control() {
+        control.gate()?;
     }
 
-    destination_backend.mkdir(destination_path)?;
+    if stat.kind != EntryKind::Directory {
+        if merge && destination_matches(destination_backend, destination_path, stat) {
+            progress.advance_by(stat.size.max(1), Path::new(source_path));
+            return Ok(());
+        }
+
+        let mut reader = source.open_read(source_path)?;
+        let writer = destination_backend.open_write(destination_path)?;
+        return match copy_stream(reader.as_mut(), writer, source_path, progress) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                // A cancelled file is a truncated file. Leaving it behind would
+                // make the next attempt look like a conflict with a real file,
+                // so the half-written destination goes and the completed
+                // siblings — which are already in the journal — stay.
+                if matches!(error, FileSystemError::Cancelled(_)) {
+                    let _ = destination_backend.remove(destination_path);
+                }
+                Err(error)
+            }
+        };
+    }
+
+    match destination_backend.mkdir(destination_path) {
+        Ok(()) => {}
+        // A merge walks into a directory the interrupted run already created.
+        Err(FileSystemError::AlreadyExists(_)) if merge => {}
+        Err(error) => return Err(error),
+    }
     progress.advance(Path::new(destination_path));
 
     let view = source.read_dir(source_path)?;
@@ -766,8 +807,51 @@ fn copy_node(
             destination_backend,
             &join_path(destination_path, &entry.name),
             progress,
+            merge,
         )
     })
+}
+
+/// Filesystems that only store whole seconds (FAT, most SMB servers) report a
+/// time the source may state with more precision; anything inside two seconds
+/// is the same write.
+const MERGE_TIME_TOLERANCE_MS: u64 = 2_000;
+
+/// True when `destination_path` already holds the file `stat` describes.
+///
+/// The rule is "same length, and no older than the source", not "same
+/// modification time". A copy stamps the destination with the moment it was
+/// written — `fs::copy` preserves the source time on Windows and does not on
+/// Linux, and a streamed upload never does — so requiring equal times would
+/// re-copy everything on some platforms and nothing on others. A destination at
+/// least as new as the source cannot be stale, while a source edited after the
+/// interrupted run is newer and still gets copied; so does every truncated
+/// partial, because its length differs.
+///
+/// The residual risk — a *different* file of exactly the same length, written
+/// later — is why this only ever runs under [`ConflictAction::Merge`], which the
+/// UI produces for "continue this cancelled copy" and nothing else.
+fn destination_matches(
+    destination_backend: &dyn FileSystemBackend,
+    destination_path: &str,
+    stat: &EntryStat,
+) -> bool {
+    let Ok(existing) = destination_backend.stat(destination_path) else {
+        return false;
+    };
+
+    if existing.kind == EntryKind::Directory || existing.size != stat.size {
+        return false;
+    }
+
+    match (existing.modified_at, stat.modified_at) {
+        // A backend that cannot report a time leaves the caller no way to tell
+        // a stale copy from a fresh one, so the file is written again.
+        (Some(existing), Some(source)) => {
+            existing.saturating_add(MERGE_TIME_TOLERANCE_MS) >= source
+        }
+        _ => false,
+    }
 }
 
 /// One chunk handed from the reading side to the writing side, carrying its
@@ -823,6 +907,16 @@ fn copy_stream(
     let mut read_error = None;
 
     loop {
+        // Checked before the read rather than after the write: a paused
+        // transfer should stop asking the network for bytes, which is the
+        // difference between idle and "still downloading into a queue".
+        if let Some(control) = progress.control() {
+            if let Err(error) = control.gate() {
+                read_error = Some(error);
+                break;
+            }
+        }
+
         let mut bytes = if allocate_buffers > 0 {
             allocate_buffers -= 1;
             vec![0_u8; STREAM_CHUNK_BYTES]
@@ -846,6 +940,15 @@ fn copy_stream(
                     break;
                 }
                 progress.advance_by(read as u64, Path::new(source_path));
+
+                // The rate limit is paid on the reading side, against the
+                // bytes that just entered the pipeline.
+                if let Some(control) = progress.control() {
+                    if let Err(error) = control.advance(read as u64) {
+                        read_error = Some(error);
+                        break;
+                    }
+                }
             }
             Err(error) => {
                 read_error = Some(FileSystemError::from(error));
@@ -888,6 +991,10 @@ fn delete_node(
     stat: &EntryStat,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
+    if let Some(control) = progress.control() {
+        control.gate()?;
+    }
+
     if stat.kind == EntryKind::Directory {
         let view = backend.read_dir(path)?;
         view.entries.par_iter().try_for_each(|entry| {
@@ -1706,5 +1813,114 @@ mod tests {
         .expect_err("a failing destination must fail the transfer");
 
         assert!(matches!(error, FileSystemError::Io(_)), "got {error:?}");
+    }
+
+    /// Counts what actually reaches the destination, so a pause is observable
+    /// as "zero bytes written" rather than inferred from a file's existence.
+    struct CountingWriter {
+        written: std::sync::Arc<AtomicUsize>,
+    }
+
+    impl Write for CountingWriter {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            self.written
+                .fetch_add(buffer.len(), AtomicOrdering::SeqCst);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A reporter that carries a pause / limit gate, which is the only thing
+    /// the engine consults.
+    fn gated_progress(
+        operation: &str,
+        control: &std::sync::Arc<crate::fs::transfer_control::TransferControl>,
+        kind: crate::progress::FileOperationKind,
+    ) -> crate::fs::progress::FileOperationProgressReporter {
+        use crate::host::Host;
+
+        let host: std::sync::Arc<dyn Host> =
+            std::sync::Arc::new(crate::host::testing::RecordingHost::default());
+        crate::fs::progress::FileOperationProgressReporter::with_control(
+            host,
+            operation.to_owned(),
+            kind,
+            std::sync::Arc::clone(control),
+        )
+    }
+
+    /// The pause has to be visible from *outside* the engine: nothing may reach
+    /// the destination while it is held, and the same call must finish once it
+    /// is released. Checking the control object alone would prove nothing about
+    /// whether the stream loop ever consults it.
+    #[test]
+    fn a_paused_stream_writes_nothing_until_it_is_resumed() {
+        use crate::progress::FileOperationKind;
+        use crate::fs::transfer_control::TransferControl;
+
+        let total = STREAM_CHUNK_BYTES * 4;
+        let control = std::sync::Arc::new(TransferControl::new(None));
+        control.pause();
+
+        let written = std::sync::Arc::new(AtomicUsize::new(0));
+        let destination = CountingWriter {
+            written: std::sync::Arc::clone(&written),
+        };
+        let progress = gated_progress("op-pause", &control, FileOperationKind::Copy);
+
+        let mut reader = std::io::Cursor::new(vec![7_u8; total]);
+        let handle = std::thread::spawn(move || {
+            copy_stream(&mut reader, Box::new(destination), "src/payload.bin", &progress)
+        });
+
+        // Long enough that an unpaused copy of 1 MiB would be finished.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert_eq!(
+            written.load(AtomicOrdering::SeqCst),
+            0,
+            "a paused stream wrote through the gate"
+        );
+
+        control.resume();
+        handle.join().expect("stream thread").expect("resumed copy");
+
+        assert_eq!(written.load(AtomicOrdering::SeqCst), total);
+    }
+
+    /// The limit has to reach the streaming path — the local bulk path is
+    /// covered by `local::operations`, this one is what every network, archive
+    /// and cloud copy runs through.
+    ///
+    /// Runs on the calling thread on purpose: the engine's pool is shared with
+    /// the concurrency tests, and a sleeping transfer sitting on it would make
+    /// them measure this test instead of themselves.
+    #[test]
+    fn the_rate_limit_holds_the_streaming_path_to_its_budget() {
+        use crate::progress::FileOperationKind;
+        use crate::fs::transfer_control::TransferControl;
+
+        // One chunk at 512 KiB/s owes half a second; the bucket starts empty
+        // and may hold at most 0.1 s of budget.
+        let control = std::sync::Arc::new(TransferControl::new(Some(512 * 1024)));
+        let written = std::sync::Arc::new(AtomicUsize::new(0));
+        let destination = CountingWriter {
+            written: std::sync::Arc::clone(&written),
+        };
+        let progress = gated_progress("op-rate", &control, FileOperationKind::Copy);
+
+        let mut reader = std::io::Cursor::new(vec![3_u8; STREAM_CHUNK_BYTES]);
+        let started = std::time::Instant::now();
+        copy_stream(&mut reader, Box::new(destination), "src/limited.bin", &progress)
+            .expect("limited copy");
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed >= std::time::Duration::from_millis(300),
+            "a 256 KiB chunk at 512 KiB/s finished in {elapsed:?}"
+        );
+        assert_eq!(written.load(AtomicOrdering::SeqCst), STREAM_CHUNK_BYTES);
     }
 }

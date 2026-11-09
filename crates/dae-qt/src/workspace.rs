@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList, QUrl};
@@ -145,6 +146,17 @@ pub mod qobject {
         #[qproperty(QStringList, queued_transfer_paths, cxx_name = "queuedTransferPaths")]
         /// Where the running transfer is going. Empty when the slot is free.
         #[qproperty(QString, transfer_destination, cxx_name = "transferDestination")]
+        /// True while the running transfer is holding at a checkpoint. The
+        /// queue's row swaps Pause for Resume on it, and the progress row says
+        /// "paused" instead of a percentage that has stopped moving.
+        #[qproperty(bool, transfer_paused, cxx_name = "transferPaused")]
+        /// The process-wide transfer limit in KiB per second; `0` is
+        /// unlimited. Persisted under `[transfer] speedLimitKib`.
+        #[qproperty(i32, transfer_speed_limit, cxx_name = "transferSpeedLimit")]
+        /// The running transfer's throughput, already formatted
+        /// (`"12.4 MB/s"`). Empty when nothing is moving or the last sample is
+        /// stale.
+        #[qproperty(QString, transfer_speed, cxx_name = "transferSpeed")]
         #[qproperty(QString, clipboard_mode, cxx_name = "clipboardMode")]
         #[qproperty(QStringList, clipboard_paths, cxx_name = "clipboardPaths")]
         #[qproperty(QString, accent)]
@@ -394,6 +406,41 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "cancelQueuedTransfer"]
         fn cancel_queued_transfer(self: Pin<&mut Workspace>, index: i32);
+
+        /// Holds the running transfer at its next checkpoint. The bytes already
+        /// written stay; nothing is undone.
+        #[qinvokable]
+        #[cxx_name = "pauseTransfer"]
+        fn pause_transfer(self: Pin<&mut Workspace>);
+
+        /// Lets a paused transfer continue from where it stopped.
+        #[qinvokable]
+        #[cxx_name = "resumeTransfer"]
+        fn resume_transfer(self: Pin<&mut Workspace>);
+
+        /// Stops the running transfer. The file it was writing is removed and
+        /// the entries already copied stay; the status center then offers to
+        /// continue, which skips exactly those entries.
+        #[qinvokable]
+        #[cxx_name = "cancelTransfer"]
+        fn cancel_transfer(self: Pin<&mut Workspace>);
+
+        /// Sets the process-wide limit in KiB per second (`0` clears it) and
+        /// persists it. Running transfers adopt it on their next chunk.
+        ///
+        /// A method rather than a property write: writing `transferSpeedLimit`
+        /// from QML would only change the number the menu shows, while this
+        /// reaches the core. The property exists for the menu to read.
+        #[qinvokable]
+        #[cxx_name = "applyTransferSpeedLimit"]
+        fn apply_transfer_speed_limit(self: Pin<&mut Workspace>, kib_per_second: i32);
+
+        /// Re-runs a failed copy or move as a separate elevated process, for
+        /// the paths the user's own token cannot write. The window itself stays
+        /// unprivileged.
+        #[qinvokable]
+        #[cxx_name = "elevateOperation"]
+        fn elevate_operation(self: Pin<&mut Workspace>, id: &QString);
 
         #[qinvokable]
         #[cxx_name = "cancelQueuedTransfers"]
@@ -777,6 +824,19 @@ pub struct WorkspaceRust {
     queued_transfers: QStringList,
     queued_transfer_paths: QStringList,
     transfer_destination: QString,
+    transfer_paused: bool,
+    transfer_speed_limit: i32,
+    transfer_speed: QString,
+    /// The id of the transfer holding the slot. Pause, cancel and "elevate"
+    /// all address the core by it; `None` means the slot is free.
+    active_operation_id: Option<String>,
+    /// Last progress sample, for the throughput readout: when it arrived and
+    /// how many bytes the operation had reported by then.
+    speed_sample: Option<(Instant, u64)>,
+    /// Smoothed throughput in bytes per second. Smoothed because a 60 ms event
+    /// on a network share reports wildly different deltas one tick to the next,
+    /// and a number that jumps between 2 and 40 MB/s is worse than none.
+    speed_bytes_per_second: f64,
     /// Copies and moves waiting for the operation slot, oldest first. The one
     /// that owns the slot is not in here.
     queue: Vec<TransferJob>,
@@ -839,6 +899,13 @@ impl Default for WorkspaceRust {
         let operations = load_operations();
         let operations_text = operations_json(&operations);
 
+        // The limit is process-wide and lives in the core, so a transfer that
+        // starts before the settings panel is ever opened still obeys it.
+        let transfer_speed_limit = settings.transfer.speed_limit_kib.min(MAX_SPEED_LIMIT_KIB) as i32;
+        service::set_transfer_speed_limit(
+            (transfer_speed_limit > 0).then_some(transfer_speed_limit as u64 * 1024),
+        );
+
         Self {
             status: QString::default(),
             last_error: QString::default(),
@@ -859,6 +926,12 @@ impl Default for WorkspaceRust {
             queued_transfers: QStringList::default(),
             queued_transfer_paths: QStringList::default(),
             transfer_destination: QString::default(),
+            transfer_paused: false,
+            transfer_speed_limit,
+            transfer_speed: QString::default(),
+            active_operation_id: None,
+            speed_sample: None,
+            speed_bytes_per_second: 0.0,
             queue: Vec::new(),
             custom_actions_json: QString::from(custom_actions_json().as_str()),
             drive_capabilities: QString::from(drive_capabilities_json().as_str()),
@@ -924,6 +997,9 @@ fn host_for(thread: &cxx_qt::CxxQtThread<qobject::Workspace>) -> Arc<dyn Host> {
 struct Outcome {
     focus: String,
     error: Option<String>,
+    /// True when the user stopped it. A cancellation is not a failure: it gets
+    /// a neutral status-center row and a "continue" action, not a diagnosis.
+    cancelled: bool,
 }
 
 impl Outcome {
@@ -931,6 +1007,7 @@ impl Outcome {
         Self {
             focus: focus.into(),
             error: None,
+            cancelled: false,
         }
     }
 
@@ -942,6 +1019,7 @@ impl Outcome {
         Self {
             focus: String::new(),
             error: Some(friendly_error(&error.to_string())),
+            cancelled: matches!(error, FileSystemError::Cancelled(_)),
         }
     }
 }
@@ -954,9 +1032,15 @@ where
     runtime::spawn(async move {
         let outcome = future.await;
         let _ = thread.queue(move |mut workspace| {
-            workspace
-                .as_mut()
-                .finish_operation(kind, outcome.focus.as_str(), outcome.error);
+            if outcome.cancelled {
+                workspace.as_mut().finish_cancelled_operation(kind);
+            } else {
+                workspace.as_mut().finish_operation(
+                    kind,
+                    outcome.focus.as_str(),
+                    outcome.error,
+                );
+            }
         });
     });
 }
@@ -973,9 +1057,15 @@ fn dispatch_transfer<F>(
     runtime::spawn(async move {
         let outcome = future.await;
         let _ = thread.queue(move |mut workspace| {
-            workspace
-                .as_mut()
-                .finish_operation(kind, outcome.focus.as_str(), outcome.error);
+            if outcome.cancelled {
+                workspace.as_mut().finish_cancelled_operation(kind);
+            } else {
+                workspace.as_mut().finish_operation(
+                    kind,
+                    outcome.focus.as_str(),
+                    outcome.error,
+                );
+            }
             workspace.as_mut().end_transfer();
         });
     });
@@ -990,6 +1080,9 @@ struct TransferJob {
     /// transfer actually runs — not when it is requested. A conflict the user
     /// cancels must leave the cut on the clipboard for another try.
     clears_clipboard: bool,
+    /// Continue an interrupted copy: every source is merged into the
+    /// destination, and no conflict dialog is shown.
+    resume: bool,
     /// The line the queue panel prints, built once when the job is accepted so
     /// the panel formats nothing itself.
     label: String,
@@ -1009,6 +1102,7 @@ impl TransferJob {
             destination,
             cut,
             clears_clipboard: false,
+            resume: false,
             label,
         }
     }
@@ -1016,6 +1110,12 @@ impl TransferJob {
     /// Marks this job as the one that spends the cut clipboard.
     fn spending_clipboard(mut self) -> Self {
         self.clears_clipboard = true;
+        self
+    }
+
+    /// Marks this job as continuing a cancelled copy of the same selection.
+    fn resuming(mut self) -> Self {
+        self.resume = true;
         self
     }
 }
@@ -1093,11 +1193,39 @@ impl qobject::Workspace {
     }
 
     fn finish_operation(mut self: Pin<&mut Self>, kind: &str, focus: &str, error: Option<String>) {
+        self.as_mut().finish_operation_state(kind, focus, error, false);
+    }
+
+    /// A transfer the user stopped: no error toast, no failure badge, and a
+    /// status-center row whose action is "continue" rather than "retry".
+    fn finish_cancelled_operation(mut self: Pin<&mut Self>, kind: &str) {
+        self.as_mut()
+            .finish_operation_state(kind, "", None, true);
+    }
+
+    fn finish_operation_state(
+        mut self: Pin<&mut Self>,
+        kind: &str,
+        focus: &str,
+        error: Option<String>,
+        cancelled: bool,
+    ) {
         self.as_mut().settle_operation();
-        self.as_mut().record_operation(kind, error.as_deref());
+        self.as_mut()
+            .record_operation_state(kind, error.as_deref(), cancelled);
 
         let kind_value = QString::from(kind);
         let focus_value = QString::from(focus);
+
+        if cancelled {
+            // Neither a success nor an error: the status bar says what
+            // happened, and the status center's row offers to continue.
+            let status = "Transfer cancelled";
+            self.as_mut().set_status(QString::from(status));
+            self.as_mut().operation_finished(&kind_value, &focus_value);
+            return;
+        }
+
         match error {
             Some(message) => {
                 self.as_mut()
@@ -1137,6 +1265,15 @@ impl qobject::Workspace {
     /// One line for the status center. Runs before the toast, so a failed
     /// operation is already in the history when its message appears.
     fn record_operation(mut self: Pin<&mut Self>, kind: &str, error: Option<&str>) {
+        self.as_mut().record_operation_state(kind, error, false);
+    }
+
+    fn record_operation_state(
+        mut self: Pin<&mut Self>,
+        kind: &str,
+        error: Option<&str>,
+        cancelled: bool,
+    ) {
         let (started, label) = self
             .as_mut()
             .rust_mut()
@@ -1150,6 +1287,30 @@ impl qobject::Workspace {
             .take()
             .unwrap_or_default();
         let retryable = !retry.is_empty() && matches!(kind, "copy" | "move" | "extract");
+
+        // A cancelled *copy* is continued, not repeated: the retry payload
+        // gains `resume`, which makes `start_transfer` skip the conflict check
+        // and merge into what already landed. A cancelled move cannot be
+        // continued — the entries it finished are no longer at the source — so
+        // it keeps the ordinary retry.
+        let retry = if cancelled && kind == "copy" && retryable {
+            match serde_json::from_str::<serde_json::Value>(&retry) {
+                Ok(mut payload) => {
+                    payload["resume"] = serde_json::json!(true);
+                    payload.to_string()
+                }
+                Err(_) => retry,
+            }
+        } else {
+            retry
+        };
+
+        let status = match (error.is_some(), cancelled) {
+            (false, _) => "ok",
+            (true, true) => "cancelled",
+            (true, false) => "failed",
+        };
+
         let record = OperationRecord {
             id: operation_id(),
             kind: kind.to_owned(),
@@ -1160,10 +1321,20 @@ impl qobject::Workspace {
             },
             started,
             finished: now_millis(),
-            status: if error.is_some() { "failed" } else { "ok" }.to_owned(),
-            detail: error.unwrap_or_else(|| success_message(kind)).to_owned(),
+            status: status.to_owned(),
+            detail: if cancelled {
+                "Cancelled".to_owned()
+            } else {
+                error.unwrap_or_else(|| success_message(kind)).to_owned()
+            },
             retryable,
             retry: if retryable { retry } else { String::new() },
+            // Elevation is a *retry* on a path the user's token cannot write,
+            // so it is only offered where a copy or a move actually failed and
+            // the platform can raise a separate process.
+            elevatable: status == "failed"
+                && matches!(kind, "copy" | "move")
+                && cfg!(any(windows, target_os = "linux", target_os = "macos")),
         };
 
         let failed = record.status == "failed";
@@ -1439,7 +1610,15 @@ impl qobject::Workspace {
                 }
                 let destination = payload["destination"].as_str().unwrap_or_default();
                 let cut = payload["cut"].as_bool().unwrap_or(false);
-                if paths.len() > 0 {
+                let resume = payload["resume"].as_bool().unwrap_or(false);
+
+                if paths.len() > 0 && resume {
+                    self.as_mut().enqueue_resumed_transfer(
+                        strings(&paths),
+                        destination.to_owned(),
+                        cut,
+                    );
+                } else if paths.len() > 0 {
                     self.as_mut()
                         .transfer_entries(&paths, &QString::from(destination), cut);
                 }
@@ -1487,6 +1666,17 @@ impl qobject::Workspace {
                     .set_progress_done(completed.min(i32::MAX as u64) as i32);
                 let total = total.unwrap_or(0).min(i32::MAX as u64) as i32;
                 self.as_mut().set_progress_total(total);
+
+                // Only a copy or a move counts bytes: a delete and a size walk
+                // report entries, and calling that a rate would be a lie.
+                if matches!(
+                    operation,
+                    dae_core::progress::FileOperationKind::Copy
+                        | dae_core::progress::FileOperationKind::Move
+                ) {
+                    self.as_mut().update_transfer_speed(completed);
+                }
+
                 if matches!(phase, dae_core::progress::FileOperationPhase::Preparing) {
                     self.as_mut().set_busy(true);
                 }
@@ -1878,6 +2068,22 @@ impl qobject::Workspace {
         self.as_mut().start_transfer(job);
     }
 
+    /// Queues the "continue" of a cancelled copy: the same sources into the
+    /// same destination, merged rather than checked for collisions.
+    fn enqueue_resumed_transfer(
+        mut self: Pin<&mut Self>,
+        sources: Vec<String>,
+        destination: String,
+        cut: bool,
+    ) {
+        if sources.is_empty() || destination.is_empty() {
+            return;
+        }
+
+        let job = TransferJob::new(sources, destination, cut).resuming();
+        self.as_mut().enqueue_transfer(job);
+    }
+
     fn publish_queue(mut self: Pin<&mut Self>) {
         let labels: Vec<String> = self.queue.iter().map(|job| job.label.clone()).collect();
         let paths: Vec<String> = self
@@ -1906,8 +2112,167 @@ impl qobject::Workspace {
         self.as_mut().publish_queue();
     }
 
+    /// Turns the byte deltas between progress events into a throughput figure.
+    ///
+    /// Nothing here reads a clock outside the events themselves: the reporter
+    /// already throttles to one event per 60 ms, so the interval between two
+    /// events is the measurement window. Smoothed with a 0.6/0.4 split because
+    /// a single SMB round trip can halve one interval and double the next, and
+    /// a readout that oscillates is worse than one that lags.
+    fn update_transfer_speed(mut self: Pin<&mut Self>, completed: u64) {
+        let now = Instant::now();
+        let previous = self
+            .as_mut()
+            .rust_mut()
+            .speed_sample
+            .replace((now, completed));
+
+        let Some((last_time, last_done)) = previous else {
+            return;
+        };
+
+        let elapsed = now.duration_since(last_time).as_secs_f64();
+        if elapsed < 0.05 || completed <= last_done {
+            return;
+        }
+
+        let instant = (completed - last_done) as f64 / elapsed;
+        let smoothed = {
+            let mut rust = self.as_mut().rust_mut();
+            let previous = rust.speed_bytes_per_second;
+            let value = if previous <= 0.0 {
+                instant
+            } else {
+                previous * 0.6 + instant * 0.4
+            };
+            rust.speed_bytes_per_second = value;
+            value
+        };
+
+        self.as_mut()
+            .set_transfer_speed(QString::from(format_speed(smoothed).as_str()));
+    }
+
+    fn pause_transfer(mut self: Pin<&mut Self>) {
+        let Some(operation) = self.as_mut().rust_mut().active_operation_id.clone() else {
+            return;
+        };
+
+        // `false` means the transfer returned between the click and here; the
+        // row is about to disappear with the progress row anyway.
+        if service::pause_transfer(&operation) {
+            self.as_mut().set_transfer_paused(true);
+            self.as_mut().set_transfer_speed(QString::default());
+        }
+    }
+
+    fn resume_transfer(mut self: Pin<&mut Self>) {
+        let Some(operation) = self.as_mut().rust_mut().active_operation_id.clone() else {
+            return;
+        };
+
+        if service::resume_transfer(&operation) {
+            self.as_mut().set_transfer_paused(false);
+        }
+    }
+
+    fn cancel_transfer(mut self: Pin<&mut Self>) {
+        let Some(operation) = self.as_mut().rust_mut().active_operation_id.clone() else {
+            return;
+        };
+
+        // The engine notices at its next checkpoint and returns `Cancelled`,
+        // which `finish_operation` reports as neither success nor failure.
+        service::cancel_transfer(&operation);
+    }
+
+    fn apply_transfer_speed_limit(mut self: Pin<&mut Self>, kib_per_second: i32) {
+        let kib = (kib_per_second.max(0) as u64).min(MAX_SPEED_LIMIT_KIB);
+
+        // Applied first: the limit is in force for this session even when the
+        // settings file cannot be written.
+        service::set_transfer_speed_limit((kib > 0).then_some(kib * 1024));
+        self.as_mut().set_transfer_speed_limit(kib as i32);
+
+        if let Ok(mut settings) = dae_core::settings::load_settings()
+            && settings.transfer.speed_limit_kib != kib
+        {
+            settings.transfer.speed_limit_kib = kib;
+            if let Err(error) = dae_core::settings::save_settings(settings) {
+                log::warn!(
+                    target: "dae::workspace",
+                    "could not persist the transfer limit: {error}"
+                );
+            }
+        }
+    }
+
+    /// Retries a failed copy or move in an elevated copy of this binary.
+    ///
+    /// The record's own retry payload is the job: the same sources, the same
+    /// destination, and `Replace` because the failed attempt may have left part
+    /// of the tree at the target.
+    fn elevate_operation(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let Some(record) = self.operations.iter().find(|record| record.id == id) else {
+            return;
+        };
+
+        if !record.elevatable {
+            return;
+        }
+
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&record.retry) else {
+            return;
+        };
+        if payload["kind"].as_str() != Some("transfer") {
+            return;
+        }
+
+        let paths: Vec<String> = payload["paths"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let destination = payload["destination"].as_str().unwrap_or_default().to_owned();
+        let cut = payload["cut"].as_bool().unwrap_or(false);
+
+        if paths.is_empty() || destination.is_empty() {
+            return;
+        }
+
+        let job = dae_core::fs::elevated::ElevatedJob {
+            kind: if cut { "move" } else { "copy" }.to_owned(),
+            sources: paths
+                .into_iter()
+                .map(|path| TransferItem {
+                    path,
+                    on_conflict: ConflictAction::Replace,
+                })
+                .collect(),
+            destination: Some(destination),
+        };
+
+        let kind = if cut { "move" } else { "copy" };
+        self.as_mut()
+            .begin_operation(if cut { "Moving as administrator…" } else { "Copying as administrator…" });
+
+        let thread = self.as_mut().qt_thread();
+        dispatch(thread, kind, async move {
+            match service::run_elevated(job).await {
+                Ok(()) => Outcome::empty(),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
     /// Gives `job` the operation slot and asks the core what would collide.
     fn start_transfer(mut self: Pin<&mut Self>, job: TransferJob) {
+        let resume = job.resume;
         let sources = job.sources.clone();
         let destination = job.destination.clone();
         self.as_mut().rust_mut().active_transfer = Some(ActiveTransfer {
@@ -1918,6 +2283,17 @@ impl qobject::Workspace {
         });
         self.as_mut()
             .set_transfer_destination(QString::from(destination.as_str()));
+        self.as_mut().set_transfer_paused(false);
+        self.as_mut().set_transfer_speed(QString::default());
+
+        // Continuing a cancelled copy has nothing to ask: every source merges
+        // into the destination by definition, so the check — and the dialog it
+        // would open for each file that already landed — is skipped entirely.
+        if resume {
+            self.as_mut().run_transfer();
+            return;
+        }
+
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
             let result = service::check_transfer_conflicts(sources, destination).await;
@@ -2073,12 +2449,17 @@ impl qobject::Workspace {
                     .decisions
                     .get(path)
                     .copied()
-                    .unwrap_or(ConflictAction::Fail),
+                    .unwrap_or(if active.job.resume {
+                        ConflictAction::Merge
+                    } else {
+                        ConflictAction::Fail
+                    }),
             })
             .collect::<Vec<_>>();
         let cut = active.job.cut;
         let destination = active.job.destination.clone();
         let kind = if cut { "move" } else { "copy" };
+        let resume = active.job.resume;
 
         // A copy clipboard stays available so the same selection can be pasted
         // into several directories; a cut is spent here, once, as the move it
@@ -2108,16 +2489,25 @@ impl qobject::Workspace {
             "paths": retry_paths,
             "destination": retry_destination,
             "cut": cut,
+            "resume": resume,
         });
         self.as_mut().rust_mut().retry_hint = Some(retry.to_string());
+        self.as_mut().set_transfer_paused(false);
+        self.as_mut().set_transfer_speed(QString::default());
+
+        // One id for the whole transfer: the core registers a control under it
+        // so pause, cancel and the limit all reach the running operation, and
+        // the shell keeps the same id to address them.
+        let operation = operation_id();
+        self.as_mut().rust_mut().active_operation_id = Some(operation.clone());
 
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch_transfer(thread, kind, async move {
             let result = if cut {
-                service::move_entries(items, destination, operation_id(), host).await
+                service::move_entries(items, destination, operation, host).await
             } else {
-                service::copy_entries(items, destination, operation_id(), host).await
+                service::copy_entries(items, destination, operation, host).await
             };
             match result {
                 Ok(()) => Outcome::empty(),
@@ -2128,8 +2518,16 @@ impl qobject::Workspace {
 
     /// Frees the slot and starts whatever was waiting behind it.
     fn end_transfer(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().active_transfer = None;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.active_transfer = None;
+            rust.active_operation_id = None;
+            rust.speed_sample = None;
+            rust.speed_bytes_per_second = 0.0;
+        }
         self.as_mut().set_transfer_destination(QString::default());
+        self.as_mut().set_transfer_paused(false);
+        self.as_mut().set_transfer_speed(QString::default());
         self.as_mut().start_next_queued();
     }
 
@@ -3411,6 +3809,11 @@ const OPERATION_HISTORY_LIMIT: usize = 200;
 /// after a relaunch are noise rather than history.
 const OPERATION_PERSISTED_LIMIT: usize = 50;
 
+/// Upper bound on a hand-edited `[transfer] speedLimitKib`. 10 GiB/s is past
+/// any link a desktop has, so a larger number is a typo rather than an intent,
+/// and clamping it keeps the value inside `i32` on the QML side.
+const MAX_SPEED_LIMIT_KIB: u64 = 10 * 1024 * 1024;
+
 /// One line of the status center.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3420,12 +3823,15 @@ struct OperationRecord {
     label: String,
     started: u64,
     finished: u64,
-    /// `ok` or `failed`; a running operation is only ever on the progress row.
+    /// `ok`, `failed` or `cancelled`; a running operation is only ever on the
+    /// progress row.
     status: String,
     detail: String,
     retryable: bool,
     /// The call arguments a retry needs, as JSON. Empty when not retryable.
     retry: String,
+    /// Whether "retry with administrator rights" applies to this row.
+    elevatable: bool,
 }
 
 fn now_millis() -> u64 {
@@ -3519,6 +3925,27 @@ fn operation_id() -> String {
     format!("qt-op-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
+/// `12.4 MB/s`, `812 KB/s`, `940 B/s`.
+///
+/// One decimal above a megabyte and none below: a transfer rate is read for its
+/// order of magnitude ("is this 12 or 120?"), and the second digit on a KB/s
+/// figure is noise the reporter's 60 ms window cannot justify.
+fn format_speed(bytes_per_second: f64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+
+    if bytes_per_second >= GIB {
+        format!("{:.1} GB/s", bytes_per_second / GIB)
+    } else if bytes_per_second >= MIB {
+        format!("{:.1} MB/s", bytes_per_second / MIB)
+    } else if bytes_per_second >= KIB {
+        format!("{:.0} KB/s", bytes_per_second / KIB)
+    } else {
+        format!("{:.0} B/s", bytes_per_second.max(0.0))
+    }
+}
+
 fn success_message(kind: &str) -> &'static str {
     match kind {
         "create" => "Created",
@@ -3598,6 +4025,20 @@ fn push_json_string(out: &mut String, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The readout is scanned, not read: one decimal above a megabyte, none
+    /// below, and never a unit the number does not need.
+    #[test]
+    fn a_transfer_rate_prints_in_the_unit_that_scans_best() {
+        assert_eq!(format_speed(0.0), "0 B/s");
+        assert_eq!(format_speed(940.0), "940 B/s");
+        assert_eq!(format_speed(812.0 * 1024.0), "812 KB/s");
+        assert_eq!(format_speed(12.44 * 1024.0 * 1024.0), "12.4 MB/s");
+        assert_eq!(format_speed(1.5 * 1024.0 * 1024.0 * 1024.0), "1.5 GB/s");
+        // A negative sample can only come from a clock that moved backwards;
+        // it must not print "-0 B/s".
+        assert_eq!(format_speed(-12.0), "0 B/s");
+    }
 
     /// A transfer conflict for `path`, with both sides looking like plain
     /// files: the decision rules do not read the metadata.

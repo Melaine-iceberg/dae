@@ -5,11 +5,15 @@ import "Localize.js" as Localize
 
 // What is waiting behind the transfer that owns the status bar's progress row.
 //
-// The running job leads the list because it is the one the user is watching;
-// it cannot be cancelled — the core has no seam for stopping a copy mid-flight,
-// and a queue entry that silently did nothing would be worse than no entry at
-// all. Every row that carries a ✕ therefore means "not started yet", which is
-// exactly the set a cancel can drop.
+// The running job leads the list because it is the one the user is watching.
+// It now carries a transport — pause, resume and cancel — because the core
+// holds a `TransferControl` per operation; cancelling removes the file it was
+// writing and keeps the entries that already landed, which is what lets the
+// status center offer "continue" instead of "start over". Every row behind it
+// carries a ✕ as well, and that one simply means "drop it from the queue".
+//
+// The header's rate menu is the only place the transfer limit is set: one
+// process-wide value, obeyed by the running transfer on its next chunk.
 //
 // A 326 px plate over the bottom of the window, the way the prototype stacks
 // it: it is a read-out on the status bar, not a dialog.
@@ -43,6 +47,28 @@ Item {
         ? Math.max(0, Math.min(100, Math.round(Workspace.progressDone * 100 / Workspace.progressTotal)))
         : (Workspace.busy ? 0 : 100)
 
+    /// The rate menu's presets, in KiB/s; `0` is "no limit". The value the core
+    /// holds is what the button prints, so a limit set in `settings.toml` shows
+    /// up here even if it is not one of these.
+    readonly property var speedPresets: [
+        { kib: 0, label: qsTr("不限速") },
+        { kib: 1024, label: "1 MB/s" },
+        { kib: 5120, label: "5 MB/s" },
+        { kib: 10240, label: "10 MB/s" },
+        { kib: 20480, label: "20 MB/s" },
+        { kib: 51200, label: "50 MB/s" }
+    ]
+
+    property bool speedMenuOpen: false
+
+    readonly property string speedLimitLabel: {
+        // qmllint disable missing-property
+        const kib = Workspace.transferSpeedLimit
+        if (kib <= 0)
+            return qsTr("限速")
+        return (kib / 1024).toFixed(kib % 1024 === 0 ? 0 : 1) + " MB/s"
+    }
+
     /// Kept for the shell's call site. The plate is anchored to the bottom of
     /// the window rather than to the chip: at 326 px it would otherwise jump
     /// sideways every time the progress digits changed width.
@@ -52,6 +78,7 @@ Item {
     }
 
     function close() {
+        root.speedMenuOpen = false
         root.visible = false
     }
 
@@ -96,6 +123,35 @@ Item {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
+
+                Item {
+                    id: speedButton
+                    width: 56
+                    height: Theme.controlSm
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("传输限速")
+                    Accessible.onPressAction: root.speedMenuOpen = !root.speedMenuOpen
+
+                    Text {
+                        id: speedText
+                        anchors.centerIn: parent
+                        text: root.speedLimitLabel
+                        color: root.speedMenuOpen
+                            ? Theme.interactive
+                            : (speedMouse.containsMouse ? root.textColor : root.faintColor)
+                        font.pixelSize: Theme.typeMicro
+                        font.features: { "tnum": 1 }
+                        textFormat: Text.PlainText
+                    }
+
+                    MouseArea {
+                        id: speedMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: root.speedMenuOpen = !root.speedMenuOpen
+                    }
+                }
 
                 Item {
                     id: cancelAll
@@ -156,6 +212,83 @@ Item {
             }
         }
 
+        // The rate menu. Above the header, so it never covers the rows the
+        // user is watching; it closes on selection, on Esc and with the plate.
+        Rectangle {
+            id: speedMenu
+
+            visible: root.speedMenuOpen
+            width: 132
+            height: speedColumn.height + 8
+            x: panel.width - width - 8
+            y: -height - 6
+            z: 2
+            radius: Theme.radiusMd
+            color: Theme.raised
+            border.width: 1
+            border.color: root.borderColor
+
+            Column {
+                id: speedColumn
+                y: 4
+                width: parent.width
+
+                Repeater {
+                    model: root.speedPresets
+
+                    Rectangle {
+                        id: preset
+                        required property var modelData
+
+                        width: speedColumn.width
+                        height: Theme.controlMd
+                        color: presetMouse.containsMouse ? Theme.hover : "transparent"
+
+                        readonly property bool active: Workspace.transferSpeedLimit === modelData.kib
+
+                        Text {
+                            x: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: preset.modelData.label
+                            color: preset.active
+                                ? Theme.interactive
+                                : (presetMouse.containsMouse ? root.textColor : root.mutedColor)
+                            font.pixelSize: Theme.typeSmall
+                            textFormat: Text.PlainText
+                        }
+
+                        Glyph {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 12
+                            height: 12
+                            visible: preset.active
+                            kind: "check"
+                            tint: Theme.interactive
+                        }
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: preset.modelData.label
+                        Accessible.onPressAction: {
+                            Workspace.applyTransferSpeedLimit(preset.modelData.kib)
+                            root.speedMenuOpen = false
+                        }
+
+                        MouseArea {
+                            id: presetMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                Workspace.applyTransferSpeedLimit(preset.modelData.kib)
+                                root.speedMenuOpen = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Flickable {
             id: scroller
             anchors.left: parent.left
@@ -172,15 +305,43 @@ Item {
                 id: body
                 width: scroller.width
 
-                // The job that is running.
+                // The job that is running. It can be paused and cancelled now:
+                // the core holds a control for every operation, so the row is a
+                // real transport rather than a read-out.
                 TransferRow {
                     width: parent.width
                     visible: Workspace.busy
                     name: Localize.message(Workspace.progressLabel)
                     target: Workspace.transferDestination
-                    status: root.percent + "%"
+                    status: {
+                        // qmllint disable missing-property
+                        if (Workspace.transferPaused)
+                            return qsTr("已暂停")
+                        if (Workspace.progressTotal > 0)
+                            return Workspace.transferSpeed !== ""
+                                ? root.percent + "% · " + Workspace.transferSpeed
+                                : root.percent + "%"
+                        return Workspace.transferSpeed
+                    }
                     progress: root.percent / 100
-                    cancellable: false
+                    // The transport belongs to the transfer that owns the slot,
+                    // and `transferDestination` is non-empty exactly while one
+                    // does. A rename, a trash or a size walk shares this
+                    // progress row but has no control behind it, so offering a
+                    // pause there would be a button that does nothing.
+                    // qmllint disable missing-property
+                    cancellable: Workspace.transferDestination !== ""
+                    pausable: Workspace.transferDestination !== ""
+                    // qmllint disable missing-property
+                    paused: Workspace.transferPaused
+                    onCancelRequested: Workspace.cancelTransfer()
+                    onPauseToggled: {
+                        // qmllint disable missing-property
+                        if (Workspace.transferPaused)
+                            Workspace.resumeTransfer()
+                        else
+                            Workspace.pauseTransfer()
+                    }
                 }
 
                 // The jobs behind it, in the order the core will start them.
@@ -228,8 +389,13 @@ Item {
         property string status: ""
         property real progress: 0
         property bool cancellable: false
+        /// The running row only: the core can hold a transfer, so the row
+        /// offers Pause (or Resume) as well as Cancel.
+        property bool pausable: false
+        property bool paused: false
 
         signal cancelRequested()
+        signal pauseToggled()
 
         width: parent ? parent.width : 0
         height: row.target !== "" ? 52 : 40
@@ -254,7 +420,7 @@ Item {
 
                 Text {
                     anchors.left: parent.left
-                    anchors.right: statusText.left
+                    anchors.right: actions.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.name
@@ -264,43 +430,72 @@ Item {
                     textFormat: Text.PlainText
                 }
 
-                Text {
-                    id: statusText
-                    anchors.right: row.cancellable ? cancelButton.left : parent.right
-                    anchors.rightMargin: row.cancellable ? 4 : 0
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: row.status
-                    color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
-                    font.features: { "tnum": 1 }
-                    textFormat: Text.PlainText
-                }
-
-                Item {
-                    id: cancelButton
+                Row {
+                    id: actions
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    width: row.cancellable ? 18 : 0
-                    height: Theme.controlXs
-                    visible: row.cancellable
+                    spacing: 2
 
-                    Accessible.role: Accessible.Button
-                    Accessible.name: qsTr("取消 ") + row.name
-                    Accessible.onPressAction: row.cancelRequested()
-
-                    Glyph {
-                        anchors.centerIn: parent
-                        width: 10
-                        height: 10
-                        kind: "close"
-                        tint: cancelMouse.containsMouse ? root.textColor : root.faintColor
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: row.status
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeMicro
+                        font.features: { "tnum": 1 }
+                        textFormat: Text.PlainText
                     }
 
-                    MouseArea {
-                        id: cancelMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: row.cancelRequested()
+                    Item {
+                        id: pauseButton
+                        width: row.pausable ? 18 : 0
+                        height: Theme.controlXs
+                        visible: row.pausable
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: row.paused ? qsTr("继续 ") + row.name : qsTr("暂停 ") + row.name
+                        Accessible.onPressAction: row.pauseToggled()
+
+                        Glyph {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 10
+                            kind: row.paused ? "play" : "pause"
+                            tint: pauseMouse.containsMouse ? root.textColor : root.faintColor
+                        }
+
+                        MouseArea {
+                            id: pauseMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: row.pauseToggled()
+                        }
+                    }
+
+                    Item {
+                        id: cancelButton
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: row.cancellable ? 18 : 0
+                        height: Theme.controlXs
+                        visible: row.cancellable
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("取消 ") + row.name
+                        Accessible.onPressAction: row.cancelRequested()
+
+                        Glyph {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 10
+                            kind: "close"
+                            tint: cancelMouse.containsMouse ? root.textColor : root.faintColor
+                        }
+
+                        MouseArea {
+                            id: cancelMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: row.cancelRequested()
+                        }
                     }
                 }
             }

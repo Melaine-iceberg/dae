@@ -32,6 +32,16 @@ unsafe extern "C" {
 }
 
 fn main() {
+    // An elevated child is *this* binary started with `--elevated-job`: it
+    // performs one file operation and exits. The branch is first so that no
+    // window, no QML engine and no single-instance claim exists on that path —
+    // an elevated copy of the shell would be a second shell, and the instance
+    // lock would hand the job back to the unprivileged window that asked for
+    // it. See `dae_core::fs::elevated`.
+    if let Some(code) = dae_qt::elevated::run_from_args() {
+        std::process::exit(code);
+    }
+
     // `DAE_STARTUP_PERF=1` prints process-relative marks on stderr. Started
     // before anything else so the first mark lines up with the spawn a harness
     // measures.

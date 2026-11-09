@@ -1,6 +1,7 @@
 use crate::fs::error::FileSystemError;
 use crate::fs::progress::FileOperationProgressReporterTrait;
 use crate::fs::transfer::{duplicate_name, path_contains};
+use crate::fs::transfer_control::TransferControl;
 use crate::fs::types::{
     ConflictAction, NewEntryKind, TransferPair, canonical_path, path_to_string,
 };
@@ -9,9 +10,13 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+
+/// Buffer used when a rate limit forces the copy through this crate instead of
+/// `fs::copy`. Same 256 KiB the cross-backend stream uses.
+const THROTTLED_CHUNK_BYTES: usize = 256 * 1024;
 
 /// Pool the bulk local tree operations run on.
 ///
@@ -98,10 +103,13 @@ pub fn copy_entries_with_progress(
         );
 
         for entry in plan {
+            if let Some(control) = progress.control() {
+                control.gate()?;
+            }
             if entry.replacement_units > 0 {
                 delete_entry(&entry.destination, progress)?;
             }
-            copy_entry(&entry.source, &entry.destination, progress)?;
+            copy_entry(&entry.source, &entry.destination, progress, entry.merge)?;
             journal.push(TransferPair {
                 source: path_to_string(&entry.source),
                 destination: path_to_string(&entry.destination),
@@ -128,6 +136,9 @@ pub fn move_entries_with_progress(
         );
 
         for entry in plan {
+            if let Some(control) = progress.control() {
+                control.gate()?;
+            }
             progress.begin_entry(&entry.source);
             if entry.replacement_units > 0 {
                 delete_entry(&entry.destination, progress)?;
@@ -135,7 +146,7 @@ pub fn move_entries_with_progress(
             match fs::rename(&entry.source, &entry.destination) {
                 Ok(()) => progress.advance_by(entry.source_units, &entry.source),
                 Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
-                    copy_entry(&entry.source, &entry.destination, progress)?;
+                    copy_entry(&entry.source, &entry.destination, progress, entry.merge)?;
                     remove_entry(&entry.source)?;
                 }
                 Err(error) => return Err(error.into()),
@@ -188,6 +199,8 @@ struct TransferPlanEntry {
     /// Units for deleting an existing destination entry (`Replace`); zero
     /// when the destination path is free.
     replacement_units: u64,
+    /// Continue into an existing destination tree instead of replacing it.
+    merge: bool,
 }
 
 fn build_transfer_plan(
@@ -245,6 +258,9 @@ fn build_transfer_plan(
                 }
                 ConflictAction::Skip => continue,
                 ConflictAction::Replace => (target.clone(), count_entry_units(&target)?),
+                // Merging writes into the existing entry; nothing gets deleted
+                // up front, and `copy_entry` decides per file.
+                ConflictAction::Merge => (target.clone(), 0),
                 ConflictAction::KeepBoth => {
                     let kept = unique_sibling_path(&destination, name, &planned_destinations)?;
                     planned_destinations.insert(kept.clone());
@@ -274,6 +290,7 @@ fn build_transfer_plan(
             destination: target,
             source_units,
             replacement_units,
+            merge: on_conflict == ConflictAction::Merge,
         });
     }
 
@@ -388,18 +405,41 @@ fn copy_entry(
     source: &Path,
     destination: &Path,
     progress: &dyn FileOperationProgressReporterTrait,
+    merge: bool,
 ) -> Result<(), FileSystemError> {
+    if let Some(control) = progress.control() {
+        control.gate()?;
+    }
+
     let metadata = fs::symlink_metadata(source)?;
     progress.begin_entry(source);
 
     if metadata.is_file() {
-        fs::copy(source, destination)?;
+        // The resume path counts a file it already wrote as done, so a
+        // cancelled 90%-complete tree costs only the rest on the next run.
+        if merge && destination_holds_copy(source, destination) {
+            progress.advance(source);
+            return Ok(());
+        }
+
+        // `fs::copy` is CopyFileExW on Windows and copy_file_range on Linux:
+        // server-side on a share, reflink where the filesystem supports it. It
+        // is also uninterruptible, so a limit — which needs the bytes to pass
+        // through this process — is the one case worth giving that up for.
+        match progress.control() {
+            Some(control) if control.rate_limit().is_some() => {
+                copy_file_throttled(source, destination, control, progress)?;
+            }
+            _ => {
+                fs::copy(source, destination)?;
+            }
+        }
         progress.advance(source);
         return Ok(());
     }
 
     if metadata.is_dir() {
-        return copy_directory(source, destination, progress);
+        return copy_directory(source, destination, progress, merge);
     }
 
     if metadata.file_type().is_symlink() {
@@ -414,19 +454,112 @@ fn copy_entry(
     )))
 }
 
+/// Copies one file through this process so the rate limit can see the bytes.
+///
+/// Only used when a limit is set: without one the OS copy above is faster and
+/// keeps server-side and reflink semantics. A cancellation here removes the
+/// half-written destination for the same reason the stream engine does — the
+/// next attempt must not read a truncated file as an existing one.
+fn copy_file_throttled(
+    source: &Path,
+    destination: &Path,
+    control: &TransferControl,
+    _progress: &dyn FileOperationProgressReporterTrait,
+) -> Result<(), FileSystemError> {
+    let mut reader = fs::File::open(source)?;
+    let mut writer = fs::File::create(destination)?;
+    let mut buffer = vec![0_u8; THROTTLED_CHUNK_BYTES];
+
+    let outcome = (|| -> Result<(), FileSystemError> {
+        loop {
+            control.gate()?;
+
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                return Ok(());
+            }
+
+            writer.write_all(&buffer[..read])?;
+            control.advance(read as u64)?;
+        }
+    })();
+
+    match outcome {
+        Ok(()) => {
+            writer.flush()?;
+            Ok(())
+        }
+        Err(error) => {
+            drop(writer);
+            if matches!(error, FileSystemError::Cancelled(_)) {
+                let _ = fs::remove_file(destination);
+            }
+            Err(error)
+        }
+    }
+}
+
 fn copy_directory(
     source: &Path,
     destination: &Path,
     progress: &dyn FileOperationProgressReporterTrait,
+    merge: bool,
 ) -> Result<(), FileSystemError> {
-    fs::create_dir(destination)?;
+    match fs::create_dir(destination) {
+        Ok(()) => {}
+        // A merge descends into the directory the interrupted run created.
+        Err(error) if merge && error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
     progress.advance(source);
 
     let children = read_child_paths(source)?;
     children
         .par_iter()
-        .map(|(child, name)| copy_entry(child, &destination.join(name), progress))
+        .map(|(child, name)| copy_entry(child, &destination.join(name), progress, merge))
         .collect::<Result<(), _>>()
+}
+
+/// True when `destination` already holds the same file as `source`.
+///
+/// Same rule as the generic engine's `destination_matches`: equal length, and a
+/// destination that is not older than the source. A copy stamps the destination
+/// with its own write time, so equal times are not available here; "not older"
+/// is what distinguishes a completed copy from one the source has since
+/// outgrown. See `transfer::destination_matches` for why this is only reachable
+/// from an explicit "continue".
+fn destination_holds_copy(source: &Path, destination: &Path) -> bool {
+    let (Ok(source), Ok(destination)) = (fs::metadata(source), fs::metadata(destination)) else {
+        return false;
+    };
+
+    if !source.is_file() || !destination.is_file() || source.len() != destination.len() {
+        return false;
+    }
+
+    let (Ok(source), Ok(destination)) = (source.modified(), destination.modified()) else {
+        return false;
+    };
+
+    is_not_older(destination, source)
+}
+
+/// Whether a destination written at `destination` can be a complete copy of a
+/// source last written at `source`.
+///
+/// Two seconds of slack: FAT stores a two-second resolution and most SMB
+/// servers round to the second, so a copy that looks older by a fraction is
+/// the same write.
+fn is_not_older(destination: std::time::SystemTime, source: std::time::SystemTime) -> bool {
+    const TOLERANCE: std::time::Duration = std::time::Duration::from_secs(2);
+
+    match destination.duration_since(source) {
+        // Written at or after the source: nothing can be missing from it.
+        Ok(_) => true,
+        // Older, but by no more than a filesystem's own rounding — a FAT or
+        // SMB timestamp that lost its sub-second part.
+        Err(gap) => gap.duration() <= TOLERANCE,
+    }
 }
 
 fn copy_symlink(source: &Path, destination: &Path) -> Result<(), FileSystemError> {
@@ -483,6 +616,13 @@ fn delete_entry(
     path: &Path,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
+    // The same checkpoint the copy path has: a paused or cancelled delete
+    // stops before removing the next entry, so the tree it has already cleared
+    // is exactly what happened.
+    if let Some(control) = progress.control() {
+        control.gate()?;
+    }
+
     let metadata = fs::symlink_metadata(path)?;
     progress.begin_entry(path);
 
@@ -856,5 +996,65 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    /// The shape a cancelled copy leaves behind: the destination directory
+    /// exists with part of the tree in it. A merge must fill in what is
+    /// missing and leave what is already there alone.
+    #[test]
+    fn a_merge_fills_in_an_interrupted_tree_without_rewriting_it() {
+        let root = std::env::temp_dir().join(format!("dae-merge-{}", std::process::id()));
+        let source = root.join("source");
+        let destination = root.join("destination");
+
+        fs::create_dir_all(destination.join("source")).expect("create the partial destination");
+        fs::create_dir_all(&source).expect("create source");
+        fs::write(source.join("done.txt"), "already copied").expect("write the copied file");
+        fs::write(source.join("pending.txt"), "not copied yet").expect("write the missing file");
+        fs::write(destination.join("source/done.txt"), "already copied")
+            .expect("write the landed file");
+
+        let landed = destination.join("source/done.txt");
+        let landed_before = fs::metadata(&landed)
+            .and_then(|metadata| metadata.modified())
+            .expect("read the landed file's time");
+
+        copy_entries_with_progress(
+            vec![(source.clone(), ConflictAction::Merge)],
+            destination.clone(),
+            &TestProgress::new(),
+            &mut Vec::new(),
+        )
+        .expect("continue the copy");
+
+        assert_eq!(
+            fs::read_to_string(destination.join("source/pending.txt")).expect("read the new file"),
+            "not copied yet"
+        );
+
+        let landed_after = fs::metadata(&landed)
+            .and_then(|metadata| metadata.modified())
+            .expect("read the landed file's time");
+        assert_eq!(
+            landed_before, landed_after,
+            "a merge rewrote a file the interrupted run had already copied"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn a_copy_counts_as_complete_only_when_it_is_not_older_than_its_source() {
+        use std::time::{Duration, SystemTime};
+
+        let source = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+        // Written after the source: nothing can be missing.
+        assert!(is_not_older(source + Duration::from_secs(30), source));
+        assert!(is_not_older(source, source));
+        // A filesystem that rounded the timestamp down by less than a second.
+        assert!(is_not_older(source - Duration::from_millis(900), source));
+        // Edited since: the copy is stale and has to be written again.
+        assert!(!is_not_older(source - Duration::from_secs(30), source));
     }
 }

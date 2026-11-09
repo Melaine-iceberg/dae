@@ -121,6 +121,9 @@ windows = { version = "0.62.2", features = [
   # `HKEY_LOCAL_MACHINE` (`Win32_System_Registry`) and pumps the STA message
   # queue while it waits on a provider (`Win32_System_Threading`).
   "Win32_System_Registry",
+  # `fs::occupancy` asks the Restart Manager which processes hold a file, the
+  # same list the "file is in use" dialog shows.
+  "Win32_System_RestartManager",
   "Win32_System_Threading",
   "Win32_UI_Shell",
   "Win32_UI_Shell_Common",

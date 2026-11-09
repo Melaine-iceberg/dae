@@ -256,6 +256,11 @@ pub enum ConflictAction {
     Replace,
     /// Transfers under a generated "副本" name, keeping both entries.
     KeepBoth,
+    /// Writes into the existing destination tree instead of replacing it:
+    /// directories are merged, and a file that is already there with the same
+    /// size and modification time is skipped. Only the "continue a cancelled
+    /// copy" path produces this, so the conflict dialog never offers it.
+    Merge,
 }
 
 /// One source entry paired with its conflict resolution.

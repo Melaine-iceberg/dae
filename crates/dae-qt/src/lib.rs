@@ -43,6 +43,12 @@ pub mod activation;
 pub mod appearance;
 pub mod config;
 mod default_manager;
+/// The elevated child's entry point, re-exported for `apps/dae`'s `main`:
+/// `dae-app` links this crate rather than the core, and the branch that runs an
+/// elevated job has to answer before Qt exists, so it cannot live in a QObject.
+pub mod elevated {
+    pub use dae_core::fs::elevated::{JOB_FLAG, ElevatedJob, run_from_args};
+}
 mod errors;
 pub mod format;
 pub mod i18n;

@@ -36,8 +36,8 @@ Item {
     /// Controls: "chevron" (and its left/up/down forms), "check", "close",
     /// "refresh", "eye", "info", "copy", "cut", "paste", "pencil", "external",
     /// "undo", "sort", "filter", "split", "extract", "arrowLeft", "arrowRight",
-    /// "arrowUp", "windowMin", "windowMax", "windowClose", "windowFullScreen",
-    /// "windowExitFullScreen".
+    /// "arrowUp", "pause", "play", "windowMin", "windowMax", "windowClose",
+    /// "windowFullScreen", "windowExitFullScreen".
     /// Anything else draws nothing and the caller falls back to its label.
     property string kind: "home"
     property color tint: Theme.inkMuted
@@ -204,6 +204,14 @@ Item {
         ],
         "close": [
             { d: "M4 4L12 12M12 4L4 12", w: 1.25 }
+        ],
+        // Transport controls for the transfer queue's running row.
+        "pause": [
+            { d: "M5.4 3.2L7.2 3.2L7.2 12.8L5.4 12.8Z", f: true },
+            { d: "M8.8 3.2L10.6 3.2L10.6 12.8L8.8 12.8Z", f: true }
+        ],
+        "play": [
+            { d: "M5.6 3.1L11.8 8L5.6 12.9Z", f: true }
         ],
         "plus": [
             { d: "M8 3L8 13M3 8L13 8", w: 1.25 }

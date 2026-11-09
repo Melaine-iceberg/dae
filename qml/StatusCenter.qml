@@ -197,15 +197,18 @@ Item {
                     width: 6
                     height: 6
                     radius: 3
+                    // A cancelled transfer is neither: it stopped on purpose,
+                    // and its row offers "continue" rather than a diagnosis.
                     color: recordRow.modelData.status === "failed"
-                        ? Theme.danger : Theme.success
+                        ? Theme.danger
+                        : (recordRow.modelData.status === "cancelled" ? Theme.warn : Theme.success)
                 }
 
                 Column {
                     id: content
                     x: 18
                     y: 7
-                    width: parent.width - 90
+                    width: parent.width - 150
 
                     Text {
                         width: parent.width
@@ -221,42 +224,84 @@ Item {
                         visible: text !== ""
                         text: recordRow.modelData.status === "failed"
                             ? root.statusText(recordRow.modelData)
-                            : root.timeText(recordRow.modelData)
+                            : (recordRow.modelData.status === "cancelled"
+                                ? qsTr("已取消") + " · " + root.timeText(recordRow.modelData)
+                                : root.timeText(recordRow.modelData))
                         color: recordRow.modelData.status === "failed"
-                            ? Theme.danger : root.faintColor
+                            ? Theme.danger
+                            : (recordRow.modelData.status === "cancelled"
+                                ? root.mutedColor : root.faintColor)
                         font.pixelSize: Theme.typeMicro
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
                     }
                 }
 
-                Item {
-                    id: retry
+                Row {
                     anchors.right: parent.right
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 44
-                    height: Theme.controlSm
-                    visible: recordRow.modelData.status === "failed"
-                        && recordRow.modelData.retryable === true
+                    spacing: 4
 
-                    Accessible.role: Accessible.Button
-                    Accessible.name: qsTr("重试")
-                    Accessible.onPressAction: Workspace.retryOperation(recordRow.modelData.id)
+                    Item {
+                        id: elevate
+                        width: 56
+                        height: Theme.controlSm
+                        // Only a failed copy or move on a platform that can
+                        // raise a separate process; the row's retry payload is
+                        // what the elevated job is built from.
+                        visible: recordRow.modelData.status === "failed"
+                            && recordRow.modelData.elevatable === true
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: qsTr("重试")
-                        color: retryMouse.containsMouse ? Theme.interactive : root.mutedColor
-                        font.pixelSize: Theme.typeMicro
-                        textFormat: Text.PlainText
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("以管理员身份重试")
+                        Accessible.onPressAction: Workspace.elevateOperation(recordRow.modelData.id)
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: qsTr("提权重试")
+                            color: elevateMouse.containsMouse ? Theme.interactive : root.mutedColor
+                            font.pixelSize: Theme.typeMicro
+                            textFormat: Text.PlainText
+                        }
+
+                        MouseArea {
+                            id: elevateMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: Workspace.elevateOperation(recordRow.modelData.id)
+                        }
                     }
 
-                    MouseArea {
-                        id: retryMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: Workspace.retryOperation(recordRow.modelData.id)
+                    Item {
+                        id: retry
+                        width: 44
+                        height: Theme.controlSm
+                        // A cancelled copy is continued, not retried: the
+                        // record carries `resume`, so the action merges into
+                        // what already landed instead of asking about it.
+                        visible: recordRow.modelData.retryable === true
+                            && (recordRow.modelData.status === "failed"
+                                || recordRow.modelData.status === "cancelled")
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: recordRow.modelData.status === "cancelled" ? qsTr("继续") : qsTr("重试")
+                        Accessible.onPressAction: Workspace.retryOperation(recordRow.modelData.id)
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: recordRow.modelData.status === "cancelled" ? qsTr("继续") : qsTr("重试")
+                            color: retryMouse.containsMouse ? Theme.interactive : root.mutedColor
+                            font.pixelSize: Theme.typeMicro
+                            textFormat: Text.PlainText
+                        }
+
+                        MouseArea {
+                            id: retryMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: Workspace.retryOperation(recordRow.modelData.id)
+                        }
                     }
                 }
             }

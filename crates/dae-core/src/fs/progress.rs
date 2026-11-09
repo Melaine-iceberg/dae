@@ -8,6 +8,7 @@
 //! on every event and a per-entry rate on a 35,000-entry copy is not a rate at
 //! all.
 
+use super::transfer_control::TransferControl;
 use super::types::path_to_string;
 use crate::host::{Event as UiEvent, Host};
 use std::path::Path;
@@ -38,6 +39,16 @@ pub trait FileOperationProgressReporterTrait: Send + Sync {
     }
     fn advance_by(&self, units: u64, path: &Path);
     fn finish(&self);
+
+    /// The pause / cancel / rate gate this operation answers to.
+    ///
+    /// The transfer engine reaches it through the reporter because that is the
+    /// one handle already threaded through every copy and delete call. A
+    /// reporter without a control — a test double, the workspace's size walk —
+    /// inherits `None`, and the engine then behaves exactly as it always did.
+    fn control(&self) -> Option<&TransferControl> {
+        None
+    }
 }
 
 struct ReporterState {
@@ -54,6 +65,10 @@ pub struct FileOperationProgressReporter {
     operation_id: String,
     operation: FileOperationKind,
     state: Mutex<ReporterState>,
+    /// `None` for the operations the UI cannot pause (the size walk, a hash),
+    /// which is also why the engine's gate is optional rather than a required
+    /// argument.
+    control: Option<Arc<TransferControl>>,
 }
 
 impl FileOperationProgressReporter {
@@ -67,7 +82,20 @@ impl FileOperationProgressReporter {
                 total: 0,
                 last_emit: None,
             }),
+            control: None,
         }
+    }
+
+    /// The same reporter, with the pause / cancel / rate gate attached.
+    pub fn with_control(
+        host: Arc<dyn Host>,
+        operation_id: String,
+        operation: FileOperationKind,
+        control: Arc<TransferControl>,
+    ) -> Self {
+        let mut reporter = Self::new(host, operation_id, operation);
+        reporter.control = Some(control);
+        reporter
     }
 
     fn emit(&self, path: Option<&Path>, force: bool) {
@@ -125,6 +153,10 @@ impl FileOperationProgressReporterTrait for FileOperationProgressReporter {
             state.completed = state.total;
         }
         self.emit(None, true);
+    }
+
+    fn control(&self) -> Option<&TransferControl> {
+        self.control.as_deref()
     }
 }
 

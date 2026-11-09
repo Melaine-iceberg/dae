@@ -21,6 +21,11 @@ pub enum FileSystemError {
     WrongPassword(String),
     #[error("The storage backend does not support this operation: {0}")]
     Unsupported(String),
+    /// The user stopped the operation. Distinct from a failure because nothing
+    /// went wrong: the shell reports it as a neutral outcome and offers to
+    /// continue it, not to diagnose it.
+    #[error("The operation was cancelled: {0}")]
+    Cancelled(String),
     #[error("The directory operation could not complete: {0}")]
     Internal(String),
 }

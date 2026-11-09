@@ -75,6 +75,19 @@ pub struct AppSettings {
     /// defer, so it drops the key on its next save — read-only there, which is
     /// why the default lives here rather than in the panel.
     pub shell_first: bool,
+    /// Copy and move behaviour that outlives a launch.
+    pub transfer: TransferSettings,
+}
+
+/// How the transfer engine behaves by default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TransferSettings {
+    /// KiB per second, applied to every transfer in the process; `0` is
+    /// unlimited. KiB rather than MB so the value stays exact in the document,
+    /// and KiB rather than bits so it names bytes on the wire — the opposite
+    /// convention ("50 Mbps") is a link speed, not a file throughput.
+    pub speed_limit_kib: u64,
 }
 
 /// Integrated-terminal appearance. `None` fields fall back to the frontend's
@@ -167,6 +180,7 @@ impl Default for AppSettings {
             actions: default_actions(),
             warm_tab_pool: true,
             shell_first: true,
+            transfer: TransferSettings::default(),
         }
     }
 }
