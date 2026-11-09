@@ -85,6 +85,7 @@ Item {
     Keys.onEscapePressed: root.close()
 
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: root.close()

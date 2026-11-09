@@ -1050,6 +1050,8 @@ FocusScope {
                             anchors.fill: parent
                         }
                         TextInput {
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: qsTr("背景图片路径")
                             anchors.fill: parent
                             anchors.leftMargin: 8
                             anchors.rightMargin: 8
@@ -1083,6 +1085,8 @@ FocusScope {
 
                         MouseArea {
                             id: chooseMouse
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("选择背景图片")
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: backgroundDialog.open()
@@ -1108,6 +1112,8 @@ FocusScope {
 
                         MouseArea {
                             id: clearMouse
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("清除背景图片")
                             anchors.fill: parent
                             hoverEnabled: true
                             enabled: parent.enabled
@@ -1183,6 +1189,8 @@ FocusScope {
 
                         MouseArea {
                             id: toolbarResetMouse
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("恢复默认工具栏")
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
@@ -1346,6 +1354,8 @@ FocusScope {
 
                                         MouseArea {
                                             id: keyMouse
+                                            Accessible.role: Accessible.Button
+                                            Accessible.name: qsTr("设置快捷键：%1").arg(shortcutRow.modelData.label)
                                             anchors.fill: parent
                                             hoverEnabled: true
                                             onClicked: root.beginCapture(shortcutRow.modelData.id,
@@ -1394,6 +1404,9 @@ FocusScope {
 
                                 MouseArea {
                                     id: rowMouse
+                                    /// The row repeats the key pill's action on the empty space beside it,
+                                    /// so the pill stays the one control the row announces.
+                                    Accessible.ignored: true
                                     z: -1
                                     anchors.fill: parent
                                     enabled: !shortcutRow.modelData.header
@@ -1488,6 +1501,8 @@ FocusScope {
                                     height: Theme.controlMd
                                 }
                                 TextInput {
+                                    Accessible.role: Accessible.EditableText
+                                    Accessible.name: qsTr("动作名称")
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 152
                                     height: Theme.controlMd
@@ -1507,6 +1522,8 @@ FocusScope {
                                     height: Theme.controlMd
                                 }
                                 TextInput {
+                                    Accessible.role: Accessible.EditableText
+                                    Accessible.name: qsTr("动作命令")
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 172
                                     height: Theme.controlMd
@@ -1547,6 +1564,8 @@ FocusScope {
                                 height: 46
                             }
                             TextInput {
+                                Accessible.role: Accessible.EditableText
+                                Accessible.name: qsTr("动作参数")
                                 x: 8
                                 y: 6
                                 width: parent.width - 16
@@ -1575,6 +1594,8 @@ FocusScope {
 
                                     MouseArea {
                                         id: saveActionMouse
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: qsTr("保存动作")
                                         anchors.fill: parent
                                         anchors.margins: -4
                                         hoverEnabled: true
@@ -1595,6 +1616,8 @@ FocusScope {
 
                                     MouseArea {
                                         id: deleteActionMouse
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: qsTr("删除动作")
                                         anchors.fill: parent
                                         anchors.margins: -4
                                         hoverEnabled: true
@@ -1635,6 +1658,8 @@ FocusScope {
                             height: Theme.controlMd
                         }
                         TextInput {
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: qsTr("新动作名称")
                             anchors.verticalCenter: parent.verticalCenter
                             width: 152
                             height: Theme.controlMd
@@ -1654,6 +1679,8 @@ FocusScope {
                             height: Theme.controlMd
                         }
                         TextInput {
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: qsTr("新动作命令")
                             anchors.verticalCenter: parent.verticalCenter
                             width: 172
                             height: Theme.controlMd
@@ -1694,6 +1721,8 @@ FocusScope {
                         height: 46
                     }
                     TextInput {
+                        Accessible.role: Accessible.EditableText
+                        Accessible.name: qsTr("新动作参数")
                         x: 8
                         y: 6
                         width: parent.width - 16
@@ -1721,6 +1750,8 @@ FocusScope {
 
                             MouseArea {
                                 id: addActionMouse
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("添加动作")
                                 anchors.fill: parent
                                 anchors.margins: -4
                                 hoverEnabled: true
@@ -1746,6 +1777,8 @@ FocusScope {
 
                             MouseArea {
                                 id: resetActionsMouse
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("恢复内置动作")
                                 anchors.fill: parent
                                 anchors.margins: -4
                                 hoverEnabled: true
@@ -2098,6 +2131,8 @@ FocusScope {
 
                             TextInput {
                                 id: nameInput
+                                Accessible.role: Accessible.EditableText
+                                Accessible.name: qsTr("标签名称")
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
@@ -2123,6 +2158,8 @@ FocusScope {
 
                             TextInput {
                                 id: colorInput
+                                Accessible.role: Accessible.EditableText
+                                Accessible.name: qsTr("标签颜色")
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8

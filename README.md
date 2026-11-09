@@ -28,6 +28,12 @@ that shell; `git log` and the decision document are where it lives now.
   an info pane with permissions and on-demand hashes.
 - **Views for the job.** List, grid, column and split views, previews, content
   search, bulk rename, per-folder git status.
+- **Office files without the suite.** A `.docx`, `.xlsx` or `.pptx` opens in the
+  preview pane as text — headings, table rows, sheet names, slides in
+  presentation order — read straight out of the OOXML parts with a bounded
+  read, so a huge workbook truncates instead of stalling the window.
+- **Searches worth keeping.** Name a query and the text, mode, scope and
+  filters travel with it; the sidebar brings it back, the search bar saves it.
 - **System-native chrome.** The OS accent colour retints the shell, and window
   material (Mica / Acrylic, macOS vibrancy) shows through where the desktop
   has one.
@@ -127,6 +133,7 @@ app.
 | `cargo test -p dae-core --lib` | The domain: filesystem backends, archives, terminal, the update engine |
 | `bun run test:rust` / `test:rust:setup` | The whole workspace through cargo-nextest |
 | `bun run lint:qml` | `qmllint` over `qml/` (needs Qt's `bin/` on `PATH`) |
+| `bun run a11y:audit` | Every QML control must carry an accessible name (`scripts/a11y-audit.mjs`) |
 | `bun run pack:msix` | Windows: builds the Qt shell, deploys Qt with `windeployqt`, packs the tree as MSIX (`scripts/pack-msix.ps1`) |
 | `bun run verify:msix` | Windows: installs a `.msix` and checks the launch, `dae://` and upgrade legs (`scripts/msix-verify.ps1`; `-InspectOnly` reads the manifest and changes nothing) |
 | `bun run update:feed` | Builds `latest-qt.json` from the signed per-platform zips (`scripts/qt-update-feed.mjs`) |
@@ -212,6 +219,12 @@ Rust tests use [cargo-nextest](https://nexte.st/):
 bun run test:rust:setup    # cargo binstall cargo-nextest
 bun run test:rust
 ```
+
+`bun run a11y:audit` covers what `qmllint` cannot: a QML button here is a
+`Rectangle` holding a `MouseArea` and a `Text`, and Qt infers no accessible name
+from the drawn glyph, so every control has to declare one. The script reads the
+QML as text and fails on a control without `Accessible.name`; an accepted gap is
+recorded in `scripts/a11y-baseline.json`, and only a *new* one fails the run.
 
 `cargo test -p dae-qt --lib` is the fastest loop while working on the bridge. The
 platform manuals no unit test can cover — window chrome, menus, IME, thumbnails,

@@ -332,6 +332,8 @@ FocusScope {
 
                             MouseArea {
                                 id: scanMouse
+                                Accessible.role: Accessible.Button
+                                Accessible.name: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: controller.sizeScanning
@@ -574,6 +576,8 @@ FocusScope {
 
                         TextInput {
                             id: expectedInput
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: qsTr("期望的校验值")
                             anchors.fill: parent
                             anchors.leftMargin: 8
                             anchors.rightMargin: 8
@@ -666,6 +670,8 @@ FocusScope {
 
                             MouseArea {
                                 id: hashMouse
+                                Accessible.role: Accessible.Button
+                                Accessible.name: controller.hashing ? qsTr("取消校验") : qsTr("开始校验")
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: controller.hashing
@@ -726,6 +732,8 @@ FocusScope {
 
                     MouseArea {
                         id: cancelMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: controller.editable ? qsTr("取消") : qsTr("关闭")
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: root.close()
@@ -750,6 +758,8 @@ FocusScope {
 
                     MouseArea {
                         id: saveMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("确定")
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: root.canSave

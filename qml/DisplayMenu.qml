@@ -197,6 +197,7 @@ Item {
     }
 
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: root.close()
@@ -265,6 +266,9 @@ Item {
                 }
 
                 MouseArea {
+                    /// A drag dot for the pointer. Its value is set from the menu around
+                    /// it, so the dot would only add a nameless target to the tree.
+                    Accessible.ignored: true
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onPositionChanged: function (mouse) {

@@ -212,6 +212,7 @@ Item {
     }
 
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: root.close()
@@ -234,6 +235,7 @@ Item {
         // A click on blank panel space must not reach the backdrop. Children
         // declared later sit above this and keep their own mouse handling.
         MouseArea {
+            Accessible.ignored: true
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
             onWheel: wheel.accepted = true
@@ -377,6 +379,8 @@ Item {
 
                     TextInput {
                         id: branchInput
+                        Accessible.role: Accessible.EditableText
+                        Accessible.name: qsTr("新分支名称")
                         anchors.fill: parent
                         anchors.leftMargin: 7
                         anchors.rightMargin: 7
@@ -420,6 +424,8 @@ Item {
                     }
 
                     MouseArea {
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("创建分支")
                         anchors.fill: parent
                         enabled: !root.createPending && branchInput.text.trim() !== ""
                         onClicked: root.submitCreate()
@@ -464,6 +470,10 @@ Item {
                     }
 
                     MouseArea {
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: qsTr("创建后切换")
+                        Accessible.checkable: true
+                        Accessible.checked: root.createCheckout
                         anchors.fill: parent
                         enabled: !root.createPending
                         onClicked: root.createCheckout = !root.createCheckout
@@ -557,6 +567,8 @@ Item {
 
                     MouseArea {
                         id: branchMouse
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: branchRow.modelData.name
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: branchRow.modelData.kind === "branch" && !root.busy

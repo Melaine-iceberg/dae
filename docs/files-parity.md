@@ -228,6 +228,7 @@ EntryTags     { path, tag_ids: Vec<String>, source: Xattr | Ads | Index }
 - 并行遍历，限制并发与结果上限；沿用现有取消令牌。
 - 过滤器：类型、修改时间、大小（`FilterMenu` 已有，移到搜索栏复用）。
 - 搜索历史存 `prefs.toml`，上限 20 条。
+- **已落地（2026-11-09）**：命名的保存搜索（查询词 + 模式 + 范围 + 过滤器），见 §13.2。
 - `tag:` 走标签索引，不走遍历。
 
 **阶段 2：平台索引（能力探测，可选）**
@@ -338,6 +339,7 @@ extensions = []           # 空表示不过滤
 
 - 应用内弹层：复用 `PreviewController`，`Space` 在预览面板关闭时打开弹层，
   `Esc`/点击外部关闭；焦点陷阱与键盘滚动。
+- **已落地（2026-11-09）**：Office（`docx`/`xlsx`/`pptx`）的文本预览，见 §13.1。
 - 不依赖 QuickLook/SeerPro；macOS 以后可选 `QLPreviewPanel`，但不作为 v1 条件。
 - 三平台一致；远程条目沿用预览面板的「文本可预览、缩略图仅本地」规则。
 
@@ -955,3 +957,69 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
   `tag:Work` 的「所有卷」搜索；`Ctrl+Shift+C` 把当前目录写入剪贴板（读回一致，
   且界面弹出「已复制路径」）。
 - **未验证**：Linux 运行时（tracker3/baloo 的实际输出）、MSIX 形态的索引可见性。
+
+## 13. Office 预览、保存搜索与可访问性审计（2026-11-09）
+
+### 13.1 Office 预览（扩展 §5.13 快速预览）
+
+- **core**（`crates/dae-core/src/fs/office.rs`）：不引入 Office 引擎，也不起外部进程，
+  直接从 OOXML 的 ZIP 容器里读文本。
+  - `docx`：`word/document.xml` 的 `w:p` 与 `w:tbl`，表格行输出成 `单元格 | 单元格`。
+  - `xlsx`：`xl/workbook.xml` 的 `sheet` 顺序配 `xl/_rels/workbook.xml.rels` 定位到各
+    `worksheets/*.xml`；`t="s"` 的单元格走 `sharedStrings.xml` 索引；一行一条。
+  - `pptx`：页序取自 `ppt/presentation.xml` 的 `sldIdLst`（不是文件名序），`r:id` 经
+    rels 落到 `slides/*.xml`。`sldId` 上同时有 `id` 和 `r:id`，取属性时优先带前缀者。
+  - **有界**：容器 48 MiB、单部件 8 MiB、220 行、表格 40 行 × 10 列、6 张表、12 页、
+    单行 400 字符。全部用 `Read::take` 截断读，超限只置 `truncated`，不把整份解压进内存。
+  - **错误码**：`fs.office_unsupported`、`fs.office_unreadable`、`fs.office_empty`、
+    `fs.office_too_large`；`.doc/.xls/.ppt`（旧二进制）与 `odt/ods/odp/rtf/pages`
+    （别的容器）各有一条独立文案——对用户来说这是三件不同的事。
+- **bridge**：`crates/dae-qt/src/office_markup.rs` 把 `OfficePreview` 渲染成
+  `QTextDocument` 能吃的 HTML 子集（标题 13px/600、正文 11px、表格行等宽并保留
+  ` | ` 对齐），复用 `preview_markup` 的调色板与转义；`preview.rs` 缓存
+  `source_office`，切主题时按纯函数重渲染——与 Markdown、代码预览同一条契约，不重读盘。
+- **QML**：`PreviewPanel.qml` 的 `officeCard`，`officeTruncated` 时右下角提示
+  「内容过长，仅显示开头部分」。
+- **不做**：图表/SmartArt/图片、列宽与公式求值、`xlsx` 日期序列到日期的换算
+  （原样显示序列号）、分页符与页眉页脚。
+
+### 13.2 保存搜索（§5.5 阶段 1 的延伸）
+
+- **偏好**（`crates/dae-qt/src/preferences.rs`）：`SavedSearch { id, name, query, mode,
+  scope, typeId, kind, modified, size, regex, caseSensitive, filter }`，落在既有的
+  `explorer-qt.ini` 单行 JSON 里（`savedSearches`），与 `searchHistory` 共用一套读写；
+  上限 40 条。
+- **API**：`saveSearch(name, spec)` 同名覆盖并保留 id（侧栏的行不跳位），否则插到队首；
+  另有 `deleteSavedSearch(id)` 与 `renameSavedSearch(id, name)`。
+- **QML**：搜索栏的「保存」chip 只在有查询词时出现；侧栏「保存的搜索」段最多显示 4 行，
+  hover 出删除叉。恢复时一次还原 mode / scope / typeId / kind / modified / size / regex /
+  caseSensitive / filter，再走与手打搜索相同的 `acceptSearchText`，所以「保存的」和
+  「刚打的」是一条执行路径。
+- **不做**：拖拽排序、导入导出、把保存的搜索固定成侧栏条目。
+
+### 13.3 可访问性审计（`scripts/a11y-audit.mjs`）
+
+- **为什么静态查**：`qmllint` 不检查这一项，截图也看不出来——这里的按钮是 `Rectangle`
+  套 `MouseArea` 套 `Text`，Qt 不会从画出来的字形推断名字，屏幕阅读器只会读出一串「按钮」。
+- **规则**：`MouseArea` / `TextInput` / `TextEdit` / `TapHandler` 必须自身或 5 层以内
+  祖先声明 `Accessible.name`；`acceptedButtons: Qt.NoButton` 的滚轮拦截层跳过；
+  `Accessible.ignored: true`（字面量 `true`）视为「有意移出无障碍树」；`// a11y:decorative`
+  是同一件事的注释形式。条件式的 `Accessible.ignored`（如 `entry.separator`）不算，
+  因为它在另一态仍然会被朗读。
+- **用法**：`bun run a11y:audit`（等于 `--baseline`，只有新缺口才失败）；`--write-baseline`
+  记录当前结果；`--json` 给外部工具；`--no-fail` 只报告。基线键是
+  `${file}:${element}:${parent}#${序号}`，与行号无关，所以在上面加一行不会把老缺口
+  变成新缺口。
+- **本次清掉 87 条存量债务**：78 条补 `Accessible.role` + `Accessible.name`（多数是
+  `Rectangle`+`MouseArea` 拼的按钮、列表行与输入框，行/页签另带
+  `checkable`/`checked`/`selected`），9 条按 `Accessible.ignored: true` 归为**指针专属**
+  （列宽拖拽、橡皮筋框选、分栏拖拽、窗口缩放手柄、对话框遮罩、标题栏双击最大化、
+  只搬焦点的 `TapHandler`）。基线现在是空的，「只缩不涨」从第一天就是 0。
+- **还没做**：新补的 `MouseArea` 按钮只声明了角色与名字，没有接
+  `Accessible.onPressAction`（既有控件是接了的）——项目里的写法是把点击体复制一遍，
+  机械铺到四十处只会和原体漂移，所以留给能跑起界面的那一轮；屏幕阅读器能读到名字，
+  激活仍走指针。真机 NVDA/Orca 的朗读顺序也还没过。
+- **验证**：`cargo test -p dae-core --lib` 通过（含 9 条 office 用例），
+  `node scripts/a11y-audit.mjs` 零缺口。`cargo build -p dae-app` 与 `bun run lint:qml`
+  在本轮机器上没跑（没有 Qt/qmake），这是接手后要补的第一件事。
+

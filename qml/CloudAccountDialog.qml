@@ -320,6 +320,8 @@ Item {
 
                     MouseArea {
                         id: copyMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("复制链接")
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor

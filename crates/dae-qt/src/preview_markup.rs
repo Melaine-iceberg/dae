@@ -258,19 +258,21 @@ fn color_hex(color: Color) -> String {
 // Markdown
 // ---------------------------------------------------------------------------
 
-struct Palette {
-    text: &'static str,
-    muted: &'static str,
-    hairline: &'static str,
-    link: &'static str,
-    inline_code_bg: &'static str,
-    inline_code_fg: &'static str,
-    table_border: &'static str,
-    table_head_bg: &'static str,
+/// The preview pane's colours. Shared with the Office renderer so a document
+/// and a Markdown file read in the same palette.
+pub(crate) struct Palette {
+    pub(crate) text: &'static str,
+    pub(crate) muted: &'static str,
+    pub(crate) hairline: &'static str,
+    pub(crate) link: &'static str,
+    pub(crate) inline_code_bg: &'static str,
+    pub(crate) inline_code_fg: &'static str,
+    pub(crate) table_border: &'static str,
+    pub(crate) table_head_bg: &'static str,
 }
 
 impl Palette {
-    fn new(dark: bool) -> Self {
+    pub(crate) fn new(dark: bool) -> Self {
         if dark {
             Self {
                 text: "#e6e9ef",
@@ -752,7 +754,7 @@ fn is_root_segment(segment: &str) -> bool {
     segment.is_empty() || is_drive(segment)
 }
 
-fn push_escaped(out: &mut String, text: &str) {
+pub(crate) fn push_escaped(out: &mut String, text: &str) {
     for character in text.chars() {
         match character {
             '&' => out.push_str("&amp;"),

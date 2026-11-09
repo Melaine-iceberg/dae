@@ -217,6 +217,7 @@ Item {
     /// there opens the same menu as one on a crumb. Declared under the
     /// repeater, so a crumb's own press is the one that wins on its plate.
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
         cursorShape: Qt.IBeamCursor

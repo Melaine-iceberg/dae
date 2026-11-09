@@ -32,6 +32,10 @@ Item {
     signal trashRequested()
     /// A tag row was clicked. The shell turns this into a `tag:` search.
     signal tagActivated(string name)
+    /// A saved search was clicked: the shell restores its query and filters.
+    signal savedSearchActivated(string id)
+    /// The remove mark on a saved search was clicked.
+    signal savedSearchRemoveRequested(string id)
     signal addRequested(string kind)
     signal restorePlacesRequested()
     signal contextRequested(string kind, string path, bool removable, real x, real y)
@@ -770,7 +774,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: tagsArea.top
+        anchors.bottom: savedArea.top
         visible: root.discovered.length > 0
         height: visible ? 26 + serverList.height + 10 : 0
 
@@ -807,6 +811,8 @@ Item {
 
             MouseArea {
                 id: refreshMouse
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("刷新网络设备")
                 anchors.fill: parent
                 anchors.margins: -4
                 hoverEnabled: true
@@ -892,12 +898,161 @@ Item {
 
                 MouseArea {
                     id: serverMouse
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: qsTr("连接到 %1").arg(serverRow.modelData.host)
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.discoveredActivated(serverRow.modelData.protocol,
                                                          serverRow.modelData.host,
                                                          String(serverRow.modelData.port))
+                }
+            }
+        }
+    }
+
+    /// Saved searches are not paths either: a row re-runs the query with the
+    /// mode, scope and filters it was stored with. The list is capped and
+    /// scrolls, like the tag list, so a long list cannot push the bin off the
+    /// column.
+    Item {
+        id: savedArea
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: tagsArea.top
+        visible: savedSearches.length > 0
+        height: visible ? 26 + savedList.height + 10 : 0
+
+        /// A malformed document reads as "no saved searches" rather than
+        /// breaking the column; the preference setter already drops entries
+        /// that could never run.
+        readonly property var savedSearches: {
+            try {
+                const parsed = JSON.parse(ExplorerPrefs.savedSearches)
+                return Array.isArray(parsed) ? parsed : []
+            } catch (error) {
+                return []
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.hairline
+        }
+
+        Text {
+            x: 18
+            y: 8
+            text: qsTr("保存的搜索")
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
+            font.letterSpacing: 0.88
+        }
+
+        ListView {
+            id: savedList
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.topMargin: 24
+            height: Math.min(contentHeight, 4 * 24)
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            model: savedArea.savedSearches
+
+            delegate: Item {
+                id: savedRow
+                required property var modelData
+
+                width: ListView.view.width
+                height: 24
+
+                readonly property bool hovered: savedMouse.containsMouse
+
+                Accessible.role: Accessible.Button
+                Accessible.name: savedRow.modelData.name
+                Accessible.description: savedRow.modelData.query
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    radius: Theme.radiusSm
+                    color: savedRow.hovered ? Theme.hover : "transparent"
+                }
+
+                Glyph {
+                    x: 20
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 12
+                    height: 12
+                    kind: "search"
+                    tint: Theme.inkFaint
+                }
+
+                Text {
+                    id: savedName
+
+                    x: 38
+                    anchors.right: parent.right
+                    anchors.rightMargin: savedRow.hovered ? 32 : 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: savedRow.modelData.name
+                    color: Theme.inkMuted
+                    font.pixelSize: Theme.typeBody
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                }
+
+                MouseArea {
+                    id: savedMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.savedSearchActivated(savedRow.modelData.id)
+                }
+
+                /// Only while the row is hovered: a permanent cross on every
+                /// row would read as "delete" before it read as "this search".
+                Item {
+                    id: savedRemove
+
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 16
+                    visible: savedRow.hovered
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("删除保存的搜索“%1”").arg(savedRow.modelData.name)
+                    Accessible.onPressAction: root.savedSearchRemoveRequested(
+                        savedRow.modelData.id)
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 9
+                        height: 9
+                        kind: "close"
+                        tint: Theme.inkFaint
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.savedSearchRemoveRequested(savedRow.modelData.id)
+                    }
                 }
             }
         }
@@ -1031,6 +1186,8 @@ Item {
 
                 MouseArea {
                     id: tagMouse
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: tagRow.modelData.name
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor

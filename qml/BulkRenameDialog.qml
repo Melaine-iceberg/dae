@@ -343,6 +343,9 @@ FocusScope {
                         }
 
                         MouseArea {
+                            Accessible.role: Accessible.PageTab
+                            Accessible.name: modeItem.modelData.label
+                            Accessible.selected: root.mode === modeItem.modelData.key
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
@@ -513,6 +516,8 @@ FocusScope {
 
                             MouseArea {
                                 id: caseMouse
+                                Accessible.role: Accessible.Button
+                                Accessible.name: caseButton.modelData.label
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
@@ -640,6 +645,8 @@ FocusScope {
 
                     MouseArea {
                         id: cancelMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("取消")
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: root.close()
@@ -663,6 +670,8 @@ FocusScope {
 
                     MouseArea {
                         id: applyMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("重命名")
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: root.canApply

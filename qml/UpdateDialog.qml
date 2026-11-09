@@ -272,6 +272,8 @@ FocusScope {
 
                     MouseArea {
                         id: closeMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("关闭")
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: !Updater.restarting
@@ -299,6 +301,8 @@ FocusScope {
 
                     MouseArea {
                         id: checkMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("重新检查")
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: !root.busy
@@ -323,6 +327,8 @@ FocusScope {
                     }
 
                     MouseArea {
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("下载并安装")
                         anchors.fill: parent
                         enabled: !Updater.downloading && !Updater.restarting
                         cursorShape: Qt.PointingHandCursor

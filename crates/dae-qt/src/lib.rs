@@ -59,6 +59,7 @@ pub mod logging;
 pub mod material;
 pub mod model;
 pub mod network_discovery;
+mod office_markup;
 pub mod open_with_model;
 pub mod overview_model;
 pub mod platform;

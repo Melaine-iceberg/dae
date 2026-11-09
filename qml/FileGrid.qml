@@ -252,6 +252,7 @@ Item {
     }
 
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
         onPressed: function (mouse) {
@@ -519,6 +520,9 @@ Item {
     /// began on a tile is handed down instead.
     MouseArea {
         id: marquee
+        /// A rubber band, not a control: it draws the marquee for a drag that
+        /// began on empty space and has no keyboard equivalent of its own.
+        Accessible.ignored: true
         anchors.fill: parent
         z: 20
         acceptedButtons: Qt.LeftButton

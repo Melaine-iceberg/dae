@@ -26,6 +26,9 @@ const VIEWS_FILE_NAME: &str = "views-qt.toml";
 const MAX_STORED_VIEWS: usize = 512;
 /// Queries kept in the search field's history.
 const SEARCH_HISTORY_LIMIT: usize = 20;
+/// Named searches kept on disk. Well past what the sidebar section shows;
+/// the list scrolls, and the cap only stops an unbounded document.
+const SAVED_SEARCH_LIMIT: usize = 40;
 /// Column ids the list view knows. A stored id outside this set is ignored,
 /// so removing a column from a future build cannot leave a hole.
 const COLUMN_IDS: &[&str] = &["type", "size", "modified", "created", "tags"];
@@ -92,6 +95,10 @@ pub mod qobject {
         /// shows them when it is focused and empty; `rememberSearch` writes
         /// them.
         #[qproperty(QString, search_history, cxx_name = "searchHistory")]
+        /// Named searches, newest first, as JSON: the query plus the mode,
+        /// scope and filters it ran with. Written by `saveSearch`, read by the
+        /// sidebar section and the search bar's "保存" chip.
+        #[qproperty(QString, saved_searches, cxx_name = "savedSearches")]
         /// The directory whose stored layout is on screen. Write it with
         /// `setString("currentPath", …)`; the setter also restores that
         /// directory's layout when `syncLayout` is off.
@@ -172,6 +179,30 @@ pub mod qobject {
         #[cxx_name = "clearSearchHistory"]
         fn clear_search_history(self: Pin<&mut ExplorerPrefs>);
 
+        /// Stores `spec` (a `SavedSearch` as JSON) under `name`. A name that
+        /// already exists replaces that entry instead of adding a second one
+        /// with the same label. False when the name or the query is empty, or
+        /// when the spec is not valid JSON.
+        #[qinvokable]
+        #[cxx_name = "saveSearch"]
+        fn save_search(
+            self: Pin<&mut ExplorerPrefs>,
+            name: &QString,
+            spec: &QString,
+        ) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "deleteSavedSearch"]
+        fn delete_saved_search(self: Pin<&mut ExplorerPrefs>, id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "renameSavedSearch"]
+        fn rename_saved_search(
+            self: Pin<&mut ExplorerPrefs>,
+            id: &QString,
+            name: &QString,
+        ) -> bool;
+
         /// Drops a directory's stored layout, returning it to the defaults.
         #[qinvokable]
         #[cxx_name = "forgetView"]
@@ -185,6 +216,31 @@ pub mod qobject {
 }
 
 use std::pin::Pin;
+
+/// One named search: the query and everything the bar needs to re-run it
+/// exactly as it ran. Every field but `id`, `name` and `query` is optional in
+/// the document, so a hand edit that drops one falls back to the default.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct SavedSearch {
+    id: String,
+    name: String,
+    query: String,
+    /// `name` or `content`.
+    mode: String,
+    /// `current`, `favorites`, `recent` or `volumes`.
+    scope: String,
+    /// The content-search type chip (`all`, `doc`, …).
+    type_id: String,
+    /// The listing's kind/modified/size buckets, which the name search reuses.
+    kind: String,
+    modified: String,
+    size: String,
+    regex: bool,
+    case_sensitive: bool,
+    /// The content-search glob list.
+    filter: String,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StoredPrefs {
@@ -220,6 +276,7 @@ struct StoredPrefs {
     background_image: String,
     background_dim: i32,
     search_history: Vec<String>,
+    saved_searches: Vec<SavedSearch>,
 }
 
 impl Default for StoredPrefs {
@@ -263,6 +320,7 @@ impl Default for StoredPrefs {
             background_image: String::new(),
             background_dim: 70,
             search_history: Vec::new(),
+            saved_searches: Vec::new(),
         }
     }
 }
@@ -376,6 +434,15 @@ impl StoredPrefs {
             self.search_history = serde_json::from_str(value).unwrap_or_default();
             self.search_history.truncate(SEARCH_HISTORY_LIMIT);
         }
+        if let Some(value) = fields.get("savedSearches") {
+            let mut saved: Vec<SavedSearch> = serde_json::from_str(value).unwrap_or_default();
+            // An entry without a name or a query can never be shown or run, so
+            // it is dropped on the way in instead of being filtered by every
+            // reader.
+            saved.retain(|entry| !entry.query.trim().is_empty() && !entry.name.trim().is_empty());
+            saved.truncate(SAVED_SEARCH_LIMIT);
+            self.saved_searches = saved;
+        }
     }
 
     fn document(&self) -> String {
@@ -426,6 +493,9 @@ impl StoredPrefs {
         // separated list would end the value at the first entry.
         if let Ok(encoded) = serde_json::to_string(&self.search_history) {
             write(&mut out, "searchHistory", &encoded);
+        }
+        if let Ok(encoded) = serde_json::to_string(&self.saved_searches) {
+            write(&mut out, "savedSearches", &encoded);
         }
         out
     }
@@ -677,6 +747,7 @@ pub struct ExplorerPrefsRust {
     background_image: QString,
     background_dim: i32,
     search_history: QString,
+    saved_searches: QString,
     current_path: QString,
 }
 
@@ -728,6 +799,11 @@ impl ExplorerPrefsRust {
                     .unwrap_or_else(|_| "[]".to_owned())
                     .as_str(),
             ),
+            saved_searches: QString::from(
+                serde_json::to_string(&prefs.saved_searches)
+                    .unwrap_or_else(|_| "[]".to_owned())
+                    .as_str(),
+            ),
             current_path: QString::default(),
         }
     }
@@ -767,6 +843,8 @@ impl ExplorerPrefsRust {
             background_dim: self.background_dim,
             search_history: serde_json::from_str(&self.search_history.to_string())
                 .unwrap_or_default(),
+            saved_searches: serde_json::from_str(&self.saved_searches.to_string())
+                .unwrap_or_default(),
         }
     }
 
@@ -797,6 +875,33 @@ fn suggest_view(images: i32, files: i32, depth: i32) -> &'static str {
     } else {
         "list"
     }
+}
+
+fn decode_saved_searches(json: &str) -> Vec<SavedSearch> {
+    let mut entries: Vec<SavedSearch> = serde_json::from_str(json).unwrap_or_default();
+    entries.truncate(SAVED_SEARCH_LIMIT);
+    entries
+}
+
+fn encode_saved_searches(entries: &[SavedSearch]) -> QString {
+    QString::from(
+        serde_json::to_string(entries)
+            .unwrap_or_else(|_| "[]".to_owned())
+            .as_str(),
+    )
+}
+
+/// Ids are compared, never shown, so a timestamp plus a suffix for the
+/// same-millisecond case is enough.
+fn next_saved_search_id(entries: &[SavedSearch]) -> String {
+    let base = format!("s{}", now_millis());
+    let mut candidate = base.clone();
+    let mut suffix = 2;
+    while entries.iter().any(|entry| entry.id == candidate) {
+        candidate = format!("{base}-{suffix}");
+        suffix += 1;
+    }
+    candidate
 }
 
 fn now_millis() -> u64 {
@@ -1256,6 +1361,81 @@ impl qobject::ExplorerPrefs {
         save(&self.stored());
     }
 
+    fn save_search(mut self: Pin<&mut Self>, name: &QString, spec: &QString) -> bool {
+        let name = name.to_string().trim().to_owned();
+        if name.is_empty() {
+            return false;
+        }
+        let Ok(mut draft) = serde_json::from_str::<SavedSearch>(&spec.to_string()) else {
+            return false;
+        };
+        if draft.query.trim().is_empty() {
+            return false;
+        }
+        draft.query = draft.query.trim().to_owned();
+        draft.name = name;
+
+        let mut entries = decode_saved_searches(&self.saved_searches.to_string());
+        match entries
+            .iter()
+            .position(|entry| entry.name.eq_ignore_ascii_case(&draft.name))
+        {
+            Some(index) => {
+                // Keep the entry's identity: a sidebar row already drawn for
+                // this name must keep pointing at the same search.
+                if draft.id.is_empty() {
+                    draft.id = entries[index].id.clone();
+                }
+                entries[index] = draft;
+            }
+            None => {
+                if draft.id.is_empty() {
+                    draft.id = next_saved_search_id(&entries);
+                }
+                entries.insert(0, draft);
+                entries.truncate(SAVED_SEARCH_LIMIT);
+            }
+        }
+        self.as_mut()
+            .set_saved_searches(encode_saved_searches(&entries));
+        save(&self.stored());
+        true
+    }
+
+    fn delete_saved_search(mut self: Pin<&mut Self>, id: &QString) -> bool {
+        let id = id.to_string();
+        if id.is_empty() {
+            return false;
+        }
+        let mut entries = decode_saved_searches(&self.saved_searches.to_string());
+        let before = entries.len();
+        entries.retain(|entry| entry.id != id);
+        if entries.len() == before {
+            return false;
+        }
+        self.as_mut()
+            .set_saved_searches(encode_saved_searches(&entries));
+        save(&self.stored());
+        true
+    }
+
+    fn rename_saved_search(mut self: Pin<&mut Self>, id: &QString, name: &QString) -> bool {
+        let id = id.to_string();
+        let name = name.to_string().trim().to_owned();
+        if id.is_empty() || name.is_empty() {
+            return false;
+        }
+        let mut entries = decode_saved_searches(&self.saved_searches.to_string());
+        let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) else {
+            return false;
+        };
+        entry.name = name;
+        self.as_mut()
+            .set_saved_searches(encode_saved_searches(&entries));
+        save(&self.stored());
+        true
+    }
+
     fn reset_filters(mut self: Pin<&mut Self>) {
         let mut changed = false;
         if self.kind_filter.to_string() != "all" {
@@ -1433,5 +1613,52 @@ mod tests {
         assert_eq!(suggest_view(1, 12, 1), "list");
         assert_eq!(suggest_view(0, 2, 4), "column", "deep and sparse");
         assert_eq!(suggest_view(0, 2, 1), "list");
+    }
+
+    #[test]
+    fn saved_searches_round_trip_through_the_document() {
+        let mut prefs = StoredPrefs::default();
+        prefs.apply_document(
+            "savedSearches=[{\"id\":\"s1\",\"name\":\"Large videos\",\"query\":\"*.mp4\",\
+             \"mode\":\"name\",\"scope\":\"volumes\",\"typeId\":\"media\",\"kind\":\"videos\",\
+             \"modified\":\"month\",\"size\":\"large\",\"regex\":false,\
+             \"caseSensitive\":false,\"filter\":\"*.mp4\"}]\n",
+        );
+        assert_eq!(prefs.saved_searches.len(), 1);
+        assert_eq!(prefs.saved_searches[0].name, "Large videos");
+        assert_eq!(prefs.saved_searches[0].type_id, "media");
+        assert_eq!(prefs.saved_searches[0].scope, "volumes");
+
+        let reparsed = {
+            let mut next = StoredPrefs::default();
+            next.apply_document(&prefs.document());
+            next
+        };
+        assert_eq!(reparsed, prefs);
+    }
+
+    #[test]
+    fn a_saved_search_without_a_query_or_name_is_dropped() {
+        let mut prefs = StoredPrefs::default();
+        prefs.apply_document(
+            "savedSearches=[{\"id\":\"a\",\"name\":\"Empty\",\"query\":\"  \"},\
+             {\"id\":\"b\",\"name\":\"\",\"query\":\"rs\"},\
+             {\"id\":\"c\",\"name\":\"Kept\",\"query\":\"rs\"}]\n",
+        );
+        assert_eq!(prefs.saved_searches.len(), 1);
+        assert_eq!(prefs.saved_searches[0].id, "c");
+    }
+
+    #[test]
+    fn a_saved_search_spec_from_qml_defaults_the_missing_fields() {
+        let search: SavedSearch = serde_json::from_str(
+            "{\"query\":\"report\",\"mode\":\"content\",\"typeId\":\"doc\"}",
+        )
+        .expect("the spec is what the search bar can always send");
+        assert_eq!(search.query, "report");
+        assert_eq!(search.mode, "content");
+        assert_eq!(search.type_id, "doc");
+        assert!(search.scope.is_empty());
+        assert!(!search.regex);
     }
 }

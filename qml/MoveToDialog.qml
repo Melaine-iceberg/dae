@@ -310,6 +310,8 @@ FocusScope {
 
                         MouseArea {
                             id: folderMouse
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: folderRow.fileName
                             anchors.fill: parent
                             hoverEnabled: true
                             acceptedButtons: Qt.LeftButton
@@ -354,6 +356,8 @@ FocusScope {
 
                     MouseArea {
                         id: cancelMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("取消")
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: root.close()
@@ -376,6 +380,8 @@ FocusScope {
 
                     MouseArea {
                         id: moveMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("移动")
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: root.accept()

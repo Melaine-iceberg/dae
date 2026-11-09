@@ -119,6 +119,7 @@ Item {
     }
 
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
         onPressed: function (mouse) {

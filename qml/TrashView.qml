@@ -378,6 +378,10 @@ Item {
             }
 
             MouseArea {
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: qsTr("全选")
+                Accessible.checkable: true
+                Accessible.checked: root.allSelected
                 anchors.fill: parent
                 onClicked: {
                     if (root.allSelected)
@@ -459,6 +463,7 @@ Item {
     }
 
     MouseArea {
+        Accessible.ignored: true
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: columnHeader.bottom
@@ -485,6 +490,9 @@ Item {
         currentIndex: -1
 
         TapHandler {
+            /// The tap only moves focus into the list. Focus is not an action, and
+            /// the list itself already carries the name.
+            Accessible.ignored: true
             acceptedButtons: Qt.LeftButton
             onTapped: root.takeFocus()
         }

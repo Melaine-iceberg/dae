@@ -358,6 +358,8 @@ FocusScope {
 
                         MouseArea {
                             id: rowMouse
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: entry.label
                             visible: entry.kind !== "header"
                             anchors.fill: parent
                             hoverEnabled: true
@@ -412,6 +414,8 @@ FocusScope {
                         horizontalAlignment: Text.AlignHCenter
 
                         MouseArea {
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("重试")
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: apps.retry()
@@ -494,6 +498,10 @@ FocusScope {
                     }
 
                     MouseArea {
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: qsTr("设为默认打开方式")
+                        Accessible.checkable: true
+                        Accessible.checked: root.setDefault
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.setDefault = !root.setDefault
@@ -524,6 +532,8 @@ FocusScope {
 
                         MouseArea {
                             id: cancelMouse
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("取消")
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: root.dismiss()
@@ -546,6 +556,8 @@ FocusScope {
                         }
 
                         MouseArea {
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("打开")
                             anchors.fill: parent
                             enabled: root.selectedId !== "" && !root.opening
                             cursorShape: Qt.PointingHandCursor

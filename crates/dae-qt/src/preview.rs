@@ -15,14 +15,24 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use dae_core::fs::media_meta;
 use dae_core::fs::vfs;
-use dae_core::fs::{preview, service};
+use dae_core::fs::{office, preview, service};
 use dae_core::types::{EntryKind, FileProperties, display_name_from_path};
 
 use crate::format;
+use crate::office_markup;
 use crate::preview_markup::{self, SourceKind};
 use crate::runtime;
 
 const PREVIEW_READ_BYTES: u32 = 64 * 1024;
+/// The whole OOXML container has to be read before any part can be opened, so
+/// this is the pane's one large read. The core refuses anything above it.
+const PREVIEW_OFFICE_BYTES: u32 = 48 * 1024 * 1024;
+/// A `.doc`/`.xls`/`.ppt` is an OLE compound file, not a ZIP: reading it needs
+/// a converter, so the pane says what to do instead of staying blank.
+const LEGACY_OFFICE_MESSAGE: &str =
+    "Legacy Office formats cannot be previewed. Save a .docx, .xlsx or .pptx copy first.";
+/// OpenDocument and the Apple iWork bundles: known, not parsed.
+const UNSUPPORTED_OFFICE_MESSAGE: &str = "This document format has no preview yet.";
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -75,6 +85,17 @@ pub mod qobject {
         /// a VFS the media backend cannot open).
         #[qproperty(QString, media_kind, cxx_name = "mediaKind")]
         #[qproperty(QString, media_url, cxx_name = "mediaUrl")]
+        /// The rendered body of an OOXML document (`.docx`, `.xlsx`, `.pptx`),
+        /// empty for every other file. `officeFormat` names the family and
+        /// `officeTruncated` says the pane is showing a sample.
+        #[qproperty(bool, has_office, cxx_name = "hasOffice")]
+        #[qproperty(QString, office_html, cxx_name = "officeHtml")]
+        #[qproperty(QString, office_format, cxx_name = "officeFormat")]
+        #[qproperty(bool, office_truncated, cxx_name = "officeTruncated")]
+        /// Why an Office file has no preview: too large, encrypted, a legacy
+        /// binary format, or a format dae does not parse. Shown in place of the
+        /// body rather than replacing the metadata.
+        #[qproperty(QString, office_error, cxx_name = "officeError")]
         #[qproperty(bool, loading)]
         #[qproperty(QString, error)]
         /// True for `smb://`, `sftp://` and `cloud://` entries. Their text is
@@ -137,6 +158,11 @@ pub struct PreviewControllerRust {
     media_text: QString,
     media_kind: QString,
     media_url: QString,
+    has_office: bool,
+    office_html: QString,
+    office_format: QString,
+    office_truncated: bool,
+    office_error: QString,
     loading: bool,
     error: QString,
     remote: bool,
@@ -144,6 +170,9 @@ pub struct PreviewControllerRust {
     source_text: String,
     source_kind: SourceKind,
     source_path: String,
+    /// The extracted document behind `office_html`, kept so a theme switch can
+    /// re-render without opening the container again.
+    source_office: Option<office::OfficePreview>,
     dark: bool,
 }
 
@@ -167,6 +196,11 @@ struct Snapshot {
     media_text: String,
     media_kind: String,
     media_url: String,
+    office: Option<office::OfficePreview>,
+    office_html: String,
+    office_format: String,
+    office_truncated: bool,
+    office_error: String,
     remote: bool,
 }
 
@@ -214,12 +248,18 @@ impl qobject::PreviewController {
         self.as_mut().set_media_text(QString::default());
         self.as_mut().set_media_kind(QString::default());
         self.as_mut().set_media_url(QString::default());
+        self.as_mut().set_has_office(false);
+        self.as_mut().set_office_html(QString::default());
+        self.as_mut().set_office_format(QString::default());
+        self.as_mut().set_office_truncated(false);
+        self.as_mut().set_office_error(QString::default());
         self.as_mut().set_loading(false);
         self.as_mut().set_error(QString::default());
         self.as_mut().set_remote(false);
         self.as_mut().rust_mut().source_text.clear();
         self.as_mut().rust_mut().source_kind = SourceKind::Plain;
         self.as_mut().rust_mut().source_path.clear();
+        self.as_mut().rust_mut().source_office = None;
     }
 
     fn apply(
@@ -244,6 +284,11 @@ impl qobject::PreviewController {
                         self.dark,
                     )
                 };
+                let office_html = match (&snapshot.office, snapshot.dark == self.dark) {
+                    (Some(preview), false) => office_markup::render(preview, self.dark),
+                    _ => snapshot.office_html.clone(),
+                };
+                let has_office = snapshot.office.is_some();
                 self.as_mut().set_path(QString::from(path.as_str()));
                 self.as_mut()
                     .set_name(QString::from(snapshot.name.as_str()));
@@ -278,6 +323,14 @@ impl qobject::PreviewController {
                     .set_media_kind(QString::from(snapshot.media_kind.as_str()));
                 self.as_mut()
                     .set_media_url(QString::from(snapshot.media_url.as_str()));
+                self.as_mut().set_has_office(has_office);
+                self.as_mut()
+                    .set_office_html(QString::from(office_html.as_str()));
+                self.as_mut()
+                    .set_office_format(QString::from(snapshot.office_format.as_str()));
+                self.as_mut().set_office_truncated(snapshot.office_truncated);
+                self.as_mut()
+                    .set_office_error(QString::from(snapshot.office_error.as_str()));
                 self.as_mut().set_remote(snapshot.remote);
                 self.as_mut().set_error(QString::default());
 
@@ -285,6 +338,7 @@ impl qobject::PreviewController {
                 rust.source_text = snapshot.content;
                 rust.source_kind = snapshot.source_kind;
                 rust.source_path = snapshot.source_path;
+                rust.source_office = snapshot.office;
             }
             Err(message) => {
                 // The retained snapshot belongs to the previous entry; drop it
@@ -308,6 +362,11 @@ impl qobject::PreviewController {
                 self.as_mut().set_media_text(QString::default());
                 self.as_mut().set_media_kind(QString::default());
                 self.as_mut().set_media_url(QString::default());
+                self.as_mut().set_has_office(false);
+                self.as_mut().set_office_html(QString::default());
+                self.as_mut().set_office_format(QString::default());
+                self.as_mut().set_office_truncated(false);
+                self.as_mut().set_office_error(QString::default());
                 self.as_mut().set_remote(!vfs::is_local_path(&path));
                 self.as_mut().set_error(QString::from(message.as_str()));
 
@@ -315,6 +374,7 @@ impl qobject::PreviewController {
                 rust.source_text.clear();
                 rust.source_kind = SourceKind::Plain;
                 rust.source_path.clear();
+                rust.source_office = None;
             }
         }
         // Last: every binding that also reads `loading` then sees the complete
@@ -327,21 +387,29 @@ impl qobject::PreviewController {
             return;
         }
         self.as_mut().rust_mut().dark = dark;
-        let (source, path, kind) = {
+        let (source, path, kind, office) = {
             let this = self.as_ref();
             let rust = this.rust();
             (
                 rust.source_text.clone(),
                 rust.source_path.clone(),
                 rust.source_kind.clone(),
+                rust.source_office.clone(),
             )
         };
-        if kind == SourceKind::Plain {
-            return;
+        if kind != SourceKind::Plain {
+            let html = preview_markup::render(&source, &path, &kind, dark);
+            if html != self.content_html.to_string() {
+                self.as_mut().set_content_html(QString::from(html.as_str()));
+            }
         }
-        let html = preview_markup::render(&source, &path, &kind, dark);
-        if html != self.content_html.to_string() {
-            self.as_mut().set_content_html(QString::from(html.as_str()));
+        // An Office body carries concrete colours too, so switching the theme
+        // has to re-render it from the cached extraction.
+        if let Some(preview) = office {
+            let html = office_markup::render(&preview, dark);
+            if html != self.office_html.to_string() {
+                self.as_mut().set_office_html(QString::from(html.as_str()));
+            }
         }
     }
 }
@@ -389,7 +457,30 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         (0, Vec::new())
     };
 
-    Ok(snapshot_from(properties, text, media, exif, children, dark))
+    // Office is a fourth kind of content, not a text peek: the body arrives as
+    // sections, and the container has to be read whole. A failure becomes a
+    // line in the pane instead of an error that hides the metadata.
+    let (office, office_error) = if is_directory {
+        (None, String::new())
+    } else {
+        let name = properties.name.as_str();
+        if office::is_office_path(name) {
+            match office::read_office_preview(path.to_owned(), PREVIEW_OFFICE_BYTES).await {
+                Ok(preview) => (Some(preview), String::new()),
+                Err(error) => (None, friendly_office_error(&error.to_string())),
+            }
+        } else if office::is_legacy_office_path(name) {
+            (None, LEGACY_OFFICE_MESSAGE.to_owned())
+        } else if office::is_unsupported_office_path(name) {
+            (None, UNSUPPORTED_OFFICE_MESSAGE.to_owned())
+        } else {
+            (None, String::new())
+        }
+    };
+
+    Ok(snapshot_from(
+        properties, text, media, exif, children, office, office_error, dark,
+    ))
 }
 
 /// The pane names the first few children of a selected folder. This is a
@@ -438,6 +529,8 @@ fn snapshot_from(
     media: Option<media_meta::MediaPreview>,
     exif: Option<media_meta::ImageExif>,
     children: (i32, Vec<String>),
+    office: Option<office::OfficePreview>,
+    office_error: String,
     dark: bool,
 ) -> Snapshot {
     let is_directory = properties.kind == EntryKind::Directory;
@@ -466,6 +559,14 @@ fn snapshot_from(
         String::new()
     } else {
         preview_markup::file_url(&properties.path).unwrap_or_default()
+    };
+    let (office_html, office_format, office_truncated) = match &office {
+        Some(document) => (
+            office_markup::render(document, dark),
+            document.kind.label().to_owned(),
+            document.truncated,
+        ),
+        None => (String::new(), String::new(), false),
     };
     Snapshot {
         name: properties.name,
@@ -497,6 +598,11 @@ fn snapshot_from(
         media_text: metadata_block(media, exif),
         media_kind,
         media_url,
+        office,
+        office_html,
+        office_format,
+        office_truncated,
+        office_error,
         remote: !vfs::is_local_path(&properties.path),
     }
 }
@@ -632,6 +738,18 @@ fn friendly_preview_error(message: &str) -> String {
     message.to_owned()
 }
 
+/// Office failures are three user-visible outcomes, not one: too large, no
+/// text, unreadable. The core reports codes so the wording stays here.
+fn friendly_office_error(message: &str) -> String {
+    if message.contains("fs.office_too_large") {
+        return "Office document is too large to preview.".to_owned();
+    }
+    if message.contains("fs.office_empty") {
+        return "This Office document has no readable text.".to_owned();
+    }
+    "This Office file cannot be read. It may be encrypted or damaged.".to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,5 +798,21 @@ mod tests {
         assert_eq!(names, vec!["sub", "a.txt", "b.txt"]);
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn office_failures_read_as_three_different_outcomes() {
+        assert_eq!(
+            friendly_office_error("The requested operation has invalid input: fs.office_too_large"),
+            "Office document is too large to preview."
+        );
+        assert_eq!(
+            friendly_office_error("fs.office_empty"),
+            "This Office document has no readable text."
+        );
+        assert_eq!(
+            friendly_office_error("fs.office_unreadable"),
+            "This Office file cannot be read. It may be encrypted or damaged."
+        );
     }
 }

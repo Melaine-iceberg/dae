@@ -46,6 +46,9 @@ Item {
     signal scopeRequested(string scope)
     /// The field's history chip was pressed; the shell owns the popup.
     signal historyRequested(real x, real y)
+    /// The live query should be stored under a name. The shell owns the prompt
+    /// and the preference write.
+    signal saveRequested()
     /// The name search's kind/date/size chips are the listing's own filter
     /// menu: one vocabulary and one popup, opened from here.
     signal filtersRequested(real x, real y)
@@ -214,6 +217,15 @@ Item {
             }
 
             id: historyChip
+        }
+
+        /// Saving the live query: one chip, one prompt. It only exists while
+        /// there is a query to save, because an empty search has no meaning to
+        /// restore.
+        Chip {
+            label: qsTr("保存")
+            visible: root.query.length > 0
+            onClicked: root.saveRequested()
         }
 
         Chip {

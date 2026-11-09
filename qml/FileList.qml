@@ -1013,6 +1013,10 @@ Item {
 
         MouseArea {
             id: dividerMouse
+            /// A drag strip between two columns. Resizing is a pointer gesture with
+            /// no keyboard path, so a name here would announce a button that cannot
+            /// be pressed from the keyboard.
+            Accessible.ignored: true
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -1078,6 +1082,8 @@ Item {
 
         MouseArea {
             id: headerMouse
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("按%1排序").arg(cell.label)
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.rightMargin: 7
@@ -1173,6 +1179,7 @@ Item {
         /// a right-click there has to open the empty-area menu. It sits
         /// behind the views: the delegates' own right-clicks are above it.
         MouseArea {
+            Accessible.ignored: true
             anchors.fill: parent
             acceptedButtons: Qt.RightButton
             onPressed: function (mouse) {
@@ -1645,6 +1652,8 @@ Item {
         /// over them; a press that began on a row is handed down instead.
         MouseArea {
             id: listMarquee
+            /// As in the grid: the marquee is the picture of a drag, not a target.
+            Accessible.ignored: true
             anchors.fill: parent
             z: 20
             acceptedButtons: Qt.LeftButton

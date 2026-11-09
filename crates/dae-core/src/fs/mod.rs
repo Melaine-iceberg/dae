@@ -38,6 +38,7 @@ pub mod macos_trash;
 pub mod media_meta;
 pub mod open_with;
 pub mod occupancy;
+pub mod office;
 pub mod prefetch;
 pub mod preview;
 pub mod progress;

@@ -158,6 +158,8 @@ Item {
 
             MouseArea {
                 id: restartMouse
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("重新启动终端")
                 anchors.fill: parent
                 hoverEnabled: true
                 onClicked: {

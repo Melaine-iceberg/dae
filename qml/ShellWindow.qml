@@ -124,6 +124,16 @@ Window {
             return []
         }
     }
+    /// Named searches, as the preference singleton stores them. The sidebar
+    /// draws the rows; this is what a click resolves an id against.
+    readonly property var savedSearches: {
+        try {
+            const entries = JSON.parse(ExplorerPrefs.savedSearches)
+            return Array.isArray(entries) ? entries : []
+        } catch (error) {
+            return []
+        }
+    }
     property string promptMode: ""
     property string promptPath: ""
     property string contextPath: ""
@@ -1515,6 +1525,54 @@ Window {
         root.acceptSearchText(query)
     }
 
+    /// The filter row's "保存" chip. The name comes from the shell's one-line
+    /// prompt; the query and its settings are read from the live bar, so what
+    /// is stored is what produced the results on screen.
+    function requestSaveSearch() {
+        const query = root.searchQuery.trim()
+        if (query.length === 0 || root.modalOpen)
+            return
+        root.promptMode = "saveSearch"
+        const suggestion = query.length > 40 ? query.slice(0, 40) : query
+        namePrompt.open(qsTr("保存搜索"), suggestion, qsTr("名称"))
+    }
+
+    /// Re-runs a stored search. The mode, scope, type and the listing's own
+    /// kind/date/size buckets are all part of the query, so every one of them
+    /// is restored before the text is accepted: the results must not come from
+    /// a half-restored bar.
+    function applySavedSearch(id) {
+        if (root.modalOpen)
+            return
+        if (root.remoteLocation) {
+            toast.show(qsTr("保存的搜索只支持本地目录"), false)
+            return
+        }
+        let entry = null
+        for (let index = 0; index < root.savedSearches.length; index += 1) {
+            if (root.savedSearches[index].id === id) {
+                entry = root.savedSearches[index]
+                break
+            }
+        }
+        if (entry === null || !entry.query)
+            return
+        if (!root.folderActive)
+            root.navigate(root.activePath)
+        root.openSearch()
+        root.searchMode = entry.mode === "content" ? "content" : "name"
+        root.searchScope = entry.scope ? entry.scope : "current"
+        root.searchType = entry.typeId ? entry.typeId : "all"
+        root.searchFilter = entry.filter ? entry.filter : ""
+        root.searchRegex = entry.regex === true
+        root.searchCase = entry.caseSensitive === true
+        ExplorerPrefs.setString("kindFilter", entry.kind ? entry.kind : "all")
+        ExplorerPrefs.setString("modifiedFilter", entry.modified ? entry.modified : "any")
+        ExplorerPrefs.setString("sizeFilter", entry.size ? entry.size : "any")
+        root.setSearchText(entry.query)
+        root.acceptSearchText(entry.query)
+    }
+
     /// Tells the preferences which directory's layout is on screen. Writing
     /// the property is what makes a per-directory layout restore (and what a
     /// change in that directory is saved against); with layouts synchronised
@@ -2286,6 +2344,26 @@ Window {
             if (!Spaces.renameSpace(path, text))
                 toast.show(Spaces.error !== ""
                     ? root.localizeBackend(Spaces.error) : qsTr("无法重命名空间"), true)
+        } else if (mode === "saveSearch") {
+            // The spec is one JSON object rather than ten arguments: the
+            // preference setter takes a `SavedSearch`, and a spec that grows a
+            // field later does not change the call.
+            const spec = JSON.stringify({
+                query: root.searchQuery.trim(),
+                mode: root.searchMode,
+                scope: root.searchScope,
+                typeId: root.searchType,
+                kind: root.searchKind,
+                modified: root.searchModified,
+                size: root.searchSize,
+                regex: root.searchRegex,
+                caseSensitive: root.searchCase,
+                filter: root.searchFilter
+            })
+            if (ExplorerPrefs.saveSearch(text, spec))
+                toast.show(qsTr("已保存搜索“%1”").arg(text), false)
+            else
+                toast.show(qsTr("无法保存搜索"), true)
         }
     }
 
@@ -3445,6 +3523,8 @@ Window {
                 // keep. Typing a path is the exception, so the editor is a
                 // state of this bar rather than the bar itself.
                 MouseArea {
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("路径栏")
                     anchors.fill: parent
                     enabled: root.folderActive && !root.pathEditing
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -3502,6 +3582,8 @@ Window {
 
                 TextInput {
                     id: pathInput
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("路径")
 
                     anchors.fill: parent
                     anchors.leftMargin: 8
@@ -4024,6 +4106,7 @@ Window {
             onHistoryRequested: function (x, y) {
                 searchHistoryMenu.openAt(x, y, root.searchHistoryItems())
             }
+            onSaveRequested: root.requestSaveSearch()
             onFiltersRequested: function (x, y) {
                 filterMenu.openAbove(x, y)
             }
@@ -4070,6 +4153,7 @@ Window {
 
                 MouseArea {
                     id: sidebarHandleMouse
+                    Accessible.ignored: true
                     anchors.fill: parent
                     enabled: sidebarHandle.live
                     hoverEnabled: true
@@ -4107,6 +4191,12 @@ Window {
                 onTrashRequested: root.openTrash()
                 onTagActivated: function (name) {
                     root.searchTag(name)
+                }
+                onSavedSearchActivated: function (id) {
+                    root.applySavedSearch(id)
+                }
+                onSavedSearchRemoveRequested: function (id) {
+                    ExplorerPrefs.deleteSavedSearch(id)
                 }
                 onAddRequested: function (kind) {
                     if (kind === "cloud")
@@ -4223,6 +4313,8 @@ Window {
                             // siblings paint on top, and crumbs the click
                             // target covered would never receive their clicks.
                             MouseArea {
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("路径栏")
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -4345,6 +4437,9 @@ Window {
                         }
 
                         MouseArea {
+                            /// The split divider is a drag strip between the two panes. There is no
+                            /// keyboard command for the ratio, so the strip stays out of the tree.
+                            Accessible.ignored: true
                             anchors.fill: parent
                             cursorShape: Qt.SplitHCursor
                             property real startPointerX: 0
@@ -4524,6 +4619,7 @@ Window {
 
                 MouseArea {
                     id: handleMouse
+                    Accessible.ignored: true
                     anchors.fill: parent
                     enabled: previewHandle.live
                     hoverEnabled: true

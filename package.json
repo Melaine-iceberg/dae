@@ -20,7 +20,8 @@
     "icons:icon": "bun scripts/render-icon.mjs",
     "test:rust": "cargo nextest run",
     "test:rust:setup": "cargo binstall -y cargo-nextest",
-    "lint:qml": "qmllint qml"
+    "lint:qml": "qmllint qml",
+    "a11y:audit": "node scripts/a11y-audit.mjs --baseline"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",

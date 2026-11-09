@@ -111,6 +111,7 @@ Item {
     }
 
     MouseArea {
+        Accessible.ignored: true
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: root.close()
@@ -170,6 +171,8 @@ Item {
             }
 
             MouseArea {
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("清除筛选")
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor

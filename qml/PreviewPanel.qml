@@ -409,6 +409,66 @@ Item {
                 }
             }
 
+            // Office documents: the extracted body of a .docx/.xlsx/.pptx, or
+            // the one line that explains why there is none. The container is
+            // read in the bridge; this card only draws what came back.
+            Rectangle {
+                id: officeCard
+
+                visible: root.single && (controller.hasOffice || controller.officeError !== "")
+                width: parent.width
+                height: root.previewHeight
+                radius: Theme.radiusSm
+                color: root.sectionColor
+                border.width: 1
+                border.color: root.hairline
+                clip: true
+
+                Flickable {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    contentWidth: width
+                    contentHeight: officeText.contentHeight + 16
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    TextEdit {
+                        id: officeText
+
+                        x: 10
+                        y: 8
+                        width: parent.width - 20
+                        height: Math.max(contentHeight, parent.height - 16)
+                        readOnly: true
+                        selectByMouse: true
+                        text: controller.hasOffice ? controller.officeHtml
+                                                   : Localize.message(controller.officeError)
+                        color: root.textColor
+                        selectionColor: root.accent
+                        selectedTextColor: Theme.onInteractive
+                        font.pixelSize: Theme.typeMicro
+                        textFormat: controller.hasOffice ? TextEdit.RichText
+                                                         : TextEdit.PlainText
+                        wrapMode: TextEdit.Wrap
+
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: qsTr("文档预览")
+                        Accessible.description: controller.hasOffice
+                            ? qsTr("Office 文档正文") : Localize.message(controller.officeError)
+                    }
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    visible: controller.hasOffice && controller.officeTruncated
+                    text: qsTr("内容过长，仅显示开头部分")
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                }
+            }
+
             // Plain text: a line-number gutter and the content, both in the
             // same mono face at the same line height, so the digits line up
             // with the rows they count.
@@ -493,6 +553,8 @@ Item {
 
                     TextEdit {
                         id: richPreview
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: qsTr("预览内容")
                         x: 10
                         y: 8
                         width: parent.width - 20
@@ -784,6 +846,10 @@ Item {
 
                             MouseArea {
                                 id: tagMouse
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: tagChip.modelData.name
+                                Accessible.checkable: true
+                                Accessible.checked: tagChip.on
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor

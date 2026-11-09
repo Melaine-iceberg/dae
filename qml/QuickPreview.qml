@@ -61,6 +61,7 @@ Item {
         color: Theme.scrim
 
         MouseArea {
+            Accessible.ignored: true
             anchors.fill: parent
             onClicked: root.close()
         }
@@ -80,6 +81,7 @@ Item {
 
         // A click inside the plate must not close it; the scrim is behind.
         MouseArea {
+            Accessible.ignored: true
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton | Qt.RightButton
         }
