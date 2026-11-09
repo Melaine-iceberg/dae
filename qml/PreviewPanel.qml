@@ -205,6 +205,7 @@ Item {
             text: qsTr("预览")
             color: root.faintColor
             font.pixelSize: Theme.typeMicro
+            font.weight: Font.Medium
             font.letterSpacing: 0.9
         }
 
@@ -356,7 +357,8 @@ Item {
             Text {
                 width: parent.width
                 visible: !root.empty && !root.single && root.trashItem === null
-                text: qsTr("多选时不展开内容预览")
+                text: root.multiSize !== "" ? qsTr("共 %1").arg(root.multiSize)
+                                            : qsTr("多选时不展开内容预览")
                 color: root.faintColor
                 font.pixelSize: Theme.typeCaption
                 wrapMode: Text.Wrap
@@ -370,7 +372,7 @@ Item {
                 visible: root.single && controller.hasThumbnail && controller.mediaKind === ""
                 width: parent.width
                 height: root.previewHeight
-                radius: Theme.radiusMd
+                radius: Theme.radiusLg
                 color: root.sectionColor
                 border.width: 1
                 border.color: root.hairline
@@ -385,7 +387,7 @@ Item {
                 Image {
                     id: thumbnail
                     anchors.fill: parent
-                    anchors.margins: 10
+                    anchors.margins: 12
                     source: root.thumbnailSource
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
@@ -791,29 +793,14 @@ Item {
                     }
                 }
 
-                /// The aggregate row: count, the size of the files that can be
-                /// measured without walking a folder, and the tags they share.
+                /// The count and the measured size already sit under the big
+                /// number above, so only the shared-tag state is left to say
+                /// here; repeating the totals in a 300 px pane is the noise
+                /// the prototype's single "共 1.2 MB" line avoids.
                 Column {
                     width: parent.width
                     visible: root.paths.length > 1
                     spacing: 4
-
-                    Text {
-                        width: parent.width
-                        text: qsTr("已选择 %1 项").arg(root.paths.length)
-                        color: root.textColor
-                        font.pixelSize: Theme.typeBody
-                        textFormat: Text.PlainText
-                    }
-
-                    Text {
-                        width: parent.width
-                        visible: root.multiSize !== ""
-                        text: qsTr("文件合计 %1").arg(root.multiSize)
-                        color: root.faintColor
-                        font.pixelSize: Theme.typeMicro
-                        textFormat: Text.PlainText
-                    }
 
                     Text {
                         width: parent.width

@@ -4628,8 +4628,8 @@ Window {
                     return base
                 }
                 color: Theme.inkMuted
-                font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeCaption
+                font.features: { "tnum": 1 }
                 elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
                 Accessible.name: text
@@ -4922,7 +4922,7 @@ Window {
                             kind: "panel"
                             implicitWidth: 14
                             implicitHeight: 14
-                            tint: root.previewVisible ? Theme.inkMuted : Theme.inkFaint
+                            tint: root.previewVisible ? Theme.ink : Theme.inkFaint
                         }
 
                         Text {
@@ -4981,7 +4981,7 @@ Window {
                             kind: "terminal"
                             implicitWidth: 14
                             implicitHeight: 14
-                            tint: root.terminalActive ? Theme.inkMuted : Theme.inkFaint
+                            tint: root.terminalActive ? Theme.ink : Theme.inkFaint
                         }
 
                         Text {

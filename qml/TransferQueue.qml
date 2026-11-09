@@ -71,7 +71,7 @@ Item {
         height: Math.min(320, body.height + header.height + 8)
         x: Math.round((root.width - width) / 2)
         y: root.height - height - 32
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
@@ -87,6 +87,7 @@ Item {
                 text: qsTr("传输队列")
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
                 font.letterSpacing: 0.55
             }
 

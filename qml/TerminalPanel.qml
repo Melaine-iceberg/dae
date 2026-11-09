@@ -47,10 +47,14 @@ Item {
         // Starting the shell before the item has its size would create the PTY
         // at the placeholder size; the resize that follows makes PowerShell
         // redraw its prompt further down and leaves blank rows above it.
+        // TerminalItem is a C++ type; qmllint's model of it stops at the
+        // registered metatypes, so the grid size reads as a missing property.
+        // qmllint disable missing-property
         if (view.columns <= 1 || view.rows <= 1) {
             Qt.callLater(root.start)
             return
         }
+        // qmllint disable missing-property
         tab.startTerminal(view.columns, view.rows)
     }
 
@@ -203,10 +207,10 @@ Item {
         anchors.right: parent.right
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
-        anchors.leftMargin: 10
+        anchors.leftMargin: 12
         anchors.rightMargin: 8
-        anchors.topMargin: 6
-        anchors.bottomMargin: 6
+        anchors.topMargin: 8
+        anchors.bottomMargin: 8
         /// The native terminal consumes Tab — it has to, Tab is completion
         /// inside a shell — so it may only be part of the focus chain while the
         /// panel is on screen. Hidden, it would be a stop that swallows the key
