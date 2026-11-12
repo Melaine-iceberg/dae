@@ -48,3 +48,6 @@ cxx-qt-build = "0.10"
 # cold `target/`, which is how CI first saw it as "did dae-qt build?".
 dae-qt = { path = "../../crates/dae-qt" }
 qt-build-utils = "0.10"
+# Embeds `packaging/icons/icon.ico` into `dae.exe`; see the top of `main` in
+# `build.rs` for why the exe needs its own icon.
+winresource = "0.1"

@@ -503,6 +503,28 @@ inline void style_window(HWND hwnd)
     DwmSetWindowAttribute(hwnd, kDwmwaWindowCornerPreference, &corner, sizeof(corner));
 }
 
+/// Gives the window the icon resource compiled into the executable.
+///
+/// Windows draws the taskbar button and Alt+Tab from the window's icon; when
+/// the window has none it falls back to the generic application icon, not to
+/// the executable's icon. `build.rs` embeds `packaging/icons/icon.ico` as
+/// resource 1, and this hands that resource to the window.
+inline void set_window_icon(HWND hwnd)
+{
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    const UINT dpi = GetDpiForWindow(hwnd);
+    const int big_px = GetSystemMetricsForDpi(SM_CXICON, dpi);
+    const int small_px = GetSystemMetricsForDpi(SM_CXSMICON, dpi);
+    auto big_icon = static_cast<HICON>(
+        LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, big_px, big_px, LR_SHARED));
+    auto small_icon = static_cast<HICON>(
+        LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, small_px, small_px, LR_SHARED));
+    if (big_icon)
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big_icon));
+    if (small_icon)
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+}
+
 inline bool apply_backdrop_to(HWND hwnd, int material, bool dark)
 {
     if (!hwnd)
@@ -702,6 +724,7 @@ inline bool dae_qt_attach(const QString& token)
     window_states().insert(key, state);
 
     style_window(hwnd);
+    set_window_icon(hwnd);
     cloak_until_painted(hwnd);
 
     // The HWND key must go away with the window: Windows recycles handles, and

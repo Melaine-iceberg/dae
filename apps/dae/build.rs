@@ -309,6 +309,20 @@ fn run_tool(command: &mut Command) -> Result<(), String> {
 }
 
 fn main() {
+    // The shell draws its own chrome and never sets a QWindow icon, so the
+    // taskbar button and Alt+Tab fell back to the generic application icon.
+    // Embed the icon as resource 1; `set_window_icon` in
+    // `crates/dae-qt/cpp/window.h` hands it to every window, and Explorer uses
+    // it for the portable exe.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=../../packaging/icons/icon.ico");
+        let mut resource = winresource::WindowsResource::new();
+        resource.set_icon("../../packaging/icons/icon.ico");
+        resource
+            .compile()
+            .expect("compile packaging/icons/icon.ico into dae.exe");
+    }
+
     let files = QML_FILES
         .iter()
         .map(|(path, alias)| QResourceFile::new(path).alias((*alias).to_owned()));
