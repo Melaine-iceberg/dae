@@ -219,6 +219,16 @@ Item {
         border.width: 1
         border.color: Theme.hairlineStrong
 
+        // The panel itself is not an input item, so a press on its padding or
+        // on a non-selectable row (a separator, a group label) would otherwise
+        // reach the window-wide scrim behind it and read as a click outside:
+        // the menu closed on release, and a drag that started there closed it
+        // too. Swallow presses and wheel here; the rows above still get theirs.
+        MouseArea {
+            anchors.fill: parent
+            onWheel: {}
+        }
+
         /// The icon size is a continuous value, so it is a slider rather than
         /// five radio rows: the menu already lists enough discrete ticks.
         Row {
