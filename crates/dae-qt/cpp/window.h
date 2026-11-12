@@ -582,28 +582,48 @@ inline bool fix_zoomed_client(HWND hwnd, WPARAM wParam, LPARAM lParam, LRESULT* 
     return false;
 }
 
+/// Applies the maximize toggle once the native click has unwound.
+///
+/// `was_zoomed` is the state *before* the press. DefWindowProc tracks the
+/// non-client button itself and toggles the window on button-up, so by the
+/// time the queued callback runs the state may already be the one the user
+/// asked for. Comparing against the pre-click state is what keeps this from
+/// undoing that toggle — reading `IsZoomed` here instead flips every click:
+/// native maximize, then an immediate restore.
+inline void perform_maximize_toggle(QPointer<QQuickWindow> window, bool was_zoomed)
+{
+    if (!window)
+        return;
+    auto* hwnd = reinterpret_cast<HWND>(window->winId());
+    if (!hwnd)
+        return;
+    if ((IsZoomed(hwnd) != FALSE) != was_zoomed) {
+        // DefWindowProc performed the same toggle; do not undo it.
+        return;
+    }
+    if (was_zoomed)
+        window->showNormal();
+    else
+        window->showMaximized();
+}
+
 /// Acts on the maximize button once the physical button is up.
 ///
 /// DefWindowProc's non-client button tracking owns the matching
 /// WM_NCLBUTTONUP — the filter never sees it — and maximizing from inside that
 /// tracking loop re-entered Qt and crashed. A poll waits for the release, then
 /// lets the loop unwind before calling Qt's window-state API.
-inline void maximize_after_release(QPointer<QQuickWindow> window)
+inline void maximize_after_release(QPointer<QQuickWindow> window, bool was_zoomed)
 {
     auto* timer = new QTimer(qApp);
     timer->setInterval(20);
-    QObject::connect(timer, &QTimer::timeout, qApp, [timer, window]() {
+    QObject::connect(timer, &QTimer::timeout, qApp, [timer, window, was_zoomed]() {
         if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0)
             return;
         timer->stop();
         timer->deleteLater();
-        QTimer::singleShot(80, qApp, [window]() {
-            if (!window)
-                return;
-            if (IsZoomed(reinterpret_cast<HWND>(window->winId())))
-                window->showNormal();
-            else
-                window->showMaximized();
+        QTimer::singleShot(80, qApp, [window, was_zoomed]() {
+            perform_maximize_toggle(window, was_zoomed);
         });
     });
     timer->start();
@@ -632,7 +652,7 @@ public:
         }
         case WM_NCLBUTTONDOWN:
             if (msg->wParam == HTMAXBUTTON)
-                maximize_after_release(state->window);
+                maximize_after_release(state->window, IsZoomed(msg->hwnd) != FALSE);
             return false;
         case WM_NCCALCSIZE:
             return fix_zoomed_client(msg->hwnd, msg->wParam, msg->lParam, result);
