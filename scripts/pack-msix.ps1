@@ -74,6 +74,10 @@ if (-not (Test-Path $exe)) {
 if (Test-Path dist) { Remove-Item dist -Recurse -Force }
 New-Item -ItemType Directory dist | Out-Null
 Copy-Item $exe (Join-Path $root 'dist\dae.exe')
+# libghostty-vt ships as a DLL beside the executable; windeployqt only knows
+# about Qt's own libraries.
+Copy-Item (Join-Path $root 'crates\dae-core\ghostty-vt\lib\x86_64-pc-windows-msvc\ghostty-vt.dll') `
+  (Join-Path $root 'dist\ghostty-vt.dll')
 
 & $windeployqt --release --no-translations --compiler-runtime --qmldir qml `
   (Join-Path $root 'dist\dae.exe')
@@ -82,10 +86,10 @@ if ($LASTEXITCODE -ne 0) { throw "windeployqt failed with exit code $LASTEXITCOD
 # The same set the release workflow asserts before it packs: a payload without
 # these starts and then fails to open a window, which is far harder to read
 # from a bug report than a failed build.
-foreach ($required in @('dae.exe', 'platforms\qwindows.dll', 'qml\QtQuick',
+foreach ($required in @('dae.exe', 'ghostty-vt.dll', 'platforms\qwindows.dll', 'qml\QtQuick',
     'qml\QtMultimedia', 'multimedia')) {
   if (-not (Test-Path (Join-Path $root "dist\$required"))) {
-    throw "windeployqt did not produce $required"
+    throw "the payload is missing $required"
   }
 }
 $bytes = (Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum

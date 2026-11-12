@@ -90,12 +90,12 @@ jobs:
           key: qt-check-${{ matrix.platform }}
           cache-on-failure: true
 
-      # libghostty-vt is vendored as a Windows static lib only; the Unix legs
-      # build it from the pinned ghostty commit (see scripts/build-ghostty-vt.sh).
-      # The cache key covers everything that changes the artifact: the Zig
-      # version, the target, the VERSION pin and the script (which carries the
-      # dependency table). release.yml uses the same key, so a tag can reuse
-      # what main already built.
+      # libghostty-vt is vendored for Windows as the official DLL and import
+      # library; the Unix legs build a static archive from the pinned release (see
+      # scripts/build-ghostty-vt.sh). The cache key covers everything that
+      # changes the artifact: the Zig version, the target, the VERSION pin and
+      # the script (which carries the tarball checksums). release.yml uses the
+      # same key, so a tag can reuse what main already built.
       - name: Cache libghostty-vt
         id: vt-cache
         uses: actions/cache@v5

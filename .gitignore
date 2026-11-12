@@ -76,8 +76,9 @@ NOTES.md
 # landed; harmless if present, never source.
 /crates/*/target/
 
-# libghostty-vt for Unix: only the Windows static lib is vendored in git.
-# CI builds the Linux/macOS archives from the pinned ghostty commit (see
+# libghostty-vt for Unix: Windows vendors the official DLL and import library;
+# every other target links a static archive.
+# CI builds the Linux/macOS archives from the pinned libghostty-vt release (see
 # qt-check.yml / release.yml), and scripts/build-ghostty-vt.sh writes local
 # rebuilds here — build artifacts, not source.
 /crates/dae-core/ghostty-vt/lib/*-linux-gnu/

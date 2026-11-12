@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Builds the vendored libghostty-vt static library for dae (Linux/macOS).
 #
-# Zig's dependency fetcher does not work reliably on every host, so this
-# script sidesteps it: every dependency the pinned source tree names is
-# downloaded with curl and extracted under local-deps/, and the build.zig.zon
-# files are rewritten to point at those directories. The URLs below are part
-# of the pin — when ghostty-vt/VERSION moves, update them and the version
-# check will tell you if you forgot.
+# The pin is the official libghostty-vt release named in ghostty-vt/VERSION.
+# A release ships two tarballs: the source, and every Zig package the build
+# needs, already unpacked in Zig's own cache layout. Passing that directory
+# as --system builds without touching the network, so there is no dependency
+# table or build.zig.zon rewriting here to drift out of date.
 #
 # Usage:
 #   scripts/build-ghostty-vt.sh
@@ -15,7 +14,7 @@
 
 set -euo pipefail
 
-repo=$(cd -- "$(dirname -- "$0")/.." && pwd)
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 vendor="$repo/crates/dae-core/ghostty-vt"
 version=$(tr -d '[:space:]' < "$vendor/VERSION")
 work=${WORK:-${TMPDIR:-/tmp}/ghostty-vt}
@@ -23,6 +22,9 @@ zig=${ZIG:-zig}
 
 rust_target=${RUST_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
 case "$rust_target" in
+    # Windows links the official prebuilt DLL, not a static archive; that is
+    # scripts/build-ghostty-vt.ps1's job and needs no Zig.
+    *-windows-*) echo "Windows uses the official libghostty-vt DLL: run scripts/build-ghostty-vt.ps1" >&2; exit 1 ;;
     x86_64-unknown-linux-gnu)    zig_target=${ZIG_TARGET:-x86_64-linux-gnu} ;;
     aarch64-unknown-linux-gnu)   zig_target=${ZIG_TARGET:-aarch64-linux-gnu} ;;
     x86_64-apple-darwin)         zig_target=${ZIG_TARGET:-x86_64-macos} ;;
@@ -30,103 +32,63 @@ case "$rust_target" in
     *) zig_target=${ZIG_TARGET:-} ;;
 esac
 
-# The source is the immutable commit archive named by VERSION's `+<hash>`
-# suffix. The `tip` release tarball used to be fetched here, but `tip` is
-# regenerated on every ghostty main commit and has moved past this pin;
-# only the commit archive stays buildable against a fixed VERSION.
-commit=${version##*+}
-source_url="https://github.com/ghostty-org/ghostty/archive/$commit.tar.gz"
+base="https://release.files.ghostty.org/libghostty-vt/$version"
+source_url="$base/libghostty-vt-$version.tar.gz"
+deps_url="$base/libghostty-vt-$version-deps.tar.gz"
 
-# The dependency set of ghostty 1.1.0-dev+711702d, exactly as its zon files
-# name them. Each archive holds one top-level directory and is extracted to
-# local-deps/<name>.
-dep_names=(aro highway pixels translate_c uucode wuffs)
-aro_url="https://deps.files.ghostty.org/aro-d0c8c4d9c55daa7ef6e40cf0f630a5b5e900989b.tar.gz"
-highway_url="https://deps.files.ghostty.org/highway-66486a10623fa0d72fe91260f96c892e41aceb06.tar.gz"
-pixels_url="https://deps.files.ghostty.org/pixels-12207ff340169c7d40c570b4b6a97db614fe47e0d83b5801a932dcd44917424c8806.tar.gz"
-translate_c_url="https://deps.files.ghostty.org/translate_c-02ff0c523fb92a38939b04d0145c4a9602a74d56.tar.gz"
-uucode_url="https://deps.files.ghostty.org/uucode-1fb73433bba5d93366c57f23ff2e9d7939746500.tar.gz"
-wuffs_url="https://deps.files.ghostty.org/wuffs-7411f488fe2e2c205c3d3b3d28638b7356522930.tar.gz"
-declare -A dep_urls=(
-    [aro]=$aro_url [highway]=$highway_url [pixels]=$pixels_url
-    [translate_c]=$translate_c_url [uucode]=$uucode_url [wuffs]=$wuffs_url
-)
+# The SHA256SUMS lines for this release. They are part of the pin: a moved
+# release file, or a proxy serving something else, fails the build instead
+# of being vendored. Update both when VERSION moves.
+source_sha256="333dfce97641ef9b536bb9e08907ad86abaaada50e8f7417b70d9284adef37aa"
+deps_sha256="91a4e10960a52bf5bf4b15aa2a2cddaff8a89d6cd903d3055bda4fd17de3356d"
 
-fetch() { # url out
-    [ -f "$2" ] && return
+sha256() { # file
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        # macOS ships shasum, not sha256sum.
+        shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
+
+fetch() { # url out expected
+    local actual
+    if [ -f "$2" ]; then
+        actual=$(sha256 "$2")
+        if [ "$actual" = "$3" ]; then return; fi
+        echo "stale $2 (sha256 $actual), refetching" >&2
+        rm -f "$2"
+    fi
     echo "download $1"
     # Download aside and move into place: a connection dropped mid-transfer
     # must not leave a partial tarball that the next run treats as complete.
     # --retry-all-errors covers receive failures (curl 56), which plain
     # --retry does not consider transient.
     curl -fsSL --retry 3 --retry-all-errors -o "$2.part" "$1"
+    actual=$(sha256 "$2.part")
+    if [ "$actual" != "$3" ]; then
+        rm -f "$2.part"
+        echo "checksum mismatch for $1: expected $3, got $actual" >&2
+        exit 1
+    fi
     mv "$2.part" "$2"
-}
-
-# Replaces the .url line and the .hash line below it with a single .path line,
-# keeping the .url line's indentation. Fails loudly when the pinned source no
-# longer carries that URL, so a version bump cannot silently produce a build
-# that still fetches from the network.
-patch_zon() { # file url path
-    URL=$2 DEST=$3 perl -0pi -e '
-        my $url = $ENV{URL};
-        my $dest = $ENV{DEST};
-        my $re = qr/([ \t]*)\.url\s*=\s*"\Q$url\E"\s*,?\s*\r?\n\s*\.hash\s*=\s*"[^"]*"\s*,?/;
-        my $count = s/$re/$1.path = "$dest",/;
-        die "pin is stale in $ARGV: $url\n" unless $count;
-    ' "$1"
-}
-
-# Same, for a dependency fetched from git — translate_c names aro that way.
-patch_zon_git() { # file entry path
-    ENTRY=$2 DEST=$3 perl -0pi -e '
-        my $entry = $ENV{ENTRY};
-        my $dest = $ENV{DEST};
-        my $re = qr/(\.\Q$entry\E\s*=\s*\.\{)(\s*)\.url\s*=\s*"git\+[^"]*"\s*,?\s*\.hash\s*=\s*"[^"]*"\s*,?/;
-        my $count = s/$re/$1$2.path = "$dest",/;
-        die "pin is stale in $ARGV: git dependency $entry\n" unless $count;
-    ' "$1"
 }
 
 echo "libghostty-vt $version -> $rust_target"
 mkdir -p "$work"
-# The archive name carries the commit so a stale tarball from an older pin
-# (or from the rolling `tip` this script used to fetch) is never reused.
-fetch "$source_url" "$work/ghostty-$commit.tar.gz"
+fetch "$source_url" "$work/libghostty-vt-$version.tar.gz" "$source_sha256"
+fetch "$deps_url" "$work/libghostty-vt-$version-deps.tar.gz" "$deps_sha256"
 
-src="$work/src"
-rm -rf "$src"
-mkdir -p "$src"
-tar -xzf "$work/ghostty-$commit.tar.gz" -C "$src" --strip-components=1
-
-# Git archives carry no LIB_VERSION (the release tarballs generate it, and
-# build.zig falls back to its own lib_version constant without it). The
-# archive's top-level directory is named after the commit instead, and that
-# is what keeps the source honest against the VERSION pin. `sed -n 1p`
-# rather than `head -n 1`: head would SIGPIPE tar under `set -o pipefail`.
-top=$(tar -tzf "$work/ghostty-$commit.tar.gz" | sed -n '1p')
-case "$top" in
-    "ghostty-$commit"*) ;;
-    *)
-        echo "the source archive is $top but ghostty-vt/VERSION pins $version." >&2
-        echo "Update VERSION and the dependency table together." >&2
-        exit 1
-        ;;
-esac
-
-for name in "${dep_names[@]}"; do
-    fetch "${dep_urls[$name]}" "$work/$name.tar.gz"
-    mkdir -p "$src/local-deps/$name"
-    tar -xzf "$work/$name.tar.gz" -C "$src/local-deps/$name" --strip-components=1
-done
-
-patch_zon "$src/build.zig.zon" "$aro_url" "./local-deps/aro"
-patch_zon "$src/build.zig.zon" "$uucode_url" "./local-deps/uucode"
-patch_zon "$src/pkg/translate-c/build.zig.zon" "$translate_c_url" "../../local-deps/translate_c"
-patch_zon "$src/pkg/highway/build.zig.zon" "$highway_url" "../../local-deps/highway"
-patch_zon "$src/pkg/wuffs/build.zig.zon" "$wuffs_url" "../../local-deps/wuffs"
-patch_zon "$src/pkg/wuffs/build.zig.zon" "$pixels_url" "../../local-deps/pixels"
-patch_zon_git "$src/local-deps/translate_c/build.zig.zon" aro "../aro"
+src="$work/libghostty-vt-$version"
+deps="$work/libghostty-vt-$version-deps"
+rm -rf "$src" "$deps"
+tar -xzf "$work/libghostty-vt-$version.tar.gz" -C "$work"
+tar -xzf "$work/libghostty-vt-$version-deps.tar.gz" -C "$work"
+if [ ! -f "$src/LIB_VERSION" ]; then
+    echo "$src is not a libghostty-vt source tarball (no LIB_VERSION)." >&2
+    echo "Use the release tarball, not the GitHub archive for a vt-* tag." >&2
+    exit 1
+fi
 
 # Upstream links libc into wuffs on Windows only. Everywhere else the
 # libc-less build exports weak `calloc`/`free` stubs that return NULL
@@ -139,11 +101,18 @@ perl -0pi -e '
 ' "$src/pkg/wuffs/build.zig"
 
 # -Dsimd=false drops the vendored SIMD runtime so the archive only needs libc.
-build_args=(-Demit-lib-vt -Dsimd=false -Doptimize=ReleaseFast)
+# -Dcpu=baseline keeps a native target from baking in the build host's CPU.
+build_args=(-Demit-lib-vt -Dsimd=false -Doptimize=ReleaseFast -Dcpu=baseline)
 if [ -n "$zig_target" ]; then
     build_args+=("-Dtarget=$zig_target")
 fi
-(cd "$src" && "$zig" build "${build_args[@]}")
+
+# A fresh global cache is required: Zig 0.17 can crash ("reached unreachable
+# code") when the cache holds an archive of a package that --system also
+# provides. An empty one also proves the dependency tarball is complete.
+cache="$work/cache"
+rm -rf "$cache"
+(cd "$src" && ZIG_GLOBAL_CACHE_DIR="$cache" "$zig" build "${build_args[@]}" --system "$deps")
 
 mkdir -p "$vendor/lib/$rust_target"
 cp "$src/zig-out/lib/libghostty-vt.a" "$vendor/lib/$rust_target/"

@@ -1,8 +1,9 @@
 //! Hand-rolled bindings to the vendored libghostty-vt C API.
 //!
 //! Only the surface `pty.rs` needs is declared here; the authoritative
-//! headers sit next to the static library in `ghostty-vt/include`. The C API
-//! is pre-1.0, so the vendored version is pinned in `ghostty-vt/VERSION`.
+//! headers sit next to the binary in `ghostty-vt/include`. The values
+//! and layouts below track the 1.0.x ABI pinned in `ghostty-vt/VERSION`; a
+//! bump past a minor release means re-checking them against the new headers.
 //!
 //! Layout notes that matter for the `#[repr(C)]` mirrors below:
 //! * every `GHOSTTY_ENUM_TYPED` enum is a C `int` (32 bit);

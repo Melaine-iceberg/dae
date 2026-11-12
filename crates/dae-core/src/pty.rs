@@ -6,7 +6,7 @@
 //! half — it produces a [`TerminalSnapshot`] of styled cells and knows nothing
 //! about Qt or any other renderer. `crates/dae-qt` paints that snapshot.
 //!
-//! The VT engine is the vendored libghostty-vt static library (see
+//! The VT engine is the vendored libghostty-vt (see
 //! `ghostty-vt/VERSION`); the raw C bindings live in `crate::ghostty_vt`.
 //! Terminal queries (`CSI 6n`, device attributes, text-area size) are answered
 //! by the library itself through the write-pty callback, which writes the

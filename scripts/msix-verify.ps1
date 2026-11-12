@@ -250,7 +250,7 @@ function Test-Alias([string]$alias) {
 function Test-InstallTree($installed) {
   $location = $installed.InstallLocation
   Write-Host "  install location: $location"
-  foreach ($required in @('dae.exe', 'platforms\qwindows.dll', 'qml\QtQuick',
+  foreach ($required in @('dae.exe', 'ghostty-vt.dll', 'platforms\qwindows.dll', 'qml\QtQuick',
       'qml\QtMultimedia', 'multimedia')) {
     $present = Test-Path (Join-Path $location $required)
     Write-Check "payload contains $required" $present (Join-Path $location $required)

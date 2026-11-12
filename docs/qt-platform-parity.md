@@ -36,7 +36,7 @@
 | 文件操作 / 回收站 | `dae-core` 三平台后端；macOS `~/.Trash` + put-back 记录 |
 | 图标 | Windows Shell、Linux xdg、macOS NSWorkspace |
 | 缩略图 | Windows Shell handler、Linux `.thumbnailer`、macOS QuickLook（§2.7） |
-| 终端 | `portable-pty` + libghostty-vt（vendored 静态库）；Unix 读 `$SHELL` |
+| 终端 | `portable-pty` + libghostty-vt（Windows 官方 DLL，Unix vendored 静态库）；Unix 读 `$SHELL` |
 | 深链解析 / 单实例 | `dae-core` 路径解析 + QLocalServer/QLockFile |
 | 打开方式 / 默认文件管理器 | Windows 原生；macOS LaunchServices；Linux `xdg-mime` |
 | 更新 | 三平台安装脚本 + zip + minisign 校验 |

@@ -1231,7 +1231,7 @@ Qt 的链接。这条链现在通了，复现代码在 `bench/qt-toolchain/`。
 
 ```bash
 uvx --from "git+https://github.com/miurahr/aqtinstall" aqt install-qt \
-  windows desktop 6.12.0 win64_msvc2022_64 -O C:/Qt \
+  windows desktop 6.12.0 win64_msvc2022_64 -O K:/Qt \
   --archives qtbase qtdeclarative qtsvg qttools qttranslations d3dcompiler_47 opengl32sw \
   -m qtshadertools qtimageformats
 ```
@@ -1246,7 +1246,7 @@ uvx --from "git+https://github.com/miurahr/aqtinstall" aqt install-qt \
 `-m qtdeclarative` 会失败：它已经是 base archive，不是模块。`qtdoc` 被显式排掉
 （200 MB 文档，spike 用不上）。
 
-装完 **2.5 GB**，落在 `C:/Qt/6.12.0/msvc2022_64`。没有 Qt 账号（`aqt` 走的是
+装完 **2.5 GB**，落在 `K:/Qt/6.12.0/msvc2022_64`。没有 Qt 账号（`aqt` 走的是
 开源仓库），没有 Qt Creator。
 
 ### 8.2 装出来的东西（已核对）
@@ -2281,3 +2281,48 @@ libghostty：PTY 仍归 `portable-pty`，`TerminalSnapshot`、`DAET` v2 帧与
 - 验证：`crates/dae-core/tests/terminal_smoke.rs` 起真实 shell，覆盖提示符、
   回显、滚动与 resize；Windows 实机确认提示符、输入回显与语法高亮按主题
   调色板绘制。
+
+## libghostty-vt 升到 1.0.1（2026-11-12）
+
+libghostty-vt 从 Ghostty 应用独立发版：1.0.0 于 2026-11-06 发布，1.0.1 于
+2026-11-11 发布（tag `vt-1.0.1`；产物在
+`release.files.ghostty.org/libghostty-vt/1.0.1/`，目录里有 `SHA256SUMS` 与
+minisign 签名）。1.0.1 比原 pin `711702d` 多 56 个提交，涵盖 kitty 图像替换、
+snapshot 页容量、resize 后提示符重绘、search 线程超时崩溃等修复。
+
+- `ghostty-vt/VERSION` 改成 `1.0.1`：官方 tarball 自带 `LIB_VERSION`，版本号
+  就是 pin，不再需要 `+<commit>` 后缀。
+- 两个构建脚本改成下载官方 source + deps tarball，`zig build --system` 直接
+  消费解包好的 Zig 包缓存，并按 `SHA256SUMS` 校验 sha256。原来 6 个依赖 URL
+  与 `.zon` 正则改写（`patch_zon*`）全部删掉；只保留 wuffs `link_libc` 补丁
+  （`-Dsimd=false` 时非 Windows 平台仍会导出返回 NULL 的弱 `calloc`/`free`，
+  静态链接会劫持宿主 libc）。加了 `-Dcpu=baseline`，产物不再随构建机 CPU
+  变化。
+- Windows 仍用本地 Zig 以 `x86_64-windows-msvc` 重建静态库：官方 zip 里的
+  `ghostty-vt-static.lib` 是 GNU ABI，MSVC 的 `link.exe` 链接不了（官方文档
+  明说），而 dae 的 Rust 宿主是 MSVC。官方 `ghostty-vt.dll` + import lib
+  虽然可链接，但要随包分发 DLL 并改 MSIX 与测试运行路径，这次不采用。
+- 头文件与 `LICENSE` 一并换成 1.0.1 的。ABI 校验：用 1.0.1 头文件编译 C 探针，
+  `ghostty_vt.rs` 手写的枚举值（`TERMINAL_OPT_*`、`RENDER_STATE_*`、
+  `CELL_*`、`SCROLL_VIEWPORT_*`）与 `GhosttyStyle`/`GhosttyCell`/
+  `GhosttyRenderStateCursor`/滚动结构的大小和偏移全部未变；
+  `terminal_smoke` 4 项在 Windows 上通过。
+
+## Windows 改用官方 ghostty-vt.dll（2026-11-12）
+
+上一节保留了本地 Zig 构建的 MSVC 静态库，因为官方 static lib 是 GNU ABI。这一轮
+改走官方 DLL，Windows 上不再需要 Zig：
+
+- 随仓产物换成官方 zip 里的 `ghostty-vt.dll` 与 import lib `ghostty-vt.lib`
+  （`lib/x86_64-pc-windows-msvc/`），静态库删除。`scripts/build-ghostty-vt.ps1`
+  只下载 zip、校验 sha256、解包并复制 DLL / import lib / 头文件 / LICENSE；
+  PDB 不入库。`.sh` 仍负责 Unix 静态库（只新增了拒绝 Windows 的分支）。
+- `build.rs` 的 Windows 分支改为 `rustc-link-lib=dylib`，不再链接 ntdll；并把
+  DLL 复制到 `<target>/<profile>/` 与 `<profile>/deps/`——Windows 只在 exe
+  同目录找 DLL，前者覆盖 `dae.exe`，后者覆盖 `cargo test` 与 example 二进制。
+- 打包三处都要求 exe 旁有 `ghostty-vt.dll`：`scripts/pack-msix.ps1`、
+  `release.yml` 的 staging 与 zip 断言、`scripts/msix-verify.ps1`。便携 zip 的
+  自更新本来就整树解包再复制，新 DLL 随更新落地。
+- 验证：`terminal_smoke` 4 项通过，这一条同时证明 import lib 可链接、运行时能从
+  `target/debug/deps` 加载 DLL；本机没有 Qt 与 winapp，`dae.exe` 链接与 MSIX/zip
+  打包未在本机验证，由 CI 与发布流水线覆盖。

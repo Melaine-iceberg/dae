@@ -386,8 +386,8 @@ jobs:
           key: qt-${{ matrix.platform_key }}
           cache-on-failure: true
 
-      # The Linux leg builds libghostty-vt from the pinned ghostty commit;
-      # Windows links the static lib committed under ghostty-vt/lib. This has
+      # The Linux leg builds libghostty-vt from the pinned libghostty-vt release;
+      # Windows links the vendored DLL's import library under ghostty-vt/lib. This has
       # to run before the PGO training pass below, which already builds
       # dae-app. Same cache key as qt-check.yml, so a tag can reuse what main
       # already built.
@@ -496,6 +496,10 @@ jobs:
           $staging = Join-Path $PWD 'dist\qt'
           New-Item -ItemType Directory -Force $staging | Out-Null
           Copy-Item '${{ matrix.binary }}' (Join-Path $staging 'dae.exe') -Force
+          # libghostty-vt ships as a DLL beside the executable; windeployqt
+          # only knows about Qt's own libraries.
+          Copy-Item 'crates\dae-core\ghostty-vt\lib\x86_64-pc-windows-msvc\ghostty-vt.dll' `
+            (Join-Path $staging 'ghostty-vt.dll') -Force
 
           & (Join-Path $env:QT_ROOT_DIR 'bin\windeployqt.exe') `
             --release --no-translations --compiler-runtime --qmldir qml `
@@ -504,9 +508,9 @@ jobs:
             throw "windeployqt failed with exit code $LASTEXITCODE"
           }
 
-          foreach ($required in @('dae.exe', 'platforms\qwindows.dll', 'qml\QtQuick', 'qml\QtMultimedia', 'multimedia')) {
+          foreach ($required in @('dae.exe', 'ghostty-vt.dll', 'platforms\qwindows.dll', 'qml\QtQuick', 'qml\QtMultimedia', 'multimedia')) {
             if (-not (Test-Path (Join-Path $staging $required))) {
-              throw "windeployqt did not produce $required"
+              throw "the payload is missing $required"
             }
           }
 
@@ -530,7 +534,7 @@ jobs:
           $archive = [IO.Compression.ZipFile]::OpenRead($zip)
           try {
             $names = @($archive.Entries | ForEach-Object { $_.FullName })
-            foreach ($required in @('dae.exe', 'platforms/qwindows.dll', 'qml/QtQuick')) {
+            foreach ($required in @('dae.exe', 'ghostty-vt.dll', 'platforms/qwindows.dll', 'qml/QtQuick')) {
               if (-not ($names | Where-Object { $_ -eq $required -or $_.StartsWith("$required/") })) {
                 throw "$zip is missing $required"
               }

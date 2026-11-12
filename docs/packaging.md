@@ -316,7 +316,7 @@ Get-AppxPackage -Name dae | Remove-AppxPackage
 | `Identity Version` 四段、与包内一致 | Windows 拒绝升级（版本不变）或拒绝安装 |
 | 清单里有 `windows.protocol` = `dae` | 点 `dae://` 链接会开一个「没有关联」的提示框 |
 | 清单里有 `appExecutionAlias` = `dae.exe` | 注册表里的启动命令会指向升级前的目录 |
-| 安装后 `platforms\qwindows.dll`、`qml\QtQuick`、`multimedia` 在 | 旧包只有 `dae.exe` 也能「装成功」，然后打不开窗 |
+| 安装后 `ghostty-vt.dll`、`platforms\qwindows.dll`、`qml\QtQuick`、`multimedia` 在 | 旧包只有 `dae.exe` 也能「装成功」，然后打不开窗 |
 | 别名路径存在 | 默认文件管理器注册不可用 |
 | 升级后旧安装目录消失、只注册了一个版本 | Windows 变成了并存安装，两次打开会各开一个窗口 |
 | 进程真的起来了、日志写进 `%LOCALAPPDATA%\com.melaine.dae\logs\dae.log` | 全信任包不被重定向，日志必须与便携版同一处 |
