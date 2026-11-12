@@ -34,9 +34,12 @@ $repo = Split-Path -Parent $PSScriptRoot
 $vendor = Join-Path $repo "crates\dae-core\ghostty-vt"
 $version = (Get-Content (Join-Path $vendor "VERSION") -Raw).Trim()
 
-# `tip` is a rolling release; the LIB_VERSION check below is what keeps the
-# artifacts and the dependency table honest.
-$sourceUrl = "https://github.com/ghostty-org/ghostty/releases/download/tip/libghostty-vt-source.tar.gz"
+# The source is the immutable commit archive named by VERSION's `+<hash>`
+# suffix. The `tip` release tarball used to be fetched here, but `tip` is
+# regenerated on every ghostty main commit and has moved past this pin;
+# only the commit archive stays buildable against a fixed VERSION.
+$commit = $version.Split('+')[-1]
+$sourceUrl = "https://github.com/ghostty-org/ghostty/archive/$commit.tar.gz"
 
 # The dependency set of ghostty 1.1.0-dev+711702d, exactly as its zon files
 # name them. Each archive holds one top-level directory and is extracted to
@@ -53,8 +56,13 @@ $deps = [ordered]@{
 function Get-Archive([string]$Url, [string]$Out) {
     if (Test-Path $Out) { return }
     Write-Host "download $Url"
-    & $curl -fsSL --retry 3 -o $Out $Url
+    # Download aside and move into place: a connection dropped mid-transfer
+    # must not leave a partial tarball that the next run treats as complete.
+    # --retry-all-errors covers receive failures (curl 56), which plain
+    # --retry does not consider transient.
+    & $curl -fsSL --retry 3 --retry-all-errors -o "$Out.part" $Url
     if ($LASTEXITCODE -ne 0) { throw "download failed: $Url" }
+    Move-Item "$Out.part" $Out -Force
 }
 
 function Expand-Tarball([string]$Archive, [string]$Directory) {
@@ -87,15 +95,21 @@ function Set-ZonGitPath([string]$Zon, [string]$Entry, [string]$Path) {
 Write-Host "libghostty-vt $version -> $Target"
 
 $src = Join-Path $Work "src"
-$sourceArchive = Join-Path $Work "libghostty-vt-source.tar.gz"
+# The archive name carries the commit so a stale tarball from an older pin
+# (or from the rolling `tip` this script used to fetch) is never reused.
+$sourceArchive = Join-Path $Work "ghostty-$commit.tar.gz"
 New-Item -ItemType Directory -Force $Work | Out-Null
 Get-Archive $sourceUrl $sourceArchive
 if (Test-Path $src) { Remove-Item -Recurse -Force $src }
 Expand-Tarball $sourceArchive $src
 
-$built = (Get-Content (Join-Path $src "LIB_VERSION") -Raw).Trim()
-if ($built -ne $version) {
-    throw "the source tarball is $built but ghostty-vt/VERSION pins $version; `tip` moved. Update VERSION and the dependency table together."
+# Git archives carry no LIB_VERSION (the release tarballs generate it, and
+# build.zig falls back to its own lib_version constant without it). The
+# archive's top-level directory is named after the commit instead, and that
+# is what keeps the source honest against the VERSION pin.
+$top = (& $tar -tzf $sourceArchive)[0]
+if ($top -notlike "ghostty-$commit*") {
+    throw "the source archive is $top but ghostty-vt/VERSION pins $version. Update VERSION and the dependency table together."
 }
 
 foreach ($name in $deps.Keys) {
@@ -111,6 +125,17 @@ Set-ZonUrlPath (Join-Path $src "pkg\highway\build.zig.zon") $deps.highway "../..
 Set-ZonUrlPath (Join-Path $src "pkg\wuffs\build.zig.zon") $deps.wuffs "../../local-deps/wuffs"
 Set-ZonUrlPath (Join-Path $src "pkg\wuffs\build.zig.zon") $deps.pixels "../../local-deps/pixels"
 Set-ZonGitPath (Join-Path $src "local-deps\translate_c\build.zig.zon") "aro" "../aro"
+
+# Upstream links libc into wuffs on Windows only. Everywhere else the
+# libc-less build exports weak `calloc`/`free` stubs that return NULL
+# (pkg/wuffs/src/main.zig), and in a static ELF link those interpose glibc:
+# every calloc in the host process fails. dae always links libc, so build
+# wuffs with it on every platform — the same configuration Windows uses.
+$wuffsBuild = Join-Path $src "pkg\wuffs\build.zig"
+$wuffsText = [IO.File]::ReadAllText($wuffsBuild)
+$wuffsUpdated = $wuffsText.Replace('.link_libc = windows,', '.link_libc = true,')
+if ($wuffsUpdated -eq $wuffsText) { throw "wuffs link_libc pin is stale in $wuffsBuild" }
+[IO.File]::WriteAllText($wuffsBuild, $wuffsUpdated, [Text.UTF8Encoding]::new($false))
 
 Push-Location $src
 try {

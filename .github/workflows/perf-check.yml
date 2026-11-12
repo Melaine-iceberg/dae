@@ -80,6 +80,38 @@ jobs:
           key: qt-perf-check
           cache-on-failure: true
 
+      # The training pass below builds dae-app, which links libghostty-vt.
+      # Only the Windows static lib is vendored; Linux builds it from the
+      # pinned ghostty commit. Same cache key as qt-check.yml / release.yml.
+      - name: Cache libghostty-vt
+        id: vt-cache
+        uses: actions/cache@v5
+        with:
+          path: crates/dae-core/ghostty-vt/lib/x86_64-unknown-linux-gnu
+          key: ghostty-vt-0.17.1-x86_64-unknown-linux-gnu-${{ hashFiles('crates/dae-core/ghostty-vt/VERSION', 'scripts/build-ghostty-vt.sh') }}
+
+      # Zig's major.minor must match the pinned ghostty's minimum_zig_version
+      # (0.17.0); 0.17.1 is the latest patch of that series.
+      - name: Install Zig
+        if: steps.vt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          ZIG_VERSION: "0.17.1"
+        run: |
+          set -euo pipefail
+          archive="zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/$archive" \
+            "https://ziglang.org/download/$ZIG_VERSION/$archive"
+          echo "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a  $RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
+      - name: Build libghostty-vt
+        if: steps.vt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/build-ghostty-vt.sh
+
       # Not `continue-on-error`: here a missing profile is the thing under test,
       # so it fails the job. The training log and whatever counters did reach
       # the disk are uploaded either way.

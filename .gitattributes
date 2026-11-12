@@ -1,0 +1,5 @@
+# Shell scripts run under bash (CI runners, WSL, git-bash). With
+# core.autocrlf=true a Windows checkout would otherwise hand them CRLF
+# endings, which bash reads as part of the command (`set: pipefail:
+# invalid option name`). Keep them LF everywhere.
+*.sh text eol=lf

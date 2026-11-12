@@ -36,10 +36,16 @@ jobs:
           - platform: ubuntu-26.04
             qt_arch: linux_gcc_64
             target: ""
+            vt_target: x86_64-unknown-linux-gnu
+            zig_arch: x86_64-linux
+            zig_sha256: 3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a
           # Matches the release legs: Apple Silicon only.
           - platform: macos-latest
             qt_arch: clang_64
             target: aarch64-apple-darwin
+            vt_target: aarch64-apple-darwin
+            zig_arch: aarch64-macos
+            zig_sha256: 75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d
 
     runs-on: ${{ matrix.platform }}
 
@@ -83,6 +89,48 @@ jobs:
           workspaces: . -> target
           key: qt-check-${{ matrix.platform }}
           cache-on-failure: true
+
+      # libghostty-vt is vendored as a Windows static lib only; the Unix legs
+      # build it from the pinned ghostty commit (see scripts/build-ghostty-vt.sh).
+      # The cache key covers everything that changes the artifact: the Zig
+      # version, the target, the VERSION pin and the script (which carries the
+      # dependency table). release.yml uses the same key, so a tag can reuse
+      # what main already built.
+      - name: Cache libghostty-vt
+        id: vt-cache
+        uses: actions/cache@v5
+        with:
+          path: crates/dae-core/ghostty-vt/lib/${{ matrix.vt_target }}
+          key: ghostty-vt-0.17.1-${{ matrix.vt_target }}-${{ hashFiles('crates/dae-core/ghostty-vt/VERSION', 'scripts/build-ghostty-vt.sh') }}
+
+      # Zig's major.minor must match the pinned ghostty's minimum_zig_version
+      # (0.17.0); 0.17.1 is the latest patch of that series.
+      - name: Install Zig
+        if: steps.vt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          ZIG_VERSION: "0.17.1"
+        run: |
+          set -euo pipefail
+          archive="zig-${{ matrix.zig_arch }}-$ZIG_VERSION.tar.xz"
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/$archive" \
+            "https://ziglang.org/download/$ZIG_VERSION/$archive"
+          # sha256sum is Linux-only; macOS runners ship shasum instead.
+          if command -v sha256sum >/dev/null 2>&1; then
+            echo "${{ matrix.zig_sha256 }}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          else
+            echo "${{ matrix.zig_sha256 }}  $RUNNER_TEMP/$archive" | shasum -a 256 -c -
+          fi
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
+      - name: Build libghostty-vt
+        if: steps.vt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.vt_target }}
+        run: bash scripts/build-ghostty-vt.sh
 
       - name: Build the Qt shell
         shell: bash

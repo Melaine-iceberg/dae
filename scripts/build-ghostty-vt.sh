@@ -30,9 +30,12 @@ case "$rust_target" in
     *) zig_target=${ZIG_TARGET:-} ;;
 esac
 
-# `tip` is a rolling release; the LIB_VERSION check below is what keeps the
-# artifacts and the dependency table honest.
-source_url="https://github.com/ghostty-org/ghostty/releases/download/tip/libghostty-vt-source.tar.gz"
+# The source is the immutable commit archive named by VERSION's `+<hash>`
+# suffix. The `tip` release tarball used to be fetched here, but `tip` is
+# regenerated on every ghostty main commit and has moved past this pin;
+# only the commit archive stays buildable against a fixed VERSION.
+commit=${version##*+}
+source_url="https://github.com/ghostty-org/ghostty/archive/$commit.tar.gz"
 
 # The dependency set of ghostty 1.1.0-dev+711702d, exactly as its zon files
 # name them. Each archive holds one top-level directory and is extracted to
@@ -52,7 +55,12 @@ declare -A dep_urls=(
 fetch() { # url out
     [ -f "$2" ] && return
     echo "download $1"
-    curl -fsSL --retry 3 -o "$2" "$1"
+    # Download aside and move into place: a connection dropped mid-transfer
+    # must not leave a partial tarball that the next run treats as complete.
+    # --retry-all-errors covers receive failures (curl 56), which plain
+    # --retry does not consider transient.
+    curl -fsSL --retry 3 --retry-all-errors -o "$2.part" "$1"
+    mv "$2.part" "$2"
 }
 
 # Replaces the .url line and the .hash line below it with a single .path line,
@@ -82,19 +90,29 @@ patch_zon_git() { # file entry path
 
 echo "libghostty-vt $version -> $rust_target"
 mkdir -p "$work"
-fetch "$source_url" "$work/libghostty-vt-source.tar.gz"
+# The archive name carries the commit so a stale tarball from an older pin
+# (or from the rolling `tip` this script used to fetch) is never reused.
+fetch "$source_url" "$work/ghostty-$commit.tar.gz"
 
 src="$work/src"
 rm -rf "$src"
 mkdir -p "$src"
-tar -xzf "$work/libghostty-vt-source.tar.gz" -C "$src" --strip-components=1
+tar -xzf "$work/ghostty-$commit.tar.gz" -C "$src" --strip-components=1
 
-built=$(tr -d '[:space:]' < "$src/LIB_VERSION")
-if [ "$built" != "$version" ]; then
-    echo "the source tarball is $built but ghostty-vt/VERSION pins $version; 'tip' moved." >&2
-    echo "Update VERSION and the dependency table together." >&2
-    exit 1
-fi
+# Git archives carry no LIB_VERSION (the release tarballs generate it, and
+# build.zig falls back to its own lib_version constant without it). The
+# archive's top-level directory is named after the commit instead, and that
+# is what keeps the source honest against the VERSION pin. `sed -n 1p`
+# rather than `head -n 1`: head would SIGPIPE tar under `set -o pipefail`.
+top=$(tar -tzf "$work/ghostty-$commit.tar.gz" | sed -n '1p')
+case "$top" in
+    "ghostty-$commit"*) ;;
+    *)
+        echo "the source archive is $top but ghostty-vt/VERSION pins $version." >&2
+        echo "Update VERSION and the dependency table together." >&2
+        exit 1
+        ;;
+esac
 
 for name in "${dep_names[@]}"; do
     fetch "${dep_urls[$name]}" "$work/$name.tar.gz"
@@ -109,6 +127,16 @@ patch_zon "$src/pkg/highway/build.zig.zon" "$highway_url" "../../local-deps/high
 patch_zon "$src/pkg/wuffs/build.zig.zon" "$wuffs_url" "../../local-deps/wuffs"
 patch_zon "$src/pkg/wuffs/build.zig.zon" "$pixels_url" "../../local-deps/pixels"
 patch_zon_git "$src/local-deps/translate_c/build.zig.zon" aro "../aro"
+
+# Upstream links libc into wuffs on Windows only. Everywhere else the
+# libc-less build exports weak `calloc`/`free` stubs that return NULL
+# (pkg/wuffs/src/main.zig), and in a static ELF link those interpose glibc:
+# every calloc in the host process fails. dae always links libc, so build
+# wuffs with it on every platform — the same configuration Windows uses.
+perl -0pi -e '
+    my $count = s/\.link_libc = windows,/.link_libc = true,/;
+    die "wuffs link_libc pin is stale in $ARGV\n" unless $count;
+' "$src/pkg/wuffs/build.zig"
 
 # -Dsimd=false drops the vendored SIMD runtime so the archive only needs libc.
 build_args=(-Demit-lib-vt -Dsimd=false -Doptimize=ReleaseFast)

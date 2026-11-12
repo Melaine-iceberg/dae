@@ -386,6 +386,41 @@ jobs:
           key: qt-${{ matrix.platform_key }}
           cache-on-failure: true
 
+      # The Linux leg builds libghostty-vt from the pinned ghostty commit;
+      # Windows links the static lib committed under ghostty-vt/lib. This has
+      # to run before the PGO training pass below, which already builds
+      # dae-app. Same cache key as qt-check.yml, so a tag can reuse what main
+      # already built.
+      - name: Cache libghostty-vt (Linux)
+        id: vt-cache
+        if: matrix.platform == 'ubuntu-26.04'
+        uses: actions/cache@v5
+        with:
+          path: crates/dae-core/ghostty-vt/lib/x86_64-unknown-linux-gnu
+          key: ghostty-vt-0.17.1-x86_64-unknown-linux-gnu-${{ hashFiles('crates/dae-core/ghostty-vt/VERSION', 'scripts/build-ghostty-vt.sh') }}
+
+      # Zig's major.minor must match the pinned ghostty's minimum_zig_version
+      # (0.17.0); 0.17.1 is the latest patch of that series.
+      - name: Install Zig (Linux)
+        if: matrix.platform == 'ubuntu-26.04' && steps.vt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          ZIG_VERSION: "0.17.1"
+        run: |
+          set -euo pipefail
+          archive="zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/$archive" \
+            "https://ziglang.org/download/$ZIG_VERSION/$archive"
+          echo "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a  $RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
+      - name: Build libghostty-vt (Linux)
+        if: matrix.platform == 'ubuntu-26.04' && steps.vt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/build-ghostty-vt.sh
+
       - name: Install winapp CLI
         if: matrix.platform == 'windows-latest'
         uses: microsoft/setup-WinAppCli@v0.2
