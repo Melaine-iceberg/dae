@@ -150,11 +150,11 @@ cargo build --release
 
 ```bash
 cd bench/qt-list-spike
-export QMAKE="C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
+export QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
 cargo build --release
 
 # gate run: unthrottled frame-work measurement
-PATH="/c/Qt/6.12.0/msvc2022_64/bin:$PATH" \
+PATH="/k/Qt/6.12.0/msvc2022_64/bin:$PATH" \
   ./target/release/qt-list-spike.exe \
   --path K:/dae-listing-bench/huge \
   --seconds 12 \

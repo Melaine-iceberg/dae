@@ -104,8 +104,8 @@ Raw record (all 214 checks, snapshots, native `WM_IME_*` log):
 
 ```bash
 cd bench/qt-ime-spike
-export QMAKE="C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
-export PATH="/c/Qt/6.12.0/msvc2022_64/bin:$PATH"
+export QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
+export PATH="/k/Qt/6.12.0/msvc2022_64/bin:$PATH"
 cargo build --release
 
 QT_ASSUME_STDERR_HAS_CONSOLE=1 ./target/release/qt-ime-spike.exe \

@@ -10,9 +10,9 @@ load into a `QQmlApplicationEngine`, and call back into Rust?** The QML calls
 
 ```bash
 # Windows, Qt installed by aqt (see the decision doc for the exact aqt version)
-export QMAKE="C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
+export QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
 cargo build
-PATH="/c/Qt/6.12.0/msvc2022_64/bin:$PATH" ./target/debug/qt-smoke.exe
+PATH="/k/Qt/6.12.0/msvc2022_64/bin:$PATH" ./target/debug/qt-smoke.exe
 ```
 
 Expected, and what this machine printed:

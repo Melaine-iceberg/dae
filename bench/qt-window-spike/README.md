@@ -221,8 +221,8 @@ gate 3.
 
 ```bash
 cd bench/qt-window-spike
-export QMAKE="C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
-export PATH="/c/Qt/6.12.0/msvc2022_64/bin:$PATH"
+export QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
+export PATH="/k/Qt/6.12.0/msvc2022_64/bin:$PATH"
 cargo build --release
 
 ./target/release/qt-window-spike.exe \
