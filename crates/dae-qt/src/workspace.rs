@@ -2576,8 +2576,8 @@ impl qobject::Workspace {
             return;
         }
 
-        // Shortcuts are a local-only operation; a remote source would be
-        // written into a .lnk that cannot resolve.
+        // Links are a local-only operation; a link to a remote path would
+        // not resolve outside dae.
         let sources: Vec<String> = paths
             .into_iter()
             .filter(|path| vfs::is_local_path(path))
