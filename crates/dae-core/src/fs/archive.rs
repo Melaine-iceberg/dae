@@ -13,10 +13,9 @@ use sevenz_rust2::encoder_options::{AesEncoderOptions, Lzma2Options};
 use sevenz_rust2::{ArchiveEntry, ArchiveReader, ArchiveWriter, Password};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use zip::CompressionMethod;
-use zip::ZipWriter;
 use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
+use zip::{AesMode, CompressionMethod, ZipWriter};
 
 const STREAM_CHUNK_BYTES: usize = 256 * 1024;
 
@@ -44,9 +43,8 @@ fn sevenz_error(error: sevenz_rust2::Error) -> FileSystemError {
     }
 }
 
-/// True when the format can carry a password. Zip supports decryption
-/// (ZipCrypto and WinZip AES) but the writer here only creates plaintext
-/// zips; tar has no notion of encryption at all.
+/// True when the format can carry a password. Zip reads ZipCrypto and WinZip
+/// AES and writes WinZip AES-256; tar has no notion of encryption at all.
 fn format_supports_password(format: ArchiveFormat) -> bool {
     matches!(format, ArchiveFormat::Zip | ArchiveFormat::SevenZip)
 }
@@ -186,6 +184,7 @@ pub(super) fn compress_sync(
         ));
     }
 
+    let password = password.filter(|value| !value.is_empty());
     if password.is_some() && !format_supports_password(format) {
         return Err(FileSystemError::InvalidInput(
             "fs.archive_password_unsupported".into(),
@@ -352,6 +351,8 @@ enum ArchiveSink {
     Zip {
         writer: Box<ZipWriter<std::fs::File>>,
         options: SimpleFileOptions,
+        /// WinZip AES-256 when set; directory entries stay plaintext.
+        password: Option<String>,
     },
     Tar {
         builder: tar::Builder<TarBackend>,
@@ -398,6 +399,7 @@ impl ArchiveSink {
                     options: SimpleFileOptions::default()
                         .compression_method(CompressionMethod::Deflated)
                         .large_file(true),
+                    password: password.map(str::to_owned),
                 })
             }
             ArchiveFormat::Tar => {
@@ -436,7 +438,7 @@ impl ArchiveSink {
 
     fn add_directory(&mut self, arc_name: &str) -> Result<(), FileSystemError> {
         match self {
-            ArchiveSink::Zip { writer, options } => writer
+            ArchiveSink::Zip { writer, options, .. } => writer
                 .add_directory(arc_name.to_owned(), *options)
                 .map_err(zip_error),
             ArchiveSink::Tar { builder } => {
@@ -466,10 +468,16 @@ impl ArchiveSink {
         reader: &mut dyn Read,
     ) -> Result<(), FileSystemError> {
         match self {
-            ArchiveSink::Zip { writer, options } => {
-                writer
-                    .start_file(arc_name.to_owned(), *options)
-                    .map_err(zip_error)?;
+            ArchiveSink::Zip {
+                writer,
+                options,
+                password,
+            } => {
+                let options = match password {
+                    Some(password) => options.with_aes_encryption(AesMode::Aes256, password),
+                    None => *options,
+                };
+                writer.start_file(arc_name.to_owned(), options).map_err(zip_error)?;
                 copy_chunked(reader, writer)?;
                 Ok(())
             }
@@ -1359,6 +1367,64 @@ mod tests {
             fs::read_to_string(Path::new(&destination).join("root.txt"))
                 .expect("read extracted file"),
             "secret content"
+        );
+
+        fs::remove_dir_all(destination).expect("remove extraction folder");
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn compresses_and_extracts_password_protected_zip() {
+        let root =
+            std::env::temp_dir().join(format!("dae-zip-create-password-{}", std::process::id()));
+        let source = root.join("bundle");
+        let output = root.join("output");
+        fs::create_dir_all(&source).expect("create source directory");
+        fs::create_dir_all(&output).expect("create output directory");
+        make_archive_source_tree(&source);
+
+        let archive_path = compress_sync(
+            vec![source.to_string_lossy().into_owned()],
+            &output.to_string_lossy(),
+            ArchiveFormat::Zip,
+            Some("正确密码123"),
+            &TestProgress::new(),
+        )
+        .expect("compress encrypted zip");
+
+        // The writer must actually encrypt the file entries (WinZip AES).
+        assert!(
+            zip_has_encrypted_entries(Path::new(&archive_path)).expect("probe encryption flag"),
+            "created zip carries encrypted entries"
+        );
+
+        // Without a password the encrypted entries are detected up front.
+        let error = extract_sync(&archive_path, None, None, &TestProgress::new())
+            .expect_err("extracting without the password must fail");
+        assert!(matches!(error, FileSystemError::WrongPassword(_)));
+
+        // A wrong password is rejected the same way.
+        let error = extract_sync(&archive_path, None, Some("错误密码"), &TestProgress::new())
+            .expect_err("a wrong password must be rejected");
+        assert!(matches!(error, FileSystemError::WrongPassword(_)));
+
+        // The correct password round-trips the content, nested unicode included.
+        let destination = extract_sync(
+            &archive_path,
+            None,
+            Some("正确密码123"),
+            &TestProgress::new(),
+        )
+        .expect("extract with the correct password");
+        let extracted_root = Path::new(&destination).join("bundle");
+        assert_eq!(
+            fs::read_to_string(extracted_root.join("root.txt")).expect("read extracted root"),
+            "root content"
+        );
+        assert_eq!(
+            fs::read_to_string(extracted_root.join("资料/nested/leaf.txt"))
+                .expect("read extracted leaf"),
+            "leaf content"
         );
 
         fs::remove_dir_all(destination).expect("remove extraction folder");

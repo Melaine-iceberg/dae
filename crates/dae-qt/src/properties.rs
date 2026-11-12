@@ -94,11 +94,18 @@ pub mod qobject {
         #[qproperty(QString, signature_issuer, cxx_name = "signatureIssuer")]
         #[qproperty(QString, signature_detail, cxx_name = "signatureDetail")]
         #[qproperty(bool, signature_supported, cxx_name = "signatureSupported")]
-        /// The discretionary ACL, read-only. Windows only.
+        /// The discretionary ACL: owner, group and the editable entry list.
+        /// Windows DACL and Linux POSIX ACL; `aclSupported` hides the tab
+        /// elsewhere.
         #[qproperty(QString, acl_owner, cxx_name = "aclOwner")]
         #[qproperty(QString, acl_group, cxx_name = "aclGroup")]
-        /// One ACE per line, already formatted by the core.
-        #[qproperty(QString, acl_entries, cxx_name = "aclEntries")]
+        /// The entries as a JSON array of `AclEntry` objects, so the dialog
+        /// can render and edit each one rather than a preformatted blob.
+        #[qproperty(QString, acl_entries_json, cxx_name = "aclEntriesJson")]
+        /// Windows: whether the DACL inherits from its parent. POSIX: false.
+        #[qproperty(bool, acl_inheritance, cxx_name = "aclInheritance")]
+        /// Whether the platform can write the ACL back.
+        #[qproperty(bool, acl_editable, cxx_name = "aclEditable")]
         #[qproperty(bool, acl_supported, cxx_name = "aclSupported")]
         type PropertiesController = super::PropertiesControllerRust;
 
@@ -124,6 +131,17 @@ pub mod qobject {
             archive: bool,
             system: bool,
             recursive: bool,
+        );
+
+        /// Writes the ACL editor's draft back. `entries_json` is a JSON array
+        /// of `{principal, allow, rights}` specs — the explicit entries only;
+        /// `inheritance` is the Windows DACL switch and is ignored on POSIX.
+        #[qinvokable]
+        #[cxx_name = "saveAcl"]
+        fn save_acl(
+            self: Pin<&mut PropertiesController>,
+            entries_json: &QString,
+            inheritance: bool,
         );
 
         #[qinvokable]
@@ -198,7 +216,9 @@ pub struct PropertiesControllerRust {
     signature_supported: bool,
     acl_owner: QString,
     acl_group: QString,
-    acl_entries: QString,
+    acl_entries_json: QString,
+    acl_inheritance: bool,
+    acl_editable: bool,
     acl_supported: bool,
     /// The snapshot the edits are compared against, so a field the user did
     /// not touch never reaches `chmod`/`chown`/`SetFileAttributesW`.
@@ -683,7 +703,9 @@ impl qobject::PropertiesController {
         self.as_mut().set_signature_detail(QString::default());
         self.as_mut().set_acl_owner(QString::default());
         self.as_mut().set_acl_group(QString::default());
-        self.as_mut().set_acl_entries(QString::default());
+        self.as_mut().set_acl_entries_json(QString::default());
+        self.as_mut().set_acl_inheritance(false);
+        self.as_mut().set_acl_editable(false);
     }
 
     fn apply_security(
@@ -716,12 +738,105 @@ impl qobject::PropertiesController {
         }
 
         if let Ok(acl) = acl {
-            self.as_mut()
-                .set_acl_owner(QString::from(acl.owner.as_deref().unwrap_or("")));
-            self.as_mut()
-                .set_acl_group(QString::from(acl.group.as_deref().unwrap_or("")));
-            self.as_mut()
-                .set_acl_entries(QString::from(acl.entries.join("\n").as_str()));
+            self.as_mut().apply_acl(acl);
+        }
+    }
+
+    /// Publishes one ACL snapshot. The JSON goes last so the dialog's
+    /// `onAclEntriesJsonChanged` handler sees the final inheritance and
+    /// editable flags when it re-syncs its draft.
+    fn apply_acl(mut self: Pin<&mut Self>, acl: security::FileAcl) {
+        self.as_mut()
+            .set_acl_owner(QString::from(acl.owner.as_deref().unwrap_or("")));
+        self.as_mut()
+            .set_acl_group(QString::from(acl.group.as_deref().unwrap_or("")));
+        self.as_mut().set_acl_inheritance(acl.inheritance);
+        self.as_mut().set_acl_editable(acl.editable);
+        let json = serde_json::to_string(&acl.entries).unwrap_or_else(|_| "[]".to_owned());
+        self.as_mut()
+            .set_acl_entries_json(QString::from(json.as_str()));
+    }
+
+    fn save_acl(mut self: Pin<&mut Self>, entries_json: &QString, inheritance: bool) {
+        if self.loading || self.saving {
+            return;
+        }
+        let path = self.path.to_string();
+        if path.is_empty() {
+            return;
+        }
+
+        let entries: Vec<security::AclEntrySpec> =
+            match serde_json::from_str(&entries_json.to_string()) {
+                Ok(entries) => entries,
+                Err(error) => {
+                    let message = friendly_error(&format!("Invalid ACL entries: {error}"));
+                    self.as_mut()
+                        .set_save_error(QString::from(message.as_str()));
+                    self.as_mut()
+                        .save_failed(&QString::from(message.as_str()));
+                    return;
+                }
+            };
+        let changes = security::AclChanges { entries, inheritance };
+
+        self.as_mut().set_saving(true);
+        self.as_mut().set_save_error(QString::default());
+
+        let generation = self.generation;
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let write_path = path.clone();
+            let result = tokio::task::spawn_blocking(move || security::set_acl(&write_path, &changes))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(dae_core::error::FileSystemError::Internal(
+                        "The ACL write was interrupted".into(),
+                    ))
+                });
+            // Re-read on success: the platform normalizes what it stored (the
+            // propagated inherited ACEs, the recomputed POSIX mask), and the
+            // dialog should show what is there, not what was asked for.
+            let refreshed = if result.is_ok() {
+                tokio::task::spawn_blocking(move || security::acl(&path))
+                    .await
+                    .ok()
+                    .and_then(|result| result.ok())
+            } else {
+                None
+            };
+            let _ = thread.queue(move |mut controller| {
+                controller
+                    .as_mut()
+                    .apply_acl_save(generation, result, refreshed)
+            });
+        });
+    }
+
+    fn apply_acl_save(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        result: Result<(), dae_core::error::FileSystemError>,
+        refreshed: Option<security::FileAcl>,
+    ) {
+        if self.generation != generation {
+            return;
+        }
+        self.as_mut().set_saving(false);
+        match result {
+            Ok(()) => {
+                if let Some(acl) = refreshed {
+                    self.as_mut().apply_acl(acl);
+                }
+                self.as_mut().saved();
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_save_error(QString::from(message.as_str()));
+                self.as_mut()
+                    .save_failed(&QString::from(message.as_str()));
+            }
         }
     }
 

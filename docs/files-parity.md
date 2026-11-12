@@ -24,7 +24,7 @@ dae 在「浏览、文件操作、多后端、终端、预览」上已经追平�
 4. **可扩展动作**：用户自定义命令、全量快捷键、状态中心。
 
 P0、P1 与 §12.1 的 R-1…R-6 落地后，上表四类只剩验证尾巴：平台索引只验过未打包
-形态，动作面按需可继续加，ACL 仍只有 Windows 只读。**当前剩余项以 §12.3 为准**；
+形态，动作面按需可继续加。**当前剩余项以 §12.3 为准**；
 本节其余内容保留为立项时的判断依据。
 
 跨平台原则先于功能：**任何一项都必须在 Windows、Linux 上要么可用，要么明确降级并说明原因**；
@@ -585,7 +585,7 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 | P1-2 | FTP/WebDAV | 完成（隐式 FTPS 未测） | FTP/FTPS 完整（浏览、下载、上传、改名、删除、建目录）；WebDAV 同样完整，上传走流式 PUT。对本地 FTP、显式 FTPS、WsgiDAV（匿名/Basic）冒烟通过；隐式 FTPS（990）与真实第三方服务器未覆盖 |
 | P1-3 | 自定义动作 + 快捷键 | 完成（动作面小于 Files） | `[[actions]]`、argv 传参、PATH 探测、设置页增删改、内置「在 IDE 中打开」；可重绑定快捷键 22 → 35，全部有分发点。未绑定的菜单命令仍多，没有补齐到 Files 的 150+ 动作面 |
 | P1-4 | 状态中心 | 完成 | 内存 200 条 / 持久化 50 条、失败徽章、传输与解压可重试、可清空 |
-| P1-5 | 属性增强 | 部分 | 哈希比对、图片 EXIF、音频/视频容器元数据、Windows 签名（含 catalog 回退）与 ACL 只读渲染均已落地；macOS 签名、Linux/macOS ACL、自定义图标未做 |
+| P1-5 | 属性增强 | 部分 | 哈希比对、图片 EXIF、音频/视频容器元数据、Windows 签名（含 catalog 回退）均已落地；ACL 在 Windows（DACL）与 Linux（POSIX ACL）可读可编辑，见 §11.4；macOS 签名、macOS ACL、自定义图标未做 |
 | P1-6 | 共享 / 上一版本 / BitLocker | 部分 | 磁盘加密状态（`manage-bde`/`fdesetup`/`cryptsetup`）与上一版本系统入口在驱动器菜单；Windows 系统共享已实现并冒烟；macOS 共享、Linux 共享按平台隐藏 |
 | P1-7 | 标签页 + 会话恢复 | 完成 | 关闭栈 16、重开/复制/固定/关闭其他与左右；几何+标签+历史路径+分屏恢复，崩溃标记提示 |
 | P1-8 | 快速预览 | 完成 | 停靠面板关闭或窗口过窄时 Space 打开弹层；Esc/外点关闭，方向键与翻页滚动 |
@@ -644,13 +644,19 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
   时再按 SHA-256 哈希查系统 catalog（System32 的多数二进制是 catalog 签名），
   状态收敛为 `valid/unsigned/untrusted/invalid`；属性对话框新增「签名」页显示
   状态、签名者、颁发者与平台原因。Windows 独占，Linux/macOS 隐藏该页。
-- **ACL**：`fs/security.rs` 用 `GetNamedSecurityInfoW` 读 owner/group/DACL，ACE 按
-  `Allow/Deny <SID 名>: <权限>` 渲染成只读文本，放在属性对话框的「属性」页；
-  POSIX/DOS 属性仍是唯一可写入口。Windows 独占。
+- **ACL**：`fs/security.rs` 在 Windows 用 `GetNamedSecurityInfoW` 读 owner/group/DACL，
+  Linux 读 `system.posix_acl_access` xattr（缺失时回退 mode）。属性对话框有独立
+  「安全」页：条目行（允许/拒绝、权限预设、继承标记）、继承开关（Windows）与
+  添加/移除表单；继承条目只读。写回走 `SetNamedSecurityInfoW`（deny 先于 allow；
+  关闭继承时先把继承 ACE 转成显式）与 `setxattr`（named 列表清空时 `removexattr`
+  回到纯 mode）。`rights == "custom"` 表示「保留该主体当前的掩码」，未改动的条目
+  因此无损往返。macOS 仍无入口。
 - `security::signature_supported()` / `acl_supported()` 决定入口是否出现；
   平台读取在 `spawn_blocking` 里与元数据并行，慢的证书链不会拖住对话框。
 - 单测：`fs::security` 对 `C:\Windows\System32\notepad.exe` 断言 `valid` 且有签名者，
-  对临时文件断言 `unsigned`；ACL 用例断言 owner 与 ACE 非空。
+  对临时文件断言 `unsigned`；Windows ACL 用例在临时文件上写显式 ACE、切换继承、
+  断言 custom 保留原掩码与未知主体报错；Linux 用例往返 named user/group 与 mask、
+  断言空列表移除 xattr（不支持 POSIX ACL 的文件系统上跳过）。
 
 ### 11.5 标签页与会话恢复（P1-7）
 
@@ -693,6 +699,9 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 ### 11.9 压缩格式（P1-11）
 
 - `ArchiveFormat` 增加 `Rar`/`Iso`；识别只用于解压，创建返回明确错误。
+- 加密创建：菜单「ZIP 压缩包（加密）」与「7Z 压缩包（加密）」先弹密码对话框
+  （双输入校验），ZIP 走 WinZip AES-256（method 99 + AE-2 extra），7z 走头部加密；
+  解压侧两者原本就支持，密码错误给具体报错。
 - `top_level_root` 判断「全部条目在同一顶层目录」，命中时解到压缩包所在目录；
   「解压到新文件夹…」复用 `MoveToDialog` 的 `extractSource` 模式。
 - 外部工具顺序：`7z/7zz/7za` → `unrar`（仅 rar）→ `bsdtar`；`external_formats()`
@@ -858,13 +867,28 @@ P1 的十二项按里程碑 M3–M5 推进，取舍记在 `docs/decisions/p1-int
 - **MSIX 形态冒烟已记录（2026-11-07）**：§7 的 ADS / 驱动器 / 共享三项与系统索引
   可见性全过，0.5.1.6 重打包后复验；步骤与输出见 `docs/packaging.md` §3.3。冒烟
   修掉 `manage-bde -summary` 的非法开关（24H2 报 Invalid Syntax）。
+- **加密压缩与 ACL 编辑器（2026-11-12）**：补齐两个缺口。加密创建新增 ZIP
+  （WinZip AES-256，此前只有 7z 能加密创建）；ACL 编辑器覆盖 Windows DACL 与
+  Linux POSIX ACL，同一「安全」页（§11.4）。验证：
+  - `cargo test -p dae-core --lib`：405 passed / 10 ignored（含加密 ZIP 创建与
+    Windows/Linux ACL 写入往返新用例）；`cargo test -p dae-qt --lib`：
+    208 passed / 2 ignored。
+  - Linux 侧（WSL CachyOS）`cargo check -p dae-core` 与 POSIX ACL 往返用例通过；
+    Linux 的 Qt 编译留给 qt-check CI。
+  - `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app` 通过。顺带修了两处
+    既有 qmllint 报错：`Accessible.ignored` 挂在 `TapHandler` 上
+    （`qml/TitleBar.qml`、`qml/TrashView.qml`）。
+  - Windows 运行时冒烟：临时文件经「安全」页添加 Everyone 读取的显式 ACE 保存，
+    `Get-Acl` 独立复核命中；再经页面移除保存，继承条目全程不受影响。菜单
+    「ZIP 压缩包（加密）」→ 密码对话框 → 压缩产出 test.zip，局部头加密位、
+    method 99 与 AE-2 strength 3（AES-256）均正确。
 - **隐式 FTPS（990）** 与格式化对话框的人工确认未覆盖（§11.13）。
 - **macOS 运行时**：不做，不是待办。
 
 ### 12.4 维持不做
 
 紧凑覆盖窗、MTP/便携设备、Explorer 标签互操作、系统通知（原 P2）；应用内格式化；
-跨平台统一 ACL 编辑器；仅 ADS 的标签存储。
+macOS ACL 编辑器（Windows/Linux 已于 2026-11-12 落地，见 §11.4）；仅 ADS 的标签存储。
 
 ### 12.5 剩余顺序
 

@@ -157,6 +157,7 @@ Window {
     property string archiveMode: ""
     property string archiveTarget: ""
     property string archiveDestination: ""
+    property string archiveFormat: ""
     property var archivePaths: []
     /// True while the cloud dialog owns an in-flight browser round trip. If the
     /// user dismisses the dialog first, a late success only refreshes the
@@ -1912,6 +1913,7 @@ Window {
             root.archivePaths = paths
             root.archiveTarget = ""
             root.archiveDestination = destination
+            root.archiveFormat = format
             passwordDialog.open("compress", "", "")
             return
         }
@@ -1951,7 +1953,8 @@ Window {
 
     function acceptArchivePassword(password) {
         if (root.archiveMode === "compress")
-            Workspace.compressEntries(root.archivePaths, root.archiveDestination, "7z", password)
+            Workspace.compressEntries(root.archivePaths, root.archiveDestination,
+                                      root.archiveFormat, password)
         else if (root.archiveMode === "extract")
             Workspace.extractArchive(root.archiveTarget, root.archiveDestination, password)
     }
@@ -1960,6 +1963,7 @@ Window {
         root.archiveMode = ""
         root.archiveTarget = ""
         root.archiveDestination = ""
+        root.archiveFormat = ""
         root.archivePaths = []
     }
 
@@ -2550,6 +2554,7 @@ Window {
         items.push({ id: "compress", glyph: "archive", label: qsTr("压缩为…"),
                      enabled: hasPath && !remote, submenu: [
             { id: "compressZip", label: qsTr("ZIP 压缩包") },
+            { id: "compressZipEncrypted", label: qsTr("ZIP 压缩包（加密）") },
             { id: "compressTar", label: qsTr("TAR 归档") },
             { id: "compressTarGz", label: qsTr("TAR.GZ 压缩包") },
             { id: "compress7z", label: qsTr("7Z 压缩包") },
@@ -2990,6 +2995,9 @@ Window {
             break
         case "compressZip":
             root.startCompress("zip", false)
+            break
+        case "compressZipEncrypted":
+            root.startCompress("zip", true)
             break
         case "compressTar":
             root.startCompress("tar", false)

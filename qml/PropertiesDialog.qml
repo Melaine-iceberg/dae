@@ -31,6 +31,17 @@ FocusScope {
     property bool draftArchive: false
     property bool draftSystem: false
     property bool recursive: false
+    /// The ACL editor's draft: one object per entry, re-synced from the
+    /// controller's `aclEntriesJson` whenever a snapshot lands. Booleans and
+    /// presets rather than bindings, for the same reason as the mode draft.
+    property var aclDraft: []
+    property bool draftInheritance: false
+    property string aclNewName: ""
+    property bool aclNewAllow: true
+    property string aclNewRights: "read"
+    /// POSIX only: whether the entry being added names a user or a group.
+    property string aclNewKind: "user"
+    readonly property bool aclWindows: controller.platformKind === "windows"
     /// Which checksum row was copied last, for the one-line confirmation.
     property string copiedAlgorithm: ""
     /// A checksum pasted to compare against. The dialog hashes the file and
@@ -55,8 +66,9 @@ FocusScope {
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
-    readonly property bool canSave: controller.editable && !controller.saving
-                                     && controller.error === ""
+    readonly property bool canSave: !controller.saving && controller.error === ""
+                                     && (root.tab === "security"
+                                         ? controller.aclEditable : controller.editable)
 
     signal closed()
     /// The write went through. The window reloads the listing so an attribute
@@ -75,6 +87,10 @@ FocusScope {
         root.recursive = false
         root.copiedAlgorithm = ""
         root.expectedHash = ""
+        root.aclNewName = ""
+        root.aclNewAllow = true
+        root.aclNewRights = "read"
+        root.aclNewKind = "user"
         controller.open(path)
         root.visible = true
         root.forceActiveFocus()
@@ -99,6 +115,96 @@ FocusScope {
         return controller.signatureStatus
     }
 
+    /// Re-syncs the ACL draft from the latest snapshot. The JSON lands after
+    /// `loading` clears, so it gets its own change handler rather than riding
+    /// `onLoadingChanged`.
+    function syncAclDraft() {
+        let entries = []
+        if (controller.aclEntriesJson !== "") {
+            try {
+                entries = JSON.parse(controller.aclEntriesJson)
+            } catch (error) {
+                entries = []
+            }
+        }
+        root.aclDraft = entries
+        root.draftInheritance = controller.aclInheritance
+    }
+
+    /// Replaces one field of one draft entry. The array is reassigned rather
+    /// than mutated in place so the Repeater sees the change.
+    function updateAclEntry(index, key, value) {
+        const draft = root.aclDraft.slice()
+        const entry = Object.assign({}, draft[index])
+        entry[key] = value
+        draft[index] = entry
+        root.aclDraft = draft
+    }
+
+    function removeAclEntry(index) {
+        const draft = root.aclDraft.slice()
+        draft.splice(index, 1)
+        root.aclDraft = draft
+    }
+
+    function addAclEntry() {
+        const name = root.aclNewName.trim()
+        if (name === "")
+            return
+        // A new entry carries the typed name; the core resolves it. Existing
+        // entries echo their stable id back instead (see saveAcl).
+        const principal = root.aclWindows
+            ? name
+            : (root.aclNewKind === "user" ? "user:" : "group:") + name
+        root.aclDraft = root.aclDraft.concat([{
+            principal: principal,
+            id: "",
+            allow: root.aclWindows ? root.aclNewAllow : true,
+            rights: root.aclNewRights,
+            rightsText: "",
+            inherited: false,
+            editable: true
+        }])
+        root.aclNewName = ""
+        aclNameField.reset("")
+    }
+
+    /// Writes the draft's explicit entries back. Inherited and base entries
+    /// are shown but never sent: the core keeps them itself.
+    function saveAcl() {
+        const specs = []
+        for (let index = 0; index < root.aclDraft.length; index += 1) {
+            const entry = root.aclDraft[index]
+            if (!entry.editable || entry.inherited)
+                continue
+            specs.push({
+                principal: entry.id !== "" ? entry.id : entry.principal,
+                allow: entry.allow,
+                rights: entry.rights
+            })
+        }
+        controller.saveAcl(JSON.stringify(specs), root.draftInheritance)
+    }
+
+    /// The preset labels differ per platform: Windows speaks Explorer's
+    /// read/modify/full control, POSIX speaks the rwx triplets.
+    function aclRightsLabel(preset) {
+        if (root.aclWindows) {
+            switch (preset) {
+            case "read": return qsTr("读取")
+            case "modify": return qsTr("修改")
+            case "full": return qsTr("完全控制")
+            }
+        } else {
+            switch (preset) {
+            case "read": return qsTr("读取")
+            case "modify": return qsTr("读写")
+            case "full": return qsTr("完全")
+            }
+        }
+        return preset
+    }
+
     function close() {
         controller.close()
         root.visible = false
@@ -108,6 +214,10 @@ FocusScope {
     function save() {
         if (!root.canSave)
             return
+        if (root.tab === "security") {
+            root.saveAcl()
+            return
+        }
         controller.save(root.draftMode, root.draftUser, root.draftGroup,
                         root.draftReadOnly, root.draftHidden, root.draftArchive,
                         root.draftSystem, root.recursive)
@@ -146,6 +256,10 @@ FocusScope {
             root.draftSystem = controller.system
             userField.reset(controller.userName)
             groupField.reset(controller.groupName)
+        }
+
+        function onAclEntriesJsonChanged() {
+            root.syncAclDraft()
         }
 
         function onSaved() {
@@ -219,6 +333,8 @@ FocusScope {
                             tabs.push({ key: "permissions", label: qsTr("权限") })
                         if (controller.platformKind === "windows" && controller.editable)
                             tabs.push({ key: "attributes", label: qsTr("属性") })
+                        if (controller.aclSupported && !controller.remote)
+                            tabs.push({ key: "security", label: qsTr("安全") })
                         if (controller.signatureSupported && !controller.remote
                                 && !controller.isDirectory)
                             tabs.push({ key: "signature", label: qsTr("签名") })
@@ -474,35 +590,189 @@ FocusScope {
                         checked: root.draftSystem
                         onToggled: root.draftSystem = !root.draftSystem
                     }
+                }
 
-                    // The ACL is a read-only view: inheritance and deny
-                    // ordering are a different editor, and the DOS flags above
-                    // stay the writable surface. Empty when the platform has no
-                    // reader or the file has no DACL.
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: root.hairline
-                        visible: controller.aclSupported && controller.aclEntries !== ""
-                    }
-                    Text {
-                        width: parent.width
-                        visible: controller.aclSupported && controller.aclOwner !== ""
-                        text: qsTr("所有者：") + controller.aclOwner
-                            + (controller.aclGroup !== ""
-                                ? qsTr("　组：") + controller.aclGroup : "")
-                        color: root.mutedColor
-                        font.pixelSize: Theme.typeMicro
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        width: parent.width
-                        visible: controller.aclEntries !== ""
-                        text: controller.aclEntries
-                        color: root.mutedColor
-                        font.pixelSize: Theme.typeMicro
-                        font.family: Theme.monoFamily
-                        wrapMode: Text.WordWrap
+                // ---- ACL editor ----------------------------------------------
+                // Windows DACL or Linux POSIX ACL, whichever the platform
+                // reads. Inherited ACEs and the POSIX base entries are shown
+                // but stay read-only here; the mode tab owns the base bits.
+                Flickable {
+                    id: securityFlick
+                    width: parent.width
+                    height: parent.height
+                    visible: root.tab === "security"
+                    contentWidth: width
+                    contentHeight: securityColumn.height
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    Column {
+                        id: securityColumn
+                        width: securityFlick.width
+                        spacing: 8
+
+                        Text {
+                            width: parent.width
+                            visible: controller.aclOwner !== ""
+                            text: qsTr("所有者：") + controller.aclOwner
+                                + (controller.aclGroup !== ""
+                                    ? qsTr("　组：") + controller.aclGroup : "")
+                            color: root.mutedColor
+                            font.pixelSize: Theme.typeMicro
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Toggle {
+                            label: qsTr("从父项继承权限")
+                            visible: root.aclWindows
+                            checked: root.draftInheritance
+                            onToggled: root.draftInheritance = !root.draftInheritance
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: root.hairline
+                        }
+
+                        Repeater {
+                            model: root.aclDraft
+
+                            delegate: AclRow {}
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: root.aclDraft.length === 0
+                            text: qsTr("没有访问控制条目")
+                            color: root.mutedColor
+                            font.pixelSize: Theme.typeMicro
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: root.hairline
+                        }
+
+                        // The add form: a name, the verb (Windows) or the
+                        // principal kind (POSIX), and a rights preset.
+                        Item {
+                            width: parent.width
+                            height: Theme.controlLg
+
+                            Rectangle {
+                                id: aclAddButton
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 56
+                                height: Theme.controlMd
+                                radius: Theme.radiusSm
+                                color: !aclAddMouse.enabled ? Theme.canvasAlt
+                                    : (aclAddMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: qsTr("添加")
+                                    color: aclAddMouse.enabled ? Theme.onInteractive : root.mutedColor
+                                    font.pixelSize: Theme.typeCaption
+                                }
+
+                                MouseArea {
+                                    id: aclAddMouse
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("添加")
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: root.aclNewName.trim() !== ""
+                                    onClicked: root.addAclEntry()
+                                }
+                            }
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.right: aclAddButton.left
+                                anchors.rightMargin: 8
+                                height: parent.height
+                                spacing: 8
+
+                                Item {
+                                    visible: !root.aclWindows
+                                    width: aclKindRow.width
+                                    height: parent.height
+                                    Row {
+                                        id: aclKindRow
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        AclChip {
+                                            label: qsTr("用户")
+                                            selected: root.aclNewKind === "user"
+                                            onClicked: root.aclNewKind = "user"
+                                        }
+                                        AclChip {
+                                            label: qsTr("组")
+                                            selected: root.aclNewKind === "group"
+                                            onClicked: root.aclNewKind = "group"
+                                        }
+                                    }
+                                }
+
+                                Field {
+                                    id: aclNameField
+                                    width: root.aclWindows ? 170 : 150
+                                    placeholder: root.aclWindows
+                                        ? qsTr("用户或组名") : qsTr("名称或 ID")
+                                    onEdited: function (value) { root.aclNewName = value }
+                                }
+
+                                Item {
+                                    visible: root.aclWindows
+                                    width: aclVerbRow.width
+                                    height: parent.height
+                                    Row {
+                                        id: aclVerbRow
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        AclChip {
+                                            label: qsTr("允许")
+                                            selected: root.aclNewAllow
+                                            onClicked: root.aclNewAllow = true
+                                        }
+                                        AclChip {
+                                            label: qsTr("拒绝")
+                                            selected: !root.aclNewAllow
+                                            danger: true
+                                            onClicked: root.aclNewAllow = false
+                                        }
+                                    }
+                                }
+
+                                Item {
+                                    width: aclNewRightsRow.width
+                                    height: parent.height
+                                    Row {
+                                        id: aclNewRightsRow
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        AclChip {
+                                            label: root.aclRightsLabel("read")
+                                            selected: root.aclNewRights === "read"
+                                            onClicked: root.aclNewRights = "read"
+                                        }
+                                        AclChip {
+                                            label: root.aclRightsLabel("modify")
+                                            selected: root.aclNewRights === "modify"
+                                            onClicked: root.aclNewRights = "modify"
+                                        }
+                                        AclChip {
+                                            label: root.aclRightsLabel("full")
+                                            selected: root.aclNewRights === "full"
+                                            onClicked: root.aclNewRights = "full"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -697,17 +967,21 @@ FocusScope {
                 spacing: 8
 
                 Toggle {
+                    id: recursiveToggle
                     width: 180
                     height: parent.height
                     label: qsTr("应用于所有子项目")
                     checked: root.recursive
+                    // The ACL write is per-entry; recursion belongs to the
+                    // mode and attribute editors only.
                     visible: controller.isDirectory && controller.editable
+                             && root.tab !== "security"
                     enabled: visible
                     onToggled: root.recursive = !root.recursive
                 }
 
                 Item {
-                    width: Math.max(0, parent.width - 180 - 76 - 84 - 16)
+                    width: Math.max(0, parent.width - (recursiveToggle.visible ? 180 : 0) - 76 - 84 - 16)
                     height: 1
                 }
 
@@ -745,6 +1019,7 @@ FocusScope {
                     height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     visible: controller.editable
+                             || (root.tab === "security" && controller.aclEditable)
                     radius: Theme.radiusSm
                     color: !root.canSave ? Theme.canvasAlt
                         : (saveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
@@ -971,6 +1246,184 @@ FocusScope {
             text: field.placeholder
             color: root.mutedColor
             font.pixelSize: Theme.typeCaption
+        }
+    }
+
+    /// One selectable chip in the ACL editor: a rights preset, a verb or a
+    /// principal kind. The same mutually exclusive shape the settings panel
+    /// uses, sized for a dialog row.
+    component AclChip: Rectangle {
+        id: aclChip
+
+        property string label: ""
+        property bool selected: false
+        property bool danger: false
+
+        signal clicked()
+
+        width: aclChipLabel.implicitWidth + 16
+        height: Theme.controlSm
+        radius: Theme.radiusSm
+        opacity: enabled ? 1 : 0.55
+        color: aclChip.selected
+            ? (aclChip.danger
+                ? Qt.rgba(root.dangerColor.r, root.dangerColor.g, root.dangerColor.b, 0.15)
+                : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
+            : (aclChipMouse.containsMouse ? Theme.fill : "transparent")
+        border.width: 1
+        border.color: aclChip.selected
+            ? (aclChip.danger ? root.dangerColor : root.accent) : root.hairline
+
+        Accessible.role: Accessible.RadioButton
+        Accessible.name: aclChip.label
+        Accessible.checkable: true
+        Accessible.checked: aclChip.selected
+        Accessible.onPressAction: aclChip.clicked()
+
+        Text {
+            id: aclChipLabel
+            anchors.centerIn: parent
+            text: aclChip.label
+            color: aclChip.selected
+                ? (aclChip.danger ? root.dangerColor : root.textColor) : root.mutedColor
+            font.pixelSize: Theme.typeMicro
+        }
+
+        MouseArea {
+            id: aclChipMouse
+            anchors.fill: parent
+            enabled: aclChip.enabled
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: aclChip.clicked()
+        }
+    }
+
+    /// One ACL entry. Editable rows offer the verb (Windows), a rights preset
+    /// and removal; inherited ACEs and the POSIX base entries show their
+    /// platform summary instead. A `custom` entry keeps its mask until a
+    /// preset is chosen, so the hint spells out what it currently holds.
+    component AclRow: Item {
+        id: aclRow
+
+        required property var modelData
+        required property int index
+
+        readonly property var entry: aclRow.modelData
+        readonly property bool canEdit: aclRow.entry.editable && !aclRow.entry.inherited
+        readonly property int nameX: root.aclWindows ? 90 : 0
+
+        width: parent ? parent.width : 0
+        height: Theme.controlMd
+
+        Row {
+            visible: root.aclWindows
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+
+            AclChip {
+                label: qsTr("允许")
+                selected: aclRow.entry.allow
+                enabled: aclRow.canEdit
+                onClicked: root.updateAclEntry(aclRow.index, "allow", true)
+            }
+            AclChip {
+                label: qsTr("拒绝")
+                selected: !aclRow.entry.allow
+                danger: true
+                enabled: aclRow.canEdit
+                onClicked: root.updateAclEntry(aclRow.index, "allow", false)
+            }
+        }
+
+        Text {
+            x: aclRow.nameX
+            width: 160
+            anchors.verticalCenter: parent.verticalCenter
+            text: Localize.message(aclRow.entry.principal)
+            color: aclRow.canEdit ? root.textColor : root.mutedColor
+            font.pixelSize: Theme.typeCaption
+            elide: Text.ElideMiddle
+        }
+
+        Row {
+            x: aclRow.nameX + 168
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            visible: aclRow.canEdit
+
+            AclChip {
+                label: root.aclRightsLabel("read")
+                selected: aclRow.entry.rights === "read"
+                onClicked: root.updateAclEntry(aclRow.index, "rights", "read")
+            }
+            AclChip {
+                label: root.aclRightsLabel("modify")
+                selected: aclRow.entry.rights === "modify"
+                onClicked: root.updateAclEntry(aclRow.index, "rights", "modify")
+            }
+            AclChip {
+                label: root.aclRightsLabel("full")
+                selected: aclRow.entry.rights === "full"
+                onClicked: root.updateAclEntry(aclRow.index, "rights", "full")
+            }
+
+            Item {
+                visible: aclRow.entry.rights === "custom"
+                width: aclCustomHint.implicitWidth
+                height: Theme.controlSm
+
+                Text {
+                    id: aclCustomHint
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Localize.message(aclRow.entry.rightsText)
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                }
+            }
+        }
+
+        Text {
+            x: aclRow.nameX + 168
+            anchors.right: aclRemoveButton.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !aclRow.canEdit
+            text: Localize.message(aclRow.entry.rightsText)
+                + (aclRow.entry.inherited ? qsTr(" · 继承") : "")
+            color: root.mutedColor
+            font.pixelSize: Theme.typeMicro
+            elide: Text.ElideRight
+        }
+
+        Rectangle {
+            id: aclRemoveButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: 28
+            height: Theme.controlSm
+            visible: aclRow.canEdit
+            radius: Theme.radiusSm
+            color: aclRemoveMouse.containsMouse ? Theme.fill : "transparent"
+            border.width: 1
+            border.color: root.hairline
+
+            Text {
+                anchors.centerIn: parent
+                text: "✕"
+                color: root.mutedColor
+                font.pixelSize: Theme.typeMicro
+            }
+
+            MouseArea {
+                id: aclRemoveMouse
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("移除")
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.removeAclEntry(aclRow.index)
+            }
         }
     }
 

@@ -94,6 +94,22 @@ function line(value) {
     if (match)
         return qsTr("不支持的网络协议：%1").arg(match[1])
 
+    // Windows access-mask summaries join their parts with " & "; translate
+    // the combination only when every part is a known right.
+    if (value.indexOf(" & ") >= 0) {
+        const rights = {
+            "Read": qsTr("读取"),
+            "Write": qsTr("写入"),
+            "Execute": qsTr("执行"),
+            "Delete": qsTr("删除"),
+            "Change permissions": qsTr("更改权限"),
+            "Take ownership": qsTr("取得所有权")
+        }
+        const parts = value.split(" & ")
+        if (parts.every(part => rights[part]))
+            return parts.map(part => rights[part]).join("、")
+    }
+
     switch (value) {
     case "No matches": return qsTr("没有匹配项")
     case "No matching content": return qsTr("没有匹配内容")
@@ -107,6 +123,16 @@ function line(value) {
     case "Symlink": return qsTr("符号链接")
     case "Symbolic link": return qsTr("符号链接")
     case "Other": return qsTr("其他")
+    case "Owner": return qsTr("所有者")
+    case "Owning group": return qsTr("所属组")
+    case "Mask": return qsTr("掩码")
+    case "Full control": return qsTr("完全控制")
+    case "Read": return qsTr("读取")
+    case "Write": return qsTr("写入")
+    case "Execute": return qsTr("执行")
+    case "Delete": return qsTr("删除")
+    case "Change permissions": return qsTr("更改权限")
+    case "Take ownership": return qsTr("取得所有权")
     case "Could not read folder": return qsTr("无法读取文件夹")
     case "No path": return qsTr("没有路径")
     case "Closed": return qsTr("已关闭")
@@ -218,7 +244,35 @@ function line(value) {
 
 /// Translate the known prefixes and sentences produced by the error layer.
 function detail(value) {
-    let match = /^Operation failed: (.+)$/.exec(value)
+    // ACL editor failures, matched before the generic wrappers below so the
+    // whole sentence lands in one piece.
+    let match = /^Invalid input: Unknown user or group: (.+)$/.exec(value)
+    if (match)
+        return qsTr("无效输入：未知的用户或组 %1").arg(match[1])
+    match = /^Invalid input: An ACL entry needs a user or group name$/.exec(value)
+    if (match)
+        return qsTr("无效输入：请填写用户或组名")
+    match = /^Invalid input: The ACL entry no longer exists on the file; reload and try again$/.exec(value)
+    if (match)
+        return qsTr("无效输入：该条目已不在文件上，请重新加载后再试")
+    match = /^Invalid input: Unknown permission preset: (.+)$/.exec(value)
+    if (match)
+        return qsTr("无效输入：未知的权限预设 %1").arg(match[1])
+    match = /^Permission denied: Could not (read|write) the security descriptor \(error (\d+)\)$/.exec(value)
+    if (match)
+        return qsTr("权限被拒绝：无法%1安全描述符（错误 %2）")
+            .arg(match[1] === "read" ? qsTr("读取") : qsTr("写入")).arg(match[2])
+    match = /^Not supported on this platform: This file system does not support POSIX ACLs$/.exec(value)
+    if (match)
+        return qsTr("当前平台不支持：此文件系统不支持 POSIX ACL")
+    match = /^Operation failed: Could not build the access control list: (.+)$/.exec(value)
+    if (match)
+        return qsTr("操作失败：无法构建访问控制列表：%1").arg(match[1])
+    match = /^Operation failed: The ACL write was interrupted$/.exec(value)
+    if (match)
+        return qsTr("操作失败：ACL 写入被中断")
+
+    match = /^Operation failed: (.+)$/.exec(value)
     if (match)
         return qsTr("操作失败：%1").arg(match[1])
     match = /^Permission denied: (.+)$/.exec(value)

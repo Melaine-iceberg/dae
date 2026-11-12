@@ -451,7 +451,7 @@ fn set_file_attributes(path: &Path, flags: u32) -> std::io::Result<()> {
 /// configured with (`/etc/passwd`, SSSD, macOS Open Directory, ...), so this
 /// stays correct on domain-joined machines where parsing local files fails.
 #[cfg(unix)]
-mod accounts {
+pub(crate) mod accounts {
     use std::ffi::{CStr, CString};
 
     const INITIAL_BUFFER_SIZE: usize = 1024;

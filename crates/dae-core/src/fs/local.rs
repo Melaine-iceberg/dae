@@ -6,7 +6,7 @@ mod content_search;
 mod directory;
 mod ignores;
 mod operations;
-mod properties;
+pub(crate) mod properties;
 pub(crate) mod search;
 
 #[cfg(windows)]

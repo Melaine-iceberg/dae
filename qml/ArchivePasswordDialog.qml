@@ -2,10 +2,11 @@ import QtQuick
 import "DialogFocus.js" as DialogFocus
 import "Localize.js" as Localize
 
-// Asks for an archive password. `compress` mode protects a new 7Z archive and
-// asks twice; `extract` mode retries a protected archive after the core
-// answered with a wrong-password error. The caller keeps the dialog open until
-// the operation succeeds, so a wrong retry can show the new message in place.
+// Asks for an archive password. `compress` mode protects a new ZIP or 7Z
+// archive and asks twice; `extract` mode retries a protected archive after the
+// core answered with a wrong-password error. The caller keeps the dialog open
+// until the operation succeeds, so a wrong retry can show the new message in
+// place.
 FocusScope {
     id: root
 
@@ -18,7 +19,7 @@ FocusScope {
         ? qsTr("设置压缩包密码")
         : qsTr("解压加密压缩包")
     readonly property string description: root.compressMode
-        ? qsTr("为新的 7Z 压缩包设置打开密码。")
+        ? qsTr("为新的压缩包设置打开密码（AES-256 加密）。")
         : "“" + root.archiveName + qsTr("”已加密，请输入密码后解压。")
 
     signal accepted(string password)
