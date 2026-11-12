@@ -23,17 +23,31 @@ fn grid_text(snapshot: &TerminalSnapshot) -> String {
     text
 }
 
-fn wait_for(session: &TerminalSession, needle: &str) -> String {
+/// Runs `echo <needle>` and waits until the answer appears on a line of its own.
+///
+/// Two startup hazards, one answer. The echoed input also contains the needle,
+/// so a substring match would return before the shell has run the command; and
+/// input written while the shell is still starting can be swallowed before it is
+/// read (a greeting that reads stdin, a line-discipline flush), so the command is
+/// rewritten until it is answered. No prompt shape is a reliable ready signal
+/// across shells, and `echo` is idempotent, so a duplicate answer is harmless.
+fn answered(session: &TerminalSession, needle: &str) {
+    let command = format!("echo {needle}\r");
     let deadline = Instant::now() + Duration::from_secs(20);
+    let mut rewrite = Instant::now();
     loop {
+        if Instant::now() >= rewrite {
+            session.write(command.as_bytes()).expect("write");
+            rewrite = Instant::now() + Duration::from_secs(2);
+        }
         let last = session.snapshot(true).map(|snapshot| grid_text(&snapshot));
         if let Some(text) = &last
-            && text.contains(needle)
+            && text.lines().any(|line| line.trim() == needle)
         {
-            return text.clone();
+            return;
         }
         if Instant::now() >= deadline {
-            panic!("{needle:?} never showed up in the grid; last snapshot:\n{last:?}");
+            panic!("{needle:?} never got a line of its own; last snapshot:\n{last:?}");
         }
         thread::sleep(Duration::from_millis(25));
     }
@@ -57,17 +71,10 @@ fn spawn_session() -> (TerminalSession, Arc<Mutex<Vec<TerminalEvent>>>) {
 fn the_shell_answers_a_command_in_the_grid() {
     let (session, _events) = spawn_session();
 
-    session.write(b"echo vt-smoke-ok\r").expect("write");
-    wait_for(&session, "vt-smoke-ok");
-
-    // The prompt proves the library answered the shell's terminal queries
+    // The answer proves the library answered the shell's terminal queries
     // through the write-pty callback; without that reply PowerShell never
     // finishes drawing its first prompt.
-    let text = wait_for(&session, "vt-smoke-ok");
-    assert!(
-        text.lines().any(|line| line.trim() == "vt-smoke-ok"),
-        "expected the echo output on its own line:\n{text}"
-    );
+    answered(&session, "vt-smoke-ok");
 
     let snapshot = session.snapshot(true).expect("snapshot");
     assert_eq!((snapshot.cols, snapshot.rows), (80, 24));
@@ -78,15 +85,14 @@ fn the_shell_answers_a_command_in_the_grid() {
 #[test]
 fn the_viewport_scrolls_and_returns() {
     let (session, _events) = spawn_session();
-    session.write(b"echo vt-scroll-ok\r").expect("write");
-    wait_for(&session, "vt-scroll-ok");
+    answered(&session, "vt-scroll-ok");
 
     for line in 0..40 {
         session
             .write(format!("echo vt-line-{line}\r").as_bytes())
             .expect("write");
     }
-    wait_for(&session, "vt-line-39");
+    answered(&session, "vt-line-39");
 
     let snapshot = session.snapshot(true).expect("snapshot");
     assert!(
@@ -115,15 +121,13 @@ fn resizing_rebuilds_the_grid() {
     assert_eq!((snapshot.cols, snapshot.rows), (100, 30));
     assert_eq!(snapshot.cells.len(), 3000);
 
-    session.write(b"echo vt-resize-ok\r").expect("write");
-    wait_for(&session, "vt-resize-ok");
+    answered(&session, "vt-resize-ok");
 }
 
 #[test]
 fn snapshots_stay_consistent_while_output_streams() {
     let (session, events) = spawn_session();
-    session.write(b"echo vt-stream-ok\r").expect("write");
-    wait_for(&session, "vt-stream-ok");
+    answered(&session, "vt-stream-ok");
 
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut frames = 0usize;

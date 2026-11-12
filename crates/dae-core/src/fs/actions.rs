@@ -272,12 +272,12 @@ mod tests {
 
     #[test]
     fn selection_modes_and_extension_filters_are_honoured() {
-        let files = vec![
-            std::env::current_exe()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-        ];
+        // The selection is a file this test names itself: the test binary
+        // carries `.exe` only on Windows, and the filter reads the name.
+        let directory = tempfile::tempdir().expect("temp dir");
+        let file = directory.path().join("probe.exe");
+        std::fs::write(&file, b"").expect("write the selection file");
+        let files = vec![file.to_string_lossy().to_string()];
         let mut file_only = action("file", &[]);
         file_only.extensions = vec!["exe".to_owned()];
         assert!(selection_allows(&file_only, &files, ""));

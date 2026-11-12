@@ -1118,13 +1118,15 @@ mod tests {
         assert_eq!(mime_for("/tmp/frame"), None);
     }
 
-    /// The shape Arch's `ffmpegthumbnailer` package ships, kept verbatim.
+    /// The shape Arch's `ffmpegthumbnailer` package ships, with `sh` standing
+    /// in for the handler: every Unix session has it on PATH, so the parse is
+    /// tested without depending on what the host happens to have installed.
     #[cfg(unix)]
     #[test]
     fn reads_a_declared_thumbnailer() {
         let parsed = parse_thumbnailer(
             "[Thumbnailer Entry]\n\
-             TryExec=ffmpegthumbnailer\n\
+             TryExec=sh\n\
              Exec=/bin/sh -i %i -o %o -s %s -f\n\
              MimeType=video/mp4;video/quicktime;\n",
         )
