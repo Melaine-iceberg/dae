@@ -492,7 +492,6 @@ Item {
         TapHandler {
             /// The tap only moves focus into the list. Focus is not an action, and
             /// the list itself already carries the name.
-            Accessible.ignored: true
             acceptedButtons: Qt.LeftButton
             onTapped: root.takeFocus()
         }

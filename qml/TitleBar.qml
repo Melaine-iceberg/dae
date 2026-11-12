@@ -119,7 +119,6 @@ Item {
     TapHandler {
         /// Double-click-to-maximize is a pointer gesture on the bar; the window
         /// is maximized from the system menu, so this handler is not a control.
-        Accessible.ignored: true
         enabled: Qt.platform.os !== "windows"
         onDoubleTapped: {
             if (root.window === null)
