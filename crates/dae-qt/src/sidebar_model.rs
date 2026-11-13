@@ -19,7 +19,7 @@ use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QStri
 use dae_core::fs::cloud::accounts::{StoredCloudAccount, list_cloud_accounts};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, StoredConnection};
-use dae_core::fs::sidebar::{self, DiskVolume, PlaceKind, WslDistro};
+use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
 
 use crate::format;
 use crate::runtime;
@@ -70,13 +70,6 @@ pub mod qobject {
         #[base = QAbstractListModel]
         #[qproperty(bool, loaded)]
         #[qproperty(QString, status)]
-        /// The capacity footer under the column: how full the disk the window
-        /// is most likely about (the first fixed volume with a size), as a
-        /// 0..1 fraction and as the two formatted figures. Empty strings mean
-        /// "no volume reported a size", and the footer stays out of the way.
-        #[qproperty(f64, disk_fill, cxx_name = "diskFill")]
-        #[qproperty(QString, disk_used, cxx_name = "diskUsed")]
-        #[qproperty(QString, disk_total, cxx_name = "diskTotal")]
         type SidebarModel = super::SidebarModelRust;
 
         #[cxx_override]
@@ -129,9 +122,6 @@ pub struct SidebarModelRust {
     rows: Vec<SidebarRow>,
     loaded: bool,
     status: QString,
-    disk_fill: f64,
-    disk_used: QString,
-    disk_total: QString,
 }
 
 impl qobject::SidebarModel {
@@ -182,12 +172,6 @@ impl qobject::SidebarModel {
 
     fn refresh(mut self: Pin<&mut Self>) {
         self.as_mut().set_status(QString::from("Loading…"));
-        // The volumes are probed off this thread; until they answer, the footer
-        // must not keep the previous machine's numbers (a profile restored onto
-        // another disk would show a full bar for a drive that is empty).
-        self.as_mut().set_disk_fill(0.0);
-        self.as_mut().set_disk_used(QString::from(""));
-        self.as_mut().set_disk_total(QString::from(""));
         // A sidebar may be created before the command singleton; both stores
         // are process-wide and loading them here is idempotent.
         crate::init_stores();
@@ -282,11 +266,14 @@ impl qobject::SidebarModel {
             // Empty everywhere but Windows, which also makes the rows
             // disappear on the other platforms.
             let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
-            let (fill, used, total) = footer_capacity(&volumes);
 
             let mut rows = base;
             for volume in volumes {
                 let name = volume_name(&volume.name, &volume.mount_point);
+                // The pair beside the filesystem is used / total, the same
+                // numbers the percentage and the gauge are drawn from: an
+                // available / total pair would contradict a 44 % bar.
+                let used_bytes = volume.total_bytes.saturating_sub(volume.available_bytes);
                 rows.push(SidebarRow {
                     section: SECTION_VOLUMES.to_owned(),
                     name,
@@ -294,7 +281,7 @@ impl qobject::SidebarModel {
                     kind: "volume".to_owned(),
                     detail: format!(
                         "{} / {}",
-                        format::size(volume.available_bytes),
+                        format::size(used_bytes),
                         format::size(volume.total_bytes)
                     ),
                     icon: "disk".to_owned(),
@@ -302,9 +289,7 @@ impl qobject::SidebarModel {
                     fill: if volume.total_bytes == 0 {
                         0.0
                     } else {
-                        ((volume.total_bytes - volume.available_bytes) as f64
-                            / volume.total_bytes as f64)
-                            .clamp(0.0, 1.0)
+                        (used_bytes as f64 / volume.total_bytes as f64).clamp(0.0, 1.0)
                     },
                     file_system: volume.file_system,
                     removable: volume.is_removable,
@@ -316,9 +301,6 @@ impl qobject::SidebarModel {
             rows.extend(network);
             rows.extend(cloud);
             let _ = thread.queue(move |mut model| {
-                model.as_mut().set_disk_fill(fill);
-                model.as_mut().set_disk_used(QString::from(used.as_str()));
-                model.as_mut().set_disk_total(QString::from(total.as_str()));
                 model.as_mut().replace_rows(rows);
             });
         });
@@ -335,32 +317,6 @@ impl qobject::SidebarModel {
             format!("{count} item{}", if count == 1 { "" } else { "s" }).as_str(),
         ));
         self.as_mut().set_loaded(true);
-    }
-}
-
-/// The disk the sidebar's capacity footer describes: the first fixed volume
-/// that reports a size, or — on a machine with only removable media — the
-/// first volume that has numbers at all. A bar with nothing behind it would be
-/// a lie, so a machine that reports no size gets empty strings and the footer
-/// stays hidden.
-///
-/// A function of the volumes rather than a paragraph inside the probe, so the
-/// choice can be tested without a disk.
-fn footer_capacity(volumes: &[DiskVolume]) -> (f64, String, String) {
-    let chosen = volumes
-        .iter()
-        .find(|volume| !volume.is_removable && volume.total_bytes > 0)
-        .or_else(|| volumes.iter().find(|volume| volume.total_bytes > 0));
-    match chosen {
-        Some(volume) => {
-            let used_bytes = volume.total_bytes.saturating_sub(volume.available_bytes);
-            (
-                (used_bytes as f64 / volume.total_bytes as f64).clamp(0.0, 1.0),
-                format::size(used_bytes),
-                format::size(volume.total_bytes),
-            )
-        }
-        None => (0.0, String::new(), String::new()),
     }
 }
 
@@ -506,53 +462,6 @@ fn cloud_provider_label(provider: CloudProviderKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn volume(mount: &str, total: u64, available: u64, removable: bool) -> DiskVolume {
-        DiskVolume {
-            mount_point: mount.to_owned(),
-            name: mount.to_owned(),
-            file_system: "NTFS".to_owned(),
-            total_bytes: total,
-            available_bytes: available,
-            is_removable: removable,
-        }
-    }
-
-    #[test]
-    fn the_footer_describes_the_first_fixed_disk() {
-        let volumes = [
-            volume("E:/", 1000, 1000, true),
-            volume("C:/", 1000, 250, false),
-            volume("D:/", 1000, 900, false),
-        ];
-        let (fill, used, total) = footer_capacity(&volumes);
-        assert!((fill - 0.75).abs() < 1e-9);
-        assert!(!used.is_empty() && !total.is_empty());
-    }
-
-    #[test]
-    fn a_machine_of_only_removable_media_still_gets_a_bar() {
-        let volumes = [volume("F:/", 800, 200, true)];
-        let (fill, _, _) = footer_capacity(&volumes);
-        assert!((fill - 0.75).abs() < 1e-9);
-    }
-
-    #[test]
-    fn a_volume_with_no_size_never_reaches_the_footer() {
-        // An unmounted drive reports zero total; dividing by it would be a
-        // NaN, and a NaN bound to a width is a warning per frame.
-        let volumes = [volume("G:/", 0, 0, false)];
-        let (fill, used, total) = footer_capacity(&volumes);
-        assert_eq!(fill, 0.0);
-        assert!(used.is_empty() && total.is_empty());
-    }
-
-    #[test]
-    fn no_volumes_means_no_footer() {
-        let (fill, used, total) = footer_capacity(&[]);
-        assert_eq!(fill, 0.0);
-        assert!(used.is_empty() && total.is_empty());
-    }
 
     #[test]
     fn every_system_place_has_a_name_and_an_icon() {

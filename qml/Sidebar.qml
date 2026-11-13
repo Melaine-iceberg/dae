@@ -50,8 +50,9 @@ Item {
     /// the pointer is over them.
     property bool favoriteDropActive: false
 
-    /// Narrow columns drop the "used / total" pair for the percentage: at 184 px
-    /// the full pair is the first thing that would collide with the name.
+    /// Narrow columns drop the "used / total" pair: at 184 px it is the first
+    /// thing that would collide with the filesystem. The percentage on the
+    /// name line still says how full the drive is.
     readonly property bool narrow: width < 200
     readonly property string trashLabel: Qt.platform.os === "osx"
         ? qsTr("废纸篓") : qsTr("回收站")
@@ -486,11 +487,18 @@ Item {
                 && list.currentIndex === row.index
             readonly property bool lit: row.focused || row.armed
                 || rowMouse.containsMouse
-            /// A volume is two lines — name, then its filesystem — because the
-            /// capacity pair already takes the whole right edge of the name line.
-            readonly property int rowHeight: row.isVolume ? 46 : 28
+            /// A volume is three bands — name and percentage, the capacity
+            /// gauge, then the filesystem and the used/total pair — so the
+            /// gauge can be as wide as the row without crowding either line.
+            readonly property int rowHeight: row.isVolume ? 58 : 28
             readonly property int percent: Math.round(
                 Math.max(0, Math.min(1, row.fill)) * 100)
+            /// The gauge's cell count, the same 24 drift prints: fine enough
+            /// that one cell is ~4 %, coarse enough that it reads as a printed
+            /// gauge rather than a smooth meter.
+            readonly property int gaugeSegments: 24
+            readonly property int litSegments: Math.round(
+                Math.max(0, Math.min(1, row.fill)) * row.gaugeSegments)
 
             width: ListView.view.width
             height: rowHeight + (row.treeOpen ? treeLoader.height : 0)
@@ -549,31 +557,6 @@ Item {
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
                     border.width: row.cursor && !row.armed ? Theme.edgeWidth : 0
                     border.color: Theme.signal
-
-                    // How full the volume is: two pixels along the bottom, and
-                    // only where there is a number behind it. An empty bar on a
-                    // home folder would be a promise the data cannot keep.
-                    Item {
-                        visible: row.isVolume && row.fill > 0
-                        x: 10
-                        y: parent.height - 7
-                        width: parent.width - 20
-                        height: 2
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 1
-                            color: Theme.hairlineStrong
-                        }
-
-                        Rectangle {
-                            width: parent.width * Math.max(0, Math.min(1, row.fill))
-                            height: parent.height
-                            radius: 1
-                            color: row.fill > 0.9 ? Theme.warn : Theme.signal
-                            opacity: row.fill > 0.9 ? 0.9 : 0.5
-                        }
-                    }
                 }
 
                 /// The plate's edge for a drop target: dashed, where the
@@ -652,14 +635,14 @@ Item {
                 Text {
                     id: nameText
 
-                    x: row.isVolume ? 48 : 40
+                    x: row.isVolume ? 46 : 40
                     y: row.isVolume ? 3 : 0
                     height: row.isVolume ? 20 : 28
-                    // A volume's capacity sits on the second line, so the drive
-                    // name gets the whole first line instead of eliding to make
-                    // room for the pair.
+                    // A volume's percentage owns the right edge of the name
+                    // line, the used/total pair the last line, so the drive name
+                    // elides only against the smaller of the two.
                     width: Math.max(0, (row.isVolume
-                        ? rowBody.width - 18
+                        ? percentText.x
                         : detailText.x) - x - 6)
                     verticalAlignment: Text.AlignVCenter
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
@@ -673,19 +656,78 @@ Item {
                 }
 
                 Text {
-                    id: detailText
+                    id: percentText
 
+                    visible: row.isVolume
                     anchors.right: parent.right
                     anchors.rightMargin: 18
-                    y: row.isVolume ? 21 : 0
-                    height: row.isVolume ? 16 : 28
-                    width: Math.min(112, implicitWidth)
+                    y: 3
+                    height: 20
+                    width: implicitWidth
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
-                    // A narrow column only has room for the percentage; the
-                    // full pair is what the tooltip carries instead.
-                    text: row.isVolume && root.narrow
-                        ? row.percent + "%" : root.detailLabel(row.detail)
+                    text: row.percent + "%"
+                    color: row.focused && !row.armed ? Theme.canvas
+                        : row.fill > 0.9 ? Theme.warn : Theme.inkFaint
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                }
+
+                /// The capacity gauge, in drift's segmented form. It sits
+                /// between the name and the filesystem so the bar can use the
+                /// row's width instead of a 112 px strip on a text line.
+                Row {
+                    id: gauge
+
+                    visible: row.isVolume
+                    x: 46
+                    y: 26
+                    width: Math.max(0, rowBody.width - 46 - 18)
+                    height: 10
+                    spacing: 2
+
+                    Repeater {
+                        model: row.isVolume ? row.gaugeSegments : 0
+
+                        Rectangle {
+                            required property int index
+                            /// The gaps come off the width first; a cell sized
+                            /// from the bar alone would overflow the right
+                            /// margin by the last gap.
+                            width: Math.max(1, (gauge.width
+                                - (row.gaugeSegments - 1) * 2) / row.gaugeSegments)
+                            height: gauge.height
+                            color: index < row.litSegments
+                                ? (row.focused && !row.armed ? Theme.canvas
+                                    : row.fill > 0.9 ? Theme.warn : Theme.ink)
+                                : Theme.hairline
+                        }
+                    }
+                }
+
+                Text {
+                    id: detailText
+
+                    visible: !row.isVolume || !root.narrow
+                    anchors.right: parent.right
+                    anchors.rightMargin: 18
+                    y: row.isVolume ? 40 : 0
+                    height: row.isVolume ? 16 : 28
+                    // A volume keeps the pair readable beside the filesystem;
+                    // anything else is capped to a strip on the name line. The
+                    // filesystem's own width is what is reserved, so a longer
+                    // label ("fuseblk") eats the pair rather than disappearing.
+                    width: Math.min(implicitWidth, row.isVolume
+                        ? Math.max(0, rowBody.width - 46 - 18
+                            - (row.fileSystem !== ""
+                                ? fileSystemText.implicitWidth + 6 : 0))
+                        : 112)
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignRight
+                    // A narrow column drops the pair; the percentage on the
+                    // name line still answers how full the drive is.
+                    text: root.detailLabel(row.detail)
                     color: row.focused && !row.armed ? Theme.canvas
                         : row.isVolume && row.fill > 0.9
                             ? Theme.warn : Theme.inkFaint
@@ -695,15 +737,16 @@ Item {
                 }
 
                 // The filesystem is the one thing a drive row could not say in
-                // one line; it shares that line with the capacity pair.
+                // one line; it shares that line with the used/total pair.
                 Text {
                     id: fileSystemText
 
                     visible: row.isVolume && row.fileSystem !== ""
-                    x: 48
-                    y: 21
+                    x: 46
+                    y: 40
                     height: 16
-                    width: Math.max(0, detailText.x - x - 8)
+                    width: Math.max(0, (root.narrow
+                        ? rowBody.width - 18 : detailText.x) - x - 6)
                     verticalAlignment: Text.AlignVCenter
                     text: row.fileSystem
                     color: row.focused && !row.armed ? Theme.canvas : Theme.inkFaint
@@ -1129,7 +1172,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: diskArea.top
+        anchors.bottom: trashArea.top
         visible: tags.length > 0
         height: visible ? 26 + tagList.height + 10 : 0
 
@@ -1256,96 +1299,6 @@ Item {
                     onClicked: root.tagActivated(tagRow.modelData.name)
                 }
             }
-        }
-    }
-
-    /// The disk footer: a labelled, segmented bar of how full the primary disk
-    /// is, in drift's printed form. It shows one volume, not every mount — a
-    /// column of bars would answer a question nobody asked, and the per-volume
-    /// line stays on the drive's own row.
-    Item {
-        id: diskArea
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: trashArea.top
-        height: sidebarModel.diskTotal !== "" ? 66 : 0
-        visible: height > 0
-
-        /// 24 cells, the count drift uses: fine enough that one cell is ~4 %,
-        /// coarse enough that the bar still reads as a printed gauge rather
-        /// than a smooth meter.
-        readonly property int segments: 24
-        readonly property real fill: sidebarModel.diskFill
-        readonly property int lit: Math.round(Math.max(0, Math.min(1, fill)) * segments)
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            anchors.top: parent.top
-            height: 1
-            color: Theme.hairline
-        }
-
-        Text {
-            x: 18
-            y: 8
-            text: root.sectionLabel("Disks")
-            color: Theme.inkFaint
-            font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeMicro
-            font.letterSpacing: 2
-            font.capitalization: Font.AllUppercase
-        }
-
-        Text {
-            anchors.right: parent.right
-            anchors.rightMargin: 18
-            y: 8
-            text: Math.round(diskArea.fill * 100) + "%"
-            color: diskArea.fill > 0.9 ? Theme.warn : Theme.ink
-            font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeMicro
-            font.features: { "tnum": 1 }
-        }
-
-        Row {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: 18
-            anchors.rightMargin: 18
-            anchors.top: parent.top
-            anchors.topMargin: 22
-            spacing: 2
-
-            Repeater {
-                model: diskArea.segments
-
-                Rectangle {
-                    required property int index
-                    /// The row's width is shared out with the gaps taken off
-                    /// first; a cell computed from the bar alone would overflow
-                    /// the right margin by the last gap.
-                    width: Math.max(1, (diskArea.width - 36 - (diskArea.segments - 1) * 2)
-                        / diskArea.segments)
-                    height: 12
-                    color: index < diskArea.lit
-                        ? (diskArea.fill > 0.9 ? Theme.warn : Theme.ink)
-                        : Theme.hairline
-                }
-            }
-        }
-
-        Text {
-            x: 18
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 8
-            text: sidebarModel.diskUsed + " / " + sidebarModel.diskTotal
-            color: Theme.inkMuted
-            font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeMicro
-            font.features: { "tnum": 1 }
         }
     }
 
