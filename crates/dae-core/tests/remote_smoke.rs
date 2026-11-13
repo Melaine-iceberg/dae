@@ -230,7 +230,8 @@ fn exercise(backend_kind: Backend) {
 
     let text = runtime
         .block_on(preview::read_text_preview(fixture.clone(), 4096))
-        .expect("text preview over the vfs");
+        .expect("text preview over the vfs")
+        .expect("the fixture is text");
     assert_eq!(
         text.content, "hello from the remote smoke test",
         "{label}: preview"
