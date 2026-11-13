@@ -49,6 +49,40 @@ QPixmap drag_preview(const QStringList& paths, int edge)
     return icon.isNull() ? QPixmap() : icon.pixmap(edge, edge);
 }
 
+/// The icon dressed for the drag: the shell icon with a dashed signal-coloured
+/// rule around it, the way the shell marks a drop target. The frame is part of
+/// the pixmap rather than a second window so the OS moves one bitmap and the
+/// hot spot stays the icon's centre. `padding` is in logical pixels; the
+/// pixmap is tagged with `ratio` so the rule stays one device pixel wide on a
+/// scaled display.
+QPixmap framed_preview(const QPixmap& icon, int padding, qreal ratio,
+                       const QColor& signal)
+{
+    if (icon.isNull())
+        return icon;
+
+    const QSizeF inner = icon.deviceIndependentSize();
+    const qreal width = inner.width() + padding * 2.0;
+    const qreal height = inner.height() + padding * 2.0;
+
+    QPixmap pixmap(qRound(width * ratio), qRound(height * ratio));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.drawPixmap(QPointF(padding, padding), icon);
+
+    QPen pen(signal, 1.0, Qt::DashLine);
+    pen.setCapStyle(Qt::FlatCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    // Half-pixel inset keeps the 1 px rule on the device grid, as the tab
+    // chip's border does.
+    painter.drawRect(QRectF(0.5, 0.5, width - 1.0, height - 1.0));
+    return pixmap;
+}
+
 /// The drag's owner. The focused window is the one the gesture started in;
 /// falling back to the first visible window keeps the call working while focus
 /// is transiently elsewhere (a popup closing, for example).
@@ -101,7 +135,8 @@ QPixmap tab_preview(const QString& title, int width, int height,
 
 } // namespace
 
-bool dae_qt_start_file_drag(const QStringList& paths, int actions)
+bool dae_qt_start_file_drag(const QStringList& paths, int actions,
+                            const QColor& signal)
 {
     if (paths.isEmpty() || s_drag_in_progress)
         return false;
@@ -127,13 +162,17 @@ bool dae_qt_start_file_drag(const QStringList& paths, int actions)
 
     // Render at the window's device-pixel ratio so the preview is crisp on a
     // scaled display, and tag the pixmap with the same ratio so Qt draws it at
-    // the intended 48 logical pixels.
+    // the intended 48 logical pixels. The frame adds `kFramePadding` logical
+    // pixels of air on every side, so the preview reads as a carried tile
+    // rather than an icon stuck to the cursor.
     constexpr int kPreviewLogicalEdge = 48;
+    constexpr int kFramePadding = 6;
     const qreal ratio = qMax<qreal>(1.0, source->devicePixelRatio());
     const int edge = qMax(16, qRound(kPreviewLogicalEdge * ratio));
-    QPixmap preview = drag_preview(paths, edge);
-    if (!preview.isNull()) {
-        preview.setDevicePixelRatio(ratio);
+    QPixmap icon = drag_preview(paths, edge);
+    if (!icon.isNull()) {
+        icon.setDevicePixelRatio(ratio);
+        const QPixmap preview = framed_preview(icon, kFramePadding, ratio, signal);
         drag->setPixmap(preview);
         // QDrag's hot spot is in device-independent pixels; Qt scales it for
         // the platform's drag image (OLE multiplies by the screen factor).

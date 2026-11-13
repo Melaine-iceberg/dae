@@ -758,7 +758,8 @@ Item {
         const paths = root.dragPaths
         root.dragPaths = []
         if (paths.length > 0)
-            Workspace.startDragOut(paths, root.dragOutMode(mouse.modifiers))
+            Workspace.startDragOut(paths, root.dragOutMode(mouse.modifiers),
+                                   Theme.signal)
     }
 
     function dragOutMode(modifiers) {
@@ -1752,7 +1753,7 @@ Item {
                     }
                     onSelectionChanged: root.selectionChanged()
                     onDragOutRequested: function (paths, mode) {
-                        Workspace.startDragOut(paths, mode)
+                        Workspace.startDragOut(paths, mode, Theme.signal)
                     }
                 }
             }
@@ -1779,7 +1780,7 @@ Item {
                     }
                     onSelectionChanged: root.selectionChanged()
                     onDragOutRequested: function (paths, mode) {
-                        Workspace.startDragOut(paths, mode)
+                        Workspace.startDragOut(paths, mode, Theme.signal)
                     }
                 }
             }

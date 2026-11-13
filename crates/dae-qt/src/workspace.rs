@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QString, QStringList, QUrl};
+use cxx_qt_lib::{QColor, QString, QStringList, QUrl};
 use dae_core::error::FileSystemError;
 use dae_core::fs::actions;
 use dae_core::fs::archive::{self, ArchiveFormat};
@@ -60,10 +60,14 @@ pub mod qobject {
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
 
+        include!("cxx-qt-lib/qcolor.h");
+        type QColor = cxx_qt_lib::QColor;
+
         include!("drag.h");
         #[namespace = "dae_qt"]
         #[rust_name = "start_file_drag"]
-        fn dae_qt_start_file_drag(paths: &QStringList, actions: i32) -> bool;
+        fn dae_qt_start_file_drag(paths: &QStringList, actions: i32,
+                                  signal: &QColor) -> bool;
 
         include!("clipboard.h");
         #[namespace = "dae_qt"]
@@ -448,10 +452,12 @@ pub mod qobject {
 
         /// Starts a native drag carrying `paths` out of the window. `mode` is
         /// `"copy"`, `"move"`, `"link"` or `"any"`; `"any"` lets the drop
-        /// target choose. Blocks until the user drops or cancels.
+        /// target choose. `signal` draws the dashed frame around the preview.
+        /// Blocks until the user drops or cancels.
         #[qinvokable]
         #[cxx_name = "startDragOut"]
-        fn start_drag_out(self: Pin<&mut Workspace>, paths: &QStringList, mode: &QString);
+        fn start_drag_out(self: Pin<&mut Workspace>, paths: &QStringList,
+                          mode: &QString, signal: &QColor);
 
         /// Creates a shortcut in `destination` for every path in `paths`.
         /// This is the Alt-drop side of an Explorer drag.
@@ -2541,7 +2547,8 @@ impl qobject::Workspace {
         }
     }
 
-    fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString) {
+    fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString,
+                      signal: &QColor) {
         if paths.is_empty() {
             return;
         }
@@ -2553,7 +2560,7 @@ impl qobject::Workspace {
             "link" => 4,
             _ => 1 | 2 | 4,
         };
-        if !qobject::start_file_drag(paths, actions) {
+        if !qobject::start_file_drag(paths, actions, signal) {
             log::warn!(target: "dae::workspace", "could not start the file drag");
         }
     }
