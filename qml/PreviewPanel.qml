@@ -204,9 +204,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("预览")
             color: root.faintColor
+            font.family: Theme.monoFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.9
+            font.letterSpacing: 1.6
         }
 
         /// The pane keeps the previous entry on screen while the next one
@@ -276,12 +276,33 @@ Item {
             spacing: 12
 
             // ── Nothing selected ──────────────────────────────────────────
+            Item {
+                width: parent.width
+                height: 172
+                visible: root.empty
+
+                DotPlate {
+                    anchors.fill: parent
+                    spacing: 12
+                }
+
+                DriftSheet {
+                    width: 82
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -6
+                    rotation: -3
+                    category: "document"
+                    shadowed: true
+                }
+            }
+
             Text {
                 width: parent.width
                 visible: root.empty
                 text: qsTr("未选择文件")
                 color: root.mutedColor
-                font.pixelSize: Theme.typeBody
+                font.family: Theme.serifFamily
+                font.pixelSize: Theme.typeDisplay
                 wrapMode: Text.Wrap
             }
 
@@ -290,7 +311,8 @@ Item {
                 visible: root.empty
                 text: root.inTrash ? qsTr("选中项目查看原位置") : qsTr("单击文件查看详情")
                 color: root.faintColor
-                font.pixelSize: Theme.typeCaption
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.typeMicro
                 wrapMode: Text.Wrap
                 lineHeight: Theme.leadingBody
             }
@@ -345,13 +367,34 @@ Item {
             }
 
             // ── Several selected ──────────────────────────────────────────
-            Text {
+            Item {
                 width: parent.width
+                height: 172
                 visible: !root.empty && !root.single && root.trashItem === null
-                text: root.paths.length + qsTr(" 项")
-                color: root.textColor
-                font.pixelSize: Theme.typeDisplay
-                font.features: { "tnum": 1 }
+
+                DotPlate {
+                    anchors.fill: parent
+                    spacing: 12
+                }
+
+                /// drift prints the count in the serif, in the signal colour,
+                /// at a size no control uses: the pane is reporting a number,
+                /// not offering a button.
+                /// The count alone: drift prints a number on the plate, and the
+                /// line under it ("共 1.2 MiB") already says what was counted.
+                /// A separate unit word only competed with the number's tail.
+                Text {
+                    id: multiCount
+                    anchors.centerIn: parent
+                    text: root.paths.length
+                    color: Theme.signal
+                    font.family: Theme.serifFamily
+                    font.pixelSize: 96
+                    font.features: { "tnum": 1 }
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: qsTr("已选 %1 项").arg(root.paths.length)
+                }
+
             }
 
             Text {
@@ -703,11 +746,25 @@ Item {
 
                 Text {
                     width: parent.width
+                    visible: root.single && Localize.message(controller.kindText) !== ""
+                    text: Localize.message(controller.kindText)
+                    color: Theme.signal
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    font.letterSpacing: 1.6
+                    font.capitalization: Font.AllUppercase
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    width: parent.width
                     visible: root.single
                     text: controller.name !== "" ? controller.name
                         : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
                     color: root.textColor
-                    font.pixelSize: Theme.typeEmphasis
+                    font.family: Theme.serifFamily
+                    font.pixelSize: 30
+                    lineHeight: Theme.leadingTight
                     wrapMode: Text.Wrap
                 }
 
@@ -954,12 +1011,34 @@ Item {
         width: parent ? parent.width : 0
         height: Theme.controlSm
 
-        Rectangle {
+        /// A dashed rule, the way drift separates a metadata row: a table of
+        /// print, not a spreadsheet. Canvas because Rectangle has no dashed
+        /// border.
+        Canvas {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 1
-            color: Theme.rowRule
+
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.setTransform(1, 0, 0, 1, 0, 0)
+                ctx.clearRect(0, 0, width, height)
+                ctx.strokeStyle = Theme.hairline
+                ctx.lineWidth = 1
+                ctx.setLineDash([2, 3])
+                ctx.beginPath()
+                ctx.moveTo(0, 0.5)
+                ctx.lineTo(width, 0.5)
+                ctx.stroke()
+            }
+
+            onWidthChanged: requestPaint()
+
+            Connections {
+                target: Theme
+                function onDarkChanged() { requestPaint() }
+            }
         }
 
         Text {
@@ -969,6 +1048,7 @@ Item {
             width: Math.min(keyLabel.implicitWidth, metaRow.width * 0.42)
             text: metaRow.key
             color: Theme.inkFaint
+            font.family: Theme.monoFamily
             font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
             textFormat: Text.PlainText
