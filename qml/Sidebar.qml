@@ -542,11 +542,12 @@ Item {
                     height: rowBody.height
                     /// The current destination is a solid ink band with the
                     /// paper showing through the type. A drop target is the
-                    /// only row that gets a signal wash and a frame.
+                    /// only row that gets a signal wash and a dashed frame,
+                    /// which keeps it apart from the solid keyboard ring.
                     color: row.armed ? Theme.signalSoft
                         : row.focused ? Theme.ink
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
-                    border.width: row.armed || row.cursor ? Theme.edgeWidth : 0
+                    border.width: row.cursor && !row.armed ? Theme.edgeWidth : 0
                     border.color: Theme.signal
 
                     // How full the volume is: two pixels along the bottom, and
@@ -573,6 +574,13 @@ Item {
                             opacity: row.fill > 0.9 ? 0.9 : 0.5
                         }
                     }
+                }
+
+                /// The plate's edge for a drop target: dashed, where the
+                /// keyboard cursor's ring is solid.
+                DashFrame {
+                    anchors.fill: plate
+                    visible: row.armed
                 }
 
                 /// The index of a place, in mono. It replaces the glyph: a

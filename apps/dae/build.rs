@@ -44,6 +44,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/DriftSheet.qml", "qml/DriftSheet.qml"),
     ("../../qml/DotPlate.qml", "qml/DotPlate.qml"),
     ("../../qml/HardShadow.qml", "qml/HardShadow.qml"),
+    ("../../qml/DashFrame.qml", "qml/DashFrame.qml"),
     ("../../qml/Grain.qml", "qml/Grain.qml"),
     // The two polarities of the paper grain, tiled by `Grain.qml`.
     ("../../Assets/grain-ink.png", "qml/assets/grain-ink.png"),

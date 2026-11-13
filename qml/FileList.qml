@@ -1455,12 +1455,12 @@ Item {
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
                 }
 
-                Rectangle {
+                /// A drop target is a dashed frame, not a solid one: the solid
+                /// rule belongs to the keyboard cursor below, and the two must
+                /// not read as the same state.
+                DashFrame {
                     anchors.fill: parent
                     visible: row.dropTarget
-                    color: "transparent"
-                    border.width: 1
-                    border.color: Theme.signal
                 }
 
                 Rectangle {
@@ -2032,11 +2032,11 @@ Item {
         }
 
         Rectangle {
+            id: dropPlate
+
             anchors.fill: parent
             visible: dropArea.containsDrag && root.dropTargetPath !== ""
             color: Theme.signalSoft
-            border.color: Theme.signal
-            border.width: 1
             radius: Theme.radiusSm
 
             Text {
@@ -2053,6 +2053,14 @@ Item {
                 color: root.textColor
                 font.pixelSize: Theme.typeBody
             }
+        }
+
+        /// The plate's own edge: the same dashed frame the row under the
+        /// pointer wears, so "this is where it lands" is one mark at both
+        /// scales instead of a wash here and a frame there.
+        DashFrame {
+            anchors.fill: dropPlate
+            visible: dropPlate.visible
         }
     }
 

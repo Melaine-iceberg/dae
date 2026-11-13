@@ -329,11 +329,24 @@ Item {
             Accessible.onPressAction: root.activate(cell.index)
 
             /// A drop target is the only thing that gets a frame; selection is
-            /// carried by the ink plate under the name, not by tinting the cell.
+            /// carried by the ink plate under the name, not by tinting the
+            /// cell. The frame is dashed so it cannot be mistaken for the
+            /// solid ring the keyboard cursor draws.
             Rectangle {
                 anchors.fill: parent
-                visible: cell.dropTarget || cell.focusedCursor
-                color: cell.dropTarget ? Theme.signalSoft : "transparent"
+                visible: cell.dropTarget
+                color: Theme.signalSoft
+            }
+
+            DashFrame {
+                anchors.fill: parent
+                visible: cell.dropTarget
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                visible: cell.focusedCursor && !cell.dropTarget
+                color: "transparent"
                 border.width: Theme.edgeWidth
                 border.color: Theme.signal
             }
