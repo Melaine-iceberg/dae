@@ -41,7 +41,6 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/FileGrid.qml", "qml/FileGrid.qml"),
     ("../../qml/ColumnView.qml", "qml/ColumnView.qml"),
     ("../../qml/EmptyState.qml", "qml/EmptyState.qml"),
-    ("../../qml/ThemedIcon.qml", "qml/ThemedIcon.qml"),
     ("../../qml/DriftSheet.qml", "qml/DriftSheet.qml"),
     ("../../qml/DotPlate.qml", "qml/DotPlate.qml"),
     ("../../qml/HardShadow.qml", "qml/HardShadow.qml"),

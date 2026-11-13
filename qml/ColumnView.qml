@@ -473,21 +473,15 @@ Item {
                 Accessible.expanded: row.expanded
                 Accessible.onPressAction: pane.activateRequested(row.filePath, row.isDir)
 
+                /// The same inversion the detail view uses: a chosen row is an
+                /// ink band with the paper showing through it. The pane a
+                /// column belongs to marks itself with the signal wash on its
+                /// header, so the row does not need a second, different mark.
                 Rectangle {
                     anchors.fill: parent
-                    color: row.selected
-                        ? (hover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                    color: row.selected ? Theme.ink
                         : row.expanded ? Theme.fill
                         : (hover.containsMouse ? Theme.hover : "transparent")
-                }
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 3
-                    color: Theme.signal
-                    visible: row.selected
                 }
 
                 Rectangle {
@@ -531,17 +525,21 @@ Item {
                     Accessible.ignored: true
                 }
 
-                ThemedIcon {
+                /// The same paper silhouette the detail view uses. A column is
+                /// 18 dp wide of row: the sheet is drawn flat, and on a
+                /// selected row it is inverted like the name beside it.
+                DriftSheet {
                     x: 10
+                    width: 18
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
                         || systemIcon.status !== Image.Ready)
+                    name: row.fileName
                     category: row.category
                     extension: row.extension
                     isDir: row.isDir
-                    size: 16
-                    tint: row.selected || row.expanded || hover.containsMouse
-                        ? Theme.ink : Theme.inkMuted
+                    detail: false
+                    inverted: row.selected
                 }
 
                 Text {
@@ -551,7 +549,8 @@ Item {
                     anchors.rightMargin: chevron.visible ? 4 : 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.fileName
-                    color: row.hidden ? Theme.inkFaint : Theme.ink
+                    color: row.selected ? Theme.canvas
+                        : row.hidden ? Theme.inkFaint : Theme.ink
                     font.pixelSize: Theme.typeBody
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
@@ -566,7 +565,7 @@ Item {
                     height: 12
                     visible: row.isDir
                     kind: "chevron"
-                    tint: Theme.inkFaint
+                    tint: row.selected ? Theme.canvas : Theme.inkFaint
                 }
 
                 MouseArea {

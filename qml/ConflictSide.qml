@@ -49,11 +49,12 @@ Rectangle {
             height: 16
             spacing: 6
 
-            ThemedIcon {
+            DriftSheet {
+                width: 16
                 anchors.verticalCenter: parent.verticalCenter
                 category: root.category
                 isDir: root.category === "folder"
-                size: 16
+                detail: false
                 Accessible.ignored: true
             }
 

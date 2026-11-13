@@ -159,11 +159,14 @@ Item {
                 onSourceChanged: if (source === "") hadPoster = false
             }
 
-            ThemedIcon {
+            /// No poster, no album art: the sheet is what the player has to
+            /// show. Drawn at 44 dp so the waveform inside it still reads.
+            DriftSheet {
                 visible: !root.video
                 anchors.centerIn: parent
+                width: 44
                 category: "audio"
-                size: 40
+                detail: true
             }
 
             Item {

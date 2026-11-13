@@ -263,7 +263,7 @@ Item {
                 color: slot.modelData.current !== true && plateMouse.containsMouse
                     ? Theme.hover : "transparent"
 
-                ThemedIcon {
+                DriftSheet {
                     id: glyph
                     anchors.left: parent.left
                     anchors.leftMargin: bar.crumbPad
@@ -271,10 +271,12 @@ Item {
                     visible: slot.modelData.ellipsis !== true
                     isDir: true
                     category: "folder"
-                    size: bar.iconSize
-                    // The trail is structure, not a signal: a column of accent
-                    // folders would spend the window's one colour on decoration.
-                    tint: bar.mutedColor
+                    width: bar.iconSize
+                    /// A crumb is 14 dp tall; the manila mark is a silhouette
+                    /// there, not a sheet with a count on its face.
+                    detail: false
+                    /// The trail is structure, not a signal: the manila mark is
+                    /// held back unless the crumb is the one on screen.
                     opacity: slot.modelData.current === true ? 1.0 : 0.55
                     Accessible.ignored: true
                 }
