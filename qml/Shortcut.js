@@ -189,7 +189,13 @@ function display(binding, isMac) {
     case "enter": pieces.push(isMac ? "↩" : "Enter"); break
     case "backspace": pieces.push(isMac ? "⌫" : "Backspace"); break
     case "space": pieces.push("Space"); break
-    default: pieces.push(parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key)
+    // Function keys keep their own spelling: `f2` is a key code, `F2` is what
+    // is printed on the keycap and in every menu that lists the binding.
+    default:
+        if (/^f[0-9]{1,2}$/.test(parsed.key))
+            pieces.push(parsed.key.toUpperCase())
+        else
+            pieces.push(parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key)
     }
     return pieces.join("+")
 }

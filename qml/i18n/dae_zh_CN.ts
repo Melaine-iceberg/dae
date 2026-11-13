@@ -1377,7 +1377,19 @@
             <source>（回退）</source>
             <translation>（回退）</translation>
         </message>
-    </context>
+            <message>
+            <source>%1 个文件夹</source>
+            <translation>%1 个文件夹</translation>
+        </message>
+        <message>
+            <source>%1 个文件</source>
+            <translation>%1 个文件</translation>
+        </message>
+        <message>
+            <source>更新于 %1</source>
+            <translation>更新于 %1</translation>
+        </message>
+</context>
     <context>
         <name>FilterMenu</name>
         <message>

@@ -1377,7 +1377,19 @@
             <source>（回退）</source>
             <translation> (fallback)</translation>
         </message>
-    </context>
+        <message>
+            <source>%1 个文件夹</source>
+            <translation>%1 folders</translation>
+        </message>
+        <message>
+            <source>%1 个文件</source>
+            <translation>%1 files</translation>
+        </message>
+        <message>
+            <source>更新于 %1</source>
+            <translation>Updated %1</translation>
+        </message>
+</context>
     <context>
         <name>FilterMenu</name>
         <message>

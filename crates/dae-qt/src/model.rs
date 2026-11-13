@@ -122,6 +122,12 @@ pub mod qobject {
         /// pass over the rows.
         #[qproperty(i32, images)]
         #[qproperty(i32, files)]
+        /// The same pass also counts directories and finds the newest change,
+        /// which is what the listing's heading prints under the folder name.
+        /// A second pass per directory to answer "2 folders, 60 files" would be
+        /// a second walk over 120k rows for a line of text.
+        #[qproperty(i32, folders)]
+        #[qproperty(QString, newest_modified, cxx_name = "newestModifiedText")]
         /// Rows currently selected. Maintained as the selection changes, so the
         /// status bar reads a number instead of walking the selection.
         #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
@@ -489,6 +495,37 @@ struct StoredRow {
     tag_ids: Vec<String>,
     /// Tag names joined in definition order, kept for the tag sort.
     tag_sort: String,
+}
+
+/// What one pass over a finished listing yields: how many of each kind, and how
+/// recently the newest row changed. Symlinks and other special entries are
+/// neither folder nor file — counting them as files would make the heading
+/// disagree with the rows that can be opened.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct RowSummary {
+    folders: i32,
+    files: i32,
+    images: i32,
+    /// Milliseconds since the epoch; zero when no row carried a stamp.
+    newest: u64,
+}
+
+fn summarize(rows: &[StoredRow]) -> RowSummary {
+    let mut summary = RowSummary::default();
+    for row in rows {
+        match row.kind {
+            EntryKind::Directory => summary.folders += 1,
+            EntryKind::File => {
+                summary.files += 1;
+                if category_of(row.kind, &row.name) == "image" {
+                    summary.images += 1;
+                }
+            }
+            _ => {}
+        }
+        summary.newest = summary.newest.max(row.modified_at.unwrap_or(0));
+    }
+    summary
 }
 
 impl PartialEq for StoredRow {
@@ -1642,6 +1679,8 @@ pub struct DirectoryListModelRust {
     loaded: i32,
     images: i32,
     files: i32,
+    folders: i32,
+    newest_modified: QString,
     /// Rows currently selected, published as the `selectedCount` property so
     /// the status bar never recounts the selection.
     selected_count: i32,
@@ -1740,6 +1779,8 @@ impl Default for DirectoryListModelRust {
             loaded: 0,
             images: 0,
             files: 0,
+            folders: 0,
+            newest_modified: QString::default(),
             selected_count: 0,
             finished: false,
             status: QString::default(),
@@ -2768,28 +2809,22 @@ impl qobject::DirectoryListModel {
             .collect()
     }
 
-    /// Counts the two things the adaptive rule asks about. One pass at
-    /// completion, never per batch.
+    /// Counts the two things the adaptive rule asks about, plus what the
+    /// heading prints. One pass at completion, never per batch.
     fn publish_counts(mut self: Pin<&mut Self>) {
-        let mut images = 0;
-        let mut files = 0;
-        for row in &self.rows {
-            match row.kind {
-                EntryKind::File => {
-                    files += 1;
-                    if category_of(row.kind, &row.name) == "image" {
-                        images += 1;
-                    }
-                }
-                EntryKind::Directory => {}
-                _ => {}
-            }
+        let summary = summarize(&self.rows);
+        if self.images != summary.images {
+            self.as_mut().set_images(summary.images);
         }
-        if self.images != images {
-            self.as_mut().set_images(images);
+        if self.files != summary.files {
+            self.as_mut().set_files(summary.files);
         }
-        if self.files != files {
-            self.as_mut().set_files(files);
+        if self.folders != summary.folders {
+            self.as_mut().set_folders(summary.folders);
+        }
+        let newest = QString::from(crate::format::timestamp(summary.newest).as_str());
+        if self.newest_modified != newest {
+            self.as_mut().set_newest_modified(newest);
         }
     }
 
@@ -3031,6 +3066,8 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_finished(true);
         self.as_mut().set_images(0);
         self.as_mut().set_files(0);
+        self.as_mut().set_folders(0);
+        self.as_mut().set_newest_modified(QString::from(""));
         self.as_mut().set_git_busy(false);
         self.as_mut().clear_git_state();
     }
@@ -4175,6 +4212,28 @@ mod tests {
             hidden: true,
             read_only: true,
         }
+    }
+
+    #[test]
+    fn the_summary_counts_each_kind_once_and_finds_the_newest_stamp() {
+        let mut folder = StoredRow::from_entry(&entry("K:/dae/src"), "K:/dae/");
+        folder.kind = EntryKind::Directory;
+        let mut image = StoredRow::from_entry(&entry("K:/dae/logo.png"), "K:/dae/");
+        image.modified_at = Some(5_000);
+        let mut document = StoredRow::from_entry(&entry("K:/dae/readme.md"), "K:/dae/");
+        document.modified_at = None;
+        let mut link = StoredRow::from_entry(&entry("K:/dae/link"), "K:/dae/");
+        link.kind = EntryKind::Symlink;
+        link.modified_at = Some(9_000);
+
+        let summary = summarize(&[folder, image, document, link]);
+        assert_eq!(summary.folders, 1);
+        assert_eq!(summary.files, 2);
+        assert_eq!(summary.images, 1);
+        // A symlink is neither kind, but its stamp is still a change in this
+        // directory, so the heading's "updated" date follows it.
+        assert_eq!(summary.newest, 9_000);
+        assert_eq!(summarize(&[]), RowSummary::default());
     }
 
     #[test]

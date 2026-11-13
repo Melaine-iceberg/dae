@@ -39,10 +39,18 @@ Item {
     /// minimum cell width, so the slider cannot make a 96 px glyph overflow a
     /// tile sized for 24.
     readonly property int glyphSize: ExplorerPrefs.iconSize
-    /// The thumbnail well follows the tile width at 4:3, which keeps the
-    /// column rhythm the same as the prototype whatever the icon slider says.
-    readonly property int thumbHeight: Math.max(56, Math.round((tileWidth - 8) * 0.75))
-    readonly property int tileHeight: thumbHeight + 56
+    /// The sheet width: twice the glyph preference, which puts drift's 76 dp
+    /// card on the 38 dp default and lets the icon slider resize the drawing
+    /// rather than swapping in a different one.
+    readonly property int sheetWidth: Math.max(44, Math.min(96, Math.round(glyphSize * 2)))
+    /// The sheet's box follows its own proportions (4:3 for a folder, 3:4 for
+    /// a card), so the column rhythm is the same at every icon size.
+    readonly property int thumbHeight: Math.round(sheetWidth * 4 / 3)
+    /// 10 dp of air above the sheet, the sheet, 6 dp, then the name plate
+    /// (two name lines plus the size line) and the tag row. The cell has to
+    /// cover all of it: a plate that overflows its cell paints the next row's
+    /// size line above that row's sheet.
+    readonly property int tileHeight: thumbHeight + 90
     readonly property int minCellWidth: Math.max(100, ExplorerPrefs.iconSize + 40)
 
     readonly property int columns: {
@@ -295,6 +303,7 @@ Item {
             required property string extension
             required property string thumbnailSource
             required property string tagColors
+            required property string sizeText
 
             width: grid.cellWidth - root.gapX
             height: grid.cellHeight - root.gapY
@@ -319,90 +328,141 @@ Item {
             Accessible.selected: cell.selected
             Accessible.onPressAction: root.activate(cell.index)
 
+            /// A drop target is the only thing that gets a frame; selection is
+            /// carried by the ink plate under the name, not by tinting the cell.
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusSm
-                color: cell.selected
-                    ? (hover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
-                    : cell.dropTarget ? Theme.signalSoft
-                    : (hover.containsMouse ? Theme.hover : "transparent")
-                border.width: cell.selected || cell.dropTarget || cell.focusedCursor ? 1 : 0
+                visible: cell.dropTarget || cell.focusedCursor
+                color: cell.dropTarget ? Theme.signalSoft : "transparent"
+                border.width: Theme.edgeWidth
                 border.color: Theme.signal
             }
 
             Item {
                 id: thumb
 
+                /// The sheet rises a little under the pointer, the way a card
+                /// does when it is picked up. Selection leaves it down, because
+                /// the ink plate below already says which tile is chosen.
+                readonly property bool lifted: hover.containsMouse && !cell.selected
+
                 anchors.top: parent.top
-                anchors.topMargin: 8
+                anchors.topMargin: 10 - (lifted ? 3 : 0)
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.min(parent.width - 8, root.tileWidth - 8)
-                height: root.thumbHeight
+                width: root.sheetWidth
+                height: Math.round(width * (cell.isDir ? 96 / 120 : 120 / 90))
+
+                Behavior on anchors.topMargin {
+                    enabled: Theme.motion
+                    NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic }
+                }
 
                 Rectangle {
                     anchors.fill: parent
-                    visible: cell.hasThumbnail
-                    radius: Theme.radiusXs
+                    visible: cell.showImage
                     color: Theme.contentAlt
-                    border.width: 1
-                    border.color: Theme.hairline
+                    border.width: Theme.edgeWidth
+                    border.color: Theme.hairlineStrong
                 }
 
                 Image {
                     id: thumbImage
                     anchors.fill: parent
-                    anchors.margins: 8
                     visible: cell.showImage
                     source: cell.hasThumbnail ? cell.thumbnailSource : ""
                     sourceSize.width: Math.round(128 * Screen.devicePixelRatio)
                     sourceSize.height: Math.round(128 * Screen.devicePixelRatio)
-                    fillMode: Image.PreserveAspectFit
+                    fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     smooth: true
                     cache: true
                     Accessible.ignored: true
                 }
 
-                ThemedIcon {
-                    anchors.centerIn: parent
+                DriftSheet {
+                    anchors.fill: parent
                     visible: !cell.showImage
                     category: cell.category
                     extension: cell.extension
                     isDir: cell.isDir
-                    size: root.glyphSize
-                    tint: cell.selected || hover.containsMouse
-                        ? Theme.ink : Theme.inkMuted
+                    name: cell.fileName
                 }
             }
 
-            Text {
+            /// The name plate. Selection is a solid ink block behind the label
+            /// with the paper showing through the type — drift's one way of
+            /// marking a chosen row, and the reason the tile needs no tinted
+            /// card behind the sheet.
+            Rectangle {
+                id: namePlate
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: 4
-                anchors.rightMargin: 4
-                anchors.top: thumb.bottom
-                anchors.topMargin: 7
-                text: {
-                    if (ExplorerPrefs.showExtensions || cell.extension === "")
-                        return cell.fileName
-                    const suffix = "." + cell.extension
-                    return cell.fileName.endsWith(suffix)
-                        ? cell.fileName.slice(0, -suffix.length) : cell.fileName
+                anchors.leftMargin: 2
+                anchors.rightMargin: 2
+                /// Anchored to the cell, not to the sheet above it: a folder
+                /// sheet is 4:3 and a card is 3:4, so anchoring to the sheet
+                /// would put the two names on different lines inside one row.
+                anchors.top: parent.top
+                anchors.topMargin: 10 + root.thumbHeight + 6
+                /// The plate covers the name only — the two lines it may
+                /// wrap to — and the size line below it stays on the paper.
+                /// A plate swallowed the size line it would read as a black
+                /// bar with a file name somewhere inside it.
+                height: Math.ceil(Theme.typeBody * Theme.leadingTight * 2) + 8
+                color: cell.selected ? Theme.ink : "transparent"
+            }
+
+            /// The label flows: name, then size directly under it. The plate
+            /// around it has a fixed height, so a one-line name and a two-line
+            /// name still leave every tile's sheet on the same row — the
+            /// difference lands in the empty space below the size line rather
+            /// than in the next row's position.
+            Column {
+                id: label
+                anchors.top: namePlate.top
+                anchors.topMargin: 4
+                anchors.left: namePlate.left
+                anchors.right: namePlate.right
+                spacing: 1
+
+                Text {
+                    id: nameText
+                    width: parent.width
+                    text: {
+                        if (ExplorerPrefs.showExtensions || cell.extension === "")
+                            return cell.fileName
+                        const suffix = "." + cell.extension
+                        return cell.fileName.endsWith(suffix)
+                            ? cell.fileName.slice(0, -suffix.length) : cell.fileName
+                    }
+                    color: cell.selected ? Theme.canvas
+                        : cell.hidden ? Theme.inkFaint : Theme.ink
+                    font.pixelSize: Theme.typeBody
+                    lineHeight: Theme.leadingTight
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                 }
-                color: cell.hidden ? Theme.inkFaint : Theme.ink
-                font.pixelSize: Theme.typeBody
-                lineHeight: Theme.leadingTight
-                horizontalAlignment: Text.AlignHCenter
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
-                elide: Text.ElideRight
+
+                Text {
+                    visible: text !== ""
+                    width: parent.width
+                    text: cell.isDir ? "" : cell.sizeText
+                    color: Theme.inkMuted
+                    opacity: 0.8
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    horizontalAlignment: Text.AlignHCenter
+                }
             }
 
             Row {
+                id: tagRow
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: thumb.bottom
-                anchors.topMargin: 44
+                anchors.top: namePlate.bottom
+                anchors.topMargin: 3
                 spacing: 3
 
                 Repeater {
@@ -412,7 +472,6 @@ Item {
                         required property string modelData
                         width: 6
                         height: 6
-                        radius: 3
                         color: modelData
                     }
                 }

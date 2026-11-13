@@ -216,7 +216,48 @@ Item {
         const suffix = "." + extension
         return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
     }
-    readonly property int listingTop: listHeaderVisible ? headerHeight : 0
+    /// The printed heading above the rows: the folder's name in the serif at
+    /// 56 dp with its item count as a superscript, the way drift opens a page.
+    /// The column view is the exception — its columns start at the top edge, so
+    /// a heading there would sit over the first column rather than above it.
+    readonly property bool heroVisible: viewMode !== "column"
+    readonly property int heroHeight: heroVisible ? 118 : 0
+    /// The name the heading prints. A search has no folder to name, and a path
+    /// that ends in a separator has to lose it before its last component is
+    /// the name.
+    readonly property string heroName: {
+        if (root.searchModel !== null)
+            return qsTr("搜索结果")
+        const path = root.tab !== null ? root.tab.listing.path : ""
+        if (path === "")
+            return ""
+        const trimmed = path.replace(/[\\/]+$/, "")
+        const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
+        return cut >= 0 ? trimmed.slice(cut + 1) : trimmed
+    }
+    /// The line under the heading: how many of each kind the directory holds,
+    /// and when it last changed. The counts come from the model's single pass
+    /// over the finished rows. The date is the newest stamp printed in the one
+    /// timestamp format the application uses — a relative "today" here would
+    /// mean a second date rule to keep in step with the column beside it.
+    ///
+    /// A search result has no folder half to count, so it prints nothing rather
+    /// than a line of zeroes.
+    readonly property string heroMeta: {
+        const listing = root.model
+        if (listing === null || listing.folders === undefined
+                || listing.files === undefined)
+            return ""
+        const parts = [
+            qsTr("%1 个文件夹").arg(listing.folders),
+            qsTr("%1 个文件").arg(listing.files)
+        ]
+        const updated = listing.newestModifiedText
+        if (updated !== undefined && updated !== "" && updated !== "-")
+            parts.push(qsTr("更新于 %1").arg(updated))
+        return parts.join(" · ")
+    }
+    readonly property int listingTop: heroHeight + (listHeaderVisible ? headerHeight : 0)
     readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -1100,11 +1141,86 @@ Item {
         color: root.contentColor
     }
 
+    /// The printed heading. It is not a control: nothing here is clickable, so
+    /// it carries no MouseArea and no tab stop, and a reader gets one static
+    /// string rather than three.
+    Item {
+        id: hero
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: root.heroHeight
+        visible: root.heroHeight > 0
+
+        Accessible.role: Accessible.StaticText
+        Accessible.name: root.heroName + "\u00B7"
+            + qsTr("%1 项").arg(root.model !== null ? root.model.loaded : 0)
+
+        Text {
+            id: heroKicker
+            x: 16
+            y: 12
+            text: root.searchModel !== null ? qsTr("搜索结果") : qsTr("文件夹")
+            color: Theme.inkMuted
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeMicro
+            font.letterSpacing: 2
+            font.capitalization: Font.AllUppercase
+        }
+
+        Text {
+            id: heroTitle
+            x: 16
+            anchors.top: heroKicker.bottom
+            anchors.topMargin: -2
+            /// The count sits to the right of the name, so the name's box
+            /// stops short of the pane's edge: a very long folder name elides
+            /// instead of pushing the count off screen.
+            width: Math.max(0, parent.width - 96)
+            text: root.heroName
+            color: Theme.ink
+            font.family: Theme.serifFamily
+            font.pixelSize: 56
+            font.letterSpacing: -1
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+        }
+
+        Text {
+            id: heroMetaText
+            x: 16
+            anchors.top: heroTitle.bottom
+            anchors.topMargin: 4
+            width: Math.max(0, parent.width - 32)
+            text: root.heroMeta
+            visible: text !== ""
+            color: Theme.inkMuted
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeMicro
+            font.features: { "tnum": 1 }
+            elide: Text.ElideRight
+            Accessible.ignored: true
+        }
+
+        Text {
+            id: heroCount
+            x: Math.min(heroTitle.x + heroTitle.contentWidth + 8, parent.width - 48)
+            anchors.top: heroTitle.top
+            anchors.topMargin: 6
+            text: String(root.model !== null ? root.model.loaded : 0).padStart(2, "0")
+            color: Theme.signal
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeName
+            font.features: { "tnum": 1 }
+        }
+    }
+
     Rectangle {
         id: columnHeader
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
+        anchors.topMargin: root.heroHeight
         height: root.headerHeight
         visible: root.listHeaderVisible
         color: root.contentColor
@@ -1121,7 +1237,7 @@ Item {
             SortHeader {
                 id: nameHeader
                 anchors.left: parent.left
-                anchors.leftMargin: 36
+                anchors.leftMargin: 64
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: Math.max(0, detailsHeader.x - 8 - x)
@@ -1224,7 +1340,7 @@ Item {
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 36
+                    anchors.leftMargin: 64
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 4
                     text: root.groupLabelText(sectionRow.section)
@@ -1328,21 +1444,14 @@ Item {
                 Accessible.selected: row.selected
                 Accessible.onPressAction: root.handleActivate(row.index)
 
+                /// Selection is a solid ink band with the paper showing
+                /// through the type — drift marks a chosen row by inverting
+                /// it, not by tinting it. A drop target keeps the wash.
                 Rectangle {
                     anchors.fill: parent
-                    color: row.selected
-                        ? (rowHover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                    color: row.selected ? Theme.ink
                         : row.dropTarget ? Theme.signalSoft
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
-                }
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 3
-                    color: Theme.signal
-                    visible: row.selected
                 }
 
                 Rectangle {
@@ -1369,9 +1478,29 @@ Item {
                     color: Theme.rowRule
                 }
 
+                /// The row's place in the current order, in mono. drift numbers
+                /// its listing; the number is the order on screen, so it
+                /// renumbers when the sort changes — that is what it reports,
+                /// not the file's identity.
+                Text {
+                    id: rowIndex
+                    x: 12
+                    width: 22
+                    anchors.verticalCenter: parent.verticalCenter
+                    horizontalAlignment: Text.AlignRight
+                    text: String(row.index + 1).padStart(2, "0")
+                    color: row.selected ? Theme.canvas : Theme.inkFaint
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                    /// The row itself already announces the file; an ordinal
+                    /// read out before every name is noise.
+                    Accessible.ignored: true
+                }
+
                 Image {
                     id: rowIcon
-                    x: 12
+                    x: 40
                     width: 16
                     height: 16
                     anchors.verticalCenter: parent.verticalCenter
@@ -1387,7 +1516,7 @@ Item {
                 }
 
                 Image {
-                    x: 10
+                    x: 38
                     width: 20
                     height: Theme.controlXs
                     anchors.verticalCenter: parent.verticalCenter
@@ -1401,22 +1530,28 @@ Item {
                     Accessible.ignored: true
                 }
 
-                ThemedIcon {
-                    x: 12
+                DriftSheet {
+                    x: 38
+                    width: 18
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
                         || rowIcon.status !== Image.Ready)
+                    name: row.fileName
                     category: row.category
                     extension: row.extension
                     isDir: row.isDir
-                    size: 16
-                    tint: row.selected || rowHover.containsMouse
-                        ? Theme.ink : Theme.inkMuted
+                    /// A row is 28–40 dp tall: there is no room for ruled
+                    /// lines or a tab inside an 18 dp sheet, so the row gets
+                    /// the flat silhouette and the tab is dropped.
+                    detail: false
+                    /// On the selected row the band is ink, so the mark is
+                    /// paper: the same inversion the name goes through.
+                    inverted: row.selected
                 }
 
                 Row {
                     id: nameCell
-                    x: 36
+                    x: 64
                     width: Math.max(0, detailsRow.x - 8 - x)
                     height: parent.height
                     anchors.verticalCenter: parent.verticalCenter
@@ -1429,7 +1564,8 @@ Item {
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
                         text: root.displayName(row.fileName, row.extension)
-                        color: row.hidden ? Theme.inkFaint : root.textColor
+                        color: row.selected ? Theme.canvas
+                            : row.hidden ? Theme.inkFaint : root.textColor
                         font.pixelSize: Theme.typeName
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
@@ -1463,7 +1599,7 @@ Item {
                         verticalAlignment: Text.AlignVCenter
                         visible: row.relativePath !== row.fileName && row.relativePath !== ""
                         text: row.relativePath !== row.fileName ? row.relativePath : ""
-                        color: root.mutedColor
+                        color: row.selected ? Theme.canvas : root.mutedColor
                         font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle
@@ -1499,8 +1635,9 @@ Item {
                                 horizontalAlignment: cell.modelData === "type"
                                     ? Text.AlignLeft : Text.AlignRight
                                 text: root.cellText(row, cell.modelData)
-                                color: cell.modelData === "created" && row.createdFallback
-                                    ? Theme.inkFaint : root.mutedColor
+                                color: row.selected ? Theme.canvas
+                                    : cell.modelData === "created" && row.createdFallback
+                                        ? Theme.inkFaint : root.mutedColor
                                 font.pixelSize: Theme.typeSmall
                                 font.features: cell.modelData === "size"
                                     || cell.modelData === "modified"
@@ -1537,7 +1674,7 @@ Item {
                                     width: Math.max(0, parent.width - 14)
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: row.tagNames
-                                    color: root.mutedColor
+                                    color: row.selected ? Theme.canvas : root.mutedColor
                                     font.pixelSize: Theme.typeSmall
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
