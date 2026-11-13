@@ -41,7 +41,7 @@
   **它现在是全应用唯一的文件图标**：网格、详细列表、分栏视图、冲突对话框两侧、面包屑、
   媒体预览的空封面都换成了它。旧的 `qml/ThemedIcon.qml`（按 category 查线条图标）已无
   调用点，随本次删除；`Glyph` 仍在，负责的不是文件——展开箭头、关闭、回收站、菜单箭头。
-- **`ColumnView.qml`** — 行图标换 `DriftSheet`（18 dp、`detail: false`）；选中从"信号色
+- **`ColumnView.qml`** — 行图标与详细列表同样的完整画法、同样跟着行高；选中从"信号色
   淡底 + 3 dp 左轨"改成与详细列表一致的墨色横幅反白，名称与展开箭头随之转纸色。
 - **`PathBreadcrumbs.qml`** — 每段路径的图标由线条字形换成 14 dp 的马尼拉剪影，非当前段
   压到 55 %。
@@ -50,8 +50,12 @@
 - **`FileGrid.qml`** — 图块改为"卡片 + 名字 + 等宽字号"：选中是名字下方的实心墨块
   （纸色字反白），不是给整格染色；悬停时卡片上浮 3 dp；拖放目标才有信号色边框。
   图块高度固定，名字占两行、字号行紧跟其下，短名与长名不会把下一行推下去。
-- **`FileList.qml`** — 行选中改为墨色横幅反白，去掉 3 dp 左轨；图标换成 `DriftSheet`
-  的剪影；等宽列（大小、日期）沿用模型给的字符串。行首加等宽序号 `01/02/03`（名称列、
+- **`FileList.qml`** — 行选中改为墨色横幅反白，去掉 3 dp 左轨；图标是 `DriftSheet`
+  **完整的画法**（不是剪影），尺寸跟着行高走（`(rowHeight - 2) × 0.75`），所以列表和网格
+  对"文件夹/PDF/代码长什么样"是同一个答案。等宽列（大小、日期）沿用模型给的字符串。
+- **40 dp 以下的紧凑画法** — 目录行只有 28–40 dp 高，纸卡约 25 dp 宽；扩展名墨标在那个尺寸
+  只剩两像素的字，细线也糊成一片。于是 `compact`（宽 < 40）换成三根粗规则、不画墨标：
+  同一张卡、同一个折角、同一套配色。行首加等宽序号 `01/02/03`（名称列、
   表头、分组标签一起右移 28 dp）；序号报的是**当前顺序**，所以改排序就会重排——这正是它
   要说明的事。
 - **`Sidebar.qml`** — 位置行用等宽序号 `01…07` 代替图标（图标只说"某处"，序号说
@@ -139,7 +143,8 @@ node scripts/a11y-audit.mjs --baseline              # 6 项均为本次改动之
 `after-sidebar2.png`（字标 + 容量条）、`after-sidebar-dark.png`（暗色）、
 `after-rows-footer2.png`（行号 + 状态条）、`after-meta.png`（标题带元信息行）、`after-grain-soft2.png`（纸纹 3 %）、
 `after-grain-dark.png`（暗色 2 %）、`after-icons-column.png`（分栏视图 + 面包屑图标）、`after-footer-clean.png`（去掉提示行的页脚）、
-`after-sheet-colours.png`（不同文件不同色）、
+`after-sheet-colours.png`（不同文件不同色）、`after-list-sheets2.png`（列表里的完整纸卡）、
+`after-column-sheets.png`（分栏视图同款）、
 `after-menu-shadow2.png`（视图菜单）、`after-dialog-shadow.png`（新建文件夹提示）、
 `after-toast2.png`（墨色 Toast + 朱红阴影）。
 

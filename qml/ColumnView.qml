@@ -530,7 +530,9 @@ Item {
                 /// selected row it is inverted like the name beside it.
                 DriftSheet {
                     x: 10
-                    width: 18
+                    /// The same drawn sheet as the list and the grid, sized to
+                    /// the row so a compact column still holds it.
+                    width: Math.round((pane.rowHeight - 2) * 0.75)
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
                         || systemIcon.status !== Image.Ready)
@@ -538,7 +540,7 @@ Item {
                     category: row.category
                     extension: row.extension
                     isDir: row.isDir
-                    detail: false
+                    detail: true
                     inverted: row.selected
                 }
 

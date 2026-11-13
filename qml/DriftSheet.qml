@@ -62,6 +62,12 @@ Item {
     property bool shadowed: false
 
     readonly property bool folder: isDir || category === "folder"
+    /// A row in a listing is 28–40 dp tall, which leaves the sheet about 25 dp
+    /// wide. Below 40 the tab and the hairline rules cannot be drawn — the tab
+    /// would be two pixels of type — so the same drawing carries its content as
+    /// three chunky bars instead of six thin ones, and drops the tab. It is
+    /// still the same card, the same fold and the same colours.
+    readonly property bool compact: width < 40
     implicitWidth: 90
     implicitHeight: folder ? Math.round(width * 96 / 120) : Math.round(width * 120 / 90)
 
@@ -229,7 +235,7 @@ Item {
         ctx.lineTo(84, 26)
         ctx.stroke()
 
-        if (!root.detail || root.extension === "")
+        if (!root.detail || root.extension === "" || root.compact)
             return
         const tab = String(root.extension).slice(0, 4).toUpperCase()
         const width = 12 + tab.length * 7
@@ -253,10 +259,12 @@ Item {
     }
 
     function paintContent(ctx, theme, ink, paper) {
-        const rule = function (y, width, colour, alpha) {
+        /// `thickness` exists for the compact sheet: at 25 dp wide a 3-unit bar
+        /// is one device pixel, which reads as a smudge rather than a line.
+        const rule = function (y, width, colour, alpha, thickness) {
             ctx.globalAlpha = alpha === undefined ? 0.75 : alpha
             ctx.fillStyle = colour || ink
-            ctx.fillRect(14, y, width, 3)
+            ctx.fillRect(14, y, width, thickness === undefined ? 3 : thickness)
             ctx.globalAlpha = 1
         }
 
@@ -285,14 +293,26 @@ Item {
         case "document":
             ctx.fillStyle = theme.signal
             ctx.fillRect(14, 34, 26, 6)
-            ;[48, 58, 68, 78].forEach(function (y, i) {
-                rule(y, [58, 52, 58, 40][i])
-            })
+            if (root.compact) {
+                ;[50, 64, 78].forEach(function (y, i) {
+                    rule(y, [58, 50, 58][i], ink, 0.75, 6)
+                })
+            } else {
+                ;[48, 58, 68, 78].forEach(function (y, i) {
+                    rule(y, [58, 52, 58, 40][i])
+                })
+            }
             break
         case "text":
-            ;[44, 52, 60, 68, 76, 84].forEach(function (y, i) {
-                rule(y, [58, 52, 58, 40, 56, 30][i], ink, 0.55)
-            })
+            if (root.compact) {
+                ;[48, 64, 80].forEach(function (y, i) {
+                    rule(y, [58, 46, 58][i], ink, 0.55, 6)
+                })
+            } else {
+                ;[44, 52, 60, 68, 76, 84].forEach(function (y, i) {
+                    rule(y, [58, 52, 58, 40, 56, 30][i], ink, 0.55)
+                })
+            }
             break
         case "code":
             ctx.fillStyle = theme.ink

@@ -1532,7 +1532,11 @@ Item {
 
                 DriftSheet {
                     x: 38
-                    width: 18
+                    /// The same drawn sheet the grid shows, sized to the row:
+                    /// two dp of air, then the card's own 3:4. At 25 dp it
+                    /// switches to the compact drawing (chunky rules, no tab)
+                    /// so it stays a sheet instead of a black block.
+                    width: Math.round((root.rowHeight - 2) * 0.75)
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
                         || rowIcon.status !== Image.Ready)
@@ -1540,10 +1544,7 @@ Item {
                     category: row.category
                     extension: row.extension
                     isDir: row.isDir
-                    /// A row is 28–40 dp tall: there is no room for ruled
-                    /// lines or a tab inside an 18 dp sheet, so the row gets
-                    /// the flat silhouette and the tab is dropped.
-                    detail: false
+                    detail: true
                     /// On the selected row the band is ink, so the mark is
                     /// paper: the same inversion the name goes through.
                     inverted: row.selected
