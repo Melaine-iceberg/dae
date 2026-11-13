@@ -120,7 +120,7 @@ Linux / macOS 在合入前就看到预编译的错误（这个 job 存在的理�
 |---|---|---|
 | `qml-root-completed` | `ShellWindow.qml` 的 `Component.onCompleted` 第一条 | 对象树建完 |
 | `qml-first-model` | `model.rs` / `overview_model.rs` 发布行之前 | 首屏数据 |
-| `qml-first-list` | 两个 `ListView` 的 `onContentHeightChanged` | 首屏布局 |
+| `qml-first-list` | 列表的 `ListView` 与概览看板的 `Flickable` 的 `onContentHeightChanged` | 首屏布局 |
 
 `qml-first-model` 标在模型里、不是 QML 里：QML 的 `onModelReset` / `onCountChanged`
 在视图自己的连接**之后**才跑，会把布局算成数据。第一版就是 QML 标记，实测

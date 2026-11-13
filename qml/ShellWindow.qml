@@ -4530,12 +4530,10 @@ Window {
                         anchors.fill: parent
                         visible: root.overviewActive
                         model: overviewModelInstance
-                        dark: root.dark
                         accent: root.accent
                         textColor: root.textColor
                         mutedColor: root.mutedColor
                         hairline: root.hairline
-                        headerColor: root.chromeColor
                         commandShortcut: root.shortcutDisplay("app.commandBar")
 
                         onOpenRequested: function (kind, path) {

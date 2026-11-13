@@ -8,8 +8,9 @@
 //! overwriting a newer refresh (a tab switch or a favorites change).
 //!
 //! Sections and row anatomy are flattened into one model on purpose: the page
-//! is one scroll, and a single `ListView` with section headers avoids four
-//! nested scroll areas with four independent viewport heights.
+//! is one scroll, and one model with section names avoids four sources with
+//! four independent refresh paths. The board in `OverviewView.qml` groups the
+//! rows by that `section` role itself.
 
 use core::pin::Pin;
 use std::collections::HashSet;
@@ -125,6 +126,26 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "isDirAt"]
         fn is_dir_at(&self, row: i32) -> bool;
+
+        /// The remaining facts the landing grid prints on a note. Same shape
+        /// as the accessors above: the board is a `Repeater`, which has no
+        /// roles to bind, so it reads the rows through this side instead of
+        /// keeping a second model in QML.
+        #[qinvokable]
+        #[cxx_name = "iconAt"]
+        fn icon_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "branchAt"]
+        fn branch_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "changeTextAt"]
+        fn change_text_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "timeTextAt"]
+        fn time_text_at(&self, row: i32) -> QString;
 
         #[inherit]
         #[rust_name = "begin_reset_model"]
@@ -304,6 +325,34 @@ impl qobject::OverviewModel {
             .get(row as usize)
             .map(|row| row.is_directory)
             .unwrap_or(false)
+    }
+
+    fn icon_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|row| QString::from(row.icon))
+            .unwrap_or_default()
+    }
+
+    fn branch_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|row| QString::from(row.branch.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn change_text_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|row| QString::from(row.change_text.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn time_text_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|row| QString::from(row.time_text.as_str()))
+            .unwrap_or_default()
     }
 
     fn apply_projects(mut self: Pin<&mut Self>, generation: u64, projects: Vec<OverviewRow>) {
