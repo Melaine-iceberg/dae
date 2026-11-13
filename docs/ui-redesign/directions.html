@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dae · 三套视觉方向</title>
+<style>
+  :root {
+    --bg: #0b0c0e;
+    --panel: #111214;
+    --raise: #16181b;
+    --line: #232529;
+    --line-soft: #1a1c1f;
+    --ink: #eaebed;
+    --muted: #9da2a9;
+    --faint: #6f7479;
+    --accent: #f0925e;
+    --ui: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system,
+          "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    --mono: Consolas, "DejaVu Sans Mono", "SF Mono", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: var(--bg); }
+
+  body {
+    margin: 0;
+    padding: 56px 32px 96px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  /* ── header ─────────────────────────────────────────────── */
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-family: var(--mono);
+  }
+
+  h1 {
+    font-size: 34px;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 14px 0 12px;
+  }
+
+  .lede {
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 64px;
+  }
+
+  .fact { background: var(--panel); padding: 16px 18px; }
+  .fact b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+  .fact span { font-size: 12px; color: var(--faint); }
+
+  /* ── section rhythm ─────────────────────────────────────── */
+  h2 {
+    font-size: 13px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+    margin: 0 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  section { margin-bottom: 72px; }
+
+  /* ── diagnosis ──────────────────────────────────────────── */
+  .diag { display: grid; gap: 14px; }
+
+  .diag-item {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    padding-top: 2px;
+  }
+
+  .diag-item h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+  .diag-item p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .diag-item code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #1c1f22;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #cfd3d6;
+  }
+
+  /* ── mockup shell ───────────────────────────────────────── */
+  .mock {
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 12px;
+    margin-bottom: 22px;
+    position: relative;
+  }
+
+  .bar {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    font-size: 11.5px;
+    letter-spacing: .01em;
+  }
+
+  .bar .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: none;
+  }
+
+  .bar .spacer { flex: 1; }
+
+  .body { display: flex; height: 232px; }
+
+  .side { width: 148px; flex: none; padding: 10px 0; }
+
+  .lab {
+    font-size: 9.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 8px 0 4px;
+  }
+
+  .srow {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    padding: 0 8px;
+    height: 26px;
+  }
+
+  .sq {
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    background: currentColor;
+    opacity: .45;
+    flex: none;
+  }
+
+  .main { flex: 1; min-width: 0; }
+
+  .hdr, .r {
+    display: grid;
+    align-items: center;
+    gap: 10px;
+    font-size: 11.5px;
+  }
+
+  .hdr { height: 26px; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+
+  .r { height: 28px; }
+
+  .r .nm {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .r .sz, .r .dt { text-align: right; }
+
+  /* ── A: 仪器台 ──────────────────────────────────────────── */
+  .ma {
+    background: #101112;
+    border: 1px solid #26282b;
+  }
+
+  .ma .bar { background: #0a0b0c; color: #9ea2a0; border-bottom: 1px solid rgba(255,255,255,.10); }
+  .ma .side { background: #0a0b0c; position: relative; }
+  .ma .main { background: #101112; position: relative; }
+
+  .ma .side::before,
+  .ma .main::before {
+    content: "";
+    position: absolute;
+    left: 12px; top: 0; bottom: 0;
+    width: 16px;
+    background: #070808;
+  }
+
+  .ma .side > *, .ma .main > * { position: relative; }
+  .ma .lab { padding-left: 36px; color: #6b706e; }
+  .ma .srow { padding-left: 36px; color: #b6bab8; }
+
+  .ma .srow.on {
+    color: #edefee;
+    background: rgba(240,146,94,.14);
+    background-image: linear-gradient(#f0925e, #f0925e);
+    background-size: 3px 100%;
+    background-position: 12px 0;
+    background-repeat: no-repeat;
+  }
+
+  .ma .hdr { color: #6b706e; padding-left: 36px; padding-right: 12px; }
+  .ma .r { padding-left: 36px; padding-right: 12px; color: #c9cdca; border-bottom: 1px solid rgba(255,255,255,.045); }
+  .ma .r .sz, .ma .r .dt { font-family: var(--mono); font-size: 10.5px; color: #757a78; font-variant-numeric: tabular-nums; }
+  .ma .hdr { grid-template-columns: 12px 1fr 58px 74px; }
+
+  .ma .r {
+    grid-template-columns: 12px 1fr 58px 74px;
+  }
+
+  .ma .r.sel {
+    color: #f4f5f4;
+    background: rgba(240,146,94,.14);
+    background-image: linear-gradient(#f0925e, #f0925e);
+    background-size: 3px 100%;
+    background-position: 12px 0;
+    background-repeat: no-repeat;
+  }
+
+  .ma .ic { width: 11px; height: 11px; border-radius: 2px; background: #4a4f4c; }
+  .ma .r.sel .ic { background: #f0925e; }
+
+  .ma .tick {
+    position: absolute;
+    left: 14px; width: 12px; height: 1px;
+    background: rgba(255,255,255,.22);
+  }
+
+  /* ── B: 纸 ──────────────────────────────────────────────── */
+  .mb {
+    background: #141412;
+    border: 1px solid #2a2a26;
+  }
+
+  .mb .bar { background: #1a1a17; color: #a09c92; }
+  .mb .side { background: #1a1a17; padding: 14px 0; }
+  .mb .main { background: #141412; }
+
+  .mb .lab {
+    color: #807c73;
+    font-size: 9px;
+    letter-spacing: .12em;
+    padding: 10px 18px 6px;
+  }
+
+  .mb .srow { height: 30px; padding: 0 18px; color: #cfcbc2; font-size: 12px; }
+  .mb .srow.on { color: #f3f0e8; font-weight: 600; }
+  .mb .sq { display: none; }
+
+  .mb .hdr {
+    grid-template-columns: 1fr 62px 78px;
+    color: #807c73;
+    padding: 0 18px;
+    height: 30px;
+    border: 0;
+  }
+
+  .mb .r {
+    grid-template-columns: 1fr 62px 78px;
+    height: 36px;
+    padding: 0 18px;
+    color: #e2dfd7;
+    border: 0;
+  }
+
+  .mb .r .sz, .mb .r .dt {
+    font-size: 11px;
+    color: #8b877e;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mb .r.sel { background: rgba(255,255,255,.035); }
+  .mb .r.sel .nm {
+    font-weight: 600;
+    color: #fbf9f4;
+    border-bottom: 2px solid #f0ede4;
+    padding-bottom: 1px;
+  }
+
+  /* ── C: 井 ──────────────────────────────────────────────── */
+  .mc {
+    background: #0b0c0e;
+    border: 1px solid #2b2e33;
+  }
+
+  .mc .bar {
+    background: #1b1d20;
+    color: #a8adb4;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+  }
+
+  .mc .body {
+    padding: 10px;
+    gap: 10px;
+    height: 232px;
+  }
+
+  .mc .side,
+  .mc .main {
+    border-radius: 7px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06),
+                0 1px 2px rgba(0,0,0,.5);
+  }
+
+  .mc .side {
+    background: #1b1d20;
+    border: 1px solid rgba(255,255,255,.05);
+    padding: 8px 0;
+  }
+
+  .mc .main {
+    background: #0f1012;
+    border: 1px solid rgba(255,255,255,.06);
+    overflow: hidden;
+  }
+
+  .mc .lab { color: #73787f; padding: 8px 12px 4px; }
+
+  .mc .srow {
+    height: 26px;
+    padding: 0 12px;
+    color: #c3c7cd;
+    border-radius: 4px;
+    margin: 0 6px;
+  }
+
+  .mc .srow.on {
+    background: rgba(240,146,94,.16);
+    color: #f6f7f8;
+    box-shadow: inset 2px 0 0 #f0925e;
+  }
+
+  .mc .hdr {
+    grid-template-columns: 1fr 58px 74px;
+    color: #6d727a;
+    padding: 0 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+
+  .mc .r {
+    grid-template-columns: 1fr 58px 74px;
+    height: 30px;
+    padding: 0 12px;
+    color: #d3d7dc;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+
+  .mc .r .sz, .mc .r .dt {
+    font-size: 10.5px;
+    color: #7b8088;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mc .r.sel {
+    background: rgba(240,146,94,.13);
+    box-shadow: inset 2px 0 0 #f0925e;
+    color: #f6f7f8;
+  }
+
+  .mc .float {
+    position: absolute;
+    right: 18px;
+    bottom: 16px;
+    width: 146px;
+    background: #26292d;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.09),
+                0 10px 24px rgba(0,0,0,.55),
+                0 1px 3px rgba(0,0,0,.5);
+    padding: 5px;
+    font-size: 11px;
+    color: #dcdfe3;
+    z-index: 3;
+  }
+
+  .mc .float div {
+    padding: 4px 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .mc .float .key { color: #7b8088; font-family: var(--mono); font-size: 10px; }
+  .mc .float .hi { background: rgba(240,146,94,.16); border-radius: 3px; }
+
+  /* ── direction header ───────────────────────────────────── */
+  .dirhead { margin-bottom: 18px; }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    color: var(--accent);
+    border: 1px solid rgba(240,146,94,.35);
+    border-radius: 3px;
+    padding: 2px 7px;
+    margin-bottom: 12px;
+  }
+
+  .dirhead h3 {
+    margin: 0 0 6px;
+    font-size: 25px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+  }
+
+  .dirhead .one { margin: 0; color: var(--muted); font-size: 14px; max-width: 68ch; }
+
+  /* ── spec blocks ────────────────────────────────────────── */
+  .specs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .blk { background: var(--panel); padding: 16px 18px; }
+  .blk.wide { grid-column: 1 / -1; }
+
+  .blk h4 {
+    margin: 0 0 8px;
+    font-size: 10.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+  }
+
+  .blk p { margin: 0 0 8px; font-size: 13px; color: #c6cacd; }
+  .blk p:last-child { margin-bottom: 0; }
+  .blk b { color: var(--ink); font-weight: 600; }
+  .blk em { color: var(--accent); font-style: normal; }
+
+  .blk ul { margin: 0; padding: 0; list-style: none; }
+  .blk li { font-size: 13px; color: #c6cacd; padding-left: 14px; position: relative; margin-bottom: 6px; }
+  .blk li::before { content: "—"; position: absolute; left: 0; color: var(--faint); }
+  .blk li:last-child { margin-bottom: 0; }
+
+  .kv { display: grid; grid-template-columns: 76px 1fr; gap: 4px 12px; font-size: 12.5px; }
+  .kv dt { color: var(--faint); }
+  .kv dd { margin: 0; color: #c6cacd; }
+  .kv code { font-family: var(--mono); font-size: 11.5px; color: #cfd3d6; }
+
+  /* ── swatches ───────────────────────────────────────────── */
+  .swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .sw { width: 52px; }
+  .sw i {
+    display: block;
+    height: 26px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,.09);
+    margin-bottom: 4px;
+  }
+  .sw span { display: block; font-family: var(--mono); font-size: 9px; color: var(--faint); line-height: 1.3; }
+  .sw em { display: block; font-style: normal; font-size: 9.5px; color: var(--muted); line-height: 1.4; }
+
+  /* ── comparison table ───────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th {
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody th { color: var(--faint); font-weight: 400; width: 118px; }
+  td { color: #c6cacd; }
+  td.win { color: var(--ink); }
+  td .mark { color: var(--accent); font-family: var(--mono); font-size: 11px; }
+
+  /* ── recommendation ─────────────────────────────────────── */
+  .rec {
+    border: 1px solid rgba(240,146,94,.28);
+    background: linear-gradient(180deg, rgba(240,146,94,.055), transparent 70%), var(--panel);
+    border-radius: 12px;
+    padding: 26px 28px;
+  }
+
+  .rec h3 { margin: 0 0 10px; font-size: 20px; font-weight: 600; }
+  .rec p { margin: 0 0 12px; color: #c6cacd; font-size: 13.5px; max-width: 74ch; }
+  .rec p:last-child { margin-bottom: 0; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+  .step { border-top: 1px solid var(--line); padding-top: 12px; }
+  .step b { display: block; font-size: 12px; color: var(--accent); font-family: var(--mono); margin-bottom: 6px; }
+  .step span { font-size: 12.5px; color: var(--muted); display: block; }
+
+  .foot { margin-top: 56px; color: var(--faint); font-size: 11.5px; font-family: var(--mono); }
+
+  @media (max-width: 760px) {
+    body { padding: 40px 18px 64px; }
+    .facts, .specs, .steps { grid-template-columns: 1fr; }
+    h1 { font-size: 26px; }
+    .body { height: auto; flex-direction: column; }
+    .side { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">dae · UI 重设计 · 方向对比</div>
+  <h1>三套视觉方向</h1>
+  <p class="lede">
+    你的判断是"整体气质平庸"。这份文档先给出这个感受的物理原因，再给三套彼此可区分、
+    并且都能在 Qt Quick 里真做出来的方向。每套都标了改动面与最坏情况，供你决定改到多深。
+  </p>
+
+  <div class="facts">
+    <div class="fact"><b>0 次</b><span>全仓 52 个 QML 文件的阴影 / 模糊 / ShaderEffect 用量</span></div>
+    <div class="fact"><b>4–6 级</b><span>raised 与 canvas 的实际亮度差，远在可感知分层之下</span></div>
+    <div class="fact"><b>116 px</b><span>三段外框固定高度，是这套"通用工具感"的结构来源</span></div>
+  </div>
+
+  <section>
+    <h2>为什么它看起来像通用工具</h2>
+    <div class="diag">
+      <div class="diag-item">
+        <div class="num">01</div>
+        <div>
+          <h3>整个界面没有海拔</h3>
+          <p>
+            <code>DropShadow</code> / <code>MultiEffect</code> / <code>FastBlur</code> / <code>ShaderEffect</code>
+            在 52 个 QML 文件里出现 0 次。菜单、对话框、命令面板、侧栏、列表全部处在同一光学平面，
+            唯一的层级手段是 1 px 线和 <code>#0b0c0e → #16181b</code> 之间 6 级的亮度差。
+            而有纵深的应用把"浮起来"当作不占面积的层级信号——你缺的正是那个信号。
+          </p>
+        </div>
+      </div>
+      <div class="diag-item">
+        <div class="num">02</div>
+        <div>
+          <h3>暖橙是唯一的作者性，但它没有被用成语言</h3>
+          <p>
+            选中行是"左侧 3 px 橙条 + 8% 橙色蒙版 + 底部 1 px 线"三件套叠加，其余地方橙色基本不出现。
+            于是十年来所有文件管理器都在用的那套语法被原样复用，橙色只成了"这个 app 的主色"，
+            而不是"这个 app 用颜色在表达什么"。
+          </p>
+        </div>
+      </div>
+      <div class="diag-item">
+        <div class="num">03</div>
+        <div>
+          <h3>三段等高的外框把内容压成了三段灰带</h3>
+          <p>
+            标题 44 + 导航 44 + 状态 28，三段同色（<code>#0b0c0e</code>），段与段之间只靠 1 px hairline 分隔。
+            上半屏因此是一条 88 px 的连续灰带，视线的第一个落点是"一片空白"而不是"文件"。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── A ─────────────────────────── -->
+  <section>
+    <div class="dirhead">
+      <span class="tag">方向 A</span>
+      <h3>仪器台 · Instrument Bench</h3>
+      <p class="one">
+        把文件管理器做成一张测量仪器：每个面板有一条自己的"脊"，定位标记、选中轨、分组刻度都住在里面，
+        数字用等宽对齐。不靠装饰，靠"这里每个像素都在汇报状态"来获得辨识度。
+      </p>
+    </div>
+
+    <div class="mock ma">
+      <div class="bar"><span class="dot"></span><span>dae — 文稿</span><span class="spacer"></span><span style="font-family:var(--mono);color:#5f6462">12 项 · 1 已选</span></div>
+      <div class="body">
+        <div class="side">
+          <div class="lab">位置</div>
+          <div class="srow on"><span class="sq"></span>主目录</div>
+          <div class="srow"><span class="sq"></span>文稿</div>
+          <div class="srow"><span class="sq"></span>下载</div>
+          <div class="lab">卷</div>
+          <div class="srow"><span class="sq"></span>系统 (C:)</div>
+          <div class="tick" style="top:170px"></div>
+        </div>
+        <div class="main">
+          <div class="hdr"><span></span><span>名称</span><span style="text-align:right">大小</span><span style="text-align:right">修改</span></div>
+          <div class="r sel"><span class="ic"></span><span class="nm">季度报告.docx</span><span class="sz">1.2 MB</span><span class="dt">11-12 22:04</span></div>
+          <div class="r"><span class="ic"></span><span class="nm">预算-v3.xlsx</span><span class="sz">486 KB</span><span class="dt">11-11 09:31</span></div>
+          <div class="r"><span class="ic"></span><span class="nm">会议记录.md</span><span class="sz">12 KB</span><span class="dt">11-09 16:20</span></div>
+          <div class="r"><span class="ic"></span><span class="nm">assets</span><span class="sz">—</span><span class="dt">11-08 11:02</span></div>
+          <div class="r"><span class="ic"></span><span class="nm">readme.txt</span><span class="sz">3 KB</span><span class="dt">11-07 08:44</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="specs">
+      <div class="blk wide">
+        <h4>记忆点</h4>
+        <p>
+          左侧一条 <b>16 dp 的脊</b>：底色再降一级（<code>#070808</code>），选中时整条轨从脊里亮起来，
+          分组边界在脊上打刻度，树形展开的引导线也画在脊里——<em>所有"位置信息"被收进同一条通道</em>。
+          它不占用内容宽度（12 inset + 16 脊 + 8 = 36 的内容原点），却让每一屏都有一条属于自己的刻度尺。
+        </p>
+      </div>
+
+      <div class="blk">
+        <h4>三条取舍</h4>
+        <ul>
+          <li>用<em>一条连续的脊</em>，也不要给每一行加装饰性的选中态</li>
+          <li>用<em>等宽数字</em>，也不要为了对齐好看去缩小字号</li>
+          <li>宁可<em>整屏只有一个饱和色</em>，也不要让第二处染色变成假按钮</li>
+        </ul>
+      </div>
+
+      <div class="blk">
+        <h4>字体与几何</h4>
+        <dl class="kv">
+          <dt>字体</dt><dd>系统 UI 字体；文件名 13（compact）/ 13.5（默认），<code>weight 500</code></dd>
+          <dt>数字</dt><dd>Consolas / DejaVu Sans Mono，10–11，<code>tabular-nums</code></dd>
+          <dt>圆角</dt><dd>3 / 4 / 6 / 8（比现在再收一档）</dd>
+          <dt>行高</dt><dd>26 / 30 / 34（三段压紧 2 dp）</dd>
+          <dt>外框</dt><dd>40 / 40 / 26，合计 106</dd>
+          <dt>网格</dt><dd>2 dp</dd>
+        </dl>
+      </div>
+
+      <div class="blk">
+        <h4>色板 · 暗色</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#101112"></i><span>#101112</span><em>canvas</em></div>
+          <div class="sw"><i style="background:#0a0b0c"></i><span>#0a0b0c</span><em>chrome</em></div>
+          <div class="sw"><i style="background:#070808"></i><span>#070808</span><em>脊</em></div>
+          <div class="sw"><i style="background:#191b1d"></i><span>#191b1d</span><em>raised</em></div>
+          <div class="sw"><i style="background:#edefee"></i><span>#edefee</span><em>ink</em></div>
+          <div class="sw"><i style="background:#f0925e"></i><span>#f0925e</span><em>signal</em></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>色板 · 亮色</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#ffffff"></i><span>#ffffff</span><em>canvas</em></div>
+          <div class="sw"><i style="background:#f2f1ed"></i><span>#f2f1ed</span><em>chrome</em></div>
+          <div class="sw"><i style="background:#e6e4de"></i><span>#e6e4de</span><em>脊</em></div>
+          <div class="sw"><i style="background:#ffffff"></i><span>#ffffff</span><em>raised</em></div>
+          <div class="sw"><i style="background:#121316"></i><span>#121316</span><em>ink</em></div>
+          <div class="sw"><i style="background:#c2410c"></i><span>#c2410c</span><em>signal</em></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>改动面与风险</h4>
+        <p>
+          <b>小</b>。Theme.qml 换值 + 给面板加一个 16 dp 的脊槽位即可，控件阶梯原本就是奇数档
+          （20/24/28/32/36 已在 4 dp 网格上），压紧后不破格。<br>
+          最先见效：<code>Theme.qml</code> → <code>FileList.qml</code> → <code>Sidebar.qml</code>。
+        </p>
+      </div>
+
+      <div class="blk">
+        <h4>最坏情况</h4>
+        <p>
+          12 万行列表：脊用<em>每行 Rect</em> 可接受（不是全高矩形，不需要裁剪）；
+          若图省事用一整条全高矩形挂在 ListView 上，会被 12 万行的 contentHeight 撑开——
+          必须每行绘制。<br>
+          亮色主题里脊的 <code>#e6e4de</code> 与 canvas 差 4 级，偏弱，需要 <code>#e2dfd8</code> 兜底。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── B ─────────────────────────── -->
+  <section>
+    <div class="dirhead">
+      <span class="tag">方向 B</span>
+      <h3>纸 · Paper</h3>
+      <p class="one">
+        假设这张列表会被读，而不是被扫。去掉几乎全部的线，用版式、字重和留白建立层级，
+        选中不画块而画一道下划线。安静到极致之后，品牌色只做印章使用。
+      </p>
+    </div>
+
+    <div class="mock mb">
+      <div class="bar"><span class="dot"></span><span>dae · 文稿</span><span class="spacer"></span><span style="font-family:var(--mono);color:#6f6b62">12 项</span></div>
+      <div class="body">
+        <div class="side">
+          <div class="lab">位置</div>
+          <div class="srow on">主目录</div>
+          <div class="srow">文稿</div>
+          <div class="srow">下载</div>
+          <div class="lab">卷</div>
+          <div class="srow">系统 (C:)</div>
+        </div>
+        <div class="main">
+          <div class="hdr"><span>名称</span><span style="text-align:right">大小</span><span style="text-align:right">修改时间</span></div>
+          <div class="r sel"><span class="nm">季度报告.docx</span><span class="sz">1.2 MB</span><span class="dt">11-12 22:04</span></div>
+          <div class="r"><span class="nm">预算-v3.xlsx</span><span class="sz">486 KB</span><span class="dt">11-11 09:31</span></div>
+          <div class="r"><span class="nm">会议记录.md</span><span class="sz">12 KB</span><span class="dt">11-09 16:20</span></div>
+          <div class="r"><span class="nm">assets</span><span class="sz">—</span><span class="dt">11-08 11:02</span></div>
+          <div class="r"><span class="nm">readme.txt</span><span class="sz">3 KB</span><span class="dt">11-07 08:44</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="specs">
+      <div class="blk wide">
+        <h4>记忆点</h4>
+        <p>
+          <b>整屏零线</b>：没有行分隔线、没有标题栏下边线、侧栏没有分组线。层级全靠
+          <em>行高（36 dp）+ 字重对比（400 / 600）+ 留白节奏</em>。选中态是一道
+          <b>2 px 下划线</b>落在文件名底下——像在纸上划了一道重点，而不是把整行涂色。
+          这是三套里唯一敢把"选中"做得这么轻的方案，因此也最不像通用文件管理器。
+        </p>
+      </div>
+
+      <div class="blk">
+        <h4>三条取舍</h4>
+        <ul>
+          <li>宁可<em>一行只读一个变量</em>（名称），也不要四列等重的表格</li>
+          <li>宁可<em>字号差 3 级</em>，也不要靠灰度差 4 级来分主次</li>
+          <li>宁可<em>选中态轻到需要适应</em>，也不要满屏色块</li>
+        </ul>
+      </div>
+
+      <div class="blk">
+        <h4>字体与几何</h4>
+        <dl class="kv">
+          <dt>字体</dt><dd>系统 UI 字体；文件名 13.5 <code>w400</code>，选中 <code>w600</code></dd>
+          <dt>元数据</dt><dd>11 px，<code>w400</code>，右对齐，比例数字</dd>
+          <dt>圆角</dt><dd>6 / 8 / 10 / 14</dd>
+          <dt>行高</dt><dd>32 / 36 / 44</dd>
+          <dt>外框</dt><dd>44 / 36 / 24，合计 104</dd>
+          <dt>网格</dt><dd>4 dp，横向留白 18</dd>
+        </dl>
+      </div>
+
+      <div class="blk">
+        <h4>色板 · 暗色</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#141412"></i><span>#141412</span><em>canvas</em></div>
+          <div class="sw"><i style="background:#1a1a17"></i><span>#1a1a17</span><em>chrome</em></div>
+          <div class="sw"><i style="background:#22221e"></i><span>#22221e</span><em>raised</em></div>
+          <div class="sw"><i style="background:#f3f0e8"></i><span>#f3f0e8</span><em>ink</em></div>
+          <div class="sw"><i style="background:#e8e3d6"></i><span>#e8e3d6</span><em>ink 软</em></div>
+          <div class="sw"><i style="background:#f0925e"></i><span>#f0925e</span><em>印章</em></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>色板 · 亮色</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#faf9f5"></i><span>#faf9f5</span><em>canvas</em></div>
+          <div class="sw"><i style="background:#f1efe8"></i><span>#f1efe8</span><em>chrome</em></div>
+          <div class="sw"><i style="background:#ffffff"></i><span>#ffffff</span><em>raised</em></div>
+          <div class="sw"><i style="background:#1a1915"></i><span>#1a1915</span><em>ink</em></div>
+          <div class="sw"><i style="background:#5b574d"></i><span>#5b574d</span><em>ink 软</em></div>
+          <div class="sw"><i style="background:#b4470f"></i><span>#b4470f</span><em>印章</em></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>改动面与风险</h4>
+        <p>
+          <b>大</b>。这不是换值：需要重排主列表的四列结构、给非活动行定义新的字重规则、
+          重做选中态、并且移除全仓 <code>Theme.hairline</code> 的大量调用点。
+          最先见效：<code>FileList.qml</code> 的行样式 → <code>Theme.qml</code> 的字阶 →
+          <code>Sidebar.qml</code> 的分组头。
+        </p>
+      </div>
+
+      <div class="blk">
+        <h4>最坏情况</h4>
+        <p>
+          没有线的表格在 <em>120 列的宽窗口</em> 和 <em>12 万行的长列表</em> 里都容易失去横向引导——
+          需要靠表头随滚动吸顶补偿（目前没有吸顶表头）。<br>
+          选中态 <code>interactive = ink</code> 会与焦点环语义冲突，键盘用户的可见性必须另设方案。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── C ─────────────────────────── -->
+  <section>
+    <div class="dirhead">
+      <span class="tag">方向 C</span>
+      <h3>井 · The Well</h3>
+      <p class="one">
+        把当前"所有东西同一平面"的结构反过来用：外框（标题、侧栏）是实心的石面，
+        内容区是凿进去的一口井，比外框更深。轻重关系一翻，层级不需要阴影就能读出来。
+      </p>
+    </div>
+
+    <div class="mock mc">
+      <div class="bar"><span class="dot"></span><span>dae — 文稿</span><span class="spacer"></span><span style="font-family:var(--mono);color:#767b82">12 项</span></div>
+      <div class="body">
+        <div class="side">
+          <div class="lab">位置</div>
+          <div class="srow on"><span class="sq"></span>主目录</div>
+          <div class="srow"><span class="sq"></span>文稿</div>
+          <div class="srow"><span class="sq"></span>下载</div>
+          <div class="lab">卷</div>
+          <div class="srow"><span class="sq"></span>系统 (C:)</div>
+        </div>
+        <div class="main">
+          <div class="hdr"><span>名称</span><span style="text-align:right">大小</span><span style="text-align:right">修改时间</span></div>
+          <div class="r sel"><span class="nm">季度报告.docx</span><span class="sz">1.2 MB</span><span class="dt">11-12 22:04</span></div>
+          <div class="r"><span class="nm">预算-v3.xlsx</span><span class="sz">486 KB</span><span class="dt">11-11 09:31</span></div>
+          <div class="r"><span class="nm">会议记录.md</span><span class="sz">12 KB</span><span class="dt">11-09 16:20</span></div>
+          <div class="r"><span class="nm">assets</span><span class="sz">—</span><span class="dt">11-08 11:02</span></div>
+          <div class="r"><span class="nm">readme.txt</span><span class="sz">3 KB</span><span class="dt">11-07 08:44</span></div>
+        </div>
+      </div>
+      <div class="float">
+        <div class="hi"><span>打开</span><span class="key">↵</span></div>
+        <div><span>用…打开</span><span class="key">⇧↵</span></div>
+        <div><span>在终端中打开</span><span class="key">⌥T</span></div>
+      </div>
+    </div>
+
+    <div class="specs">
+      <div class="blk wide">
+        <h4>记忆点</h4>
+        <p>
+          <b>面板井 + 唯一一层浮起</b>：标题/侧栏是 <code>#1b1d20</code> 的石面，内容区是
+          <code>#0b0c0e</code> 的井底，中间留 10 dp 的缝。面板自身带一道
+          <code>inset 0 1px 0 rgba(255,255,255,.07)</code> 的顶光——这在 Qt 里只需一个
+          多色渐变矩形，成本为零。菜单/命令面板/对话框是<em>整屏唯一允许浮起的东西</em>，
+          带 10/24 的投影。于是"浮起"变成了一个有意义的状态，而不是装饰。
+        </p>
+      </div>
+
+      <div class="blk">
+        <h4>三条取舍</h4>
+        <ul>
+          <li>宁可<em>只有一层海拔</em>（菜单），也不要给卡片和行都加影子</li>
+          <li>宁可<em>反转明暗关系</em>，也不要靠加粗边线制造分区</li>
+          <li>宁可<em>缝比线宽</em>，也不要在面板之间画分隔线</li>
+        </ul>
+      </div>
+
+      <div class="blk">
+        <h4>字体与几何</h4>
+        <dl class="kv">
+          <dt>字体</dt><dd>系统 UI 字体；13 为主，字号阶梯不变</dd>
+          <dt>数字</dt><dd>比例数字，11 px</dd>
+          <dt>圆角</dt><dd>4 / 6 / 8 / 12（沿用现值）</dd>
+          <dt>行高</dt><dd>28 / 32 / 40（沿用现值）</dd>
+          <dt>外框</dt><dd>40 / 44 / 28，合计 112</dd>
+          <dt>缝</dt><dd>面板间 10 dp</dd>
+        </dl>
+      </div>
+
+      <div class="blk">
+        <h4>色板 · 暗色</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#0b0c0e"></i><span>#0b0c0e</span><em>井底</em></div>
+          <div class="sw"><i style="background:#1b1d20"></i><span>#1b1d20</span><em>石面</em></div>
+          <div class="sw"><i style="background:#26292d"></i><span>#26292d</span><em>浮起</em></div>
+          <div class="sw"><i style="background:#f2f3f5"></i><span>#f2f3f5</span><em>ink</em></div>
+          <div class="sw"><i style="background:#8b9099"></i><span>#8b9099</span><em>inkMuted</em></div>
+          <div class="sw"><i style="background:#f0925e"></i><span>#f0925e</span><em>signal</em></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>色板 · 亮色</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#ffffff"></i><span>#ffffff</span><em>井底</em></div>
+          <div class="sw"><i style="background:#f4f4f1"></i><span>#f4f4f1</span><em>石面</em></div>
+          <div class="sw"><i style="background:#ffffff"></i><span>#ffffff</span><em>浮起</em></div>
+          <div class="sw"><i style="background:#111215"></i><span>#111215</span><em>ink</em></div>
+          <div class="sw"><i style="background:#5a5f66"></i><span>#5a5f66</span><em>inkMuted</em></div>
+          <div class="sw"><i style="background:#c2410c"></i><span>#c2410c</span><em>signal</em></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>改动面与风险</h4>
+        <p>
+          <b>中</b>。Token 只需换值并新增一个"浮起层"角色，但 <em>所有外框表面都要重新排布</em>：
+          标题栏、侧栏、列表、预览、终端现在都是紧贴的，加 10 dp 缝等于改五处锚点与
+          <code>shellTitle/shellNav/shellStatus</code> 的耦合。<br>
+          最先见效：<code>ShellWindow.qml</code> 的面板锚点 → <code>Theme.qml</code> → <code>MenuList.qml</code>。
+        </p>
+      </div>
+
+      <div class="blk">
+        <h4>最坏情况</h4>
+        <p>
+          无材质环境（<code>material = none</code>）下石面与井底同时出现，若亮度差压到 5 级以内，
+          整扇窗会读成两种脏灰——这是三套里对取色最敏感的一套。<br>
+          系统强调色覆盖 <code>interactive</code> 时，顶光的冷白会让强调色偏脏，需要给 accent 加一道降低饱和的补偿。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>横向对比</h2>
+    <table>
+      <thead>
+        <tr><th></th><th>A · 仪器台</th><th>B · 纸</th><th>C · 井</th></tr>
+      </thead>
+      <tbody>
+        <tr><th>气质</th><td class="win">精密、可测量、有工程味</td><td class="win">编辑感、安静、有教养</td><td class="win">有材质、有纵深、克制</td></tr>
+        <tr><th>记忆点强度</th><td>中高（脊）</td><td class="win">高（零线 + 下划线选中）</td><td>中高（井 + 唯一浮起层）</td></tr>
+        <tr><th>落地成本</th><td class="win">小 · 约 3 个文件起步</td><td>大 · 需重排列表结构</td><td>中 · 需重排面板锚点</td></tr>
+        <tr><th>能否先浅后深</th><td class="win">可切两刀：浅版 3 个文件，随时回滚</td><td>不可：删线 / 去色相 / 抬行高互为前提</td><td>不可：只改部分面板会让亮框与暗井并存</td></tr>
+        <tr><th>12 万行风险</th><td class="win">低（每行一个 3 px Rect）</td><td>低</td><td>低（只加井底底色）</td></tr>
+        <tr><th>无材质环境</th><td class="win">不受影响</td><td class="win">不受影响</td><td>需谨慎（石面/井底亮度差）</td></tr>
+        <tr><th>浅色主题</th><td>需补一档脊色</td><td class="win">天然更好看</td><td>需重新配比</td></tr>
+        <tr><th>系统强调色</th><td class="win">只影响 interact</td><td class="win">只做印章，不冲突</td><td>需降饱和补偿</td></tr>
+        <tr><th>RTL</th><td>脊需镜像到右侧</td><td class="win">天然对称</td><td class="win">天然对称</td></tr>
+        <tr><th>可回退性</th><td class="win">可逐文件回退</td><td>整屏耦合，难半途</td><td>中等</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>推荐</h2>
+    <div class="rec">
+      <h3>先做 A，但它不是终点</h3>
+      <p>
+        你的痛点不是"不够漂亮"，是<em>没有记忆点</em>。三套里 A 是唯一能在一周内让用户
+        说出"这个文件管理器长得不一样"而不用重排任何布局的方案——脊是一个局部组件，
+        改动面小、可回退、对 12 万行列表几乎零成本，而且它保留了你已经付过代价的那套
+        暖橙信号色与克制圆角。
+      </p>
+      <p>
+        B 的记忆点最强，但它把"选中"做成下划线，等于重新教育用户的肌肉记忆；
+        对一个日常工具来说，这需要产品上有足够自信才成立——如果 dae 想走"给写作者/研究者的
+        文件管理器"这条窄路，B 才是对的答案。
+      </p>
+      <p>
+        C 最"现代"，也最容易被抄成另一款通用 app；它的价值在于把<em>浮起</em>这个概念
+        引进来。这件事其实可以单独摘出来做——不管选 A 还是 B，菜单与命令面板都该有且仅有
+        一层海拔。我建议把 C 的这一条作为 A 的附加项吸收。
+      </p>
+      <p>
+        <b>所以"改到多深"和"选哪套"其实是同一个问题。</b>三套里只有 A 能切两刀：
+        第一刀只动 <code>Theme.qml</code>（收圆角与行高、压紧外框）、<code>FileList.qml</code>
+        （画脊与等宽数字）、<code>Sidebar.qml</code>（脊的槽位），改完就能整窗回滚；
+        第二刀再加浮层海拔与动效一致性。B 的删线、去色相、抬行高三件事互为前提，
+        拆开做任何一件都会让界面更糟；C 只改一部分面板会让亮石面与暗井底同时存在。
+        也就是说——<em>选 A 等于保留了"改到一半就停"的权利</em>，这对一个已有 52 个 QML 文件、
+        还在正常发版的项目，比纯粹的视觉强度更值钱。
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <b>STEP 1</b>
+          <span>你选定方向与深度。只换视觉层 → 直接进落地；要动结构 → 先进体验规范。</span>
+        </div>
+        <div class="step">
+          <b>STEP 2</b>
+          <span>体验专家出主窗口的区域权重、密度节奏、焦点可见性与缩放行为规范。</span>
+        </div>
+        <div class="step">
+          <b>STEP 3</b>
+          <span>工程按批次落地：token → 列表 → 侧栏 → 浮层，每批可独立走查与回退。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">dae · docs/ui-redesign/directions.html · 由 UI 设计全栈专家团产出</div>
+
+</div>
+</body>
+</html>
