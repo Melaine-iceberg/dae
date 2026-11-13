@@ -47,14 +47,16 @@ Item {
     /// Plain text keeps its line numbers; rendered Markdown and highlighted
     /// code arrive as HTML and are shown as they are. Five hundred lines is
     /// far past what the card shows at a time, and it keeps a 64 KB peek from
-    /// becoming a text-shaping job on a 300 px pane.
-    readonly property string plainText: {
-        const source = controller.content !== "" ? controller.content : qsTr("（空文件）")
-        const lines = source.split("\n")
-        return lines.length > 500 ? lines.slice(0, 500).join("\n") : source
-    }
+    /// becoming a text-shaping job on a 300 px pane. `plainCapped` lets the
+    /// card say so instead of ending mid-file without a word.
+    readonly property string plainSource: controller.content !== ""
+        ? controller.content : qsTr("（空文件）")
+    readonly property var plainLines: plainSource.split("\n")
+    readonly property bool plainCapped: plainLines.length > 500
+    readonly property string plainText: plainCapped
+        ? plainLines.slice(0, 500).join("\n") : plainSource
     readonly property string lineNumbers: {
-        const count = root.plainText.split("\n").length
+        const count = Math.min(plainLines.length, 500)
         let out = ""
         for (let index = 1; index <= count; index += 1)
             out += (index === 1 ? "" : "\n") + index
@@ -526,16 +528,17 @@ Item {
                 clip: true
 
                 Flickable {
+                    id: plainScroller
                     anchors.fill: parent
                     anchors.margins: 1
-                    contentWidth: width
-                    contentHeight: Math.max(plainRows.height, height)
+                    contentWidth: Math.max(width, plainRows.implicitWidth)
+                    contentHeight: Math.max(height, plainRows.implicitHeight)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    flickableDirection: Flickable.HorizontalAndVerticalFlick
 
                     Row {
                         id: plainRows
-                        width: parent.width
                         spacing: 8
 
                         Text {
@@ -549,15 +552,16 @@ Item {
                             font.features: { "tnum": 1 }
                         }
 
+                        // Not elided: the end of a stack trace or a long path
+                        // is the part being looked for, so the card scrolls
+                        // sideways instead of cutting the line with "…".
                         Text {
-                            width: plainRows.width - 36
                             text: root.plainText
                             color: root.textColor
                             font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
                             lineHeight: Theme.leadingProse
                             wrapMode: Text.NoWrap
-                            elide: Text.ElideRight
                             textFormat: Text.PlainText
                         }
                     }
@@ -567,8 +571,10 @@ Item {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     anchors.margins: 6
-                    visible: controller.truncated
-                    text: qsTr("仅显示前 64 KB")
+                    visible: controller.truncated || root.plainCapped
+                    text: controller.truncated
+                        ? qsTr("仅显示前 64 KB")
+                        : qsTr("仅显示前 500 行")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                 }
@@ -587,12 +593,40 @@ Item {
                 clip: true
 
                 Flickable {
+                    id: richScroller
                     anchors.fill: parent
                     anchors.margins: 1
-                    contentWidth: width
-                    contentHeight: richPreview.contentHeight + 16
+                    // Code blocks are laid out `white-space:pre`, so their
+                    // width is the longest line's and this is what lets it be
+                    // read; Markdown paragraphs still wrap to the pane.
+                    contentWidth: Math.max(width, richPreview.contentWidth + 20)
+                    contentHeight: Math.max(height, richPreview.contentHeight + 16)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    flickableDirection: Flickable.HorizontalAndVerticalFlick
+
+                    // Dragging inside a TextEdit selects text, so a mouse
+                    // reaches the part of a long line past the edge with
+                    // Shift+wheel; touchpads send horizontal deltas and land
+                    // here too. Without it the horizontal scroll existed but
+                    // no common device could drive it.
+                    WheelHandler {
+                        acceptedModifiers: Qt.ShiftModifier
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+
+                        onWheel: function (event) {
+                            const step = event.pixelDelta.x !== 0
+                                ? event.pixelDelta.x
+                                : (event.angleDelta.x !== 0
+                                    ? event.angleDelta.x * 0.4
+                                    : -event.angleDelta.y * 0.4)
+                            const maximum = Math.max(0,
+                                richScroller.contentWidth - richScroller.width)
+                            richScroller.contentX = Math.max(0,
+                                Math.min(maximum, richScroller.contentX + step))
+                            event.accepted = true
+                        }
+                    }
 
                     TextEdit {
                         id: richPreview
@@ -600,8 +634,8 @@ Item {
                         Accessible.name: qsTr("预览内容")
                         x: 10
                         y: 8
-                        width: parent.width - 20
-                        height: Math.max(contentHeight, parent.height - 16)
+                        width: Math.max(richScroller.width - 20, richPreview.contentWidth)
+                        height: Math.max(contentHeight, richScroller.height - 16)
                         readOnly: true
                         selectByMouse: true
                         text: controller.contentHtml
@@ -620,6 +654,16 @@ Item {
                                 Workspace.openPath(link)
                         }
                     }
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    visible: controller.truncated
+                    text: qsTr("仅显示前 64 KB")
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
                 }
             }
 

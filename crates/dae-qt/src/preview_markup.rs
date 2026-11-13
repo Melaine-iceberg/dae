@@ -9,9 +9,10 @@
 //! non-web link schemes — is deliberately dropped or rendered as text. The
 //! pane is an inspector, not a browser.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -139,27 +140,31 @@ fn language_token(name: &str) -> Option<String> {
     Some(token.to_owned())
 }
 
-fn syntax_set() -> &'static SyntaxSet {
-    static SET: OnceLock<SyntaxSet> = OnceLock::new();
-    SET.get_or_init(SyntaxSet::load_defaults_newlines)
-}
+/// `two-face` is bat's grammar pack: syntect's own defaults stop at Sublime's
+/// old packages, which have no TOML, INI, Dockerfile, PowerShell, TypeScript
+/// or Kotlin — the files the pane most often shows.
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
-fn theme_set() -> &'static ThemeSet {
-    static SET: OnceLock<ThemeSet> = OnceLock::new();
-    SET.get_or_init(ThemeSet::load_defaults)
+/// The pane's own palettes, embedded as tmTheme documents so a colour can be
+/// tuned without touching Rust. Both are the shell's stock: `canvasAlt` behind,
+/// `ink` for identifiers, vermilion for keywords. The files document their
+/// contrast ratios, and a test enforces them.
+static DARK_THEME: LazyLock<Theme> =
+    LazyLock::new(|| load_theme(include_str!("../assets/preview-dark.tmTheme")));
+static LIGHT_THEME: LazyLock<Theme> =
+    LazyLock::new(|| load_theme(include_str!("../assets/preview-light.tmTheme")));
+
+fn syntax_set() -> &'static SyntaxSet {
+    &SYNTAX_SET
 }
 
 fn theme(dark: bool) -> &'static Theme {
-    let set = theme_set();
-    let name = if dark {
-        "base16-ocean.dark"
-    } else {
-        "InspiredGitHub"
-    };
-    set.themes
-        .get(name)
-        .or_else(|| set.themes.get("base16-ocean.dark"))
-        .expect("syntect ships its default themes")
+    if dark { &DARK_THEME } else { &LIGHT_THEME }
+}
+
+fn load_theme(document: &str) -> Theme {
+    ThemeSet::load_from_reader(&mut std::io::Cursor::new(document.as_bytes()))
+        .expect("the bundled preview theme parses")
 }
 
 fn resolve_syntax<'a>(set: &'a SyntaxSet, token: &str) -> &'a SyntaxReference {
@@ -197,7 +202,10 @@ fn render_code(source: &str, language: &str, dark: bool) -> String {
     let mut highlighter = HighlightLines::new(syntax, theme);
     let mut out = String::with_capacity(source.len() * 2);
     out.push_str(&pre_open(theme, dark));
-    for line in LinesWithEndings::from(source) {
+    // Tokenising the expanded text rather than replacing after the fact keeps
+    // the spans and the glyphs in the same coordinate system.
+    let expanded = expand_tabs(source);
+    for line in LinesWithEndings::from(expanded.as_ref()) {
         match highlighter.highlight_line(line, set) {
             Ok(ranges) => {
                 for (style, text) in ranges {
@@ -211,21 +219,55 @@ fn render_code(source: &str, language: &str, dark: bool) -> String {
     out
 }
 
+/// `QTextDocument` lays a tab out on an 80-device-unit grid rather than on the
+/// mono face's advance, so one tab in a file jumps about eleven columns and
+/// the code stops looking like code. Four spaces per stop is the grid the
+/// pane's 12 px face reads as.
+fn expand_tabs(source: &str) -> Cow<'_, str> {
+    if !source.contains('\t') {
+        return Cow::Borrowed(source);
+    }
+    let mut out = String::with_capacity(source.len() + source.len() / 4);
+    let mut column = 0usize;
+    for character in source.chars() {
+        match character {
+            '\t' => {
+                let width = 4 - column % 4;
+                out.extend(std::iter::repeat_n(' ', width));
+                column += width;
+            }
+            '\n' => {
+                out.push('\n');
+                column = 0;
+            }
+            _ => {
+                out.push(character);
+                column += 1;
+            }
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// A 12 px face, an 18 px line and `white-space:pre`: the three values the
+/// card's width and height are measured against. `padding` used to be here and
+/// was never applied — Qt's rich text engine only honours padding on table
+/// cells, and the card's own margins do the inset.
 fn pre_open(theme: &Theme, dark: bool) -> String {
     let background = theme
         .settings
         .background
         .map(color_hex)
-        .unwrap_or_else(|| if dark { "#20242b" } else { "#f6f8fa" }.to_owned());
+        .unwrap_or_else(|| if dark { "#1d1b17" } else { "#f6f2e8" }.to_owned());
     let foreground = theme
         .settings
         .foreground
         .map(color_hex)
-        .unwrap_or_else(|| if dark { "#e6e9ef" } else { "#1c1f24" }.to_owned());
+        .unwrap_or_else(|| if dark { "#ece6d8" } else { "#16140f" }.to_owned());
     format!(
-        "<pre style=\"margin:0; padding:8px; background-color:{background}; color:{foreground}; \
-         font-family:'Cascadia Mono'; font-size:11px; line-height:150%; \
-         white-space:pre-wrap;\">"
+        "<pre style=\"margin:0; background-color:{background}; color:{foreground}; \
+         font-family:'Cascadia Mono'; font-size:12px; line-height:18px; \
+         white-space:pre;\">"
     )
 }
 
@@ -593,7 +635,7 @@ impl Renderer<'_> {
         let text = text.strip_suffix('\n').unwrap_or(text);
         if language.is_empty() || resolve_syntax(syntax_set(), language).name == "Plain Text" {
             self.out.push_str(&pre_open(theme(self.dark), self.dark));
-            push_escaped(&mut self.out, text);
+            push_escaped(&mut self.out, &expand_tabs(text));
             self.out.push_str("</pre>");
         } else {
             self.out.push_str(&render_code(text, language, self.dark));
@@ -882,6 +924,102 @@ mod tests {
         assert!(html.contains("<span style=\"color:"));
         assert!(html.contains("&lt;tag&gt;"));
         assert!(!html.contains("\"<tag>\""));
+    }
+
+    /// The tokens the pane maps are only worth mapping if a grammar answers.
+    /// syntect's own defaults fail this for half the list; `two-face` is what
+    /// makes it pass, so the test guards the feature, not the lookup helper.
+    /// `ps1` is absent from the pack — PowerShell still renders as plain text.
+    #[test]
+    fn every_mapped_language_resolves_to_a_grammar() {
+        for token in [
+            "rs",
+            "ts",
+            "tsx",
+            "kt",
+            "swift",
+            "dart",
+            "toml",
+            "ini",
+            "dockerfile",
+            "gitignore",
+            "graphql",
+            "proto",
+            "nix",
+            "yaml",
+            "sql",
+        ] {
+            assert_ne!(
+                resolve_syntax(syntax_set(), token).name,
+                "Plain Text",
+                "{token} fell back to plain text"
+            );
+        }
+    }
+
+    #[test]
+    fn tabs_expand_on_a_four_column_grid() {
+        assert_eq!(expand_tabs("\tx"), "    x");
+        assert_eq!(expand_tabs("ab\tx"), "ab  x");
+        assert_eq!(expand_tabs("abcd\tx"), "abcd    x");
+        assert_eq!(expand_tabs("a\n\tb"), "a\n    b");
+        assert!(matches!(expand_tabs("no tabs"), Cow::Borrowed(_)));
+    }
+
+    /// The QML card pins its gutter and horizontal viewport to these values.
+    #[test]
+    fn code_is_rendered_on_the_twelve_pixel_grid() {
+        let html = render_code("fn main() {}\n", "rs", true);
+        assert!(html.contains("font-size:12px"));
+        assert!(html.contains("line-height:18px"));
+        assert!(html.contains("white-space:pre;"));
+    }
+
+    /// A palette edit that drops a colour below AA body contrast fails here
+    /// instead of shipping as a washed-out pane.
+    #[test]
+    fn the_preview_themes_keep_text_readable() {
+        for dark in [true, false] {
+            let theme = theme(dark);
+            let background = theme.settings.background.expect("theme background");
+            let foreground = theme.settings.foreground.expect("theme foreground");
+            assert!(
+                contrast_ratio(foreground, background) >= 4.5,
+                "base text in {} theme",
+                if dark { "dark" } else { "light" }
+            );
+            for item in &theme.scopes {
+                if let Some(foreground) = item.style.foreground {
+                    assert!(
+                        contrast_ratio(foreground, background) >= 4.5,
+                        "a {:?} rule in the {} theme",
+                        item.scope,
+                        if dark { "dark" } else { "light" }
+                    );
+                }
+            }
+        }
+    }
+
+    fn contrast_ratio(a: Color, b: Color) -> f64 {
+        let (high, low) = if luminance(a) >= luminance(b) {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        (luminance(high) + 0.05) / (luminance(low) + 0.05)
+    }
+
+    fn luminance(color: Color) -> f64 {
+        let channel = |value: u8| {
+            let value = f64::from(value) / 255.0;
+            if value <= 0.03928 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
     }
 
     #[cfg(windows)]

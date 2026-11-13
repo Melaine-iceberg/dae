@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The code preview's dark palette. It is the shell's own stock (canvasAlt,
+  ink, vermilion) rather than a ported editor theme: a code block that arrives
+  in somebody else's colours reads as a pasted screenshot.
+
+  Rules are ordered from general to specific; syntect applies every matching
+  rule in order, so a later one wins. Comment contrast on #1d1b17 is 4.89:1 and
+  every other colour is at least 5.2:1. The theme this replaced
+  (base16-ocean.dark) put comments at 2.71:1, which is why the pane read as
+  washed out.
+
+  Regenerate the Rust side by rebuilding; the file is embedded with
+  `include_str!`.
+-->
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>dae-dark</string>
+    <key>settings</key>
+    <array>
+        <dict>
+            <key>settings</key>
+            <dict>
+                <key>background</key>
+                <string>#1d1b17</string>
+                <key>foreground</key>
+                <string>#ece6d8</string>
+                <key>caret</key>
+                <string>#ff6a3d</string>
+                <key>selection</key>
+                <string>#3a332a</string>
+                <key>invisibles</key>
+                <string>#948e80</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Keyword</string>
+            <key>scope</key>
+            <string>keyword, storage, storage.type, storage.modifier, keyword.other</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#ff8a63</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Operator and punctuation</string>
+            <key>scope</key>
+            <string>keyword.operator, punctuation, punctuation.separator, punctuation.terminator</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#948e80</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Comment</string>
+            <key>scope</key>
+            <string>comment, punctuation.definition.comment</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#8f887a</string>
+                <key>fontStyle</key>
+                <string>italic</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>String</string>
+            <key>scope</key>
+            <string>string, string.quoted, punctuation.definition.string, constant.other.symbol</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#a8c98a</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Number and constant</string>
+            <key>scope</key>
+            <string>constant.numeric, constant.language, constant.character.escape, constant.other</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#e0b072</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Function</string>
+            <key>scope</key>
+            <string>entity.name.function, support.function, variable.function, meta.function-call</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#f0d9a8</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Type</string>
+            <key>scope</key>
+            <string>entity.name.type, entity.name.class, entity.other.inherited-class, support.type, support.class, entity.name.namespace</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#9db7e0</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Tag and attribute</string>
+            <key>scope</key>
+            <string>entity.name.tag, meta.tag, entity.other.attribute-name</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#e3a17c</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Parameter</string>
+            <key>scope</key>
+            <string>variable.parameter</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#d8cdb8</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Invalid</string>
+            <key>scope</key>
+            <string>invalid, invalid.illegal</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#ff6a5a</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The code preview's light palette: the same ink-on-paper stock as the dark
+  one, printed the other way round. Contrast on #f6f2e8 is 4.94:1 for comments
+  and at least 5.3:1 for every other colour. Rule order and scope names match
+  `preview-dark.tmTheme`; see that file for why.
+-->
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>dae-light</string>
+    <key>settings</key>
+    <array>
+        <dict>
+            <key>settings</key>
+            <dict>
+                <key>background</key>
+                <string>#f6f2e8</string>
+                <key>foreground</key>
+                <string>#16140f</string>
+                <key>caret</key>
+                <string>#ff4d1f</string>
+                <key>selection</key>
+                <string>#e3d9c2</string>
+                <key>invisibles</key>
+                <string>#625c50</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Keyword</string>
+            <key>scope</key>
+            <string>keyword, storage, storage.type, storage.modifier, keyword.other</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#b5360f</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Operator and punctuation</string>
+            <key>scope</key>
+            <string>keyword.operator, punctuation, punctuation.separator, punctuation.terminator</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#625c50</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Comment</string>
+            <key>scope</key>
+            <string>comment, punctuation.definition.comment</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#6f685a</string>
+                <key>fontStyle</key>
+                <string>italic</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>String</string>
+            <key>scope</key>
+            <string>string, string.quoted, punctuation.definition.string, constant.other.symbol</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#386b34</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Number and constant</string>
+            <key>scope</key>
+            <string>constant.numeric, constant.language, constant.character.escape, constant.other</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#8a5514</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Function</string>
+            <key>scope</key>
+            <string>entity.name.function, support.function, variable.function, meta.function-call</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#1f4d7a</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Type</string>
+            <key>scope</key>
+            <string>entity.name.type, entity.name.class, entity.other.inherited-class, support.type, support.class, entity.name.namespace</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#5b4a86</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Tag and attribute</string>
+            <key>scope</key>
+            <string>entity.name.tag, meta.tag, entity.other.attribute-name</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#8a4a1c</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Parameter</string>
+            <key>scope</key>
+            <string>variable.parameter</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#3d382f</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>name</key>
+            <string>Invalid</string>
+            <key>scope</key>
+            <string>invalid, invalid.illegal</string>
+            <key>settings</key>
+            <dict>
+                <key>foreground</key>
+                <string>#b3261e</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>
