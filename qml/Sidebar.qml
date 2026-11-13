@@ -275,14 +275,53 @@ Item {
         }
     }
 
+    /// The column's masthead. drift opens its sidebar with a wordmark; the
+    /// window's title bar carries a tab strip, so this is the only place the
+    /// product's name is printed rather than resolved from a tab.
+    Item {
+        id: masthead
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 62
+
+        Text {
+            id: wordmark
+            x: 18
+            y: 10
+            text: "dae"
+            color: Theme.ink
+            font.family: Theme.serifFamily
+            font.italic: true
+            font.pixelSize: 38
+            font.letterSpacing: -1
+            /// Decorative: the window's title and its accessible name already
+            /// say which application this is, and a reader that lands in the
+            /// sidebar wants the destinations, not the brand.
+            Accessible.ignored: true
+        }
+
+        Text {
+            anchors.left: wordmark.right
+            anchors.leftMargin: 1
+            anchors.baseline: wordmark.baseline
+            text: "."
+            color: Theme.signal
+            font.family: Theme.serifFamily
+            font.italic: true
+            font.pixelSize: 38
+            Accessible.ignored: true
+        }
+    }
+
     ListView {
         id: list
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: masthead.bottom
         anchors.bottom: discoveryArea.top
-        anchors.topMargin: 8
+        anchors.topMargin: 4
         model: sidebarModel
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -358,6 +397,7 @@ Item {
                 anchors.bottomMargin: 4
                 text: root.sectionLabel(sectionRow.section)
                 color: parent.lit ? Theme.signal : Theme.inkFaint
+                font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
                 font.letterSpacing: 0.88
@@ -425,6 +465,10 @@ Item {
             readonly property bool isAction: row.kind === "addConnection"
                 || row.kind === "addCloud"
                 || row.kind === "restorePlaces"
+            /// A place is a named destination in the first group: it carries a
+            /// number instead of a glyph, the way drift indexes the column.
+            readonly property bool place: !row.isVolume && !row.isAction
+                && row.kind !== "favoriteHint"
             readonly property bool builtInName: row.isAction
                 || row.kind === "favoriteHint"
                 || row.icon === "home" || row.icon === "desktop"
@@ -496,12 +540,14 @@ Item {
                     x: 8
                     width: rowBody.width - 16
                     height: rowBody.height
-                    radius: Theme.radiusSm
-                    color: row.armed || row.focused
-                        ? Theme.signalSoft
+                    /// The current destination is a solid ink band with the
+                    /// paper showing through the type. A drop target is the
+                    /// only row that gets a signal wash and a frame.
+                    color: row.armed ? Theme.signalSoft
+                        : row.focused ? Theme.ink
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
-                    border.width: row.armed || row.cursor ? 1 : 0
-                    border.color: row.cursor ? Theme.signal : Theme.hairlineStrong
+                    border.width: row.armed || row.cursor ? Theme.edgeWidth : 0
+                    border.color: Theme.signal
 
                     // How full the volume is: two pixels along the bottom, and
                     // only where there is a number behind it. An empty bar on a
@@ -529,17 +575,22 @@ Item {
                     }
                 }
 
-                // The current row's left track sits on the sidebar's own edge,
-                // not inside the plate: the 8 px inset is what makes it read as
-                // a marker rather than a border.
-                Rectangle {
-                    visible: row.focused
-                    x: 0
-                    y: row.isVolume ? 7 : 6
-                    width: 3
-                    height: rowBody.height - (row.isVolume ? 14 : 12)
-                    radius: 1
-                    color: Theme.signal
+                /// The index of a place, in mono. It replaces the glyph: a
+                /// number says "the third destination" and survives being read
+                /// at a glance, where six outline icons at 14 dp only say
+                /// "somewhere".
+                Text {
+                    id: placeIndex
+                    visible: row.place
+                    x: 18
+                    y: 0
+                    height: rowBody.height
+                    width: 20
+                    verticalAlignment: Text.AlignVCenter
+                    text: String(row.index + 1).padStart(2, "0")
+                    color: row.focused ? Theme.signal : Theme.inkFaint
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 // A volume's chevron is a separate hit target from the row
@@ -581,6 +632,7 @@ Item {
                 Glyph {
                     id: rowIcon
 
+                    visible: !row.place
                     x: row.isVolume ? 26 : 18
                     y: row.isVolume ? 6 : 7
                     width: 14
@@ -605,6 +657,7 @@ Item {
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: row.kind === "favoriteHint" && root.favoriteDropActive
                         ? Theme.signal
+                        : row.focused && !row.armed ? Theme.canvas
                         : (row.lit ? Theme.ink : Theme.inkMuted)
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
@@ -625,8 +678,9 @@ Item {
                     // full pair is what the tooltip carries instead.
                     text: row.isVolume && root.narrow
                         ? row.percent + "%" : root.detailLabel(row.detail)
-                    color: row.isVolume && row.fill > 0.9
-                        ? Theme.warn : Theme.inkFaint
+                    color: row.focused && !row.armed ? Theme.canvas
+                        : row.isVolume && row.fill > 0.9
+                            ? Theme.warn : Theme.inkFaint
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
                     elide: Text.ElideRight
@@ -644,7 +698,7 @@ Item {
                     width: Math.max(0, detailText.x - x - 8)
                     verticalAlignment: Text.AlignVCenter
                     text: row.fileSystem
-                    color: Theme.inkFaint
+                    color: row.focused && !row.armed ? Theme.canvas : Theme.inkFaint
                     font.pixelSize: Theme.typeMicro
                     elide: Text.ElideRight
                 }
@@ -1067,7 +1121,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: trashArea.top
+        anchors.bottom: diskArea.top
         visible: tags.length > 0
         height: visible ? 26 + tagList.height + 10 : 0
 
@@ -1194,6 +1248,96 @@ Item {
                     onClicked: root.tagActivated(tagRow.modelData.name)
                 }
             }
+        }
+    }
+
+    /// The disk footer: a labelled, segmented bar of how full the primary disk
+    /// is, in drift's printed form. It shows one volume, not every mount — a
+    /// column of bars would answer a question nobody asked, and the per-volume
+    /// line stays on the drive's own row.
+    Item {
+        id: diskArea
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: trashArea.top
+        height: sidebarModel.diskTotal !== "" ? 66 : 0
+        visible: height > 0
+
+        /// 24 cells, the count drift uses: fine enough that one cell is ~4 %,
+        /// coarse enough that the bar still reads as a printed gauge rather
+        /// than a smooth meter.
+        readonly property int segments: 24
+        readonly property real fill: sidebarModel.diskFill
+        readonly property int lit: Math.round(Math.max(0, Math.min(1, fill)) * segments)
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.top: parent.top
+            height: 1
+            color: Theme.hairline
+        }
+
+        Text {
+            x: 18
+            y: 8
+            text: root.sectionLabel("Disks")
+            color: Theme.inkFaint
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeMicro
+            font.letterSpacing: 2
+            font.capitalization: Font.AllUppercase
+        }
+
+        Text {
+            anchors.right: parent.right
+            anchors.rightMargin: 18
+            y: 8
+            text: Math.round(diskArea.fill * 100) + "%"
+            color: diskArea.fill > 0.9 ? Theme.warn : Theme.ink
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeMicro
+            font.features: { "tnum": 1 }
+        }
+
+        Row {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 18
+            anchors.rightMargin: 18
+            anchors.top: parent.top
+            anchors.topMargin: 22
+            spacing: 2
+
+            Repeater {
+                model: diskArea.segments
+
+                Rectangle {
+                    required property int index
+                    /// The row's width is shared out with the gaps taken off
+                    /// first; a cell computed from the bar alone would overflow
+                    /// the right margin by the last gap.
+                    width: Math.max(1, (diskArea.width - 36 - (diskArea.segments - 1) * 2)
+                        / diskArea.segments)
+                    height: 12
+                    color: index < diskArea.lit
+                        ? (diskArea.fill > 0.9 ? Theme.warn : Theme.ink)
+                        : Theme.hairline
+                }
+            }
+        }
+
+        Text {
+            x: 18
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 8
+            text: sidebarModel.diskUsed + " / " + sidebarModel.diskTotal
+            color: Theme.inkMuted
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeMicro
+            font.features: { "tnum": 1 }
         }
     }
 
