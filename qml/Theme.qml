@@ -32,13 +32,13 @@ QtObject {
         || (Appearance.theme === "system" && Workspace.systemDark)
 
     // ── Interaction ─────────────────────────────────────────────────────────
-    /// The brand pair: the instrument signal orange. Used when the user has not
-    /// asked to follow the OS.
-    readonly property color brand: dark ? "#f0925e" : "#c2410c"
+    /// The brand pair: drift's vermilion. Used when the user has not asked to
+    /// follow the OS.
+    readonly property color brand: dark ? "#ff6a3d" : "#ff4d1f"
     /// The window's one signal colour, independent of the accent preference.
     /// Selection tracks, focus rings and the active tab underline take this so
-    /// the shell keeps its instrument character even when the OS accent is on.
-    readonly property color signal: dark ? "#f0925e" : "#c2410c"
+    /// the shell keeps its printed character even when the OS accent is on.
+    readonly property color signal: dark ? "#ff6a3d" : "#ff4d1f"
     /// The only saturated colour in the window. It marks what can be acted on,
     /// so it must not also be used as decoration: a tinted panel reads as a
     /// button to anyone who has used the app for a minute.
@@ -56,11 +56,14 @@ QtObject {
     readonly property color onSolid: "#ffffff"
 
     // ── Surfaces ────────────────────────────────────────────────────────────
-    /// Where content lives: the listing, the editor, the preview text.
-    readonly property color canvas: dark ? "#0f1012" : "#ffffff"
+    /// Where content lives: the listing, the editor, the preview text. drift
+    /// prints on warm paper rather than on screen white; every other surface
+    /// below is a step of that same stock, not a separate material.
+    readonly property color canvas: dark ? "#131210" : "#ece6d8"
     /// A second canvas for surfaces that sit *inside* a canvas — a grid card,
-    /// the alternating plate, the palette's shortcut plate.
-    readonly property color canvasAlt: dark ? "#16181b" : "#f4f4f2"
+    /// the alternating plate, the palette's shortcut plate. The lighter card
+    /// stock the sheets are cut from.
+    readonly property color canvasAlt: dark ? "#1d1b17" : "#f6f2e8"
     /// Whether a background image is set. The listing surfaces below switch
     /// from the solid canvas to a translucent one so the image shows through;
     /// chrome stays solid, which keeps the frame readable.
@@ -73,16 +76,16 @@ QtObject {
     readonly property color content: Qt.rgba(canvas.r, canvas.g, canvas.b, contentAlpha)
     readonly property color contentAlt: Qt.rgba(canvasAlt.r, canvasAlt.g,
                                                canvasAlt.b, contentAlpha)
-    /// The window's frame: title, tabs, path bar, status bar, sidebar. This is
-    /// the only surface the OS material is allowed to show through, and the
-    /// shell currently asks for no material at all so this value is what paints.
-    readonly property color chrome: dark ? "#0b0c0e" : "#ecece9"
+    /// The window's frame: title, tabs, path bar, status bar, sidebar. One ink
+    /// line separates it from the paper instead of a shade change: drift draws
+    /// regions with rules, so the frame and the listing share a colour.
+    readonly property color chrome: dark ? "#131210" : "#ece6d8"
     /// A surface that floats above everything else: menus, dialogs, the
     /// command palette. There is exactly one elevation, so there is exactly
-    /// one value.
-    readonly property color raised: dark ? "#1c1e22" : "#ffffff"
+    /// one value; `edge` and `shadow` are what separate it from what is below.
+    readonly property color raised: dark ? "#1d1b17" : "#f6f2e8"
     /// An input well: text fields, search, the rename box.
-    readonly property color field: dark ? "#131518" : "#e8e8e5"
+    readonly property color field: dark ? "#1d1b17" : "#f6f2e8"
 
     // ── Material tint ───────────────────────────────────────────────────────
     /// The veil painted over a native backdrop, by backdrop kind.
@@ -99,6 +102,10 @@ QtObject {
     /// `material` is what `WindowController.appliedMaterial` reports (`mica`,
     /// `acrylic`, `blur` or `none`); `panel` is the sidebar, which has always
     /// run slightly deeper than the title, path and status bands.
+    ///
+    /// The veil is paper rather than neutral grey: drift's chrome is a printed
+    /// stock, and a material tinted with it reads as the same sheet held up to
+    /// the desktop instead of as a second, bluer window behind this one.
     function backdropTint(material, isDark, panel) {
         if (material === "none")
             return theme.chrome
@@ -107,55 +114,57 @@ QtObject {
             ? (panel ? (isDark ? 0.76 : 0.84) : (isDark ? 0.78 : 0.86))
             : (panel ? (isDark ? 0.30 : 0.34) : (isDark ? 0.38 : 0.46))
         return isDark
-            ? Qt.rgba(panel ? 0.05 : 0.055, panel ? 0.06 : 0.063,
-                      panel ? 0.07 : 0.075, alpha)
-            : Qt.rgba(panel ? 0.95 : 0.98, panel ? 0.96 : 0.985,
-                      panel ? 0.97 : 0.99, alpha)
+            ? Qt.rgba(0.075, 0.071, 0.063, alpha)
+            : Qt.rgba(0.925, 0.902, 0.847, alpha)
     }
 
     // ── Ink ─────────────────────────────────────────────────────────────────
-    /// Names and primary content.
-    readonly property color ink: dark ? "#eaebed" : "#121316"
+    /// Names and primary content. drift's ink is warm black, never #000: the
+    /// same ink the sheets are outlined with.
+    readonly property color ink: dark ? "#ece6d8" : "#16140f"
     /// Secondary: column headers, metadata, timestamps, hints. Kept above
     /// 4.5:1 against `canvas` in both themes so it stays readable.
-    readonly property color inkMuted: dark ? "#9da2a9" : "#55595f"
+    readonly property color inkMuted: dark ? "#b9b3a5" : "#4a453b"
     /// Tertiary: group labels, disabled glyphs, metadata. Above 4.5:1 against
     /// chrome, canvas and field in both themes, so it can carry the 11 px group
     /// labels and meta text — not just icons as the previous palette allowed.
-    readonly property color inkFaint: dark ? "#858a91" : "#63666d"
+    readonly property color inkFaint: dark ? "#948e80" : "#625c50"
 
     // ── Lines ───────────────────────────────────────────────────────────────
-    /// Row separators and the edge of an unfocused control.
+    /// Row separators and the edge of an unfocused control: ink held back to a
+    /// fifth, the weight drift gives a rule inside a table.
     /// Note the order: Qt reads eight digits as `#AARRGGBB`, so a translucent
     /// white is `#24ffffff`, never `#ffffff24` — the CSS order parses as a
     /// nearly opaque yellow and it does not fail, it just paints.
-    readonly property color hairline: dark ? "#24ffffff" : "#24000000"
-    /// The edge of something that holds: a field, a menu, a raised plate.
-    readonly property color hairlineStrong: dark ? "#3bffffff" : "#3d000000"
+    readonly property color hairline: dark ? "#33ece6d8" : "#3316140f"
+    /// The edge of something that holds: a field, a menu, a raised plate, and
+    /// every panel boundary in the frame. Ink at four fifths, not a shade of
+    /// the surface — drift closes a region with a line you can see.
+    readonly property color hairlineStrong: dark ? "#ccece6d8" : "#cc16140f"
     /// The hairline between list rows: lighter than a structural line.
-    readonly property color rowRule: dark ? "#12ffffff" : "#0f000000"
+    readonly property color rowRule: dark ? "#1aece6d8" : "#1a16140f"
 
     // ── State ───────────────────────────────────────────────────────────────
     /// Pointer is over a row or a quiet control. Deliberately below the
     /// threshold where it could be confused with selection.
-    readonly property color hover: dark ? "#10ffffff" : "#0d000000"
+    readonly property color hover: dark ? "#12ece6d8" : "#1216140f"
     /// A state fill: a hovered menu item, an active chip, a row selected while
     /// the pane is unfocused. One step above `hover` so a menu can show both.
-    readonly property color fill: dark ? "#1affffff" : "#17000000"
+    readonly property color fill: dark ? "#1fece6d8" : "#1f16140f"
     /// Behind a modal. Never opaque: the window has to stay legible so the
     /// user keeps their place.
     readonly property color scrim: dark ? "#61000000" : "#1a181816"
 
     // ── Accent-derived ──────────────────────────────────────────────────────
     /// The signal at 8 % (light) / 12 % (dark). This is the selected row, not
-    /// a saturated plate, and it stays orange even when the system accent wins
-    /// the interactive role.
+    /// a saturated plate, and it stays vermilion even when the system accent
+    /// wins the interactive role.
     readonly property color selection: Qt.rgba(signal.r, signal.g, signal.b,
                                                dark ? 0.12 : 0.08)
     /// The wash behind an active chip or a focused drop target.
-    readonly property color signalSoft: dark ? "#1ff0925e" : "#14c2410c"
+    readonly property color signalSoft: dark ? "#1fff6a3d" : "#14ff4d1f"
     /// One step stronger: a drop edge or a focused search field.
-    readonly property color signalSoft2: dark ? "#30f0925e" : "#2ec2410c"
+    readonly property color signalSoft2: dark ? "#38ff6a3d" : "#2eff4d1f"
     /// The ring around a focused control, and the edge of a drop target.
     readonly property color focusRing: Qt.rgba(interactive.r, interactive.g,
                                                interactive.b, 0.30)
@@ -167,19 +176,23 @@ QtObject {
     readonly property color dangerSolid: dark ? "#c6403a" : "#c62c26"
     readonly property color dangerSolidHover: Qt.lighter(dangerSolid, 1.15)
     readonly property color success: dark ? "#8fd18f" : "#2f7d32"
-    readonly property color warn: dark ? "#e0a340" : "#9a6700"
+    readonly property color warn: dark ? "#f0b838" : "#8a6100"
+    /// The manila of a folder sheet: drift draws the tab lighter than the
+    /// body, and the two values are a pair rather than a colour and its tint.
+    readonly property color folderTab: dark ? "#c08c1e" : "#f0b838"
+    readonly property color folderBody: dark ? "#a4761a" : "#d99a1c"
     /// Reference ink for links, commit hashes and the git status chips. Kept
     /// apart from `interactive` because it reports state rather than inviting
     /// a click from the listing itself.
     readonly property color link: dark ? "#6cb6ff" : "#0969da"
     /// The terminal follows the shell's theme. Its grid palette is resolved by
     /// the core per snapshot (`dae-core::pty`), and these are the matching
-    /// panel, header plate and header ink: near-black on the dark canvas, the
+    /// panel, header plate and header ink: card stock on the dark canvas, the
     /// same paper as the rest of the window in light.
-    readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
-    readonly property color terminalHeader: dark ? "#141518" : "#f4f4f1"
-    readonly property color terminalInk: dark ? "#8b9099" : "#5c6066"
-    readonly property color terminalInkStrong: dark ? "#e8eaf0" : "#161719"
+    readonly property color terminalCanvas: dark ? "#131210" : "#ece6d8"
+    readonly property color terminalHeader: dark ? "#1d1b17" : "#f6f2e8"
+    readonly property color terminalInk: dark ? "#b9b3a5" : "#4a453b"
+    readonly property color terminalInkStrong: dark ? "#ece6d8" : "#16140f"
 
     // ── Motion ──────────────────────────────────────────────────────────────
     /// Qt 6 has no system-wide reduced-motion query, so `explorer.ini` carries
@@ -202,26 +215,39 @@ QtObject {
     readonly property string monoFamily: Qt.platform.os === "osx" ? "SF Mono"
         : Qt.platform.os === "windows" ? "Consolas"
         : "DejaVu Sans Mono"
+    /// The serif: a printed name, not a UI label. Only the listing header and
+    /// the preview title take it, and only at the two rungs below.
+    ///
+    /// QML cannot express a fallback list on `font.family`, so each platform
+    /// names the face it ships. Windows' CJK serif is SimSun — old, but it is
+    /// the only serif the stock system has, and at 30–56 dp its Latin is a
+    /// matching Didone rather than a fallback.
+    readonly property string serifFamily: Qt.platform.os === "osx" ? "Songti SC"
+        : Qt.platform.os === "windows" ? "SimSun"
+        : "Noto Serif CJK SC"
 
     // ── Geometry ────────────────────────────────────────────────────────────
-    /// The only corner radii the shell draws — four steps, no more.
+    /// No corner radii. drift is drawn with a straight edge: rectangles,
+    /// 1 px ink rules and a hard offset shadow are the whole vocabulary, so a
+    /// rounded corner anywhere reads as a different application.
     ///
-    /// The Qt shell used to run 2 / 4 / 8 / 12, a full step below the Web
-    /// shell's `App.css` ladder (4 / 6 / 12 / 16), and two shells side by side
-    /// made the same button change shape. It was first aligned with the Web
-    /// shell; the 2026-11-08 "ink line" pass tightens it one step to
-    /// 4 / 6 / 8 / 12 instead. The listing is the main work surface, and squarer
-    /// corners read as structure rather than as softness. Menus and dialogs
-    /// follow `radiusLg` down together, so there is still one ladder and no
-    /// separate "panel" step.
-    ///
-    /// Anything that squares off a corner by painting over it has to follow
-    /// `radiusLg`: `SettingsPanel`'s nav column covers what its own right edge
-    /// rounds, and that width is bound to the token, not written out.
-    readonly property int radiusXs: 4
-    readonly property int radiusSm: 6
-    readonly property int radiusMd: 8
-    readonly property int radiusLg: 12
+    /// The four names stay — 216 call sites bound to them, and a call site that
+    /// says `radiusSm` states "a corner belongs here", which is worth keeping
+    /// even while the value is 0. When a surface genuinely needs a curve it
+    /// takes its own number, not a renamed token.
+    readonly property int radiusXs: 0
+    readonly property int radiusSm: 0
+    readonly property int radiusMd: 0
+    readonly property int radiusLg: 0
+    /// How far a floating surface's shadow steps out from the plate. There is
+    /// no blur: the shadow is the plate's own rectangle in solid ink, displaced
+    /// by this many pixels (see `HardShadow.qml`).
+    readonly property int shadowOffset: 5
+
+    /// The width of every structural rule in the frame. One pixel: a printed
+    /// hairline, not a 2 px border — the print look comes from the rule being
+    /// ink rather than from it being thick.
+    readonly property int edgeWidth: 1
     /// Row heights; the header is always the paired value.
     readonly property int rowCompact: 28
     readonly property int rowDefault: 32
