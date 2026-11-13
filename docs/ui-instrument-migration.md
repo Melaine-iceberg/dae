@@ -358,9 +358,9 @@ readonly property color terminalCanvas: dark ? "#0f1012" : "#ffffff"
 
 ### 6.4 图标 `qml/ThemedIcon.qml` + `qml/Glyph.qml`
 
-- 图形数据只有一个来源：原型的 sprite（`docs/prototypes/dae-instrument-ui-20261028.html` 的 `<symbol>`）。`Glyph.qml` 存的是展开成绝对 `M`/`L`/`C`/`Q`/`Z` 的路径表，不再手绘近似——旧实现把「设置」画成太阳、把「链接」画成纸张，并且和原型已经漂移。
-- 描边按尺寸补偿：`lineWidth × max(1, 16 / 宽度)`。10 / 12 / 14 px 下仍是 1.2 设备像素（旧实现是 1.2 单位，10 px 时只剩 0.75 px，整列图标发灰）。
-- `folder` 是填充轮廓，其余是描边；填充和描边共用一个 `tint`，文件里没有颜色。
+- 图形数据只有一个来源：Solar Icons 的 `linear` 风格（`qml/SolarMarks.js`，MIT，版本与映射表写在文件头；决策见 `docs/decisions/glyph-source-solar.md`）。`Glyph.qml` 只负责渲染，不再手绘近似——旧实现把「设置」画成太阳、把「链接」画成纸张，并且和原型已经漂移。Solar 没有对应图画的六个标记（mac 三色灯、`diamond`）留在数据文件里，按 1.5× 从 16 网格放大到 24 网格。
+- 描边按尺寸补偿：`lineWidth = 设备像素 × 24 / 宽度`。16 dp 及以下恒为 1.2 设备像素（旧实现是 1.2 单位，10 px 时只剩 0.75 px，整列图标发灰）；24 网格自带的 1.5 单位描边不直接使用。
+- `folder` / `tag` 是 30 % 填充 + 描边的剪影，其余是描边；填充和描边共用一个 `tint`，文件里没有颜色。Solar 的 `bold-duotone` 变体虽然形状相同，但一屏实心块会压过文字，故不用。
 - 重写 `ThemedIcon` 的绘制：保留 `category` / `isDir` / `size` API；分类映射 `image`、`video`→`media`、`audio`→`music`、`text`、`code`、`archive`、`link`、`other`→`exe`。
 - 列表默认 `iconStyle = "themed"`，系统图标仍在「视图 › 图标」里可选：一屏不能同时出现彩色 shell 图标和单色线稿。
 - 真实系统缩略图仍走现有后端；不要把图片换成图标。

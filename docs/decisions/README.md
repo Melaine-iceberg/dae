@@ -17,6 +17,7 @@
 | [`sftp-host-key-tofu.md`](sftp-host-key-tofu.md) | **已实施，未对真实 sshd 验证** | SFTP 之前接受任何主机密钥 —— 改为按用户 `~/.ssh/known_hosts` 的 `accept-new`：首次记录、变更即拒、记不下来也拒 |
 | [`transfer-control.md`](transfer-control.md) | **已实施（2026-11-09）** | 暂停/取消/限速挂在操作上而不是窗口上；本地 `fs::copy` 不可中断，故暂停在条目边界生效，只有设了限速才走 256 KiB 分块；续传判据是「长度相同且目标不旧于源」，单文件字节续传留给下一步 |
 | [`permission-failures.md`](permission-failures.md) | **已实施（2026-11-09），macOS 未真机验证** | 提权的是**一次操作**不是应用（job 文件 + `--elevated-job` 子进程，job 限定在用户配置目录内）；「拒绝访问」的另一半答案是占用者查询，Windows 走 Restart Manager、Linux 扫 `/proc/*/fd`、macOS 用 `lsof`，只接到错误文案上 |
+| [`glyph-source-solar.md`](glyph-source-solar.md) | **已实施（2026-11-13），Windows 本机验证** | 界面字形改用 Solar Icons `linear`（`@solar-icons/static@2.5.0`，MIT）：`Glyph.qml` 只留渲染器，64 个标记的路径数据进 `qml/SolarMarks.js`；描边仍是 ≤16 dp 恒 1.2 设备像素、文件夹仍是 30 % 填充 + 描边；mac 三色灯与 `diamond` 留自绘；解析器补全 SVG 语法（`A` 圆弧按端点→圆心切贝塞尔） |
 | [`engine-qt-quick.md`](engine-qt-quick.md) | **方向已定，四组门槛全过（§5.1–§5.4）；Qt 壳已覆盖浏览/标签/终端/搜索/预览/压缩包/文件图标（§4.3–§4.7）；图标接入后 12 万行复测通过（§5.1.1）** | 引擎从系统 WebView 换成 Qt Quick（QML 视图 + cxx-qt 的 Rust 后端）—— 结构性理由：每 tab ~200 MB PSS、WebView2 占冷启动 63–65%；12 万行列表实测工作 p95 最差 5.68 ms、PSS 峰值 123.7 MB（全 CJK）；画真实图标后同会话 A/B 的 work p95 1.60–1.66 ms、PSS +3–4 MB；IME 214 项检查全过；无边框 + Mica + 自绘标题栏 63 项检查全过；第二个窗口撕出最差 76.82 ms、PSS 增量最差 13.74 MB（热态 5.1–6.2 MB）、关闭后私有提交不增长；Qt 壳已跑通真实配置/列举/标签撕出/终端/搜索/预览/压缩包/回收站/设置，图标与系统缩略图走 `dae-core`；连接管理、深链、更新链路与旧壳退役已在 §9.13–§9.17 记完（MSIX 版「设为默认文件管理器」已知不生效，§9.15）。**迁移收尾：`main` 即 Qt 壳，Tauri 壳留档在 `tauri` 分支（§9.18）** |
 
 `gtk-stack-pinned-by-upstream.md` 与其余各份**无关**：它记录的是**依赖升级遇到的上游阻断**，
