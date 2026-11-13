@@ -42,6 +42,13 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/ColumnView.qml", "qml/ColumnView.qml"),
     ("../../qml/EmptyState.qml", "qml/EmptyState.qml"),
     ("../../qml/ThemedIcon.qml", "qml/ThemedIcon.qml"),
+    ("../../qml/DriftSheet.qml", "qml/DriftSheet.qml"),
+    ("../../qml/DotPlate.qml", "qml/DotPlate.qml"),
+    ("../../qml/HardShadow.qml", "qml/HardShadow.qml"),
+    ("../../qml/Grain.qml", "qml/Grain.qml"),
+    // The two polarities of the paper grain, tiled by `Grain.qml`.
+    ("../../Assets/grain-ink.png", "qml/assets/grain-ink.png"),
+    ("../../Assets/grain-paper.png", "qml/assets/grain-paper.png"),
     ("../../qml/DisplayMenu.qml", "qml/DisplayMenu.qml"),
     ("../../qml/FilterMenu.qml", "qml/FilterMenu.qml"),
     ("../../qml/ContentResults.qml", "qml/ContentResults.qml"),
