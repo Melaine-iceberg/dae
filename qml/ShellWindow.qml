@@ -4739,11 +4739,44 @@ Window {
                     return base
                 }
                 color: Theme.inkMuted
+                font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeCaption
                 font.features: { "tnum": 1 }
                 elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
                 Accessible.name: text
+            }
+
+            /// What is on the clipboard, while something is. The in-app
+            /// clipboard outlives the menu that filled it, so the footer is the
+            /// only place that says a paste is still possible.
+            Row {
+                id: clipboardChip
+                anchors.left: statusText.right
+                anchors.leftMargin: 14
+                anchors.verticalCenter: parent.verticalCenter
+                visible: Workspace.clipboardMode !== "" && root.width > 900
+                spacing: 5
+
+                Rectangle {
+                    width: 6
+                    height: 12
+                    color: Theme.signal
+                }
+
+                Text {
+                    /// QStringList exposes `.length` to QML; qmllint's type
+                    /// model does not (same caveat as the transfer chip).
+                    // qmllint disable missing-property
+                    text: qsTr("剪贴板") + " " + Workspace.clipboardPaths.length
+                        + " · " + (Workspace.clipboardMode === "cut"
+                                   ? qsTr("剪切") : qsTr("复制"))
+                    // qmllint enable missing-property
+                    color: Theme.inkMuted
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeCaption
+                    font.features: { "tnum": 1 }
+                }
             }
 
             // ── Centre: the running transfer ──────────────────────────────
@@ -4832,8 +4865,34 @@ Window {
                 }
             }
 
+            /// The block cursor at the end of the strip. drift ends its footer
+            /// with one, and it is the only moving thing in the frame: a
+            /// reminder that the listing takes typing (type-ahead, the search
+            /// bar) without spending a word on saying so.
+            Rectangle {
+                id: statusCursor
+                anchors.right: statusRight.left
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: 7
+                height: 13
+                color: Theme.signal
+
+                /// Reduced motion turns the blink off rather than shortening
+                /// it: a cursor that fades in 110 ms still blinks.
+                SequentialAnimation on opacity {
+                    running: Theme.motion
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0; duration: 1 }
+                    PauseAnimation { duration: 550 }
+                    NumberAnimation { to: 1; duration: 1 }
+                    PauseAnimation { duration: 550 }
+                }
+            }
+
             // ── Right: repository and pane switches ───────────────────────
             Row {
+                id: statusRight
                 anchors.right: parent.right
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
@@ -5822,6 +5881,14 @@ Window {
         dark: root.dark
 
         onUndoRequested: Workspace.undo()
+    }
+
+    /// The paper grain, over everything including menus and dialogs. It takes
+    /// no input: an Item with no MouseArea cannot swallow a click, and the
+    /// listing's own hit testing never sees it.
+    Grain {
+        anchors.fill: parent
+        z: 2000
     }
 
     Shortcut {

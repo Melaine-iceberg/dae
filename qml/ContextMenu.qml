@@ -157,6 +157,10 @@ Item {
         onWheel: root.close()
     }
 
+    HardShadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
         width: list.naturalWidth
@@ -200,6 +204,10 @@ Item {
                     root.close()
             }
         }
+    }
+
+    HardShadow {
+        target: submenuPanel
     }
 
     Rectangle {

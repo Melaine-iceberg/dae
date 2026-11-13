@@ -3,12 +3,12 @@ import QtQuick
 // One line of feedback, used for operation results and errors. Long operations
 // already have the status bar's progress row; this is only for the outcome.
 //
-// The plate is the one raised surface in the window's bottom margin: 36 high,
-// 38 up from the edge, 6 px corners, no drop shadow. It used to be a dark pill
-// in the middle of the window with 2.6 seconds of life, which made an error as
-// easy to miss as a success. A toast now sits where the eye already goes for
-// transient state, stays for 4.8 seconds, and offers the undo when the outcome
-// can be taken back instead of making the user hunt for Mod+Z.
+// The plate is the one floating surface in the window's bottom margin: 36 high,
+// 38 up from the edge. It is an ink band with the paper showing through the
+// type, and it casts a signal-coloured hard shadow — drift's toast is the one
+// surface whose shadow is not ink, which is what separates "something happened"
+// from "something is open". It stays for 4.8 seconds and offers the undo when
+// the outcome can be taken back instead of making the user hunt for Mod+Z.
 Item {
     id: root
 
@@ -35,7 +35,7 @@ Item {
         label.text = message
         root.undoable = canUndo === true
         icon.kind = isError === true ? "close" : "check"
-        icon.tint = isError === true ? Theme.danger : Theme.inkMuted
+        icon.tint = isError === true ? Theme.signal : Theme.canvas
         root.opacity = 1
         timer.restart()
     }
@@ -52,16 +52,19 @@ Item {
         onTriggered: root.dismiss()
     }
 
+    HardShadow {
+        target: bubble
+        offset: 4
+        color: Theme.signal
+    }
+
     Rectangle {
         id: bubble
 
         anchors.centerIn: parent
         width: row.implicitWidth + 20
         height: Theme.controlXl
-        radius: Theme.radiusSm
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.hairlineStrong
+        color: Theme.ink
 
         Row {
             id: row
@@ -75,7 +78,7 @@ Item {
                 height: 14
                 anchors.verticalCenter: parent.verticalCenter
                 kind: "check"
-                tint: Theme.inkMuted
+                tint: Theme.canvas
             }
 
             Text {
@@ -83,7 +86,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(320, implicitWidth)
                 text: ""
-                color: Theme.ink
+                color: Theme.canvas
                 font.pixelSize: Theme.typeSmall
                 elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
@@ -94,8 +97,9 @@ Item {
                 visible: root.undoable
                 width: visible ? undoLabel.implicitWidth + 12 : 0
                 height: Theme.controlSm
-                radius: Theme.radiusXs
-                color: undoMouse.containsMouse ? Theme.signalSoft : "transparent"
+                color: undoMouse.containsMouse
+                    ? Qt.rgba(Theme.canvas.r, Theme.canvas.g, Theme.canvas.b, 0.14)
+                    : "transparent"
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("撤销")
@@ -137,8 +141,9 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.radiusXs
-                    color: closeMouse.containsMouse ? Theme.hover : "transparent"
+                    color: closeMouse.containsMouse
+                        ? Qt.rgba(Theme.canvas.r, Theme.canvas.g, Theme.canvas.b, 0.14)
+                        : "transparent"
                 }
 
                 Glyph {
@@ -146,7 +151,8 @@ Item {
                     width: 10
                     height: 10
                     kind: "close"
-                    tint: closeMouse.containsMouse ? Theme.ink : Theme.inkFaint
+                    tint: closeMouse.containsMouse ? Theme.canvas
+                        : Qt.rgba(Theme.canvas.r, Theme.canvas.g, Theme.canvas.b, 0.55)
                 }
 
                 MouseArea {

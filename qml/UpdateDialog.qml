@@ -78,7 +78,14 @@ FocusScope {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `HardShadow.qml`).
+    HardShadow {
+        target: dialogPanel
+    }
+
     Rectangle {
+        id: dialogPanel
         anchors.centerIn: parent
         width: Math.min(470, root.width - 40)
         height: Math.min(410, root.height - 48)

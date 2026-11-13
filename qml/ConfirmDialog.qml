@@ -98,6 +98,12 @@ FocusScope {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `HardShadow.qml`).
+    HardShadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
 

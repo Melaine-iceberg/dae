@@ -151,6 +151,12 @@ Item {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `HardShadow.qml`).
+    HardShadow {
+        target: card
+    }
+
     Rectangle {
         id: card
         anchors.centerIn: parent

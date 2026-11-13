@@ -204,6 +204,10 @@ Item {
         onWheel: root.close()
     }
 
+    HardShadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
         width: list.naturalWidth
