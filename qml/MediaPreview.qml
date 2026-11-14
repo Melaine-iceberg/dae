@@ -3,7 +3,7 @@ import QtMultimedia
 
 // In-pane playback for the selected audio or video file.
 //
-// Loaded through a `Loader` from PreviewPanel so a build without Qt
+// Loaded through a `Loader` from Inspector so a build without Qt
 // Multimedia degrades to the metadata card instead of failing the whole pane.
 // Nothing plays until the user asks: a selection change must not make noise.
 Item {

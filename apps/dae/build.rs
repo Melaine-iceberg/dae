@@ -52,7 +52,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/FilterMenu.qml", "qml/FilterMenu.qml"),
     ("../../qml/ContentResults.qml", "qml/ContentResults.qml"),
     ("../../qml/SearchFilterBar.qml", "qml/SearchFilterBar.qml"),
-    ("../../qml/PreviewPanel.qml", "qml/PreviewPanel.qml"),
+    ("../../qml/Inspector.qml", "qml/Inspector.qml"),
     ("../../qml/MediaPreview.qml", "qml/MediaPreview.qml"),
     ("../../qml/Sidebar.qml", "qml/Sidebar.qml"),
     ("../../qml/Glyph.qml", "qml/Glyph.qml"),

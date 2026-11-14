@@ -17,7 +17,9 @@ Item {
     /// The shell's pane visibility. These are window state, not preferences,
     /// so the menu asks the window to flip them instead of writing prefs.
     property bool sidebarVisible: true
-    property bool previewVisible: true
+    /// The docked inspector (§11.5). Off by default, so a window that never
+    /// opens it keeps the full width for the listing.
+    property bool inspectorVisible: false
     property bool terminalVisible: false
     property real openX: 0
     property real openY: 0
@@ -52,8 +54,8 @@ Item {
         { kind: "sep" },
         { kind: "shellToggle", property: "sidebarVisible", glyph: "panel",
           label: qsTr("侧栏") },
-        { kind: "shellToggle", property: "previewVisible", glyph: "eye",
-          label: qsTr("预览") },
+        { kind: "shellToggle", property: "inspectorVisible", glyph: "panel",
+          label: qsTr("检查器") },
         { kind: "shellToggle", property: "terminalVisible", glyph: "terminal",
           label: qsTr("终端") },
         { kind: "sep" },

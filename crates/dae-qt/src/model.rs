@@ -16,7 +16,7 @@
 //! a reload instead of waiting for F5.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -142,6 +142,12 @@ pub mod qobject {
         /// A second pass per directory to answer "2 folders, 60 files" would be
         /// a second walk over 120k rows for a line of text.
         #[qproperty(i32, folders)]
+        /// File counts per family for the finished listing, as JSON:
+        /// `[{"id":"image","count":3}, …]`, most frequent first. The
+        /// inspector's no-selection state prints this distribution, and the
+        /// same single pass that counts folders and files fills it — a
+        /// 120k-row directory is not walked twice for a line of text.
+        #[qproperty(QString, family_counts, cxx_name = "familyCounts")]
         #[qproperty(QString, newest_modified, cxx_name = "newestModifiedText")]
         /// Rows currently selected. Maintained as the selection changes, so the
         /// status bar reads a number instead of walking the selection.
@@ -332,6 +338,15 @@ pub mod qobject {
         #[cxx_name = "selectedPaths"]
         fn selected_paths(&self) -> QStringList;
 
+        /// What the selection is made of, as JSON:
+        /// `{"folders":2,"families":[{"id":"image","count":3}, …]}`.
+        /// The inspector's multi-selection state prints it; the rows already
+        /// carry their family, so this is one walk over the selection rather
+        /// than a metadata pass over the disk.
+        #[qinvokable]
+        #[cxx_name = "selectionBreakdown"]
+        fn selection_breakdown(&self) -> QString;
+
         /// Starts a rubber-band drag. `keep` is the Ctrl case: the band then
         /// extends the selection instead of replacing it.
         #[qinvokable]
@@ -521,6 +536,9 @@ struct RowSummary {
     folders: i32,
     files: i32,
     images: i32,
+    /// File rows per family id. Filled by the same pass as the counts above,
+    /// so the inspector can print a distribution without a second walk.
+    families: BTreeMap<&'static str, i32>,
     /// Milliseconds since the epoch; zero when no row carried a stamp.
     newest: u64,
 }
@@ -532,15 +550,33 @@ fn summarize(rows: &[StoredRow]) -> RowSummary {
             EntryKind::Directory => summary.folders += 1,
             EntryKind::File => {
                 summary.files += 1;
-                if category_of(row.kind, &row.name) == "image" {
+                let family = category_of(row.kind, &row.name);
+                if family == "image" {
                     summary.images += 1;
                 }
+                *summary.families.entry(family).or_insert(0) += 1;
             }
             _ => {}
         }
         summary.newest = summary.newest.max(row.modified_at.unwrap_or(0));
     }
     summary
+}
+
+/// The JSON shape both the property and the invokable publish: most frequent
+/// family first, ties by id so two listings of the same directory agree.
+fn families_json(families: &BTreeMap<&'static str, i32>) -> String {
+    let mut entries: Vec<(&str, i32)> = families.iter().map(|(id, count)| (*id, *count)).collect();
+    entries.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    let mut out = String::from("[");
+    for (index, (id, count)) in entries.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!("{{\"id\":\"{id}\",\"count\":{count}}}"));
+    }
+    out.push(']');
+    out
 }
 
 impl PartialEq for StoredRow {
@@ -1790,6 +1826,9 @@ pub struct DirectoryListModelRust {
     images: i32,
     files: i32,
     folders: i32,
+    /// Per-family file counts of the finished listing, as JSON. See the
+    /// property declaration above for the shape.
+    family_counts: QString,
     newest_modified: QString,
     /// Rows currently selected, published as the `selectedCount` property so
     /// the status bar never recounts the selection.
@@ -1890,6 +1929,7 @@ impl Default for DirectoryListModelRust {
             images: 0,
             files: 0,
             folders: 0,
+            family_counts: QString::default(),
             newest_modified: QString::default(),
             selected_count: 0,
             finished: false,
@@ -2955,6 +2995,10 @@ impl qobject::DirectoryListModel {
         if self.folders != summary.folders {
             self.as_mut().set_folders(summary.folders);
         }
+        let families = QString::from(families_json(&summary.families).as_str());
+        if self.family_counts != families {
+            self.as_mut().set_family_counts(families);
+        }
         let newest = QString::from(crate::format::timestamp(summary.newest).as_str());
         if self.newest_modified != newest {
             self.as_mut().set_newest_modified(newest);
@@ -2973,6 +3017,30 @@ impl qobject::DirectoryListModel {
             .get(row as usize)
             .map(|entry| QString::from(entry.full_path(&self.base).as_str()))
             .unwrap_or_default()
+    }
+
+    fn selection_breakdown(&self) -> QString {
+        let mut folders = 0;
+        let mut families: BTreeMap<&'static str, i32> = BTreeMap::new();
+        for row in &self.rows {
+            if !row.selected {
+                continue;
+            }
+            match row.kind {
+                EntryKind::Directory => folders += 1,
+                EntryKind::File => {
+                    *families.entry(category_of(row.kind, &row.name)).or_insert(0) += 1;
+                }
+                _ => {}
+            }
+        }
+        QString::from(
+            format!(
+                "{{\"folders\":{folders},\"families\":{}}}",
+                families_json(&families)
+            )
+            .as_str(),
+        )
     }
 
     /// Republishes the selected count and repaints the spans whose flags moved.
@@ -3206,6 +3274,7 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_images(0);
         self.as_mut().set_files(0);
         self.as_mut().set_folders(0);
+        self.as_mut().set_family_counts(QString::from("[]"));
         self.as_mut().set_newest_modified(QString::from(""));
         self.as_mut().set_git_busy(false);
         self.as_mut().clear_git_state();

@@ -82,7 +82,10 @@ Window {
     /// `TerminalItem` used to pay simply moved to the first other text item.
     property bool terminalLoaded: false
     property bool sidebarVisible: true
-    property bool previewVisible: true
+    /// The inspector is off by default (proposal §11.5): it describes a
+    /// selection, and an always-on panel spends 300 dp on "nothing selected".
+    /// Ctrl+I or the status bar button opens it, per window.
+    property bool inspectorVisible: false
     /// The second pane's tab. Created the first time split view is enabled and
     /// disposed when it is turned off, so an unused pane never holds a watcher.
     property var splitTab: null
@@ -419,7 +422,7 @@ Window {
 
     onActiveIndexChanged: {
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.applyRemotePolicy()
         if (root.trashActive)
             trashModel.refresh()
@@ -1043,7 +1046,7 @@ Window {
         if (root.activeTab === null || !path || path.length === 0)
             return
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.activeTab.navigate(path)
         root.applyRemotePolicy()
         Workspace.recordRecent(path, true, false)
@@ -1129,7 +1132,7 @@ Window {
             return
         root.pathEditing = false
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.activeTab.openTrash()
         trashModel.refresh()
         Qt.callLater(trashView.takeFocus)
@@ -1142,7 +1145,7 @@ Window {
             return
         root.pathEditing = false
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.activeTab.openOverview()
         overviewModelInstance.refresh()
         Qt.callLater(overviewView.takeFocus)
@@ -1155,7 +1158,7 @@ Window {
             return
         root.pathEditing = false
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.activeTab.openSpace(id)
         Qt.callLater(spaceView.takeFocus)
     }
@@ -1696,7 +1699,7 @@ Window {
         if (query === "" || root.remoteLocation)
             return
         tab.listing.clearSelection()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         if (root.searchMode === "content") {
             tab.contentSearch.search(tab.listing.path, query, root.searchRegex,
                                     root.searchCase, root.searchFilter)
@@ -1721,8 +1724,8 @@ Window {
     /// (the one operation that works over the VFS) and say what to do instead
     /// of letting the open call fail.
     function acceptRemotePreview(path) {
-        root.previewVisible = true
-        previewPanel.showPaths([path])
+        root.inspectorVisible = true
+        inspector.showPaths([path])
         toast.show(qsTr("远程文件可预览；用本地应用打开前请先复制到本地"), false)
     }
 
@@ -1789,7 +1792,7 @@ Window {
             return
         root.pathEditing = false
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.activeTab.goBack()
         root.applyRemotePolicy()
         Qt.callLater(fileList.takeFocus)
@@ -1800,7 +1803,7 @@ Window {
             return
         root.pathEditing = false
         root.resetSearchState()
-        previewPanel.showPaths([])
+        inspector.showPaths([])
         root.activeTab.goForward()
         root.applyRemotePolicy()
         Qt.callLater(fileList.takeFocus)
@@ -2110,8 +2113,8 @@ Window {
                 Workspace.addFavorite(root.activePath)
         } else if (id === "toggle-split") {
             ExplorerPrefs.setBool("splitEnabled", !ExplorerPrefs.splitEnabled)
-        } else if (id === "toggle-preview") {
-            root.togglePreview()
+        } else if (id === "toggle-inspector") {
+            root.toggleInspector()
         } else if (id === "toggle-sidebar") {
             root.sidebarVisible = !root.sidebarVisible
         } else if (id === "view-list") {
@@ -2524,7 +2527,7 @@ Window {
             { id: "terminal", glyph: "terminal", label: qsTr("在终端中打开"),
               enabled: hasPath && isDir && !remote },
             { id: "preview", glyph: "eye",
-              label: root.previewShows(path) ? qsTr("隐藏预览") : qsTr("预览"),
+              label: root.inspectorShows(path) ? qsTr("隐藏预览") : qsTr("预览"),
               enabled: hasPath && !manySelection(), shortcut: root.shortcutDisplay("explorer.preview") },
             { id: "copyPath", glyph: "copy", label: qsTr("复制路径"), enabled: hasPath },
             { id: "share", glyph: "external", label: qsTr("共享…"),
@@ -2620,10 +2623,33 @@ Window {
         return items
     }
 
-    /// True when the preview panel is already showing exactly this entry.
-    function previewShows(path) {
-        return root.previewVisible && previewPanel.paths.length === 1
-            && previewPanel.paths[0] === path
+    /// True when the inspector is already showing exactly this entry.
+    function inspectorShows(path) {
+        return root.inspectorVisible && inspector.paths.length === 1
+            && inspector.paths[0] === path
+    }
+
+    /// Feeds the inspector the selection and, for several entries, the list's
+    /// own breakdown. The breakdown comes from the model that made the
+    /// selection: in split view the other pane's model does not know it.
+    function syncInspector(paths, model) {
+        const several = paths.length > 1 && model !== null
+            && typeof model.selectionBreakdown === "function"
+        inspector.showPaths(paths, several ? model.selectionBreakdown() : "")
+    }
+
+    /// Ctrl+I and the status bar button (proposal §11.5). Opening with no
+    /// selection describes the directory rather than showing an empty pane.
+    function toggleInspector() {
+        if (!root.folderActive && !root.trashActive)
+            return
+        root.inspectorVisible = !root.inspectorVisible
+        if (root.inspectorVisible)
+            return
+        if (root.trashActive)
+            trashView.takeFocus()
+        else
+            fileList.takeFocus()
     }
 
     /// Applies a measured folder total to whichever listing shows that path.
@@ -2636,20 +2662,20 @@ Window {
     }
 
     function togglePreview(path) {
-        if (root.previewShows(path)) {
-            root.previewVisible = false
-            previewPanel.showPaths([])
+        if (root.inspectorShows(path)) {
+            root.inspectorVisible = false
+            inspector.showPaths([])
             return
         }
         // A pane that is closed, too narrow to dock, or on another surface has
         // no room to reflow into — Space opens the overlay instead of changing
         // the window's layout behind the user's back.
-        if (!root.previewVisible || !root.folderActive || root.width < 840) {
+        if (!root.inspectorVisible || !root.folderActive || root.width < 840) {
             quickPreview.show([path])
             return
         }
-        root.previewVisible = true
-        previewPanel.showPaths([path])
+        root.inspectorVisible = true
+        inspector.showPaths([path])
     }
 
     /// The ancestors the breadcrumb bar folded into its `…`. The bar draws the
@@ -4214,7 +4240,7 @@ Window {
 
             Column {
                 width: parent.width - sidebar.width - sidebarHandle.width
-                    - previewPanel.width - previewHandle.width
+                    - inspector.width - inspectorHandle.width
                 height: parent.height
 
                 Item {
@@ -4250,7 +4276,7 @@ Window {
                             root.showEmptyMenu(x, y)
                         }
                         onSelectionChanged: {
-                            previewPanel.showPaths(fileList.selectedPathList())
+                            root.syncInspector(fileList.selectedPathList(), fileList.model)
                         }
                         onRemoteDeleteRequested: function (paths) {
                             root.requestRemoteDelete(paths)
@@ -4407,7 +4433,7 @@ Window {
                                 root.showSplitEmptyMenu(x, y)
                             }
                             onSelectionChanged: {
-                                previewPanel.showPaths(splitList.selectedPathList())
+                                root.syncInspector(splitList.selectedPathList(), splitList.model)
                             }
                             onRemoteDeleteRequested: function (paths) {
                                 root.requestRemoteDelete(paths)
@@ -4468,7 +4494,7 @@ Window {
                         model: root.activeTab !== null ? root.activeTab.contentSearch : null
 
                         onPreviewRequested: function (path) {
-                            previewPanel.showPaths([path])
+                            inspector.showPaths([path])
                         }
                     }
 
@@ -4493,7 +4519,7 @@ Window {
                                 }
                                 onEmptyRequested: root.requestEmptyTrash()
                                 onPreviewRequested: function (item) {
-                                    previewPanel.showTrash(item)
+                                    inspector.showTrash(item)
                                 }
                                 onContextRequested: function (id, originalParent, x, y) {
                                     root.showTrashRowMenu(id, originalParent, x, y)
@@ -4594,14 +4620,14 @@ Window {
             }
 
             // A one-pixel seam that is six pixels wide to the pointer. The
-            // preview is the one pane whose useful width depends on what is in
-            // it — a code file wants more, a thumbnail less — so the number is
-            // the user's, remembered in explorer.ini. 260–420 is the range the
-            // preference clamps to; a double click restores the default.
+            // inspector is the one pane whose useful width depends on what is
+            // in it — a code file wants more, a thumbnail less — so the number
+            // is the user's, remembered in explorer.ini. 260–420 is the range
+            // the preference clamps to; a double click restores the default.
             Item {
-                id: previewHandle
+                id: inspectorHandle
 
-                readonly property bool live: root.previewVisible
+                readonly property bool live: root.inspectorVisible
                     && (root.folderActive || root.trashActive)
                     && root.width >= 840
 
@@ -4619,7 +4645,7 @@ Window {
                     id: handleMouse
                     Accessible.ignored: true
                     anchors.fill: parent
-                    enabled: previewHandle.live
+                    enabled: inspectorHandle.live
                     hoverEnabled: true
                     cursorShape: Qt.SizeHorCursor
 
@@ -4640,9 +4666,9 @@ Window {
                 }
             }
 
-            PreviewPanel {
-                id: previewPanel
-                width: root.previewVisible && (root.folderActive || root.trashActive)
+            Inspector {
+                id: inspector
+                width: root.inspectorVisible && (root.folderActive || root.trashActive)
                     && root.width >= 840
                     ? Math.min(ExplorerPrefs.previewWidth, Math.max(260, parent.width * 0.5))
                     : 0
@@ -4651,9 +4677,11 @@ Window {
                 dark: root.dark
                 accent: root.accent
                 inTrash: root.trashActive
+                listing: root.activeTab !== null ? root.activeTab.listing : null
+                trashCount: trashModel.count
 
                 onCloseRequested: {
-                    root.previewVisible = false
+                    root.inspectorVisible = false
                     if (root.trashActive)
                         trashView.takeFocus()
                     else
@@ -4969,34 +4997,24 @@ Window {
                 }
 
                 Item {
-                    id: previewToggle
-                    width: previewToggleRow.implicitWidth + 12
+                    id: inspectorToggle
+                    width: inspectorToggleRow.implicitWidth + 12
                     height: Theme.controlSm
                     visible: root.folderActive || root.trashActive
 
                     Accessible.role: Accessible.Button
-                    Accessible.name: root.previewVisible ? qsTr("隐藏预览") : qsTr("显示预览")
+                    Accessible.name: root.inspectorVisible ? qsTr("隐藏检查器") : qsTr("显示检查器")
 
                     /// The status bar closes the tab chain, so its two pane
                     /// switches are the last stops: Enter flips them the way a
                     /// click does.
-                    activeFocusOnTab: previewToggle.visible
-                    Keys.onReturnPressed: previewToggle.flip()
-                    Keys.onSpacePressed: previewToggle.flip()
-
-                    function flip() {
-                        root.previewVisible = !root.previewVisible
-                        if (root.previewVisible)
-                            return
-                        if (root.trashActive)
-                            trashView.takeFocus()
-                        else
-                            fileList.takeFocus()
-                    }
+                    activeFocusOnTab: inspectorToggle.visible
+                    Keys.onReturnPressed: root.toggleInspector()
+                    Keys.onSpacePressed: root.toggleInspector()
 
                     Rectangle {
                         anchors.fill: parent
-                        visible: previewToggle.activeFocus
+                        visible: inspectorToggle.activeFocus
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
@@ -5006,12 +5024,12 @@ Window {
                     Rectangle {
                         anchors.fill: parent
                         radius: Theme.radiusXs
-                        color: previewToggleMouse.containsMouse
+                        color: inspectorToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }
 
                     Row {
-                        id: previewToggleRow
+                        id: inspectorToggleRow
                         anchors.centerIn: parent
                         spacing: 4
 
@@ -5020,22 +5038,22 @@ Window {
                             kind: "panel"
                             implicitWidth: 14
                             implicitHeight: 14
-                            tint: root.previewVisible ? Theme.ink : Theme.inkTertiary
+                            tint: root.inspectorVisible ? Theme.ink : Theme.inkTertiary
                         }
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("预览")
-                            color: root.previewVisible ? Theme.ink : Theme.inkTertiary
+                            text: qsTr("检查器")
+                            color: root.inspectorVisible ? Theme.ink : Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
                     }
 
                     MouseArea {
-                        id: previewToggleMouse
+                        id: inspectorToggleMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: previewToggle.flip()
+                        onClicked: root.toggleInspector()
                     }
                 }
 
@@ -5190,16 +5208,14 @@ Window {
         dark: root.dark
         accent: root.accent
         sidebarVisible: root.sidebarVisible
-        previewVisible: root.previewVisible
+        inspectorVisible: root.inspectorVisible
         terminalVisible: root.terminalActive
 
         onToggleRequested: function (property) {
             if (property === "sidebarVisible") {
                 root.sidebarVisible = !root.sidebarVisible
-            } else if (property === "previewVisible") {
-                root.previewVisible = !root.previewVisible
-                if (!root.previewVisible)
-                    fileList.takeFocus()
+            } else if (property === "inspectorVisible") {
+                root.toggleInspector()
             } else if (property === "terminalVisible") {
                 root.toggleTerminal()
             }
@@ -5898,6 +5914,13 @@ Window {
         sequence: root.shortcutSequence("app.toggleSidebar")
         enabled: !root.modalOpen && sequence !== ""
         onActivated: root.sidebarVisible = !root.sidebarVisible
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("app.toggleInspector")
+        enabled: !root.modalOpen && (root.folderActive || root.trashActive)
+            && sequence !== ""
+        onActivated: root.toggleInspector()
     }
 
     Shortcut {

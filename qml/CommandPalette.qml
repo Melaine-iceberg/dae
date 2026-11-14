@@ -263,8 +263,8 @@ Item {
                          "terminal", qsTr("文件")),
             root.command("toggle-favorite", qsTr("加入收藏"), "", "star", qsTr("文件")),
             root.command("toggle-split", qsTr("切换分栏"), "", "column", qsTr("文件")),
-            root.command("toggle-preview", qsTr("切换预览"),
-                         root.shortcutHint("explorer.preview", "Space"),
+            root.command("toggle-inspector", qsTr("切换检查器"),
+                         root.shortcutHint("app.toggleInspector", "Ctrl+I"),
                          "panel", qsTr("文件")),
             root.command("toggle-sidebar", qsTr("切换侧栏"), root.chord("Mod+B"), "panel", qsTr("文件"))
         ]

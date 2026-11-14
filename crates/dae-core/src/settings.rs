@@ -219,7 +219,7 @@ pub fn default_shortcuts() -> HashMap<String, String> {
     } else {
         ("Alt+Left", "Alt+Right")
     };
-    let entries: [(&str, &str); 48] = [
+    let entries: [(&str, &str); 49] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
         ("app.pathJump", "Mod+L"),
@@ -235,6 +235,9 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("app.nextTab", "Ctrl+Tab"),
         ("app.previousTab", "Ctrl+Shift+Tab"),
         ("app.toggleSidebar", "Mod+B"),
+        // The inspector replaced the always-on preview pane; until P3 it had
+        // only a status-bar button and no chord.
+        ("app.toggleInspector", "Mod+I"),
         // Explorer file operations (file-list.tsx)
         ("explorer.clearSelection", "Escape"),
         ("explorer.copy", "Mod+C"),
@@ -538,6 +541,7 @@ mod tests {
             "app.nextTab",
             "app.previousTab",
             "app.toggleSidebar",
+            "app.toggleInspector",
             "explorer.newFolder",
             "explorer.properties",
             "explorer.refresh",

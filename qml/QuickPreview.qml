@@ -3,12 +3,12 @@ import QtQuick
 
 // Space, without giving up the listing.
 //
-// The docked preview pane is a fourth column: opening it reflows the window.
+// The docked inspector is a fourth column: opening it reflows the window.
 // This overlay is the other gesture — the one Files trains — a plate over the
 // content that closes on Escape or an outside click and leaves the selection
-// exactly where it was. It reuses `PreviewPanel` rather than a second reader,
-// so a file that previews in the pane previews here with the same limits
-// (text peeks; thumbnails are local-only).
+// exactly where it was. It reuses `Inspector` rather than a second reader, so
+// a file that previews in the pane previews here with the same limits (text
+// peeks; thumbnails are local-only).
 Item {
     id: root
 
@@ -86,12 +86,15 @@ Item {
             acceptedButtons: Qt.LeftButton | Qt.RightButton
         }
 
-        PreviewPanel {
+        Inspector {
             id: panelContent
             anchors.fill: parent
+            anchors.margins: 1
             paths: root.paths
             dark: root.dark
             accent: root.accent
+            plate: true
+            wellHeight: 260
             onCloseRequested: root.close()
         }
     }

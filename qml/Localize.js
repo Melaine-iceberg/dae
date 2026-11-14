@@ -366,3 +366,31 @@ function typeName(key) {
     default: return key
     }
 }
+
+/// A file family's short label, for the inspector's distribution rows
+/// (proposal §11.5). `dae-qt::model::category_of()` returns these ids; they
+/// are coarser than `typeName()`, because a distribution sums whole families
+/// rather than naming one entry's format.
+function familyName(id) {
+    switch (id) {
+    case "folder": return qsTr("文件夹")
+    case "document": return qsTr("文档")
+    case "spreadsheet": return qsTr("表格")
+    case "presentation": return qsTr("演示文稿")
+    case "pdf": return "PDF"
+    case "image": return qsTr("图片")
+    case "video": return qsTr("视频")
+    case "audio": return qsTr("音频")
+    case "archive": return qsTr("压缩包")
+    case "code": return qsTr("代码")
+    case "text": return qsTr("文本")
+    case "font": return qsTr("字体")
+    case "executable": return qsTr("应用")
+    case "link": return qsTr("链接")
+    case "other": return qsTr("其他")
+    // Files whose extension has no family still count in the distribution;
+    // label them the same way the type column labels an unknown file.
+    case "file": return qsTr("文件")
+    default: return id
+    }
+}

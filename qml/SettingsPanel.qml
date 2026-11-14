@@ -227,7 +227,9 @@ FocusScope {
                 { id: "app.previousTab", label: qsTr("上一个标签页"),
                   detail: qsTr("按顺序切换到上一个标签页") },
                 { id: "app.toggleSidebar", label: qsTr("切换侧栏"),
-                  detail: qsTr("显示或隐藏侧栏") }
+                  detail: qsTr("显示或隐藏侧栏") },
+                { id: "app.toggleInspector", label: qsTr("切换检查器"),
+                  detail: qsTr("显示或隐藏右侧检查器") }
             ]
         },
         {
