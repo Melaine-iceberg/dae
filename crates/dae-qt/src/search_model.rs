@@ -19,7 +19,7 @@ use cxx_qt_lib::{
 use dae_core::fs::search;
 use dae_core::fs::vfs;
 
-use crate::model::{category_of, extension_of, icon_version_of, thumbnail_for};
+use crate::model::{category_of, extension_of, icon_version_of, thumbnail_for, type_label};
 use crate::selection::{SelectableRow, Selection};
 use dae_core::types::{
     ContentSearchFile, EntryKind, SearchEntry, SearchResponse, display_name_from_path,
@@ -61,6 +61,16 @@ const SEARCH_TAGS: i32 = 0x0210;
 const SEARCH_TAG_IDS: i32 = 0x0211;
 const SEARCH_TAG_COLORS: i32 = 0x0212;
 const SEARCH_GROUP: i32 = 0x0213;
+/// Shared with the listing delegate (§7.1.6, §7.2): the type label, the raw
+/// modification stamp the relative label is computed from, and the neighbour
+/// flags that decide a selection block's outer corners.
+const SEARCH_TYPE_NAME: i32 = 0x0214;
+const SEARCH_MODIFIED_AT: i32 = 0x0215;
+const SEARCH_SELECTED_PREV: i32 = 0x0216;
+const SEARCH_SELECTED_NEXT: i32 = 0x0217;
+/// Search rows carry no creation stamp; the role exists so the shared
+/// delegate's required property can be created.
+const SEARCH_CREATED_AT: i32 = 0x0218;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -431,6 +441,26 @@ impl qobject::SearchModel {
             SEARCH_TAGS | SEARCH_TAG_IDS | SEARCH_TAG_COLORS | SEARCH_GROUP => {
                 QVariant::from(&QString::default())
             }
+            SEARCH_TYPE_NAME => {
+                QVariant::from(&QString::from(type_label(row.kind, &row.name)))
+            }
+            SEARCH_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
+            SEARCH_CREATED_AT => QVariant::from(&0.0),
+            SEARCH_SELECTED_PREV => {
+                let previous = index.row() > 0
+                    && self
+                        .rows
+                        .get(index.row() as usize - 1)
+                        .is_some_and(|row| row.selected);
+                QVariant::from(&previous)
+            }
+            SEARCH_SELECTED_NEXT => {
+                let next = self
+                    .rows
+                    .get(index.row() as usize + 1)
+                    .is_some_and(|row| row.selected);
+                QVariant::from(&next)
+            }
             _ => QVariant::default(),
         }
     }
@@ -457,6 +487,11 @@ impl qobject::SearchModel {
             (SEARCH_TAG_IDS, "tagIds"),
             (SEARCH_TAG_COLORS, "tagColors"),
             (SEARCH_GROUP, "groupLabel"),
+            (SEARCH_TYPE_NAME, "typeName"),
+            (SEARCH_MODIFIED_AT, "modifiedAt"),
+            (SEARCH_SELECTED_PREV, "previousSelected"),
+            (SEARCH_SELECTED_NEXT, "nextSelected"),
+            (SEARCH_CREATED_AT, "createdAt"),
         ])
     }
 
@@ -587,17 +622,23 @@ impl qobject::SearchModel {
 
     /// Republishes the selected count and repaints the spans whose flags moved.
     /// Same contract as the listing model's: one `dataChanged` per contiguous
-    /// run, carrying only the selected role.
+    /// run, widened by one row on each side because the delegate merges a
+    /// block's corners from the neighbour flags.
     fn publish_selection(mut self: Pin<&mut Self>, runs: Vec<crate::selection::Run>) {
         self.as_mut().publish_selection_count();
-        if runs.is_empty() {
+        let len = self.rows.len();
+        if runs.is_empty() || len == 0 {
             return;
         }
         unsafe {
             let parent = QModelIndex::default();
             let mut roles = cxx_qt_lib::QList::<i32>::default();
             roles.append(SEARCH_SELECTED);
+            roles.append(SEARCH_SELECTED_PREV);
+            roles.append(SEARCH_SELECTED_NEXT);
             for (first, last) in runs {
+                let first = first.saturating_sub(1);
+                let last = (last + 1).min(len - 1);
                 let top = self.as_mut().model_index(first as i32, 0, &parent);
                 let bottom = self.as_mut().model_index(last as i32, 0, &parent);
                 self.as_mut().data_changed(&top, &bottom, &roles);

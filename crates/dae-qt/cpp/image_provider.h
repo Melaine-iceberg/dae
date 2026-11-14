@@ -55,11 +55,33 @@ public:
     QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
 };
 
+// The built-in file glyph provider (proposal §12.3).
+//
+// QML asks for `image://fileglyph/<family>?size=<px>&ink=RRGGBB&fc=RRGGBB`.
+// The 20-grid geometry lives here, and each (family, pixel edge, ink, family
+// colour) pair is rasterised once and cached, so a listing row paints a plain
+// `Image` instead of owning a `Canvas`. Theme changes land on a new URL and
+// therefore a new cache entry; the old one ages out.
+class FileGlyphImageProvider : public QQuickImageProvider
+{
+public:
+    FileGlyphImageProvider();
+
+    QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
+
+private:
+    QMutex m_mutex;
+    QCache<QString, QImage> m_cache;
+};
+
 /// Takes ownership of the provider, as QQmlEngine::addImageProvider does.
 void dae_qt_register_thumbnail_provider(QQmlApplicationEngine* engine);
 
 /// Takes ownership, as above.
 void dae_qt_register_file_icon_provider(QQmlApplicationEngine* engine);
+
+/// Takes ownership, as above.
+void dae_qt_register_file_glyph_provider(QQmlApplicationEngine* engine);
 
 } // namespace dae_qt
 

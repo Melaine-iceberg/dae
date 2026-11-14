@@ -298,7 +298,7 @@ impl Default for StoredPrefs {
             row_thumbnails: false,
             show_extensions: true,
             columns: "type,size,modified".to_owned(),
-            column_widths: "108,92,142,142,120".to_owned(),
+            column_widths: "104,88,150,150,120".to_owned(),
             // The app has always listed hidden entries; the toggle is for
             // people who want the classic hidden-by-default reading.
             show_hidden_files: true,
@@ -660,7 +660,9 @@ fn sanitize_columns(value: &str) -> String {
 /// defaults. The list is keyed by [`COLUMN_IDS`] order, not by which columns
 /// are visible, so hiding a column does not shift the widths of the rest.
 fn sanitize_widths(value: &str) -> String {
-    const DEFAULTS: [i32; 5] = [108, 92, 142, 142, 120];
+    /// §7.1.2: type 104, size 88, modified 150, created 150, tags 120. Keyed
+    /// by [`COLUMN_IDS`] order.
+    const DEFAULTS: [i32; 5] = [104, 88, 150, 150, 120];
     let mut widths: Vec<String> = value
         .split(',')
         .map(|part| part.trim())
@@ -1493,7 +1495,7 @@ mod tests {
         assert_eq!(prefs.kind_filter, "images");
         assert_eq!(prefs.size_filter, "small");
         assert_eq!(prefs.columns, "modified,tags", "canonical order");
-        assert_eq!(prefs.column_widths, "140,200,142,142,120");
+        assert_eq!(prefs.column_widths, "140,200,150,150,120");
 
         let reparsed = {
             let mut next = StoredPrefs::default();
@@ -1603,8 +1605,8 @@ mod tests {
     fn column_lists_are_canonical_and_widths_are_clamped() {
         assert_eq!(sanitize_columns("tags,size,tags,bogus"), "size,tags");
         assert_eq!(sanitize_columns(""), "");
-        assert_eq!(sanitize_widths("10,900,120"), "60,420,120,142,120");
-        assert_eq!(sanitize_widths("nonsense"), "108,92,142,142,120");
+        assert_eq!(sanitize_widths("10,900,120"), "60,420,120,150,120");
+        assert_eq!(sanitize_widths("nonsense"), "104,88,150,150,120");
     }
 
     #[test]

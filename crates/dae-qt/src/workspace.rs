@@ -4359,6 +4359,6 @@ mod tests {
                 "missing {id} in {json}"
             );
         }
-        assert!(json.contains("\"app.pathJump\":\"Mod+P\""));
+        assert!(json.contains("\"app.pathJump\":\"Mod+L\""));
     }
 }

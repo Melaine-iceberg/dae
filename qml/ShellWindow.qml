@@ -37,10 +37,6 @@ Window {
     readonly property string material: chrome.appliedMaterial
     /// Cmd on macOS, Ctrl elsewhere; also how a recorded binding is written.
     readonly property bool isMac: Qt.platform.os === "osx"
-    /// Where the tab strip starts in the title bar: after the traffic lights on
-    /// macOS, after the 17 dp mark elsewhere. The native caption band and the
-    /// QML anchors read the same number so they cannot disagree.
-    readonly property real tabLeftInset: root.isMac ? 78 : 44
 
     /// Right-to-left locales mirror the whole shell: Qt resolves the direction
     /// from the translator, and children inherit because QML does not mirror by
@@ -197,6 +193,16 @@ Window {
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
     readonly property bool splitActive: ExplorerPrefs.splitEnabled
         && folderActive && !searchActive
+    /// The listing the footer's action bar acts on: the focused pane when
+    /// split view is on, the primary one otherwise — the same rule a
+    /// window-level shortcut follows.
+    readonly property var actionList: (splitActive && splitFocused) ? splitList : fileList
+    readonly property int actionCount: actionList !== null ? actionList.selectionCount : 0
+    /// A selection turns the 28 dp status strip into the 36 dp action bar in
+    /// place (proposal §7.3.3). The eight extra dp come out of the listing
+    /// above, not out of a floating layer, so the footer never covers a row.
+    readonly property bool actionActive: folderActive && actionCount > 0
+    readonly property int footerHeight: actionActive ? Theme.actionBar : Theme.shellStatus
     /// The tab and list a context menu was opened from. `null` means the
     /// primary pane, which is also the only pane when split view is off.
     property var contextTab: null
@@ -770,7 +776,7 @@ Window {
             return
         root.tabMenuIndex = index
         const tab = root.tabs[index]
-        const point = tabStrip.mapToItem(null, x, y)
+        const point = topBar.mapToItem(null, x, y)
         menu.openAt(point.x, point.y, [
             { id: "tabDuplicate", glyph: "copy", label: qsTr("复制标签页") },
             { id: "tabPin", glyph: "star",
@@ -938,7 +944,7 @@ Window {
         if (!tab)
             return
         const next = root.tabs.slice()
-        let at = tabStrip.indexAt(localX)
+        let at = topBar.indexAt(localX)
         if (at < 0 || at > next.length)
             at = next.length
         next.splice(at, 0, tab)
@@ -1050,14 +1056,17 @@ Window {
     function beginPathEditing() {
         if (!root.folderActive || root.activeTab === null)
             return
+        // Search and editing are states of the same frame (§7.2), so opening
+        // the editor ends a live query instead of stacking two modes.
+        if (root.searchOpen) {
+            root.searchOpen = false
+            if (root.searchQuery !== "")
+                root.acceptSearchText("")
+        }
         root.pathEditing = true
-        pathInput.text = root.activePath
         // The field is only visible once `pathEditing` is on, and a hidden item
         // cannot take focus: wait for the state to settle before focusing.
-        Qt.callLater(function () {
-            pathInput.forceActiveFocus()
-            pathInput.selectAll()
-        })
+        Qt.callLater(locator.focusAddress)
     }
 
     /// The split pane keeps its own trail: navigating it never moves the
@@ -1252,9 +1261,12 @@ Window {
     function openSearch() {
         if (!root.folderActive || root.remoteLocation)
             return
+        // One frame, one mode: entering search takes the locator out of the
+        // path editor.
+        root.pathEditing = false
         root.searchOpen = true
-        // The field is only focusable once the expanded state has been laid
-        // out; focusing a hidden item silently does nothing.
+        // The field is only focusable once the mode has been laid out;
+        // focusing a hidden item silently does nothing.
         Qt.callLater(root.focusSearchField)
     }
 
@@ -1387,23 +1399,14 @@ Window {
         moreMenu.openAt(point.x + anchor.width - 226, point.y, root.moreMenuItems())
     }
 
-    /// The search action is a component now, so the shell reaches it through
-    /// the bar instead of a file-scoped id.
-    function searchSlotItem() {
-        const loader = root.toolbarItem("search")
-        return loader !== null ? loader.item : null
-    }
-
+    /// The search field lives in the locator now, so the shell reaches it
+    /// directly instead of through the toolbar model (proposal §7.2).
     function setSearchText(value) {
-        const slot = root.searchSlotItem()
-        if (slot !== null)
-            slot.setText(value)
+        locator.setSearchText(value)
     }
 
     function focusSearchField() {
-        const slot = root.searchSlotItem()
-        if (slot !== null)
-            slot.focusInput()
+        locator.focusSearch()
     }
 
     /// `Image.source` wants a URL, and the stored preference is a native path
@@ -2851,6 +2854,103 @@ Window {
         root.contextName = ""
     }
 
+    /// The action bar's verbs, on the live selection rather than on a menu's
+    /// captured target: the bar describes what is selected right now, and a
+    /// click that opened a menu a moment ago must not redirect it. The long
+    /// tail stays in the context menu; this runs only what the footer shows.
+    function runActionBarAction(id) {
+        const list = root.actionList
+        if (list === null)
+            return
+        const paths = list.selectedPathList()
+        if (paths.length === 0)
+            return
+        const model = list.model
+        const first = paths[0]
+        const firstIndex = model !== null ? model.indexOfPath(first) : -1
+        const firstIsDir = firstIndex >= 0 && model.isDirectoryAt(firstIndex)
+        const many = paths.length > 1
+        const directory = list.tab !== null && list.tab !== undefined
+            ? list.tab.listing.path : root.activePath
+        switch (id) {
+        case "open":
+            // One row: the same act as Enter. Several: open every file and
+            // leave folders alone — navigating has no meaning for a set.
+            if (!many && firstIndex >= 0) {
+                list.handleActivate(firstIndex)
+                break
+            }
+            for (let index = 0; index < paths.length; index += 1) {
+                const at = model !== null ? model.indexOfPath(paths[index]) : -1
+                if (at >= 0 && !model.isDirectoryAt(at))
+                    Workspace.openPath(paths[index])
+            }
+            break
+        case "cut":
+            Workspace.setClipboard("cut", paths)
+            break
+        case "copy":
+            Workspace.setClipboard("copy", paths)
+            break
+        case "paste":
+            // A single folder is its own destination; anything else pastes
+            // into the folder the bar belongs to.
+            Workspace.pasteInto(!many && firstIsDir ? first : directory)
+            break
+        case "rename":
+            if (many)
+                bulkRenameDialog.open(paths)
+            else
+                root.promptRename(first, first.split(/[\\/]/).pop())
+            break
+        case "trash":
+            if (root.remoteLocation) {
+                root.requestRemoteDelete(paths)
+                break
+            }
+            Workspace.trashEntries(paths)
+            root.announceUndoable(many
+                ? qsTr("已将 %1 项移到回收站").arg(paths.length)
+                : qsTr("已移到回收站"))
+            break
+        case "moveTo":
+            moveToDialog.open(!many && firstIsDir ? first : directory, paths)
+            break
+        case "compress":
+            // The format picker lives in the menu; the bar's one verb is the
+            // default archive, which is what most compressions are.
+            Workspace.compressEntries(paths, directory, "zip", "")
+            break
+        }
+    }
+
+    /// The action bar's two menu buttons. 标签 reuses the row menu's tag rows;
+    /// 更多 opens the row menu's second page. Either way the menu's target is
+    /// seeded from the live selection first, because `runMenuAction` resolves
+    /// against the captured context, not against the bar.
+    function openActionBarMenu(kind, x, y) {
+        const list = root.actionList
+        if (list === null)
+            return
+        const paths = list.selectedPathList()
+        if (paths.length === 0)
+            return
+        const model = list.model
+        const index = model !== null ? model.indexOfPath(paths[0]) : -1
+        root.contextTab = list === splitList ? root.splitTab : root.activeTab
+        root.contextList = list
+        root.contextPath = paths[0]
+        root.contextIsDir = index >= 0 && model.isDirectoryAt(index)
+        root.contextKind = "row"
+        root.rowMenuMore = kind !== "tags"
+        if (kind === "tags") {
+            menu.openAt(x, y, root.tagSubmenu())
+            return
+        }
+        shellCommands.load(root.currentSelection(), paths[0])
+        menu.openAt(x, y, root.rowMoreMenuItems())
+    }
+
     function runMenuAction(id) {
         if (id.indexOf("customAction:") === 0) {
             Workspace.runCustomAction(id.substring("customAction:".length),
@@ -3143,8 +3243,13 @@ Window {
         root.activeTab.listing.reload()
         if (root.splitTab !== null)
             root.splitTab.listing.reload()
-        if (focus !== "")
+        if (focus !== "") {
             fileList.focusPath(focus)
+            // §7.1.7: the row a creation just landed on keeps one beat of
+            // highlight. A rename is not a new row, so it only takes focus.
+            if (kind === "create")
+                fileList.flashRow(focus)
+        }
     }
 
     function modalClosed() {
@@ -3155,7 +3260,7 @@ Window {
             // gone by now, so the field can take the caret that would otherwise
             // fall through to the listing below.
             if (root.pathEditing) {
-                pathInput.forceActiveFocus()
+                locator.focusAddress()
                 return
             }
             if (root.overviewActive)
@@ -3372,7 +3477,7 @@ Window {
     Column {
         anchors.fill: parent
 
-        // The chrome bar is one row now: mark, tabs, window buttons. 44 dp is the
+        // The chrome bar is one row: mark, tabs, window buttons. 38 dp is the
         // number `kTitleBarDp` in crates/dae-qt/cpp/window.h hard-codes for the
         // native hit test, so the two move together.
         Item {
@@ -3380,27 +3485,14 @@ Window {
             width: parent.width
             height: Theme.shellTitle
 
-            TitleBar {
-                id: titleBar
+            TopBar {
+                id: topBar
                 anchors.fill: parent
                 window: root
                 controller: chrome
                 dark: root.dark
                 material: root.material
                 title: root.title
-            }
-
-            TabStrip {
-                id: tabStrip
-                anchors.left: parent.left
-                anchors.leftMargin: root.tabLeftInset
-                anchors.right: parent.right
-                // Three 46 dp buttons; `buttonsWidth` keeps that number in one
-                // place rather than repeating it in two files. macOS has no
-                // buttons on this side and lets the strip run to the edge.
-                anchors.rightMargin: titleBar.buttonsWidth + 8
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
                 tabs: root.tabs
                 activeIndex: root.activeIndex
                 hostWindow: root
@@ -3408,14 +3500,12 @@ Window {
 
                 // Native hit test input. Without this the chips sit inside the
                 // caption and a click on a tab starts a window drag instead of
-                // activating it. `leftMargin` is the band's origin in window
-                // coordinates; the strip's own numbers are strip-local. On
-                // macOS the band starts after the traffic lights, so it must
-                // use the same inset as the anchors above.
+                // activating it. The bar is full-width, so its own numbers are
+                // already window coordinates; the native setter clamps the
+                // right edge against the button columns.
                 function pushCaptionBand() {
                     if (chrome.attached)
-                        chrome.setCaptionClient(root.tabLeftInset + clientLeft,
-                                                root.tabLeftInset + clientRight)
+                        chrome.setCaptionClient(clientLeft, clientRight)
                 }
                 onClientRightChanged: pushCaptionBand()
 
@@ -3514,51 +3604,31 @@ Window {
                 anchors.right: trailingToolbar.left
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                height: Theme.controlMd
+                // §7.2: the one input control in the row is 32 dp tall.
+                height: Theme.controlLg
 
-                // The trail is a readout, not a field: it only looks like one
-                // while it is being typed into. The plate is the editing state.
-                Rectangle {
+                // One frame, three modes. The trail navigates, a click on its
+                // empty part or Mod+L becomes the path editor, Mod+F becomes
+                // search; the shell owns which mode is on.
+                Locator {
+                    id: locator
                     anchors.fill: parent
-                    radius: Theme.radiusSm
-                    color: root.pathEditing ? Theme.field : "transparent"
-                    border.width: root.pathEditing ? 1 : 0
-                    border.color: Theme.accent
-                }
-
-                // The bar's normal shape is the trail: every ancestor is a
-                // destination, and the current folder is the one name it must
-                // keep. Typing a path is the exception, so the editor is a
-                // state of this bar rather than the bar itself.
-                MouseArea {
-                    Accessible.role: Accessible.Button
-                    Accessible.name: qsTr("路径栏")
-                    anchors.fill: parent
-                    enabled: root.folderActive && !root.pathEditing
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    cursorShape: Qt.IBeamCursor
-                    onClicked: function (mouse) {
-                        if (mouse.button === Qt.RightButton) {
-                            const point = mapToItem(null, mouse.x, mouse.y)
-                            root.openBreadcrumbBarMenu(point.x, point.y, false)
-                        } else {
-                            root.beginPathEditing()
-                        }
-                    }
-                }
-
-                PathBreadcrumbs {
-                    anchors.fill: parent
-                    anchors.leftMargin: 2
-                    anchors.rightMargin: 2
-                    fontSize: Theme.typeBody
-                    visible: root.folderActive && !root.pathEditing
-                    names: root.activeTab !== null ? root.activeTab.listing.breadcrumbNames : []
-                    paths: root.activeTab !== null ? root.activeTab.listing.breadcrumbPaths : []
+                    visible: root.folderActive
+                    mode: root.searchOpen ? "search"
+                        : (root.pathEditing ? "address" : "breadcrumb")
+                    interactive: root.folderActive
+                    names: root.activeTab !== null
+                        ? root.activeTab.listing.breadcrumbNames : []
+                    paths: root.activeTab !== null
+                        ? root.activeTab.listing.breadcrumbPaths : []
                     dark: root.dark
+                    accent: root.accent
                     textColor: root.textColor
                     mutedColor: root.mutedColor
-                    accent: root.accent
+                    addressPath: root.activePath
+                    searchMode: root.searchMode
+                    searchBusy: root.searchBusy
+                    searchText: root.searchQuery
 
                     onCrumbActivated: function (path) {
                         root.navigate(path)
@@ -3569,6 +3639,16 @@ Window {
                     onContextMenuRequested: function (x, y) {
                         root.openBreadcrumbBarMenu(x, y, false)
                     }
+                    onAddressRequested: root.beginPathEditing()
+                    onAddressAccepted: function (path) {
+                        root.navigate(path)
+                    }
+                    onAddressCanceled: root.pathEditing = false
+                    onSearchEdited: function (value) {
+                        root.acceptSearchText(value)
+                    }
+                    onSearchCleared: root.acceptSearchText("")
+                    onSearchDismissed: root.closeSearch()
                 }
 
                 // Overview, spaces and the recycle bin are surfaces, not paths:
@@ -3586,49 +3666,6 @@ Window {
                     color: root.textColor
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
-                }
-
-                TextInput {
-                    id: pathInput
-                    Accessible.role: Accessible.EditableText
-                    Accessible.name: qsTr("路径")
-
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    visible: root.pathEditing && root.folderActive
-                    verticalAlignment: TextInput.AlignVCenter
-                    text: ""
-                    color: root.textColor
-                    selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeCaption
-                    selectByMouse: true
-                    clip: true
-
-                    // TextInput assigns to `text` while the user edits, which
-                    // permanently drops any binding on it. `beginPathEditing`
-                    // seeds it instead, and the field goes back to naming the
-                    // trail once it loses focus — every way out of the editor
-                    // (Enter, Escape, a click elsewhere) ends here.
-                    onActiveFocusChanged: {
-                        if (!activeFocus)
-                            root.pathEditing = false
-                    }
-
-                    onAccepted: {
-                        let target = text.trim()
-                        if (target.length >= 2
-                                && target.charAt(0) === '"'
-                                && target.charAt(target.length - 1) === '"')
-                            target = target.substring(1, target.length - 1)
-                        focus = false
-                        if (target.length > 0)
-                            root.navigate(target)
-                    }
-
-                    Keys.onEscapePressed: focus = false
                 }
             }
 
@@ -3836,20 +3873,16 @@ Window {
             }
 
             // ── Search ────────────────────────────────────────────────────
-            // A 224 px field parked here for the whole session takes a quarter
-            // of the bar from the breadcrumb, to serve an action used a few
-            // times an hour. It is an icon until asked for, and it stays out
-            // while a query is live so the field and its results never part.
+            // The field lives in the locator now (§7.2): this button switches
+            // that one control into search mode, so the bar never carries two
+            // text fields that could disagree about the query.
             Component {
                 id: searchToolbarComponent
                 Item {
                     id: searchSlot
 
-                    readonly property bool expanded: root.searchOpen
-                        || root.searchQuery.length > 0
-
                     height: Theme.controlMd
-                    width: expanded ? 210 : 28
+                    width: 28
                     implicitWidth: width
                     implicitHeight: height
                     visible: root.folderActive
@@ -3859,34 +3892,14 @@ Window {
                     /// locations, but dim and disable it on network paths.
                     opacity: root.remoteLocation ? 0.35 : 1
 
-                    /// The collapsed icon is a button; the expanded field is the
-                    /// tab stop instead, so the two states never both claim focus.
-                    activeFocusOnTab: !searchSlot.expanded && !root.remoteLocation
+                    activeFocusOnTab: !root.remoteLocation
                     Keys.onReturnPressed: root.openSearch()
                     Keys.onSpacePressed: root.openSearch()
 
-                    /// The shell reaches the field through the toolbar model,
-                    /// so these two are the only door it needs.
-                    function setText(value) {
-                        searchBar.setText(value)
-                    }
-                    function focusInput() {
-                        searchBar.focusInput()
-                    }
-
-                    Behavior on width {
-                        enabled: Theme.motion
-                        NumberAnimation {
-                            duration: Theme.motionPanel
-                            easing.type: Easing.OutCubic
-                        }
-                    }
-
                     Rectangle {
                         anchors.fill: parent
-                        visible: !searchSlot.expanded
                         radius: Theme.radiusSm
-                        color: searchIconMouse.containsMouse && !root.remoteLocation
+                        color: root.searchOpen || searchIconMouse.containsMouse
                             ? Theme.hover : "transparent"
                         border.width: searchSlot.activeFocus ? 1 : 0
                         border.color: Theme.accent
@@ -3894,8 +3907,9 @@ Window {
                         Glyph {
                             anchors.centerIn: parent
                             kind: "search"
-                            tint: searchIconMouse.containsMouse && !root.remoteLocation
-                                ? root.textColor : root.mutedColor
+                            tint: root.searchOpen ? Theme.accent
+                                : (searchIconMouse.containsMouse && !root.remoteLocation
+                                    ? root.textColor : root.mutedColor)
                         }
 
                         Accessible.role: Accessible.Button
@@ -3909,32 +3923,6 @@ Window {
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.openSearch()
                         }
-                    }
-
-                    SearchBar {
-                        id: searchBar
-                        anchors.fill: parent
-                        visible: searchSlot.expanded
-                        mode: root.searchMode
-                        busy: root.searchBusy
-                        dark: root.dark
-                        accent: root.accent
-                        textColor: root.textColor
-                        mutedColor: root.mutedColor
-                        hairline: root.hairline
-                        // The field owns the focus as soon as it exists. Asking
-                        // for it from `openSearch` lands in the same frame the
-                        // field is being laid out, and the listing can still
-                        // take it back.
-                        onVisibleChanged: {
-                            if (visible && root.searchOpen)
-                                focusInput()
-                        }
-                        onQueryEdited: function (value) {
-                            root.acceptSearchText(value)
-                        }
-                        onClearRequested: root.acceptSearchText("")
-                        onDismissRequested: root.closeSearch()
                     }
                 }
             }
@@ -4142,7 +4130,7 @@ Window {
             id: body
             width: parent.width
             height: parent.height - Theme.shellTitle - Theme.shellNav
-                - Theme.shellStatus - searchFilterBar.height
+                - root.footerHeight - searchFilterBar.height
 
             Item {
                 id: sidebarHandle
@@ -4338,14 +4326,18 @@ Window {
                                 }
                             }
 
-                            PathBreadcrumbs {
+                            Locator {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 8
                                 anchors.right: splitClose.left
                                 anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
                                 height: Theme.controlSm
-                                fontSize: 12
+                                // The split pane keeps a read-only trail: the
+                                // left click still belongs to the pane's focus
+                                // target.
+                                framed: false
+                                interactive: false
                                 names: root.splitTab !== null
                                     ? root.splitTab.listing.breadcrumbNames : []
                                 paths: root.splitTab !== null
@@ -4679,7 +4671,21 @@ Window {
         Rectangle {
             id: statusBar
             width: parent.width
-            height: Theme.shellStatus
+            // A selection swaps this strip for the action bar at the same edge.
+            // The column still stacks both, so the hidden one takes no height
+            // and the 36 dp one lands exactly where the 28 dp strip was.
+            //
+            // The strip stays `visible` at height 0 instead of being hidden:
+            // a positioner skips invisible items entirely, and the body above
+            // still reserves the strip's height, which would leave a dead band
+            // at the bottom of the window. Clipping at zero height paints
+            // nothing and keeps the column arithmetic exact.
+            height: root.actionActive ? 0 : Theme.shellStatus
+            clip: true
+            // A clipped strip has no focusable children: without this the
+            // transfer chip and the pane toggles would still answer Tab while
+            // the action bar is the footer on screen.
+            enabled: !root.actionActive
             color: root.chromeColor
 
             // A hairline instead of a colour step: the strip is the same surface
@@ -4778,89 +4784,13 @@ Window {
             }
 
             // ── Centre: the running transfer ──────────────────────────────
-            // It used to be a "queue" chip bolted after the status text. The
-            // centre is where the eye looks for progress, and the chip is the
-            // queue's only door: without it a second paste looks like it did
-            // nothing until the first copy finished.
-            Rectangle {
-                id: transferChip
+            // The capsule is shared with the action bar (TransferChip.qml):
+            // both footer states must keep the queue's only door visible, and
+            // a paste is exactly what a selection leads to.
+            TransferChip {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                width: transferRow.implicitWidth + 14
-                height: Theme.controlSm
-                radius: Theme.radiusXs
-                visible: transferChip.count > 0
-                color: transferMouse.containsMouse ? Theme.raised : Theme.canvas
-                border.width: 1
-
-                // QStringList exposes `.length` to QML; qmllint's type model
-                // does not (same caveat in SpaceView/TransferQueue).
-                // qmllint disable missing-property
-                readonly property int count: Workspace.queuedTransfers.length
-                    + (Workspace.busy ? 1 : 0)
-                readonly property real percent: Workspace.progressTotal > 0
-                    ? Math.round(Workspace.progressDone * 100 / Workspace.progressTotal)
-                    : (Workspace.busy ? 0 : 100)
-
-                function openPanel() {
-                    const point = transferChip.mapToItem(null, 0, 0)
-                    transferQueue.openAbove(point.x, point.y)
-                }
-
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("%1 项传输，%2%").arg(count).arg(percent)
-                    + qsTr("，查看传输队列")
-                Accessible.onPressAction: transferChip.openPanel()
-
-                /// The chip is a tab stop only while it exists: an empty queue
-                /// has nothing to show in its panel. The border it already
-                /// carries turns into the focus ring rather than gaining a
-                /// second one.
-                activeFocusOnTab: transferChip.visible
-                border.color: transferChip.activeFocus ? Theme.accent : Theme.hairline
-                Keys.onReturnPressed: transferChip.openPanel()
-                Keys.onSpacePressed: transferChip.openPanel()
-
-                Row {
-                    id: transferRow
-                    anchors.centerIn: parent
-                    spacing: 6
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("%1 项传输").arg(transferChip.count)
-                        color: Theme.inkSecondary
-                        font.pixelSize: Theme.typeMicro
-                    }
-
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 32
-                        height: 2
-                        color: Theme.line
-
-                        Rectangle {
-                            width: parent.width * transferChip.percent / 100
-                            height: parent.height
-                            color: Theme.accent
-                        }
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: transferChip.percent + "%"
-                        color: Theme.inkSecondary
-                        font.pixelSize: Theme.typeMicro
-                        font.family: Theme.monoFamily
-                    }
-                }
-
-                MouseArea {
-                    id: transferMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: transferChip.openPanel()
-                }
+                onOpenRequested: function (x, y) { transferQueue.openAbove(x, y) }
             }
 
             /// The block cursor at the end of the strip. drift ends its footer
@@ -5170,6 +5100,25 @@ Window {
                 }
             }
         }
+
+        // The same edge, the other state: with a selection the 28 dp strip is
+        // gone and this 36 dp bar stands exactly where it was. Both are
+        // children of the column, so `root.footerHeight` decides how much of
+        // the window the body above them may use.
+        ActionBar {
+            id: actionBar
+            width: parent.width
+            height: root.actionActive ? Theme.actionBar : 0
+            visible: root.actionActive
+            background: root.chromeColor
+            count: root.actionCount
+            remote: root.remoteLocation
+            clipboardReady: Workspace.clipboardMode !== ""
+
+            onActionRequested: function (id) { root.runActionBarAction(id) }
+            onMenuRequested: function (kind, x, y) { root.openActionBarMenu(kind, x, y) }
+            onTransferRequested: function (x, y) { transferQueue.openAbove(x, y) }
+        }
     }
 
     // The native resize border Windows gets from its hit test. Invisible there,
@@ -5198,8 +5147,8 @@ Window {
             return {
                 "token": payload.substring(0, split),
                 "index": parseInt(payload.substring(split + 1), 10),
-                "onStrip": drag.y >= tabStrip.y
-                    && drag.y < tabStrip.y + tabStrip.height
+                "onStrip": drag.y >= topBar.y
+                    && drag.y < topBar.y + topBar.height
             }
         }
 
@@ -5210,7 +5159,7 @@ Window {
                 return
             }
             drag.accept(Qt.MoveAction)
-            tabStrip.showDrop(tab.onStrip ? drag.x : -1)
+            topBar.showDrop(tab.onStrip ? drag.x : -1)
         }
         onPositionChanged: function (drag) {
             const tab = draggedTab(drag)
@@ -5219,12 +5168,12 @@ Window {
                 return
             }
             drag.accept(Qt.MoveAction)
-            tabStrip.showDrop(tab.onStrip ? drag.x : -1)
+            topBar.showDrop(tab.onStrip ? drag.x : -1)
         }
-        onExited: tabStrip.clearDrop()
+        onExited: topBar.clearDrop()
         onDropped: function (drop) {
             const tab = draggedTab(drop)
-            tabStrip.clearDrop()
+            topBar.clearDrop()
             if (tab === null) {
                 drop.accepted = false
                 return
@@ -6121,8 +6070,8 @@ Window {
             console.warn("dae: native window attach failed")
         // The tab band is a client area of the caption. It can only be declared
         // once the window exists natively, so this runs after `attach` rather
-        // than from the strip's own completion.
-        tabStrip.pushCaptionBand()
+        // than from the bar's own completion.
+        topBar.pushCaptionBand()
 
         overviewModelInstance.setHiddenSections(ExplorerPrefs.hiddenHomeSections)
         root.syncToolbarOrder()

@@ -316,11 +316,10 @@ QtObject {
     readonly property int controlLg: 32
     readonly property int controlXl: 36
 
-    /// The chrome bands (§8.1). The design value for the tab row is 38, but
-    /// the native side still reserves `kTitleBarDp = 44` for dragging and
-    /// snap; moving this one without `window.h` would leave a 6 dp invisible
-    /// drag strip over the locator row, so both move together in P1.
-    readonly property int shellTitle: 44
+    /// The chrome bands (§8.1). The tab row is 38 dp and the native side's
+    /// `kTitleBarDp` is the same number; moving one without the other leaves an
+    /// invisible drag strip over the other row.
+    readonly property int shellTitle: 38
     readonly property int shellNav: 44
     readonly property int shellStatus: 28
     /// The status bar's other state: 36 dp while something is selected. The

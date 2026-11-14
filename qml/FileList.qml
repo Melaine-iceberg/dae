@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
+import QtQuick.Shapes
 import dae 1.0
 import "Localize.js" as Localize
 import "Shortcut.js" as ShortcutJS
@@ -44,46 +45,47 @@ Item {
         : density === "spacious" ? 36 : 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
     /// The detail columns stop at a readable measure instead of stretching
-    /// with the window, the way Explorer's detail view does: past this point
-    /// the row is background, and that strip still takes clicks, marquees and
-    /// drops. 44 rem leaves the name column ~262 dp after the three fixed
-    /// columns, which is the width the reference's table occupies.
-    readonly property int contentMaxWidth: 704
+    /// with the window. 980 dp is the widest the table needs: name floor plus
+    /// every detail column in §7.1.2 (42 + 16 + 260 + 88 + 104 + 150 + 150 +
+    /// 120), so enabling created and tags still leaves a readable name. Past
+    /// this point the row is background, and that strip still takes clicks,
+    /// marquees and drops.
+    readonly property int contentMaxWidth: 980
     readonly property int contentWidth: Math.min(width, contentMaxWidth)
-    /// The details columns, in the order they sit from the right edge of the
-    /// name column. Their widths and visibility belong to the directory's
-    /// layout, so the header and the rows read one configuration instead of
-    /// two copies of four hard-coded constants.
+    /// The details columns as stored in preferences, padded to a stable length
+    /// for positional widths.
     readonly property var columnIds: ["type", "size", "modified", "created", "tags"]
+    /// Display order (§7.1.2): size, type, modified, created, tags. Widths stay
+    /// keyed by `columnIds`, so an existing preference keeps its meaning.
+    readonly property var columnOrder: ["size", "type", "modified", "created", "tags"]
+    /// When the pane narrows, columns retreat in this order (§7.1.2): path
+    /// (search only), created, tags, type, modified, size. The name column is
+    /// the last thing standing.
+    readonly property var columnRetreat: ["created", "tags", "type", "modified", "size"]
     readonly property var visibleColumns: {
         const configured = (ExplorerPrefs.columns || "").split(",")
-        return root.columnIds.filter(function (id) {
+        return root.columnOrder.filter(function (id) {
             return configured.indexOf(id) >= 0
         })
     }
-    /// A narrow pane drops trailing columns rather than squeezing labels into
-    /// ellipses. The thresholds are the widths at which the pane stops
-    /// carrying the column without clipping its own heading.
-    readonly property var columnMinWidth: ({
-        "type": 550, "size": 470, "modified": 360, "created": 360, "tags": 470
-    })
-    /// The name column keeps this much room. The track caps at
-    /// `contentMaxWidth`, so even a wide pane cannot carry every enabled
-    /// detail column plus a readable name; without this floor, turning on
-    /// both created and tags collapsed the name column to zero.
-    readonly property int nameMinWidth: 100
+    /// The name column keeps this much room (§7.1.2). Without the floor, a
+    /// narrow pane squeezes the one column the table exists for into zero.
+    readonly property int nameMinWidth: 260
     readonly property var shownColumns: {
         const list = visibleColumns.slice()
-        while (list.length > 0
-               && root.width < (root.columnMinWidth[list[list.length - 1]] || 0))
-            list.pop()
-        let used = 0
-        for (let index = 0; index < list.length; index += 1)
-            used += root.columnWidth(list[index])
-        while (list.length > 0
-               && root.contentWidth - 16 - 8 - 36 - used < root.nameMinWidth) {
-            used -= root.columnWidth(list[list.length - 1])
-            list.pop()
+        while (list.length > 0) {
+            let used = 0
+            for (let index = 0; index < list.length; index += 1)
+                used += root.effectiveColumnWidth(list[index])
+            if (root.contentWidth - 16 - 50 - used >= root.nameMinWidth)
+                break
+            for (let index = 0; index < root.columnRetreat.length; index += 1) {
+                const drop = list.indexOf(root.columnRetreat[index])
+                if (drop >= 0) {
+                    list.splice(drop, 1)
+                    break
+                }
+            }
         }
         return list
     }
@@ -142,10 +144,10 @@ Item {
     /// would reflow the table every time a large file scrolled past.
     function autoFitColumn(id) {
         const samples = {
-            "type": qsTr("文件夹"),
+            "type": qsTr("PowerPoint 演示文稿"),
             "size": "888.8 MiB",
-            "modified": "2026-11-05 12:34",
-            "created": "2026-11-05 12:34",
+            "modified": qsTr("周三 14:32"),
+            "created": qsTr("周三 14:32"),
             "tags": qsTr("工作, 重要")
         }
         const label = root.columnLabel(id) + "  "
@@ -177,7 +179,8 @@ Item {
                 "folder": qsTr("文件夹"), "link": qsTr("链接"),
                 "image": qsTr("图片"), "video": qsTr("视频"),
                 "audio": qsTr("音频"), "document": qsTr("文档"),
-                "text": qsTr("文本"), "code": qsTr("代码"),
+                "spreadsheet": qsTr("电子表格"), "presentation": qsTr("演示文稿"),
+                "pdf": qsTr("PDF"), "text": qsTr("文本"), "code": qsTr("代码"),
                 "archive": qsTr("压缩包"), "font": qsTr("字体"),
                 "executable": qsTr("程序"), "other": qsTr("其他"),
                 "file": qsTr("文件")
@@ -195,20 +198,57 @@ Item {
     /// are unaffected.
     function cellText(r, id) {
         if (id === "type")
-            return r.isDir ? qsTr("文件夹")
-                : (r.extension !== "" ? r.extension.toUpperCase() : qsTr("文件"))
+            return Localize.typeName(r.typeName)
         if (id === "size")
             return r.sizeText
         if (id === "modified")
-            return r.modifiedText
+            return root.relativeTime(r.modifiedAt)
         if (id === "created") {
-            if (!r.createdText || r.createdText.length === 0)
+            if (!r.createdAt)
                 return "—"
-            return r.createdFallback ? r.createdText + qsTr("（回退）") : r.createdText
+            return root.relativeTime(r.createdAt)
         }
         if (id === "tags")
             return r.tagNames
         return ""
+    }
+    /// The relative stamp the modified and created columns print (§7.1.4):
+    /// today's time, "yesterday", a weekday inside seven days, then the
+    /// localised short date. Computed from the raw epoch stamp in the user's
+    /// time zone rather than from the model's UTC text, so "today" means the
+    /// user's today.
+    function relativeTime(milliseconds) {
+        if (!milliseconds || milliseconds <= 0)
+            return "—"
+        const then = new Date(milliseconds)
+        const now = new Date()
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        const startOfThen = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime()
+        const days = Math.round((startOfToday - startOfThen) / 86400000)
+        if (days > 0 && days < 7) {
+            const time = Qt.formatTime(then, "HH:mm")
+            if (days === 1)
+                return qsTr("昨天 %1").arg(time)
+            return then.toLocaleDateString(Qt.locale(), "ddd") + " " + time
+        }
+        if (days === 0)
+            return Qt.formatTime(then, "HH:mm")
+        return then.toLocaleDateString(Qt.locale())
+    }
+    /// The tooltip: the full local stamp, which is what a relative label hides.
+    function fullTimestamp(milliseconds) {
+        if (!milliseconds || milliseconds <= 0)
+            return "—"
+        return Qt.formatDateTime(new Date(milliseconds), "yyyy-MM-dd HH:mm")
+    }
+    /// The filename's middle elision (§7.1.3): front 8 characters, an ellipsis,
+    /// then the last 6 characters, which keeps the extension. A longer
+    /// extension widens the tail so it is never cut; a stem shorter than the
+    /// rule's 14 characters falls back to eliding the whole string, because
+    /// keeping two fragments at that length reads worse than one.
+    function middleElide(name, stem, extensionSuffix) {
+        const tailLength = Math.max(6, extensionSuffix.length)
+        return stem.slice(0, 8) + "…" + name.slice(-tailLength)
     }
     function displayName(name, extension) {
         if (ExplorerPrefs.showExtensions || extension === "")
@@ -216,51 +256,11 @@ Item {
         const suffix = "." + extension
         return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
     }
-    /// The printed heading above the rows: the folder's name in the serif at
-    /// 56 dp with its item count as a superscript, the way drift opens a page.
-    /// The column view is the exception — its columns start at the top edge, so
-    /// a heading there would sit over the first column rather than above it.
-    readonly property bool heroVisible: viewMode !== "column"
-    readonly property int heroHeight: heroVisible ? 118 : 0
-    /// The name the heading prints. A search has no folder to name, and a path
-    /// that ends in a separator has to lose it before its last component is
-    /// the name.
-    readonly property string heroName: {
-        if (root.searchModel !== null)
-            return qsTr("搜索结果")
-        const path = root.tab !== null ? root.tab.listing.path : ""
-        if (path === "")
-            return ""
-        const trimmed = path.replace(/[\\/]+$/, "")
-        const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
-        return cut >= 0 ? trimmed.slice(cut + 1) : trimmed
-    }
-    /// The line under the heading: how many of each kind the directory holds,
-    /// and when it last changed. The counts come from the model's single pass
-    /// over the finished rows. The date is the newest stamp printed in the one
-    /// timestamp format the application uses — a relative "today" here would
-    /// mean a second date rule to keep in step with the column beside it.
-    ///
-    /// A search result has no folder half to count, so it prints nothing rather
-    /// than a line of zeroes.
-    readonly property string heroMeta: {
-        const listing = root.model
-        if (listing === null || listing.folders === undefined
-                || listing.files === undefined)
-            return ""
-        const parts = [
-            qsTr("%1 个文件夹").arg(listing.folders),
-            qsTr("%1 个文件").arg(listing.files)
-        ]
-        const updated = listing.newestModifiedText
-        if (updated !== undefined && updated !== "" && updated !== "-")
-            parts.push(qsTr("更新于 %1").arg(updated))
-        return parts.join(" · ")
-    }
-    readonly property int listingTop: heroHeight + (listHeaderVisible ? headerHeight : 0)
+    /// The printed heading is gone (§6.7.1): the shell's path is the heading,
+    /// and the count lives in the status bar. Only the table remains.
+    readonly property int listingTop: listHeaderVisible ? headerHeight : 0
     readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
 
     /// What the centred empty state says. A listing status of "N items" is
@@ -310,6 +310,31 @@ Item {
     readonly property var columnView: columnSurface.content
 
     property string pendingFocus: ""
+    /// The path whose row paints the one-shot paste/create highlight, and the
+    /// timer that fades it: §7.1.7's "just pasted" state lasts one glance, not
+    /// until the next selection.
+    property string flashPath: ""
+    Timer {
+        id: flashTimer
+        interval: 480
+        onTriggered: root.flashPath = ""
+    }
+    /// Cut rows are drawn at 40% (§7.1.7). The clipboard is one list for the
+    /// window, so it is turned into a lookup once per change instead of being
+    /// scanned by every visible delegate.
+    readonly property var cutSet: {
+        const paths = Workspace.clipboardMode === "cut" ? Workspace.clipboardPaths : []
+        const set = ({})
+        for (let index = 0; index < paths.length; index += 1)
+            set[paths[index]] = true
+        return set
+    }
+    /// A folder already has a size while the shell is measuring the selection,
+    /// so selected directories paint a progress ring rather than a stale
+    /// number (§7.1.7). `progressLabel` is the live field the shell sets when
+    /// an operation starts and clears when it settles; `operationsJson` only
+    /// lists finished operations, so it never showed the ring.
+    readonly property bool measuringSizes: Workspace.progressLabel.indexOf("Calculating sizes") >= 0
     /// A reload is in flight and the viewport still has to be returned to the
     /// position `saveScroll` recorded. Cleared once the rows under it exist.
     property bool scrollPending: false
@@ -630,6 +655,13 @@ Item {
         root.pendingFocus = path
         if (root.model !== null && root.model.finished)
             root.applyFocus()
+    }
+
+    /// The shell calls this after a paste or a creation lands: the new row is
+    /// selected, scrolled to, and highlighted for one beat (§7.1.7).
+    function flashRow(path) {
+        root.flashPath = path
+        flashTimer.restart()
     }
 
     function applyFocus() {
@@ -1142,86 +1174,11 @@ Item {
         color: root.contentColor
     }
 
-    /// The printed heading. It is not a control: nothing here is clickable, so
-    /// it carries no MouseArea and no tab stop, and a reader gets one static
-    /// string rather than three.
-    Item {
-        id: hero
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: root.heroHeight
-        visible: root.heroHeight > 0
-
-        Accessible.role: Accessible.StaticText
-        Accessible.name: root.heroName + "\u00B7"
-            + qsTr("%1 项").arg(root.model !== null ? root.model.loaded : 0)
-
-        Text {
-            id: heroKicker
-            x: 16
-            y: 12
-            text: root.searchModel !== null ? qsTr("搜索结果") : qsTr("文件夹")
-            color: Theme.inkSecondary
-            font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeMicro
-            font.letterSpacing: 2
-            font.capitalization: Font.AllUppercase
-        }
-
-        Text {
-            id: heroTitle
-            x: 16
-            anchors.top: heroKicker.bottom
-            anchors.topMargin: -2
-            /// The count sits to the right of the name, so the name's box
-            /// stops short of the pane's edge: a very long folder name elides
-            /// instead of pushing the count off screen.
-            width: Math.max(0, parent.width - 96)
-            text: root.heroName
-            color: Theme.ink
-            font.family: Theme.uiFamily
-            font.pixelSize: 56
-            font.letterSpacing: -1
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-        }
-
-        Text {
-            id: heroMetaText
-            x: 16
-            anchors.top: heroTitle.bottom
-            anchors.topMargin: 4
-            width: Math.max(0, parent.width - 32)
-            text: root.heroMeta
-            visible: text !== ""
-            color: Theme.inkSecondary
-            font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeMicro
-            font.features: { "tnum": 1 }
-            elide: Text.ElideRight
-            Accessible.ignored: true
-        }
-
-        Text {
-            id: heroCount
-            x: Math.min(heroTitle.x + heroTitle.contentWidth + 8, parent.width - 48)
-            anchors.top: heroTitle.top
-            anchors.topMargin: 6
-            text: String(root.model !== null ? root.model.loaded : 0).padStart(2, "0")
-            color: Theme.accent
-            font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeBody
-            font.features: { "tnum": 1 }
-        }
-    }
-
     Rectangle {
         id: columnHeader
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: root.heroHeight
         height: root.headerHeight
         visible: root.listHeaderVisible
         color: root.contentColor
@@ -1238,7 +1195,7 @@ Item {
             SortHeader {
                 id: nameHeader
                 anchors.left: parent.left
-                anchors.leftMargin: 64
+                anchors.leftMargin: 16
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: Math.max(0, detailsHeader.x - 8 - x)
@@ -1332,7 +1289,7 @@ Item {
                 required property string section
 
                 width: list.width
-                height: ExplorerPrefs.groupKey === "" ? 0 : 26
+                height: ExplorerPrefs.groupKey === "" ? 0 : 28
 
                 Rectangle {
                     anchors.fill: parent
@@ -1341,7 +1298,7 @@ Item {
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 64
+                    anchors.leftMargin: 16
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 4
                     text: root.groupLabelText(sectionRow.section)
@@ -1409,14 +1366,25 @@ Item {
                 required property string tagIds
                 required property string tagColors
                 required property string groupLabel
+                /// §7.1.6: the type label Rust already resolved.
+                required property string typeName
+                /// Epoch stamps for the relative modified/created labels.
+                required property double modifiedAt
+                required property double createdAt
+                /// A contiguous selection block rounds only its outer corners
+                /// (§6.4.2); a delegate cannot see its neighbours on its own.
+                required property bool previousSelected
+                required property bool nextSelected
+                required property bool selected
 
                 /// The row stops at the column track's cap; ListView leaves the
                 /// rest of the viewport as background, exactly like the
                 /// Tauri shell's Windows-style detail view.
                 width: Math.min(ListView.view.width, root.contentMaxWidth)
                 height: root.rowHeight
+                /// A cut row stays legible but reads as pending (§7.1.7).
+                opacity: row.isCut ? 0.4 : 1
 
-                required property bool selected
                 readonly property bool dropTarget: root.dropTargetPath !== ""
                     && row.isDir && row.filePath === root.dropTargetPath
                 readonly property bool current: list.currentIndex === row.index
@@ -1433,6 +1401,74 @@ Item {
                     : (row.gitStatus === "added"
                         ? Theme.success
                         : Theme.accent)
+                /// §7.1.7: a cut row stays in place at 40%.
+                readonly property bool isCut: root.cutSet[row.filePath] === true
+                /// §7.1.7: the new or just-pasted row is highlighted once.
+                readonly property bool flash: root.flashPath !== ""
+                    && root.flashPath === row.filePath
+                readonly property bool measuring: row.isDir && row.selected
+                    && root.measuringSizes
+                readonly property var tagDots: row.tagColors !== ""
+                    ? row.tagColors.split(",").slice(0, 3) : []
+                readonly property real tagDotsWidth: row.tagDots.length === 0 ? 0
+                    : row.tagDots.length * 6 + (row.tagDots.length - 1) * 3 + 8
+                readonly property bool hasPath: root.searchModel !== null
+                    && row.relativePath !== "" && row.relativePath !== row.fileName
+                /// §7.1.3: the stem keeps the name, the extension is a second
+                /// run at 12 dp/400 so the two never merge into one ellipsis.
+                readonly property bool separateExtension: ExplorerPrefs.showExtensions
+                    && row.extension !== ""
+                readonly property string stemText: {
+                    if (!row.separateExtension)
+                        return root.displayName(row.fileName, row.extension)
+                    const suffix = "." + row.extension
+                    return row.fileName.endsWith(suffix)
+                        ? row.fileName.slice(0, -suffix.length) : row.fileName
+                }
+                readonly property string extensionText: row.separateExtension
+                    ? "." + row.extension : ""
+                readonly property real nameBudget: Math.max(0,
+                    nameCell.width - row.tagDotsWidth - (row.hasPath ? 104 : 0))
+                readonly property real nameIntrinsic: stemMetrics.advanceWidth
+                    + (row.separateExtension ? 1 + extensionMetrics.advanceWidth : 0)
+                readonly property bool truncated: row.nameIntrinsic > row.nameBudget
+                /// A stem below the rule's 14 characters elides as one string
+                /// rather than keeping a two-character fragment of it.
+                readonly property bool singleString: row.truncated
+                    && row.separateExtension && row.stemText.length < 14
+                readonly property string stemDisplay: {
+                    if (!row.separateExtension || row.singleString)
+                        return root.displayName(row.fileName, row.extension)
+                    if (!row.truncated)
+                        return row.stemText
+                    return root.middleElide(row.fileName, row.stemText,
+                                            row.extensionText)
+                }
+                readonly property real stemBudget: Math.max(0,
+                    row.nameBudget - (row.separateExtension
+                        ? 1 + extensionMetrics.advanceWidth : 0))
+                /// §7.1.4: number and unit are separate runs so the decimal
+                /// points can line up under a tabular figure.
+                readonly property var sizeParts: {
+                    const text = row.sizeText
+                    const cut = text.lastIndexOf(" ")
+                    return cut < 0 ? [text, ""] : [text.slice(0, cut), text.slice(cut + 1)]
+                }
+
+                TextMetrics {
+                    id: stemMetrics
+                    text: row.stemText
+                    font.family: Theme.uiFamily
+                    font.pixelSize: Theme.typeBody
+                    font.weight: 450
+                }
+
+                TextMetrics {
+                    id: extensionMetrics
+                    text: row.extensionText
+                    font.family: Theme.uiFamily
+                    font.pixelSize: Theme.typeCaption
+                }
 
                 /// The row, not the four cells inside it: a listing read cell
                 /// by cell is unlistenable, and the selection state lives on
@@ -1440,79 +1476,86 @@ Item {
                 /// one gesture a pointer does.
                 Accessible.role: Accessible.ListItem
                 Accessible.name: root.displayName(row.fileName, row.extension)
-                Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
+                Accessible.description: Localize.typeName(row.typeName)
                 Accessible.selectable: true
                 Accessible.selected: row.selected
                 Accessible.onPressAction: root.handleActivate(row.index)
 
-                /// Selection is a solid ink band with the paper showing
-                /// through the type — drift marks a chosen row by inverting
-                /// it, not by tinting it. A drop target keeps the wash.
+                /// Hover is a 4% ink wash, selection a 10% accent wash and the
+                /// drop target 12% accent (§7.1.7). The text never inverts:
+                /// the pale masks keep the name the strongest mark in the row.
                 Rectangle {
+                    id: rowMask
                     anchors.fill: parent
-                    color: row.selected ? Theme.ink
+                    color: row.selected ? Theme.selection
                         : row.dropTarget ? Theme.accentSoft
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
+                    /// A contiguous block rounds its outer corners and stays
+                    /// square along shared edges (§6.4.2).
+                    topLeftRadius: row.selected && row.previousSelected ? 0 : Theme.radiusSm
+                    topRightRadius: row.selected && row.previousSelected ? 0 : Theme.radiusSm
+                    bottomLeftRadius: row.selected && row.nextSelected ? 0 : Theme.radiusSm
+                    bottomRightRadius: row.selected && row.nextSelected ? 0 : Theme.radiusSm
                 }
 
-                /// A drop target is a solid accent edge at 1.5 dp, and the
-                /// keyboard cursor keeps its own 1 dp ring: the two states stay
-                /// apart without a dashed line, which in a file manager only
-                /// ever means "placeholder" (§6.7).
+                /// The one-shot paste/create highlight, a 160 ms fade (§7.1.7).
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusSm
+                    color: Theme.accentSoftStrong
+                    opacity: row.flash ? 1 : 0
+                    visible: opacity > 0
+                    Accessible.ignored: true
+                    Behavior on opacity {
+                        enabled: Theme.motion
+                        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                    }
+                }
+
+                /// A drop target is a solid 1.5 dp accent border, never a
+                /// dashed one (§6.7).
                 Rectangle {
                     anchors.fill: parent
                     visible: row.dropTarget
                     color: "transparent"
+                    radius: Theme.radiusSm
                     border.width: 1.5
                     border.color: Theme.accent
                 }
 
-                Rectangle {
-                    anchors.fill: parent
-                    visible: row.focusedCursor
-                    color: "transparent"
-                    border.width: 1
-                    border.color: Theme.accent
-                }
-
+                /// The keyboard cursor (§7.1.8): on a selected row the signal
+                /// is a 2 dp accent track on the left; on an unselected row a
+                /// 1.5 dp inner stroke. Only keyboard navigation paints it.
                 Rectangle {
                     anchors.left: parent.left
-                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    height: 1
-                    color: Theme.hairline
-                }
-
-                /// The row's place in the current order, in mono. drift numbers
-                /// its listing; the number is the order on screen, so it
-                /// renumbers when the sort changes — that is what it reports,
-                /// not the file's identity.
-                Text {
-                    id: rowIndex
-                    x: 12
-                    width: 22
-                    anchors.verticalCenter: parent.verticalCenter
-                    horizontalAlignment: Text.AlignRight
-                    text: String(row.index + 1).padStart(2, "0")
-                    color: row.selected ? Theme.canvas : Theme.inkTertiary
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
-                    font.features: { "tnum": 1 }
-                    /// The row itself already announces the file; an ordinal
-                    /// read out before every name is noise.
+                    width: 2
+                    visible: row.focusedCursor && row.selected
+                    color: Theme.accent
                     Accessible.ignored: true
                 }
 
+                Rectangle {
+                    anchors.fill: parent
+                    visible: row.focusedCursor && !row.selected
+                    color: "transparent"
+                    radius: Theme.radiusSm
+                    border.width: 1.5
+                    border.color: Theme.accent
+                }
+
+                /// §7.1.1: 16 dp left pad, an 18 dp icon, 8 dp to the name.
                 Image {
                     id: rowIcon
-                    x: 40
-                    width: 16
-                    height: 16
+                    x: 16
+                    width: 18
+                    height: 18
                     anchors.verticalCenter: parent.verticalCenter
                     source: row.showThumbnail || ExplorerPrefs.iconStyle !== "system"
                         ? "" : row.iconSource
-                    sourceSize.width: Math.round(16 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(16 * Screen.devicePixelRatio)
+                    sourceSize.width: Math.round(18 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(18 * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
@@ -1521,95 +1564,166 @@ Item {
                 }
 
                 Image {
-                    x: 38
-                    width: 20
-                    height: Theme.controlXs
+                    x: 16
+                    width: 18
+                    height: 18
                     anchors.verticalCenter: parent.verticalCenter
                     visible: row.showThumbnail
                     source: row.showThumbnail ? row.thumbnailSource : ""
-                    sourceSize.width: Math.round(40 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(40 * Screen.devicePixelRatio)
-                    fillMode: Image.PreserveAspectFit
+                    sourceSize.width: Math.round(36 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(36 * Screen.devicePixelRatio)
+                    fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     smooth: true
                     Accessible.ignored: true
                 }
 
-                DriftSheet {
-                    x: 38
-                    /// The same drawn sheet the grid shows, sized to the row:
-                    /// two dp of air, then the card's own 3:4. At 25 dp it
-                    /// switches to the compact drawing (chunky rules, no tab)
-                    /// so it stays a sheet instead of a black block.
-                    width: Math.round((root.rowHeight - 2) * 0.75)
+                /// The built-in glyph (§6.3.2, §12.3) is a cached raster, not
+                /// a per-row canvas. The system icon wins only when the
+                /// preference asks for it and the platform delivered one.
+                FileIcon {
+                    x: 16
+                    edge: 18
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
-                        || rowIcon.status !== Image.Ready)
-                    name: row.fileName
+                    visible: !row.showThumbnail
+                        && (ExplorerPrefs.iconStyle !== "system"
+                            || rowIcon.status !== Image.Ready)
                     category: row.category
-                    extension: row.extension
-                    isDir: row.isDir
-                    detail: true
-                    /// On the selected row the band is ink, so the mark is
-                    /// paper: the same inversion the name goes through.
-                    inverted: row.selected
+                    outline: row.isDir ? Theme.inkSecondary : Theme.inkTertiary
+                    Accessible.ignored: true
                 }
 
+                /// Measuring a directory's size is a background operation;
+                /// the row that started it shows a 12 dp ring (§7.1.7).
+                Item {
+                    id: measuringRing
+                    x: Math.max(0, detailsRow.x - 20)
+                    width: 12
+                    height: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: row.measuring
+                    Accessible.ignored: true
+
+                    Shape {
+                        anchors.fill: parent
+                        ShapePath {
+                            strokeColor: Theme.accent
+                            strokeWidth: 1.5
+                            fillColor: "transparent"
+                            capStyle: ShapePath.RoundCap
+                            PathAngleArc {
+                                centerX: 6
+                                centerY: 6
+                                radiusX: 4.5
+                                radiusY: 4.5
+                                startAngle: -90
+                                sweepAngle: 270
+                            }
+                        }
+                        RotationAnimator on rotation {
+                            from: 0
+                            to: 360
+                            duration: 900
+                            loops: Animation.Infinite
+                            running: row.measuring
+                        }
+                    }
+                }
+
+                /// The name cell (§7.1.3): stem at 13 dp/450 in ink, a 1 dp
+                /// gap, the extension at 12 dp/400 in `inkTertiary`, then up to
+                /// three tag dots and — in a search — the relative path.
                 Row {
                     id: nameCell
-                    x: 64
+                    x: 42
                     width: Math.max(0, detailsRow.x - 8 - x)
                     height: parent.height
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 8
+                    spacing: 0
 
                     Text {
-                        id: fileNameText
-                        width: Math.min(implicitWidth,
-                            Math.max(0, parent.width * 0.62 - (row.hasGitStatus ? 22 : 0)))
-                        height: parent.height
+                        id: stemLabel
+                        height: nameCell.height
+                        width: row.singleString
+                            ? row.nameBudget
+                            : Math.min(implicitWidth, row.stemBudget)
                         verticalAlignment: Text.AlignVCenter
-                        text: root.displayName(row.fileName, row.extension)
-                        color: row.selected ? Theme.canvas
-                            : row.hidden ? Theme.inkTertiary : root.textColor
+                        text: row.stemDisplay
+                        color: row.hidden ? Theme.inkTertiary : Theme.ink
+                        font.family: Theme.uiFamily
                         font.pixelSize: Theme.typeBody
+                        font.weight: 450
                         textFormat: Text.PlainText
-                        elide: Text.ElideRight
+                        /// Backstop only: the rule's 8 + … + 6 candidate is
+                        /// usually short enough; when it is not, Qt's middle
+                        /// elide keeps the same shape.
+                        elide: Text.ElideMiddle
                     }
 
-                    Rectangle {
-                        width: 14
-                        height: 14
-                        radius: Theme.radiusXs
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: row.hasGitStatus
-                        color: "transparent"
-                        border.width: 1
-                        border.color: Theme.line
+                    Text {
+                        id: extensionLabel
+                        visible: row.separateExtension && !row.singleString
+                        height: nameCell.height
+                        leftPadding: 1
+                        verticalAlignment: Text.AlignVCenter
+                        text: row.extensionText
+                        color: Theme.inkTertiary
+                        font.family: Theme.uiFamily
+                        font.pixelSize: Theme.typeCaption
+                        textFormat: Text.PlainText
+                    }
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: row.gitLetter
-                            color: row.gitBadgeColor
-                            font.pixelSize: Theme.typeMicro
-                            font.family: Theme.monoFamily
-                            font.weight: Font.Medium
-                            textFormat: Text.PlainText
+                    Row {
+                        id: tagDotsRow
+                        visible: row.tagDots.length > 0
+                        height: nameCell.height
+                        leftPadding: 8
+                        spacing: 3
+
+                        Repeater {
+                            model: row.tagDots
+
+                            Rectangle {
+                                required property string modelData
+                                width: 6
+                                height: 6
+                                radius: 3
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: modelData
+                            }
                         }
                     }
 
                     Text {
-                        width: Math.max(0, parent.width - fileNameText.width - parent.spacing
-                            - (row.hasGitStatus ? 22 : 0))
-                        height: parent.height
+                        visible: row.hasPath
+                        height: nameCell.height
+                        leftPadding: 8
+                        width: row.hasPath ? Math.max(0, nameCell.width - stemLabel.width
+                            - (extensionLabel.visible ? extensionLabel.width : 0)
+                            - (tagDotsRow.visible ? tagDotsRow.width : 0)) : 0
                         verticalAlignment: Text.AlignVCenter
-                        visible: row.relativePath !== row.fileName && row.relativePath !== ""
-                        text: row.relativePath !== row.fileName ? row.relativePath : ""
-                        color: row.selected ? Theme.canvas : root.mutedColor
-                        font.pixelSize: Theme.typeMicro
+                        text: row.hasPath ? row.relativePath : ""
+                        color: Theme.inkTertiary
+                        font.pixelSize: Theme.typeCaption
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle
                     }
+                }
+
+                /// A symbolic link is marked at the end of the row (§6.1.6).
+                /// The marker sits in the row's right padding, so it never
+                /// shifts the columns beside it.
+                Text {
+                    visible: row.category === "link"
+                    x: row.width - 16
+                    width: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    horizontalAlignment: Text.AlignRight
+                    text: "↗"
+                    color: Theme.inkTertiary
+                    font.pixelSize: Theme.typeCaption
+                    textFormat: Text.PlainText
+                    Accessible.ignored: true
                 }
 
                 /// The details columns, right-anchored in the order the
@@ -1634,22 +1748,88 @@ Item {
                             width: root.effectiveColumnWidth(modelData)
                             height: detailsRow.height
 
+                            /// Type: the human label at inkSecondary, then the
+                            /// git status as one letter hugging its right edge
+                            /// (§7.1.6) — not a badge.
+                            Row {
+                                visible: cell.modelData === "type"
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 6
+
+                                Text {
+                                    width: Math.max(0, cell.width
+                                        - (row.hasGitStatus ? 18 : 0))
+                                    text: Localize.typeName(row.typeName)
+                                    color: Theme.inkSecondary
+                                    font.pixelSize: Theme.typeCaption
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    Accessible.ignored: true
+                                }
+
+                                Text {
+                                    visible: row.hasGitStatus
+                                    text: row.gitLetter
+                                    color: row.gitBadgeColor
+                                    font.family: Theme.monoFamily
+                                    font.pixelSize: Theme.typeMicro
+                                    font.weight: Font.Medium
+                                    textFormat: Text.PlainText
+                                    Accessible.ignored: true
+                                }
+                            }
+
+                            /// §7.1.4: the number is right-aligned on a
+                            /// tabular figure, the unit sits in its own left
+                            /// track so MiB and GiB share one baseline.
+                            Row {
+                                visible: cell.modelData === "size"
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+
+                                Text {
+                                    width: 44
+                                    horizontalAlignment: Text.AlignRight
+                                    text: row.sizeParts[0]
+                                    color: Theme.inkSecondary
+                                    font.pixelSize: Theme.typeCaption
+                                    font.features: { "tnum": 1 }
+                                    textFormat: Text.PlainText
+                                    Accessible.ignored: true
+                                }
+
+                                Text {
+                                    width: 30
+                                    text: row.sizeParts[1]
+                                    color: Theme.inkTertiary
+                                    font.pixelSize: Theme.typeCaption
+                                    textFormat: Text.PlainText
+                                    Accessible.ignored: true
+                                }
+                            }
+
+                            /// Modified and created: a relative label, right
+                            /// aligned, tabular (§7.1.4). The full local stamp
+                            /// stays available to a screen reader.
                             Text {
                                 anchors.fill: parent
-                                visible: cell.modelData !== "tags"
+                                visible: cell.modelData === "modified"
+                                    || cell.modelData === "created"
+                                horizontalAlignment: Text.AlignRight
                                 verticalAlignment: Text.AlignVCenter
-                                horizontalAlignment: cell.modelData === "type"
-                                    ? Text.AlignLeft : Text.AlignRight
                                 text: root.cellText(row, cell.modelData)
-                                color: row.selected ? Theme.canvas
-                                    : cell.modelData === "created" && row.createdFallback
-                                        ? Theme.inkTertiary : root.mutedColor
+                                color: cell.modelData === "created" && row.createdFallback
+                                    ? Theme.inkTertiary : Theme.inkSecondary
                                 font.pixelSize: Theme.typeCaption
-                                font.features: cell.modelData === "size"
-                                    || cell.modelData === "modified"
-                                    || cell.modelData === "created" ? { "tnum": 1 } : {}
+                                font.features: { "tnum": 1 }
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
+                                Accessible.description: cell.modelData === "modified"
+                                    ? root.fullTimestamp(row.modifiedAt)
+                                    : root.fullTimestamp(row.createdAt)
                             }
 
                             Row {
@@ -1680,7 +1860,7 @@ Item {
                                     width: Math.max(0, parent.width - 14)
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: row.tagNames
-                                    color: row.selected ? Theme.canvas : root.mutedColor
+                                    color: Theme.inkSecondary
                                     font.pixelSize: Theme.typeCaption
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight

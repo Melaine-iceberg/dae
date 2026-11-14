@@ -86,6 +86,21 @@ const ROLE_TAG_COLORS: i32 = 0x0112;
 /// The section this row belongs to under the current grouping; empty when
 /// grouping is off.
 const ROLE_GROUP: i32 = 0x0113;
+/// Human-readable type for the type column (§7.1.6). The mapping lives here,
+/// next to [`category_of`], so the delegate only prints what it is handed.
+const ROLE_TYPE_NAME: i32 = 0x0114;
+/// `modified_at` as milliseconds since the epoch. The delegate formats the
+/// relative label from it, so "today" is decided in the user's local time
+/// rather than in the model's UTC timestamp.
+const ROLE_MODIFIED_AT: i32 = 0x0115;
+/// Whether the row above is selected. A contiguous selection block rounds only
+/// its outer corners (§6.4.2), and a delegate cannot read its neighbours.
+const ROLE_SELECTED_PREV: i32 = 0x0116;
+/// Whether the row below is selected, for the same reason.
+const ROLE_SELECTED_NEXT: i32 = 0x0117;
+/// `created_at` as milliseconds since the epoch, for the relative label the
+/// created column prints in the same format as the modified column.
+const ROLE_CREATED_AT: i32 = 0x0118;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -1576,12 +1591,11 @@ fn category_for_extension(extension: &str) -> &'static str {
         "bat", "cmd", "sql", "html", "htm", "css", "scss", "less", "json", "yaml", "yml", "toml",
         "xml",
     ];
-    const TEXT: &[&str] = &[
-        "txt", "md", "markdown", "log", "csv", "tsv", "ini", "conf", "cfg",
-    ];
-    const DOCUMENT: &[&str] = &[
-        "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods",
-    ];
+    const TEXT: &[&str] = &["txt", "md", "markdown", "log", "ini", "conf", "cfg"];
+    const DOCUMENT: &[&str] = &["doc", "docx", "rtf", "odt", "pages"];
+    const SPREADSHEET: &[&str] = &["xls", "xlsx", "xlsm", "ods", "numbers", "csv", "tsv"];
+    const PRESENTATION: &[&str] = &["ppt", "pptx", "pps", "ppsx", "odp", "key"];
+    const PDF: &[&str] = &["pdf", "epub"];
     const FONT: &[&str] = &["ttf", "otf", "woff", "woff2"];
     const EXECUTABLE: &[&str] = &["exe", "msi", "appref-ms"];
 
@@ -1601,6 +1615,12 @@ fn category_for_extension(extension: &str) -> &'static str {
         "code"
     } else if contains(TEXT) {
         "text"
+    } else if contains(SPREADSHEET) {
+        "spreadsheet"
+    } else if contains(PRESENTATION) {
+        "presentation"
+    } else if contains(PDF) {
+        "pdf"
     } else if contains(DOCUMENT) {
         "document"
     } else if contains(FONT) {
@@ -1612,6 +1632,93 @@ fn category_for_extension(extension: &str) -> &'static str {
     }
 }
 
+/// The type column's human label (§7.1.6).
+///
+/// The extension table is the first half of the same decision `category_of`
+/// makes; `FileList.qml` only prints the answer through `Localize.typeName()`,
+/// so a new extension is one line here and one translation key, not a QML
+/// branch. Unknown extensions fall back to their family, and a file without one
+/// is simply "File".
+pub(crate) fn type_label(kind: EntryKind, name: &str) -> &'static str {
+    if kind != EntryKind::File {
+        return match kind {
+            EntryKind::Directory => "Folder",
+            EntryKind::Symlink => "Link",
+            _ => "Other",
+        };
+    }
+    let extension = extension_of(name);
+    if extension.is_empty() {
+        return "File";
+    }
+    match extension.to_ascii_lowercase().as_str() {
+        "qml" => "QML source",
+        "rs" => "Rust source",
+        "ts" => "TypeScript source",
+        "tsx" => "TSX source",
+        "js" => "JavaScript source",
+        "jsx" => "JSX source",
+        "py" => "Python source",
+        "go" => "Go source",
+        "c" => "C source",
+        "h" => "C header",
+        "cpp" | "cc" => "C++ source",
+        "hpp" => "C++ header",
+        "cs" => "C# source",
+        "java" => "Java source",
+        "kt" | "kts" => "Kotlin source",
+        "swift" => "Swift source",
+        "rb" => "Ruby source",
+        "php" => "PHP source",
+        "lua" => "Lua source",
+        "sh" | "bash" | "zsh" => "Shell script",
+        "ps1" => "PowerShell script",
+        "bat" | "cmd" => "Batch file",
+        "sql" => "SQL script",
+        "html" | "htm" => "HTML",
+        "css" | "scss" | "less" => "Stylesheet",
+        "json" => "JSON",
+        "toml" => "TOML",
+        "yaml" | "yml" => "YAML",
+        "xml" => "XML",
+        "txt" => "Plain text",
+        "md" | "markdown" => "Markdown",
+        "log" => "Log",
+        "ini" | "conf" | "cfg" => "Config",
+        "doc" | "docx" => "Word document",
+        "rtf" => "Rich text",
+        "odt" | "pages" => "Document",
+        "xls" | "xlsx" | "xlsm" => "Excel workbook",
+        "ods" | "numbers" => "Spreadsheet",
+        "csv" => "CSV",
+        "tsv" => "TSV",
+        "ppt" | "pptx" | "pps" | "ppsx" => "PowerPoint",
+        "odp" | "key" => "Presentation",
+        "pdf" => "PDF document",
+        "epub" => "EPUB book",
+        "exe" | "msi" | "appref-ms" => "Application",
+        _ => family_label(category_for_extension(&extension)),
+    }
+}
+
+fn family_label(family: &str) -> &'static str {
+    match family {
+        "image" => "Image",
+        "video" => "Video",
+        "audio" => "Audio",
+        "archive" => "Archive",
+        "code" => "Source code",
+        "text" => "Text",
+        "document" => "Document",
+        "spreadsheet" => "Spreadsheet",
+        "presentation" => "Presentation",
+        "pdf" => "PDF document",
+        "font" => "Font",
+        "executable" => "Application",
+        _ => "File",
+    }
+}
+
 fn category_rank(category: &str) -> u8 {
     match category {
         "folder" => 0,
@@ -1620,13 +1727,16 @@ fn category_rank(category: &str) -> u8 {
         "video" => 3,
         "audio" => 4,
         "document" => 5,
-        "text" => 6,
-        "code" => 7,
-        "archive" => 8,
-        "font" => 9,
-        "executable" => 10,
-        "other" => 12,
-        _ => 11,
+        "spreadsheet" => 6,
+        "presentation" => 7,
+        "pdf" => 8,
+        "text" => 9,
+        "code" => 10,
+        "archive" => 11,
+        "font" => 12,
+        "executable" => 13,
+        "other" => 15,
+        _ => 14,
     }
 }
 
@@ -1924,6 +2034,24 @@ impl qobject::DirectoryListModel {
                 QVariant::from(&QString::from(self.tag_colors(&row.tag_ids).as_str()))
             }
             ROLE_GROUP => QVariant::from(&QString::from(row.group_label.as_str())),
+            ROLE_TYPE_NAME => QVariant::from(&QString::from(type_label(row.kind, &row.name))),
+            ROLE_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
+            ROLE_CREATED_AT => QVariant::from(&(row.created_at.unwrap_or(0) as f64)),
+            ROLE_SELECTED_PREV => {
+                let previous = index.row() > 0
+                    && self
+                        .rows
+                        .get(index.row() as usize - 1)
+                        .is_some_and(|row| row.selected);
+                QVariant::from(&previous)
+            }
+            ROLE_SELECTED_NEXT => {
+                let next = self
+                    .rows
+                    .get(index.row() as usize + 1)
+                    .is_some_and(|row| row.selected);
+                QVariant::from(&next)
+            }
             _ => QVariant::default(),
         }
     }
@@ -1950,6 +2078,11 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_TAG_IDS, QByteArray::from("tagIds"));
         roles.insert(ROLE_TAG_COLORS, QByteArray::from("tagColors"));
         roles.insert(ROLE_GROUP, QByteArray::from("groupLabel"));
+        roles.insert(ROLE_TYPE_NAME, QByteArray::from("typeName"));
+        roles.insert(ROLE_MODIFIED_AT, QByteArray::from("modifiedAt"));
+        roles.insert(ROLE_SELECTED_PREV, QByteArray::from("previousSelected"));
+        roles.insert(ROLE_SELECTED_NEXT, QByteArray::from("nextSelected"));
+        roles.insert(ROLE_CREATED_AT, QByteArray::from("createdAt"));
         roles
     }
 
@@ -2843,19 +2976,25 @@ impl qobject::DirectoryListModel {
     }
 
     /// Republishes the selected count and repaints the spans whose flags moved.
-    /// One `dataChanged` per contiguous run, carrying only the selected role:
-    /// the delegate re-reads one property, and rows whose flag did not move are
-    /// not touched at all.
+    /// One `dataChanged` per contiguous run, carrying the selected role plus the
+    /// two neighbour flags the delegate merges block corners from. A run is
+    /// widened by one row on each side so a row next to the change redraws its
+    /// own merge state.
     fn publish_selection(mut self: Pin<&mut Self>, runs: Vec<Run>) {
         self.as_mut().publish_selection_count();
-        if runs.is_empty() {
+        let len = self.rows.len();
+        if runs.is_empty() || len == 0 {
             return;
         }
         unsafe {
             let parent = QModelIndex::default();
             let mut roles = QList::<i32>::default();
             roles.append(ROLE_SELECTED);
+            roles.append(ROLE_SELECTED_PREV);
+            roles.append(ROLE_SELECTED_NEXT);
             for (first, last) in runs {
+                let first = first.saturating_sub(1);
+                let last = (last + 1).min(len - 1);
                 let top = self.as_mut().model_index(first as i32, 0, &parent);
                 let bottom = self.as_mut().model_index(last as i32, 0, &parent);
                 self.as_mut().data_changed(&top, &bottom, &roles);
@@ -5106,9 +5245,27 @@ mod tests {
         assert_eq!(category_of(EntryKind::File, "Button.qml"), "code");
         assert_eq!(category_of(EntryKind::File, "song.flac"), "audio");
         assert_eq!(category_of(EntryKind::File, "bundle.7z"), "archive");
+        assert_eq!(category_of(EntryKind::File, "sheet.xlsx"), "spreadsheet");
+        assert_eq!(category_of(EntryKind::File, "deck.pptx"), "presentation");
+        assert_eq!(category_of(EntryKind::File, "paper.pdf"), "pdf");
         assert_eq!(category_of(EntryKind::File, "README"), "file");
         assert_eq!(extension_of("README"), "");
         assert_eq!(extension_of("a.tar.gz"), "gz");
+    }
+
+    /// §7.1.6: the type column's label comes from the same table as the glyph,
+    /// and a common extension is named after its format rather than its family.
+    #[test]
+    fn type_labels_name_the_format_before_the_family() {
+        assert_eq!(type_label(EntryKind::Directory, "src"), "Folder");
+        assert_eq!(type_label(EntryKind::Symlink, "link"), "Link");
+        assert_eq!(type_label(EntryKind::File, "Button.qml"), "QML source");
+        assert_eq!(type_label(EntryKind::File, "report.docx"), "Word document");
+        assert_eq!(type_label(EntryKind::File, "notes.md"), "Markdown");
+        assert_eq!(type_label(EntryKind::File, "sheet.csv"), "CSV");
+        assert_eq!(type_label(EntryKind::File, "holiday.jpeg"), "Image");
+        assert_eq!(type_label(EntryKind::File, "README"), "File");
+        assert_eq!(type_label(EntryKind::File, "thing.weird"), "File");
     }
 
     /// M1 acceptance: the tag work must stay out of the 120,000-entry listing's

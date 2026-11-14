@@ -222,7 +222,7 @@ pub fn default_shortcuts() -> HashMap<String, String> {
     let entries: [(&str, &str); 48] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
-        ("app.pathJump", "Mod+P"),
+        ("app.pathJump", "Mod+L"),
         ("app.toggleTerminal", "Control+`"),
         ("app.openSettings", "Mod+,"),
         // Window and tab management. These were fixed chords in the shell

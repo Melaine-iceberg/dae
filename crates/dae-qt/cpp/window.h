@@ -312,14 +312,14 @@ inline void dae_qt_dress_placeholder(QWindow* window)
     set_transitions(hwnd, TRUE);
 }
 
-// The QML chrome bar is 44 dp tall and each window button 46 dp wide. These are
+// The QML chrome bar is 38 dp tall and each window button 46 dp wide. These are
 // physical pixels on this side because WM_NCHITTEST speaks client pixels,
 // which Qt does not scale for us in a native filter.
 //
-// 44 is not cosmetic: the tab strip lives inside the bar now, so the bar has to
-// be tall enough to hold a 34 dp tab with 5 dp above and below it. The height
-// and `TitleBar.implicitHeight` are the same number and both are load-bearing.
-constexpr double kTitleBarDp = 44.0;
+// 38 is not cosmetic: the tabs live inside the bar, so the bar holds a 30 dp
+// tab with 4 dp above and below it. The height and
+// `TopBar.implicitHeight` are the same number and both are load-bearing.
+constexpr double kTitleBarDp = 38.0;
 constexpr double kButtonDp = 46.0;
 
 /// Everything the native half needs to know about one window.
@@ -770,9 +770,14 @@ inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
     return apply_backdrop_to(hwnd, material, dark);
 }
 
-/// Records which horizontal slice of the 44 dp bar must hit-test as client, in
-/// dp from the client's left edge. Called by the tab strip whenever the number
+/// Records which horizontal slice of the 38 dp bar must hit-test as client, in
+/// dp from the client's left edge. Called by the top bar whenever the number
 /// or the width of the tabs changes.
+///
+/// QML owns the numbers, but they are geometry and can be stale for a frame
+/// while tabs are rebuilt or the window is resized. Clamping here keeps a stale
+/// band from swallowing the drag strip or the window buttons: the band may not
+/// start before the client edge or reach into the three button columns.
 inline bool dae_qt_set_caption_client(const QString& token, double left, double right)
 {
     QQuickWindow* window = find_window_by_token(token);
@@ -781,8 +786,16 @@ inline bool dae_qt_set_caption_client(const QString& token, double left, double 
     WindowState* state = state_for(reinterpret_cast<HWND>(window->winId()));
     if (!state)
         return false;
-    state->client_left_dp = left;
-    state->client_right_dp = right;
+    if (window->width() > 0.0)
+        right = qMin(right, window->width() - 3.0 * kButtonDp);
+    left = qMax(0.0, left);
+    if (right > left) {
+        state->client_left_dp = left;
+        state->client_right_dp = right;
+    } else {
+        state->client_left_dp = 0.0;
+        state->client_right_dp = 0.0;
+    }
     return true;
 }
 

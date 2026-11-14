@@ -40,6 +40,10 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         #[rust_name = "register_file_icon_provider"]
         unsafe fn dae_qt_register_file_icon_provider(engine: *mut QQmlApplicationEngine);
+
+        #[namespace = "dae_qt"]
+        #[rust_name = "register_file_glyph_provider"]
+        unsafe fn dae_qt_register_file_glyph_provider(engine: *mut QQmlApplicationEngine);
     }
 
     extern "Rust" {
@@ -69,6 +73,9 @@ pub mod qobject {
 pub fn register_provider(engine: *mut cxx_qt_lib::QQmlApplicationEngine) {
     unsafe {
         qobject::register_file_icon_provider(engine);
+        // The built-in file glyphs (§12.3): one cached raster per family and
+        // pixel edge, painted by `FileIcon.qml` as a plain `Image`.
+        qobject::register_file_glyph_provider(engine);
     }
 }
 
