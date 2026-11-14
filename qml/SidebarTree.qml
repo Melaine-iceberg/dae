@@ -125,7 +125,7 @@ Item {
                     height: parent.height
                     radius: Theme.radiusSm
                     color: node.current
-                        ? Theme.signalSoft
+                        ? Theme.accentSoft
                         : (nodeMouse.containsMouse ? Theme.hover : "transparent")
                 }
 
@@ -136,7 +136,7 @@ Item {
                     width: 3
                     height: parent.height - 12
                     radius: 1
-                    color: Theme.signal
+                    color: Theme.accent
                 }
 
                 Item {
@@ -163,7 +163,7 @@ Item {
                         height: 12
                         kind: "chevron"
                         tint: node.expanded || nodeMouse.containsMouse
-                            ? Theme.inkMuted : Theme.inkFaint
+                            ? Theme.inkSecondary : Theme.inkTertiary
                         rotation: node.expanded ? 90 : 0
                     }
 
@@ -182,7 +182,7 @@ Item {
                     height: 14
                     kind: "folder"
                     tint: node.current || nodeMouse.containsMouse
-                        ? Theme.ink : Theme.inkMuted
+                        ? Theme.ink : Theme.inkSecondary
                 }
 
                 Text {
@@ -192,7 +192,7 @@ Item {
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: node.treeName
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
@@ -230,7 +230,7 @@ Item {
         height: visible ? 20 : 0
         visible: treeModel.count === 0 && (treeModel.busy || treeModel.loaded)
         text: Localize.message(treeModel.status)
-        color: Theme.inkFaint
+        color: Theme.inkTertiary
         font.pixelSize: Theme.typeMicro
         elide: Text.ElideRight
         verticalAlignment: Text.AlignVCenter

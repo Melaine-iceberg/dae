@@ -151,7 +151,7 @@ Item {
         const label = root.columnLabel(id) + "  "
         const sample = label.length > (samples[id] || "").length ? label : samples[id]
         const metrics = Qt.createQmlObject(
-            "import QtQuick; Text { font.pixelSize: " + Theme.typeSmall + " }", root)
+            "import QtQuick; Text { font.pixelSize: " + Theme.typeCaption + " }", root)
         metrics.text = sample || ""
         root.setColumnWidth(id, metrics.implicitWidth + 28)
         metrics.destroy()
@@ -260,7 +260,7 @@ Item {
     readonly property int listingTop: heroHeight + (listHeaderVisible ? headerHeight : 0)
     readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
 
     /// What the centred empty state says. A listing status of "N items" is
@@ -759,7 +759,7 @@ Item {
         root.dragPaths = []
         if (paths.length > 0)
             Workspace.startDragOut(paths, root.dragOutMode(mouse.modifiers),
-                                   Theme.signal)
+                                   Theme.accent)
     }
 
     function dragOutMode(modifiers) {
@@ -1107,7 +1107,7 @@ Item {
             Text {
                 text: cell.label
                 color: cell.active ? Theme.ink
-                    : (headerMouse.containsMouse ? Theme.inkMuted : Theme.inkFaint)
+                    : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
                 font.letterSpacing: 0.55
@@ -1162,7 +1162,7 @@ Item {
             x: 16
             y: 12
             text: root.searchModel !== null ? qsTr("搜索结果") : qsTr("文件夹")
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.family: Theme.monoFamily
             font.pixelSize: Theme.typeMicro
             font.letterSpacing: 2
@@ -1180,7 +1180,7 @@ Item {
             width: Math.max(0, parent.width - 96)
             text: root.heroName
             color: Theme.ink
-            font.family: Theme.serifFamily
+            font.family: Theme.uiFamily
             font.pixelSize: 56
             font.letterSpacing: -1
             elide: Text.ElideRight
@@ -1195,7 +1195,7 @@ Item {
             width: Math.max(0, parent.width - 32)
             text: root.heroMeta
             visible: text !== ""
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.family: Theme.monoFamily
             font.pixelSize: Theme.typeMicro
             font.features: { "tnum": 1 }
@@ -1209,9 +1209,9 @@ Item {
             anchors.top: heroTitle.top
             anchors.topMargin: 6
             text: String(root.model !== null ? root.model.loaded : 0).padStart(2, "0")
-            color: Theme.signal
+            color: Theme.accent
             font.family: Theme.monoFamily
-            font.pixelSize: Theme.typeName
+            font.pixelSize: Theme.typeBody
             font.features: { "tnum": 1 }
         }
     }
@@ -1345,7 +1345,7 @@ Item {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 4
                     text: root.groupLabelText(sectionRow.section)
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
                     font.letterSpacing: 0.4
@@ -1429,10 +1429,10 @@ Item {
                     : (row.gitStatus === "modified" ? "M"
                         : (row.gitStatus === "untracked" ? "U" : ""))
                 readonly property color gitBadgeColor: row.gitStatus === "modified"
-                    ? Theme.warn
+                    ? Theme.warning
                     : (row.gitStatus === "added"
                         ? Theme.success
-                        : Theme.link)
+                        : Theme.accent)
 
                 /// The row, not the four cells inside it: a listing read cell
                 /// by cell is unlistenable, and the selection state lives on
@@ -1451,16 +1451,20 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     color: row.selected ? Theme.ink
-                        : row.dropTarget ? Theme.signalSoft
+                        : row.dropTarget ? Theme.accentSoft
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
                 }
 
-                /// A drop target is a dashed frame, not a solid one: the solid
-                /// rule belongs to the keyboard cursor below, and the two must
-                /// not read as the same state.
-                DashFrame {
+                /// A drop target is a solid accent edge at 1.5 dp, and the
+                /// keyboard cursor keeps its own 1 dp ring: the two states stay
+                /// apart without a dashed line, which in a file manager only
+                /// ever means "placeholder" (§6.7).
+                Rectangle {
                     anchors.fill: parent
                     visible: row.dropTarget
+                    color: "transparent"
+                    border.width: 1.5
+                    border.color: Theme.accent
                 }
 
                 Rectangle {
@@ -1468,7 +1472,7 @@ Item {
                     visible: row.focusedCursor
                     color: "transparent"
                     border.width: 1
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                 }
 
                 Rectangle {
@@ -1476,7 +1480,7 @@ Item {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     height: 1
-                    color: Theme.rowRule
+                    color: Theme.hairline
                 }
 
                 /// The row's place in the current order, in mono. drift numbers
@@ -1490,7 +1494,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     horizontalAlignment: Text.AlignRight
                     text: String(row.index + 1).padStart(2, "0")
-                    color: row.selected ? Theme.canvas : Theme.inkFaint
+                    color: row.selected ? Theme.canvas : Theme.inkTertiary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
@@ -1567,8 +1571,8 @@ Item {
                         verticalAlignment: Text.AlignVCenter
                         text: root.displayName(row.fileName, row.extension)
                         color: row.selected ? Theme.canvas
-                            : row.hidden ? Theme.inkFaint : root.textColor
-                        font.pixelSize: Theme.typeName
+                            : row.hidden ? Theme.inkTertiary : root.textColor
+                        font.pixelSize: Theme.typeBody
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
                     }
@@ -1581,7 +1585,7 @@ Item {
                         visible: row.hasGitStatus
                         color: "transparent"
                         border.width: 1
-                        border.color: Theme.hairlineStrong
+                        border.color: Theme.line
 
                         Text {
                             anchors.centerIn: parent
@@ -1639,8 +1643,8 @@ Item {
                                 text: root.cellText(row, cell.modelData)
                                 color: row.selected ? Theme.canvas
                                     : cell.modelData === "created" && row.createdFallback
-                                        ? Theme.inkFaint : root.mutedColor
-                                font.pixelSize: Theme.typeSmall
+                                        ? Theme.inkTertiary : root.mutedColor
+                                font.pixelSize: Theme.typeCaption
                                 font.features: cell.modelData === "size"
                                     || cell.modelData === "modified"
                                     || cell.modelData === "created" ? { "tnum": 1 } : {}
@@ -1677,7 +1681,7 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: row.tagNames
                                     color: row.selected ? Theme.canvas : root.mutedColor
-                                    font.pixelSize: Theme.typeSmall
+                                    font.pixelSize: Theme.typeCaption
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                 }
@@ -1753,7 +1757,7 @@ Item {
                     }
                     onSelectionChanged: root.selectionChanged()
                     onDragOutRequested: function (paths, mode) {
-                        Workspace.startDragOut(paths, mode, Theme.signal)
+                        Workspace.startDragOut(paths, mode, Theme.accent)
                     }
                 }
             }
@@ -1780,7 +1784,7 @@ Item {
                     }
                     onSelectionChanged: root.selectionChanged()
                     onDragOutRequested: function (paths, mode) {
-                        Workspace.startDragOut(paths, mode, Theme.signal)
+                        Workspace.startDragOut(paths, mode, Theme.accent)
                     }
                 }
             }
@@ -1955,9 +1959,9 @@ Item {
                 width: Math.abs(listMarquee.pointerX - listMarquee.startX)
                 height: Math.max(0, Math.abs(list.contentY + listMarquee.pointerY
                                              - listMarquee.startContentY))
-                color: Theme.signalSoft
+                color: Theme.accentSoft
                 border.width: 1
-                border.color: Theme.signal
+                border.color: Theme.accent
                 radius: Theme.radiusXs
             }
         }
@@ -2036,7 +2040,7 @@ Item {
 
             anchors.fill: parent
             visible: dropArea.containsDrag && root.dropTargetPath !== ""
-            color: Theme.signalSoft
+            color: Theme.accentSoft
             radius: Theme.radiusSm
 
             Text {
@@ -2055,12 +2059,15 @@ Item {
             }
         }
 
-        /// The plate's own edge: the same dashed frame the row under the
+        /// The plate's own edge: the same solid accent frame the row under the
         /// pointer wears, so "this is where it lands" is one mark at both
         /// scales instead of a wash here and a frame there.
-        DashFrame {
+        Rectangle {
             anchors.fill: dropPlate
             visible: dropPlate.visible
+            color: "transparent"
+            border.width: 1.5
+            border.color: Theme.accent
         }
     }
 

@@ -26,9 +26,9 @@ Item {
     property bool remoteLocation: false
     property string scopePath: ""
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
     /// The bindings from `settings.toml`, so a hint in the list is the key the
     /// user actually has to press. Commands without an entry keep their
@@ -635,8 +635,8 @@ Item {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: panel
     }
 
@@ -650,7 +650,7 @@ Item {
         radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         MouseArea {
             anchors.fill: parent
@@ -675,7 +675,7 @@ Item {
                 height: 14
                 anchors.verticalCenter: parent.verticalCenter
                 kind: "search"
-                tint: Theme.inkMuted
+                tint: Theme.inkSecondary
             }
 
             TextInput {
@@ -689,8 +689,8 @@ Item {
                 height: Theme.controlSm
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onInteractive
-                font.pixelSize: Theme.typeEmphasis
+                selectedTextColor: Theme.onAccent
+                font.pixelSize: Theme.typeHeading
                 verticalAlignment: TextInput.AlignVCenter
                 focus: true
                 clip: true
@@ -753,8 +753,8 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: input.text.length === 0
                 text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
-                color: Theme.inkFaint
-                font.pixelSize: Theme.typeEmphasis
+                color: Theme.inkTertiary
+                font.pixelSize: Theme.typeHeading
             }
 
             // 20 × 18, the one keycap in the surface: there is no button to
@@ -775,7 +775,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "Esc"
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                 }
@@ -831,7 +831,7 @@ Item {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 3
                     text: sectionRow.section
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
                     font.letterSpacing: 0.6
@@ -873,7 +873,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.radiusSm
-                    color: row.current ? Theme.signalSoft
+                    color: row.current ? Theme.accentSoft
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
 
                     Rectangle {
@@ -885,7 +885,7 @@ Item {
                         anchors.bottomMargin: 6
                         width: 3
                         radius: Theme.radiusXs
-                        color: Theme.signal
+                        color: Theme.accent
                     }
                 }
 
@@ -895,7 +895,7 @@ Item {
                     height: 14
                     anchors.verticalCenter: parent.verticalCenter
                     kind: row.glyph
-                    tint: row.current ? Theme.inkMuted : Theme.inkFaint
+                    tint: row.current ? Theme.inkSecondary : Theme.inkTertiary
                 }
 
                 Text {
@@ -919,7 +919,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(220, implicitWidth)
                     text: row.hint
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.family: Theme.monoFamily
                     elide: Text.ElideMiddle
@@ -962,7 +962,7 @@ Item {
                     : (root.trimmedQuery.length === 0
                         ? qsTr("没有可用的入口")
                         : qsTr("没有匹配 “") + root.trimmedQuery + "”")
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeBody
                 wrapMode: Text.Wrap
             }
@@ -973,7 +973,7 @@ Item {
                 text: root.trimmedQuery.length === 0
                     ? qsTr("试试命令名、文件路径，或一个空间的名字。")
                     : qsTr("试试其他关键词，或输入一个路径直接跳转。")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeCaption
                 wrapMode: Text.Wrap
             }
@@ -1000,7 +1000,7 @@ Item {
                 x: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("↑↓ 选择") + " · " + qsTr("↵ 执行") + " · " + qsTr("Esc 关闭")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -1010,7 +1010,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.searchingFiles ? qsTr("搜索文件…")
                     : qsTr("%1 个结果").arg(root.resultCount)
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
         }

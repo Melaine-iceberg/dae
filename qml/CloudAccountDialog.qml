@@ -13,7 +13,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property string provider: "google_drive"
     property bool authorizing: false
     property bool copied: false
@@ -32,7 +32,7 @@ Item {
     Accessible.name: qsTr("云盘账户")
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
@@ -152,8 +152,8 @@ Item {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: card
     }
 
@@ -165,7 +165,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         MouseArea {
             anchors.fill: parent
@@ -185,7 +185,7 @@ Item {
             x: 20
             y: 76
             text: qsTr("网盘")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -244,7 +244,7 @@ Item {
             width: card.width - 40
             height: 86
             radius: Theme.radiusSm
-            color: Theme.canvasAlt
+            color: Theme.inset
             border.width: 1
             border.color: root.hairline
 
@@ -293,9 +293,9 @@ Item {
                         readOnly: true
                         selectByMouse: true
                         text: root.redirectUri
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
+                        selectedTextColor: Theme.onAccent
                         font.pixelSize: Theme.typeMicro
                         font.family: Theme.monoFamily
 
@@ -314,7 +314,7 @@ Item {
                         anchors.fill: parent
                         radius: Theme.radiusSm
                         color: copyMouse.containsMouse
-                            ? Theme.fill : "transparent"
+                            ? Theme.hover : "transparent"
 
                         Text {
                             anchors.centerIn: parent
@@ -368,13 +368,13 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.authorizing
-                ? Theme.canvasAlt
-                : (authorizeMouse.containsMouse ? Theme.interactiveHover : root.accent)
+                ? Theme.inset
+                : (authorizeMouse.containsMouse ? Theme.accentHover : root.accent)
 
             Text {
                 anchors.centerIn: parent
                 text: root.authorizing ? qsTr("等待授权中…") : qsTr("在浏览器中授权…")
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -396,14 +396,14 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: cancelMouse.containsMouse
-                ? Theme.fill : "transparent"
+                ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -432,7 +432,7 @@ Item {
         radius: Theme.radiusSm
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
-            : (hovered ? Theme.fill : "transparent")
+            : (hovered ? Theme.hover : "transparent")
         border.width: 1
         border.color: selected ? root.accent : root.hairline
 
@@ -463,7 +463,7 @@ Item {
             anchors.bottomMargin: 8
             anchors.horizontalCenter: parent.horizontalCenter
             text: providerCard.label
-            color: providerCard.selected ? root.textColor : Theme.inkMuted
+            color: providerCard.selected ? root.textColor : Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -494,7 +494,7 @@ Item {
             x: 0
             y: 0
             text: field.label
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -527,7 +527,7 @@ Item {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onInteractive
+                selectedTextColor: Theme.onAccent
                 font.pixelSize: Theme.typeCaption
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 selectByMouse: true

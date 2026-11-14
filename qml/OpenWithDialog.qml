@@ -15,7 +15,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property string path: ""
     property string selectedId: ""
     property bool setDefault: false
@@ -23,7 +23,7 @@ FocusScope {
     property string errorText: ""
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
@@ -146,8 +146,8 @@ FocusScope {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: dialogPanel
     }
 
@@ -159,7 +159,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         MouseArea {
             anchors.fill: parent
@@ -212,7 +212,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -328,7 +328,7 @@ FocusScope {
                             height: Theme.controlXs
                             radius: Theme.radiusSm
                             anchors.verticalCenter: parent.verticalCenter
-                            color: Theme.hairlineStrong
+                            color: Theme.line
 
                             Text {
                                 anchors.centerIn: parent
@@ -484,7 +484,7 @@ FocusScope {
                             color: root.setDefault ? root.accent : "transparent"
                             border.width: 1
                             border.color: root.setDefault ? root.accent
-                                : Theme.hairlineStrong
+                                : Theme.line
 
                             Glyph {
                                 anchors.centerIn: parent
@@ -492,7 +492,7 @@ FocusScope {
                                 width: 10
                                 height: 10
                                 kind: "check"
-                                tint: Theme.onInteractive
+                                tint: Theme.onAccent
                             }
                         }
 
@@ -525,7 +525,7 @@ FocusScope {
                         height: Theme.controlMd
                         radius: Theme.radiusSm
                         color: cancelMouse.containsMouse
-                            ? Theme.fill
+                            ? Theme.hover
                             : "transparent"
                         border.width: 1
                         border.color: root.hairline
@@ -557,7 +557,7 @@ FocusScope {
                         Text {
                             anchors.centerIn: parent
                             text: root.opening ? qsTr("正在打开…") : qsTr("打开")
-                            color: Theme.onInteractive
+                            color: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             font.weight: Font.Medium
                         }

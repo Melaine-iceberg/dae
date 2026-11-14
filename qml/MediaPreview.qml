@@ -13,10 +13,10 @@ Item {
     property string mediaKind: "video"
     property string posterSource: ""
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
-    property color sectionColor: Theme.canvasAlt
+    property color mutedColor: Theme.inkSecondary
+    property color sectionColor: Theme.inset
     property color hairline: Theme.hairline
 
     property bool muted: false
@@ -239,7 +239,7 @@ Item {
                 anchors.margins: 8
                 visible: root.video && root.started && root.playing
                 text: root.durationLabel(player.position)
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeMicro
             }
         }
@@ -254,7 +254,7 @@ Item {
                 width: parent.width
                 height: 4
                 radius: Theme.radiusSm
-                color: Theme.hairlineStrong
+                color: Theme.line
             }
 
             Rectangle {
@@ -338,14 +338,14 @@ Item {
                         width: 3
                         height: 11
                         radius: Theme.radiusSm
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                     }
 
                     Rectangle {
                         width: 3
                         height: 11
                         radius: Theme.radiusSm
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                     }
                 }
 

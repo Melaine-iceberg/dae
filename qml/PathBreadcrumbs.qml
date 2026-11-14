@@ -23,8 +23,8 @@ Item {
 
     property bool dark: true
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
-    property color accent: Theme.interactive
+    property color mutedColor: Theme.inkSecondary
+    property color accent: Theme.accent
 
     /// The path of the ancestor that was clicked.
     signal crumbActivated(string path)
@@ -251,7 +251,7 @@ Item {
                 x: -bar.crumbGap - width
                 visible: slot.index > 0
                 text: "\u203A"
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: bar.fontSize
                 Accessible.ignored: true
             }

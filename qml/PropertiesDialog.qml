@@ -15,7 +15,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     /// `general`, `permissions` (unix), `attributes` (windows) or `checksum`.
     property string tab: "general"
@@ -62,7 +62,7 @@ FocusScope {
     readonly property bool expectedMatches: root.expectedMatch !== ""
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
@@ -288,8 +288,8 @@ FocusScope {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: dialogPanel
     }
 
@@ -301,7 +301,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         MouseArea {
             anchors.fill: parent
@@ -376,7 +376,7 @@ FocusScope {
                             // The current tab is a position, not a control: it
                             // keeps the same signal track as the window's tabs
                             // instead of following the system accent.
-                            color: Theme.signal
+                            color: Theme.accent
                             visible: root.tab === tabItem.modelData.key
                         }
 
@@ -442,7 +442,7 @@ FocusScope {
                             height: Theme.controlSm
                             radius: Theme.radiusSm
                             color: scanMouse.containsMouse
-                                ? Theme.fill : "transparent"
+                                ? Theme.hover : "transparent"
                             border.width: 1
                             border.color: root.hairline
 
@@ -675,13 +675,13 @@ FocusScope {
                                 width: 56
                                 height: Theme.controlMd
                                 radius: Theme.radiusSm
-                                color: !aclAddMouse.enabled ? Theme.canvasAlt
-                                    : (aclAddMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
+                                color: !aclAddMouse.enabled ? Theme.inset
+                                    : (aclAddMouse.containsMouse ? Theme.accentHover : Theme.accent)
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: qsTr("添加")
-                                    color: aclAddMouse.enabled ? Theme.onInteractive : root.mutedColor
+                                    color: aclAddMouse.enabled ? Theme.onAccent : root.mutedColor
                                     font.pixelSize: Theme.typeCaption
                                 }
 
@@ -861,7 +861,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -936,12 +936,12 @@ FocusScope {
                             width: 96
                             height: Theme.controlMd
                             radius: Theme.radiusSm
-                            color: hashMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
+                            color: hashMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                             Text {
                                 anchors.centerIn: parent
                                 text: controller.hashing ? qsTr("取消") : qsTr("开始校验")
-                                color: Theme.onInteractive
+                                color: Theme.onAccent
                                 font.pixelSize: Theme.typeCaption
                             }
 
@@ -998,7 +998,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
@@ -1007,7 +1007,7 @@ FocusScope {
                         // A read-only entry has nothing to write, so the button
                         // that is always available is a plain close.
                         text: controller.editable ? qsTr("取消") : qsTr("关闭")
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -1028,13 +1028,13 @@ FocusScope {
                     visible: controller.editable
                              || (root.tab === "security" && controller.aclEditable)
                     radius: Theme.radiusSm
-                    color: !root.canSave ? Theme.canvasAlt
-                        : (saveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
+                    color: !root.canSave ? Theme.inset
+                        : (saveMouse.containsMouse ? Theme.accentHover : Theme.accent)
 
                     Text {
                         anchors.centerIn: parent
                         text: controller.saving ? qsTr("保存中…") : qsTr("确定")
-                        color: root.canSave ? Theme.onInteractive : root.mutedColor
+                        color: root.canSave ? Theme.onAccent : root.mutedColor
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -1088,7 +1088,7 @@ FocusScope {
             // Labels carry the field name only, so they sit back at `inkFaint`
             // while the value keeps full `ink`: the pair reads as one line,
             // scanned left to right, instead of as two competing columns.
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -1178,7 +1178,7 @@ FocusScope {
                 anchors.centerIn: parent
                 visible: toggle.checked
                 text: "\u2713"
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeMicro
             }
         }
@@ -1234,7 +1234,7 @@ FocusScope {
             verticalAlignment: TextInput.AlignVCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: Theme.onInteractive
+            selectedTextColor: Theme.onAccent
             font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
@@ -1276,7 +1276,7 @@ FocusScope {
             ? (aclChip.danger
                 ? Qt.rgba(root.dangerColor.r, root.dangerColor.g, root.dangerColor.b, 0.15)
                 : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
-            : (aclChipMouse.containsMouse ? Theme.fill : "transparent")
+            : (aclChipMouse.containsMouse ? Theme.hover : "transparent")
         border.width: 1
         border.color: aclChip.selected
             ? (aclChip.danger ? root.dangerColor : root.accent) : root.hairline
@@ -1411,7 +1411,7 @@ FocusScope {
             height: Theme.controlSm
             visible: aclRow.canEdit
             radius: Theme.radiusSm
-            color: aclRemoveMouse.containsMouse ? Theme.fill : "transparent"
+            color: aclRemoveMouse.containsMouse ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
 
@@ -1485,7 +1485,7 @@ FocusScope {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: copyMouse.containsMouse
-                ? Theme.fill : "transparent"
+                ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
             visible: checksum.value !== ""

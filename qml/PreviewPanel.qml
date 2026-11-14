@@ -22,16 +22,16 @@ Item {
     property var trashItem: null
     property bool inTrash: false
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     /// Bumped by the tag store so `currentTags`/`allTags` re-read after a
     /// write or a definition change.
     property int tagRevision: 0
 
     readonly property color panelColor: Theme.canvas
-    readonly property color sectionColor: Theme.canvasAlt
+    readonly property color sectionColor: Theme.inset
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
-    readonly property color faintColor: Theme.inkFaint
+    readonly property color mutedColor: Theme.inkSecondary
+    readonly property color faintColor: Theme.inkTertiary
     readonly property color hairline: Theme.hairline
     readonly property bool single: paths.length === 1
     readonly property bool empty: paths.length === 0 && trashItem === null
@@ -283,11 +283,6 @@ Item {
                 height: 172
                 visible: root.empty
 
-                DotPlate {
-                    anchors.fill: parent
-                    spacing: 12
-                }
-
                 DriftSheet {
                     width: 82
                     anchors.centerIn: parent
@@ -303,8 +298,8 @@ Item {
                 visible: root.empty
                 text: qsTr("未选择文件")
                 color: root.mutedColor
-                font.family: Theme.serifFamily
-                font.pixelSize: Theme.typeDisplay
+                font.family: Theme.uiFamily
+                font.pixelSize: Theme.typeHeading
                 wrapMode: Text.Wrap
             }
 
@@ -329,7 +324,7 @@ Item {
                     width: parent.width
                     text: root.trashItem !== null ? root.trashItem.name : ""
                     color: root.textColor
-                    font.pixelSize: Theme.typeEmphasis
+                    font.pixelSize: Theme.typeHeading
                     wrapMode: Text.Wrap
                     textFormat: Text.PlainText
                 }
@@ -374,11 +369,6 @@ Item {
                 height: 172
                 visible: !root.empty && !root.single && root.trashItem === null
 
-                DotPlate {
-                    anchors.fill: parent
-                    spacing: 12
-                }
-
                 /// drift prints the count in the serif, in the signal colour,
                 /// at a size no control uses: the pane is reporting a number,
                 /// not offering a button.
@@ -389,8 +379,8 @@ Item {
                     id: multiCount
                     anchors.centerIn: parent
                     text: root.paths.length
-                    color: Theme.signal
-                    font.family: Theme.serifFamily
+                    color: Theme.accent
+                    font.family: Theme.uiFamily
                     font.pixelSize: 96
                     font.features: { "tnum": 1 }
                     Accessible.role: Accessible.StaticText
@@ -490,7 +480,7 @@ Item {
                                                    : Localize.message(controller.officeError)
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
+                        selectedTextColor: Theme.onAccent
                         font.pixelSize: Theme.typeMicro
                         textFormat: controller.hasOffice ? TextEdit.RichText
                                                          : TextEdit.PlainText
@@ -641,7 +631,7 @@ Item {
                         text: controller.contentHtml
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
+                        selectedTextColor: Theme.onAccent
                         font.pixelSize: Theme.typeMicro
                         textFormat: TextEdit.RichText
 
@@ -792,7 +782,7 @@ Item {
                     width: parent.width
                     visible: root.single && Localize.message(controller.kindText) !== ""
                     text: Localize.message(controller.kindText)
-                    color: Theme.signal
+                    color: Theme.accent
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                     font.letterSpacing: 1.6
@@ -806,7 +796,7 @@ Item {
                     text: controller.name !== "" ? controller.name
                         : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
                     color: root.textColor
-                    font.family: Theme.serifFamily
+                    font.family: Theme.uiFamily
                     font.pixelSize: 30
                     lineHeight: Theme.leadingTight
                     wrapMode: Text.Wrap
@@ -918,9 +908,9 @@ Item {
                             width: chipRow.implicitWidth + 16
                             height: Theme.controlXs + 4
                             radius: Theme.radiusXs
-                            color: on ? Theme.fill : "transparent"
+                            color: on ? Theme.hover : "transparent"
                             border.width: 1
-                            border.color: on ? Theme.hairlineStrong : Theme.hairline
+                            border.color: on ? Theme.line : Theme.hairline
                             opacity: tagMouse.containsMouse ? 1 : (on ? 1 : 0.72)
 
                             Row {
@@ -939,7 +929,7 @@ Item {
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: tagChip.modelData.name
-                                    color: tagChip.on ? Theme.ink : Theme.inkMuted
+                                    color: tagChip.on ? Theme.ink : Theme.inkSecondary
                                     font.pixelSize: Theme.typeMicro
                                     textFormat: Text.PlainText
                                 }
@@ -1091,7 +1081,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: Math.min(keyLabel.implicitWidth, metaRow.width * 0.42)
             text: metaRow.key
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.family: Theme.monoFamily
             font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
@@ -1151,7 +1141,7 @@ Item {
             color: "transparent"
             radius: Theme.radiusSm
             border.width: 1
-            border.color: Theme.signal
+            border.color: Theme.accent
         }
 
         Row {
@@ -1164,10 +1154,10 @@ Item {
                 text: action.label
                 color: action.accent
                     ? (actionMouse.containsMouse && action.available
-                        ? Theme.interactiveHover : Theme.signal)
+                        ? Theme.accentHover : Theme.accent)
                     : (actionMouse.containsMouse && action.available
-                        ? Theme.signal : Theme.ink)
-                font.pixelSize: Theme.typeSmall
+                        ? Theme.accent : Theme.ink)
+                font.pixelSize: Theme.typeCaption
                 textFormat: Text.PlainText
             }
 
@@ -1178,7 +1168,7 @@ Item {
                 visible: action.chevron
                 kind: "chevron"
                 tint: actionMouse.containsMouse && action.available
-                    ? Theme.signal : root.faintColor
+                    ? Theme.accent : root.faintColor
             }
         }
 

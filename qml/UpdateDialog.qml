@@ -10,10 +10,10 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
     readonly property bool busy: Updater.checking || Updater.downloading
@@ -79,8 +79,8 @@ FocusScope {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: dialogPanel
     }
 
@@ -92,7 +92,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         MouseArea {
             anchors.fill: parent
@@ -215,7 +215,7 @@ FocusScope {
                     height: 4
                     radius: Theme.radiusSm
                     visible: Updater.downloading
-                    color: Theme.fill
+                    color: Theme.hover
 
                     Rectangle {
                         width: parent.width * Math.max(0, Math.min(100, Updater.installProgress)) / 100
@@ -265,7 +265,7 @@ FocusScope {
                     height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: closeMouse.containsMouse
-                        ? Theme.fill
+                        ? Theme.hover
                         : "transparent"
                     border.width: 1
                     border.color: root.hairline
@@ -294,7 +294,7 @@ FocusScope {
                     radius: Theme.radiusSm
                     visible: !Updater.downloading && !Updater.restarting
                     color: checkMouse.containsMouse
-                        ? Theme.fill
+                        ? Theme.hover
                         : "transparent"
                     border.width: 1
                     border.color: root.hairline
@@ -328,7 +328,7 @@ FocusScope {
                     Text {
                         anchors.centerIn: parent
                         text: Updater.downloading ? qsTr("下载中…") : qsTr("下载并安装")
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                         font.pixelSize: Theme.typeCaption
                         font.weight: Font.Medium
                     }

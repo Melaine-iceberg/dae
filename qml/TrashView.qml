@@ -32,7 +32,7 @@ Item {
     readonly property int nameColumnSpan: 282
     readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
     /// Set while an arrow key owns the cursor, so the focus ring only shows
     /// for keyboard movement, never for a click — the same rule as the list.
@@ -365,15 +365,15 @@ Item {
             height: 14
             radius: Theme.radiusSm
             border.width: 1
-            border.color: root.allSelected ? Theme.signal
-                : Theme.hairlineStrong
-            color: root.allSelected ? Theme.signal : "transparent"
+            border.color: root.allSelected ? Theme.accent
+                : Theme.line
+            color: root.allSelected ? Theme.accent : "transparent"
 
             Text {
                 anchors.centerIn: parent
                 visible: root.allSelected
                 text: "\u2713"
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -400,7 +400,7 @@ Item {
                 : Math.round(columnHeader.width * 0.32)
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("名称")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.55
@@ -414,7 +414,7 @@ Item {
                             - nameHeader.width - 14)
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("原位置")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.55
@@ -429,7 +429,7 @@ Item {
             width: 118
             horizontalAlignment: Text.AlignRight
             text: qsTr("删除时间")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.55
@@ -443,7 +443,7 @@ Item {
             width: 68
             horizontalAlignment: Text.AlignRight
             text: qsTr("大小")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.55
@@ -534,7 +534,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 color: row.selected
-                    ? (rowMouse.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                    ? (rowMouse.containsMouse ? Theme.accentSoftStrong : Theme.accentSoft)
                     : (rowMouse.containsMouse ? Theme.hover : "transparent")
             }
 
@@ -543,7 +543,7 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: 3
-                color: Theme.signal
+                color: Theme.accent
                 visible: row.selected
             }
 
@@ -552,7 +552,7 @@ Item {
                 visible: root.keyboardCursor && list.currentIndex === row.index
                 color: "transparent"
                 border.width: 1
-                border.color: Theme.signal
+                border.color: Theme.accent
             }
 
             Rectangle {
@@ -562,15 +562,15 @@ Item {
                 height: 14
                 radius: Theme.radiusSm
                 border.width: 1
-                border.color: row.selected ? Theme.signal
-                    : Theme.hairlineStrong
-                color: row.selected ? Theme.signal : "transparent"
+                border.color: row.selected ? Theme.accent
+                    : Theme.line
+                color: row.selected ? Theme.accent : "transparent"
 
                 Text {
                     anchors.centerIn: parent
                     visible: row.selected
                     text: "\u2713"
-                    color: Theme.onInteractive
+                    color: Theme.onAccent
                     font.pixelSize: Theme.typeMicro
                 }
             }
@@ -581,7 +581,7 @@ Item {
                 width: 14
                 height: 14
                 radius: Theme.radiusSm
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
             }
 
             Text {
@@ -593,7 +593,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.fileName
                 color: root.textColor
-                font.pixelSize: Theme.typeName
+                font.pixelSize: Theme.typeBody
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
             }
@@ -606,7 +606,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.originalParent !== "" ? row.originalParent : qsTr("原位置未知")
                 color: root.mutedColor
-                font.pixelSize: Theme.typeSmall
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText
             }
@@ -620,7 +620,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.deletedText
                 color: root.mutedColor
-                font.pixelSize: Theme.typeSmall
+                font.pixelSize: Theme.typeCaption
                 font.features: { "tnum": 1 }
                 textFormat: Text.PlainText
             }
@@ -634,7 +634,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.sizeText
                 color: root.mutedColor
-                font.pixelSize: Theme.typeSmall
+                font.pixelSize: Theme.typeCaption
                 font.features: { "tnum": 1 }
                 textFormat: Text.PlainText
             }
@@ -718,7 +718,7 @@ Item {
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? Theme.canvasAlt : "transparent")
+                ? Theme.inset : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
 

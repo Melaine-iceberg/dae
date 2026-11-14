@@ -122,9 +122,9 @@ Item {
         height: Theme.controlSm
         width: chip.square ? 28 : Math.ceil(chipLabel.implicitWidth) + 14
         radius: Theme.radiusXs
-        color: chip.active ? Theme.fill : "transparent"
+        color: chip.active ? Theme.hover : "transparent"
         border.width: 1
-        border.color: chip.active ? Theme.hairlineStrong : Theme.hairline
+        border.color: chip.active ? Theme.line : Theme.hairline
         opacity: chip.available ? 1 : 0.45
 
         Accessible.role: Accessible.Button
@@ -134,7 +134,7 @@ Item {
             id: chipLabel
             anchors.centerIn: parent
             text: chip.label
-            color: chip.active ? Theme.ink : Theme.inkMuted
+            color: chip.active ? Theme.ink : Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -276,7 +276,7 @@ Item {
                     width: 14
                     height: 14
                     kind: "file"
-                    tint: Theme.inkMuted
+                    tint: Theme.inkSecondary
                 }
 
                 Text {
@@ -294,7 +294,7 @@ Item {
                 height: 10
                 kind: "chevron"
                 rotation: 90
-                tint: Theme.inkFaint
+                tint: Theme.inkTertiary
             }
 
             MouseArea {
@@ -324,7 +324,7 @@ Item {
                                        : qsTr("输入以筛选名称")
             return qsTr("%1 项匹配").arg(root.matchCount)
         }
-        color: Theme.inkFaint
+        color: Theme.inkTertiary
         font.pixelSize: Theme.typeMicro
         Accessible.role: Accessible.StaticText
         Accessible.name: text

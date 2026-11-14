@@ -86,8 +86,8 @@ Item {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: panel
     }
 
@@ -101,7 +101,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         MouseArea {
             anchors.fill: parent
@@ -125,7 +125,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.heading
                 color: Theme.ink
-                font.pixelSize: Theme.typeTitle
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
                 elide: Text.ElideRight
             }
@@ -154,7 +154,7 @@ Item {
                     width: 10
                     height: 10
                     kind: "close"
-                    tint: closeMouse.containsMouse ? Theme.ink : Theme.inkFaint
+                    tint: closeMouse.containsMouse ? Theme.ink : Theme.inkTertiary
                 }
 
                 MouseArea {
@@ -185,7 +185,7 @@ Item {
             radius: Theme.radiusSm
             color: Theme.field
             border.width: 1
-            border.color: input.activeFocus ? Theme.signal : Theme.hairlineStrong
+            border.color: input.activeFocus ? Theme.accent : Theme.line
 
             TextInput {
                 id: input
@@ -194,8 +194,8 @@ Item {
                 anchors.rightMargin: 8
                 verticalAlignment: TextInput.AlignVCenter
                 color: Theme.ink
-                selectionColor: Theme.interactive
-                selectedTextColor: Theme.onInteractive
+                selectionColor: Theme.accent
+                selectedTextColor: Theme.onAccent
                 font.pixelSize: Theme.typeBody
                 selectByMouse: true
                 clip: true
@@ -220,7 +220,7 @@ Item {
             x: 16
             anchors.baseline: errorText.baseline
             text: errorText.text === "" ? root.hint : ""
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 

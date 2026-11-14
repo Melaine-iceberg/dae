@@ -292,7 +292,7 @@ Item {
             y: 10
             text: "dae"
             color: Theme.ink
-            font.family: Theme.serifFamily
+            font.family: Theme.uiFamily
             font.italic: true
             font.pixelSize: 38
             font.letterSpacing: -1
@@ -307,8 +307,8 @@ Item {
             anchors.leftMargin: 1
             anchors.baseline: wordmark.baseline
             text: "."
-            color: Theme.signal
-            font.family: Theme.serifFamily
+            color: Theme.accent
+            font.family: Theme.uiFamily
             font.italic: true
             font.pixelSize: 38
             Accessible.ignored: true
@@ -397,7 +397,7 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 4
                 text: root.sectionLabel(sectionRow.section)
-                color: parent.lit ? Theme.signal : Theme.inkFaint
+                color: parent.lit ? Theme.accent : Theme.inkTertiary
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
@@ -411,7 +411,7 @@ Item {
                 anchors.bottomMargin: 4
                 visible: parent.lit && parent.favoriteSection
                 text: qsTr("松开以加入收藏")
-                color: Theme.signal
+                color: Theme.accent
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -552,18 +552,21 @@ Item {
                     /// paper showing through the type. A drop target is the
                     /// only row that gets a signal wash and a dashed frame,
                     /// which keeps it apart from the solid keyboard ring.
-                    color: row.armed ? Theme.signalSoft
+                    color: row.armed ? Theme.accentSoft
                         : row.focused ? Theme.ink
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
                     border.width: row.cursor && !row.armed ? Theme.edgeWidth : 0
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                 }
 
-                /// The plate's edge for a drop target: dashed, where the
-                /// keyboard cursor's ring is solid.
-                DashFrame {
+                /// The plate's edge for a drop target: a solid accent frame,
+                /// where the keyboard cursor's ring is 1 dp and unfilled.
+                Rectangle {
                     anchors.fill: plate
                     visible: row.armed
+                    color: "transparent"
+                    border.width: 1.5
+                    border.color: Theme.accent
                 }
 
                 /// The index of a place, in mono. It replaces the glyph: a
@@ -579,7 +582,7 @@ Item {
                     width: 20
                     verticalAlignment: Text.AlignVCenter
                     text: String(row.index + 1).padStart(2, "0")
-                    color: row.focused ? Theme.signal : Theme.inkFaint
+                    color: row.focused ? Theme.accent : Theme.inkTertiary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                 }
@@ -608,7 +611,7 @@ Item {
                         width: 12
                         height: 12
                         kind: "chevron"
-                        tint: row.lit ? Theme.inkMuted : Theme.inkFaint
+                        tint: row.lit ? Theme.inkSecondary : Theme.inkTertiary
                         rotation: row.treeOpen ? 90 : 0
                     }
 
@@ -629,7 +632,7 @@ Item {
                     width: 14
                     height: 14
                     kind: root.glyphKind(row.icon)
-                    tint: row.lit ? Theme.ink : Theme.inkMuted
+                    tint: row.lit ? Theme.ink : Theme.inkSecondary
                 }
 
                 Text {
@@ -647,9 +650,9 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: row.kind === "favoriteHint" && root.favoriteDropActive
-                        ? Theme.signal
+                        ? Theme.accent
                         : row.focused && !row.armed ? Theme.canvas
-                        : (row.lit ? Theme.ink : Theme.inkMuted)
+                        : (row.lit ? Theme.ink : Theme.inkSecondary)
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
@@ -668,7 +671,7 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     text: row.percent + "%"
                     color: row.focused && !row.armed ? Theme.canvas
-                        : row.fill > 0.9 ? Theme.warn : Theme.inkFaint
+                        : row.fill > 0.9 ? Theme.warning : Theme.inkTertiary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
@@ -700,7 +703,7 @@ Item {
                             height: gauge.height
                             color: index < row.litSegments
                                 ? (row.focused && !row.armed ? Theme.canvas
-                                    : row.fill > 0.9 ? Theme.warn : Theme.ink)
+                                    : row.fill > 0.9 ? Theme.warning : Theme.ink)
                                 : Theme.hairline
                         }
                     }
@@ -730,7 +733,7 @@ Item {
                     text: root.detailLabel(row.detail)
                     color: row.focused && !row.armed ? Theme.canvas
                         : row.isVolume && row.fill > 0.9
-                            ? Theme.warn : Theme.inkFaint
+                            ? Theme.warning : Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
                     elide: Text.ElideRight
@@ -749,7 +752,7 @@ Item {
                         ? rowBody.width - 18 : detailText.x) - x - 6)
                     verticalAlignment: Text.AlignVCenter
                     text: row.fileSystem
-                    color: row.focused && !row.armed ? Theme.canvas : Theme.inkFaint
+                    color: row.focused && !row.armed ? Theme.canvas : Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     elide: Text.ElideRight
                 }
@@ -897,7 +900,7 @@ Item {
             x: 18
             y: 8
             text: qsTr("网络")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.88
@@ -912,7 +915,7 @@ Item {
             height: 12
             visible: !NetworkDiscovery.busy
             kind: "refresh"
-            tint: refreshMouse.containsMouse ? Theme.inkMuted : Theme.inkFaint
+            tint: refreshMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary
 
             MouseArea {
                 id: refreshMouse
@@ -932,7 +935,7 @@ Item {
             y: 8
             visible: NetworkDiscovery.busy
             text: qsTr("搜索中…")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -976,7 +979,7 @@ Item {
                     height: 12
                     anchors.verticalCenter: parent.verticalCenter
                     kind: "network"
-                    tint: Theme.inkFaint
+                    tint: Theme.inkTertiary
                 }
 
                 Text {
@@ -985,7 +988,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: serverRow.label
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                 }
@@ -996,7 +999,7 @@ Item {
                     anchors.rightMargin: 18
                     anchors.verticalCenter: parent.verticalCenter
                     text: String(serverRow.modelData.protocol).toUpperCase()
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
                 }
@@ -1055,7 +1058,7 @@ Item {
             x: 18
             y: 8
             text: qsTr("保存的搜索")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.88
@@ -1103,7 +1106,7 @@ Item {
                     width: 12
                     height: 12
                     kind: "search"
-                    tint: Theme.inkFaint
+                    tint: Theme.inkTertiary
                 }
 
                 Text {
@@ -1114,7 +1117,7 @@ Item {
                     anchors.rightMargin: savedRow.hovered ? 32 : 18
                     anchors.verticalCenter: parent.verticalCenter
                     text: savedRow.modelData.name
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
@@ -1150,7 +1153,7 @@ Item {
                         width: 9
                         height: 9
                         kind: "close"
-                        tint: Theme.inkFaint
+                        tint: Theme.inkTertiary
                     }
 
                     MouseArea {
@@ -1208,7 +1211,7 @@ Item {
             x: 18
             y: 8
             text: qsTr("标签")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
             font.letterSpacing: 0.88
@@ -1244,7 +1247,7 @@ Item {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     radius: Theme.radiusSm
-                    color: tagRow.armed ? Theme.signalSoft
+                    color: tagRow.armed ? Theme.accentSoft
                         : (tagRow.hovered ? Theme.hover : "transparent")
                 }
 
@@ -1263,7 +1266,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: tagRow.modelData.name
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                 }
@@ -1275,7 +1278,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.modelData.count > 0
                     text: tagRow.modelData.count
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
                 }
@@ -1330,7 +1333,7 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.trashActive
-                ? Theme.signalSoft
+                ? Theme.accentSoft
                 : (trashMouse.containsMouse ? Theme.hover : "transparent")
 
             Accessible.role: Accessible.Button
@@ -1346,7 +1349,7 @@ Item {
                 width: 3
                 height: 16
                 radius: 1
-                color: Theme.signal
+                color: Theme.accent
             }
 
             Glyph {
@@ -1356,7 +1359,7 @@ Item {
                 height: 14
                 kind: "trash"
                 tint: root.trashActive || trashMouse.containsMouse
-                    ? Theme.ink : Theme.inkMuted
+                    ? Theme.ink : Theme.inkSecondary
             }
 
             Text {
@@ -1364,7 +1367,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.trashLabel
                 color: root.trashActive || trashMouse.containsMouse
-                    ? Theme.ink : Theme.inkMuted
+                    ? Theme.ink : Theme.inkSecondary
                 font.pixelSize: Theme.typeBody
             }
 
@@ -1374,7 +1377,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.trashCount > 0
                 text: qsTr("%1 项").arg(root.trashCount)
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
                 font.features: { "tnum": 1 }
             }

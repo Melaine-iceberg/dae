@@ -64,7 +64,7 @@ Item {
     readonly property color solidChrome: Theme.chrome
     readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property bool maximized: window !== null
         && window.visibility === Window.Maximized
     /// The green button's own state on macOS. Kept apart from `maximized`,
@@ -148,13 +148,13 @@ Item {
         // The mark is the brand, not an interactive control: keeping it on
         // `signal` means a system accent cannot turn the window's identity a
         // second colour while every selection track stays orange.
-        color: Theme.brand
+        color: Theme.accent
         visible: !root.isMac
 
         Text {
             anchors.centerIn: parent
             text: "D"
-            color: Theme.onInteractive
+            color: Theme.onAccent
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
         }
@@ -282,7 +282,7 @@ Item {
                     anchors.fill: parent
                     color: button.isClose
                         ? (button.hovered ? "#c42b1c" : "transparent")
-                        : (button.hovered ? Theme.fill : "transparent")
+                        : (button.hovered ? Theme.hover : "transparent")
                 }
 
                 // Windows keeps its own glyph font. The other two platforms

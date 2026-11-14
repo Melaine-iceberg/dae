@@ -12,7 +12,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     /// The binding from `settings.toml`; the view only prints it.
     property string hiddenShortcut: "Ctrl+H"
     property real openX: 0
@@ -118,7 +118,7 @@ Item {
         onWheel: root.close()
     }
 
-    HardShadow {
+    Shadow {
         target: panel
     }
 
@@ -132,7 +132,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise

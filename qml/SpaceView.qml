@@ -13,10 +13,10 @@ Item {
 
     property string spaceId: ""
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color headerColor: Theme.chrome
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
 
     readonly property color contentColor: Theme.content
@@ -98,7 +98,7 @@ Item {
             Text {
                 text: root.spaceName !== "" ? root.spaceName : qsTr("空间")
                 color: root.textColor
-                font.pixelSize: Theme.typeDisplay
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
             }
 
@@ -188,7 +188,7 @@ Item {
                 width: 26
                 height: Theme.controlMd
                 radius: Theme.radiusSm
-                color: Theme.canvasAlt
+                color: Theme.inset
 
                 Text {
                     anchors.centerIn: parent
@@ -271,7 +271,7 @@ Item {
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? Theme.canvasAlt : "transparent")
+                ? Theme.inset : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
 

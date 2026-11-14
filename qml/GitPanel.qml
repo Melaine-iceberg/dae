@@ -14,7 +14,7 @@ Item {
 
     property var repo: null
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property real openX: 0
     property real openY: 0
 
@@ -28,9 +28,9 @@ Item {
     z: 1002
 
     readonly property color panelColor: Theme.raised
-    readonly property color borderColor: Theme.hairlineStrong
+    readonly property color borderColor: Theme.line
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hoverColor: Theme.hover
     readonly property bool hasRepo: repo !== null && repo.gitRoot !== ""

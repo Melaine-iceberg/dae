@@ -12,7 +12,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property string protocol: "smb"
     property bool remember: true
     property bool testing: false
@@ -34,7 +34,7 @@ Item {
     Accessible.name: qsTr("连接网络存储")
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
@@ -198,8 +198,8 @@ Item {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: card
     }
 
@@ -211,7 +211,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         // The dimmed backdrop must not scroll the list behind the dialog, and
         // clicks inside the card must never reach that backdrop.
@@ -236,7 +236,7 @@ Item {
             x: 20
             y: 72
             text: qsTr("协议")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -329,7 +329,7 @@ Item {
                     width: 10
                     height: 10
                     kind: "check"
-                    tint: Theme.onInteractive
+                    tint: Theme.onAccent
                 }
             }
 
@@ -373,7 +373,7 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: testMouse.containsMouse && testButton.enabled
-                ? Theme.fill : "transparent"
+                ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
             enabled: !root.testing && !root.saving
@@ -381,7 +381,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: root.testing ? qsTr("测试中…") : qsTr("测试连接")
-                color: testButton.enabled ? Theme.inkMuted : root.mutedColor
+                color: testButton.enabled ? Theme.inkSecondary : root.mutedColor
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -403,13 +403,13 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: submitButton.enabled
-                ? (submitMouse.containsMouse ? Theme.interactiveHover : root.accent)
-                : Theme.canvasAlt
+                ? (submitMouse.containsMouse ? Theme.accentHover : root.accent)
+                : Theme.inset
 
             Text {
                 anchors.centerIn: parent
                 text: root.saving ? qsTr("保存中…") : qsTr("连接")
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -431,14 +431,14 @@ Item {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: cancelMouse.containsMouse
-                ? Theme.fill : "transparent"
+                ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -465,7 +465,7 @@ Item {
         radius: Theme.radiusSm
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.20)
-            : (hovered ? Theme.fill : "transparent")
+            : (hovered ? Theme.hover : "transparent")
         border.width: 1
         border.color: selected ? root.accent : root.hairline
 
@@ -477,7 +477,7 @@ Item {
             id: labelText
             anchors.centerIn: parent
             text: button.label
-            color: button.selected ? root.textColor : Theme.inkMuted
+            color: button.selected ? root.textColor : Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -508,7 +508,7 @@ Item {
             x: 0
             y: 0
             text: field.label
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -542,7 +542,7 @@ Item {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onInteractive
+                selectedTextColor: Theme.onAccent
                 font.pixelSize: Theme.typeCaption
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 inputMethodHints: field.inputHints

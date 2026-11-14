@@ -14,7 +14,7 @@ import QtQuick
 /// at 0 too — the divider then reaches the panel sides, which is what
 /// `ConfirmDialog` wants.
 ///
-/// `implicitHeight` and `Theme.typeTitle` are a pair, and the type rung is
+/// `implicitHeight` and `Theme.typeHeading` are a pair, and the type rung is
 /// deliberately capped at 17 rather than the Web shell's 22: a title and its
 /// subtitle have to share 44 dp, and the hosts that lay this head out by hand
 /// would overlap before any layout pass ran. `SettingsPanel` stacks them at
@@ -52,7 +52,7 @@ Item {
             width: parent.width
             text: root.title
             color: Theme.ink
-            font.pixelSize: Theme.typeTitle
+            font.pixelSize: Theme.typeHeading
             font.weight: Font.Medium
             elide: Text.ElideRight
         }
@@ -61,7 +61,7 @@ Item {
             width: parent.width
             visible: root.subtitle.length > 0
             text: root.subtitle
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
             elide: Text.ElideMiddle
         }
@@ -92,7 +92,7 @@ Item {
             width: 10
             height: 10
             kind: "close"
-            tint: closeMouse.containsMouse ? Theme.ink : Theme.inkFaint
+            tint: closeMouse.containsMouse ? Theme.ink : Theme.inkTertiary
         }
 
         MouseArea {

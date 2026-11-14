@@ -14,7 +14,7 @@ Item {
 
     property var paths: []
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     visible: false
     focus: visible
@@ -76,7 +76,7 @@ Item {
         radius: Theme.radiusMd
         color: Theme.canvas
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
         focus: true
 
         // A click inside the plate must not close it; the scrim is behind.

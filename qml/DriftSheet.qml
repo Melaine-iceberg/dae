@@ -79,8 +79,8 @@ Item {
             const ctx = getContext("2d")
             ctx.setTransform(1, 0, 0, 1, 0, 0)
             const theme = Theme
-            const ink = root.accented ? theme.signal : theme.ink
-            const paper = theme.canvasAlt
+            const ink = root.accented ? theme.accent : theme.ink
+            const paper = theme.inset
             const edge = Math.max(1, root.width / 90 * 1.6)
 
             ctx.save()
@@ -153,7 +153,7 @@ Item {
         if (root.shadowed)
             paintShadow(ctx, theme)
 
-        ctx.fillStyle = theme.folderTab
+        ctx.fillStyle = theme.fileColor("folder")
         ctx.beginPath()
         ctx.rect(5, 7, 46, 20)
         ctx.fill()
@@ -161,7 +161,7 @@ Item {
         ctx.stroke()
 
         ctx.fillStyle = root.inverted ? theme.canvas
-            : root.detail ? theme.folderTab : theme.folderBody
+            : root.detail ? theme.fileColor("folder") : theme.fileColor("folder")
         ctx.beginPath()
         ctx.moveTo(7, 20)
         ctx.lineTo(113, 20)
@@ -252,9 +252,9 @@ Item {
         case "image": return hsl(theme, root.seed % 360, 75, 58)
         case "video":
         case "code": return theme.ink
-        case "archive": return theme.folderTab
-        case "executable": return theme.folderBody
-        default: return theme.canvasAlt
+        case "archive": return theme.fileColor("folder")
+        case "executable": return theme.fileColor("folder")
+        default: return theme.inset
         }
     }
 
@@ -291,7 +291,7 @@ Item {
             break
         }
         case "document":
-            ctx.fillStyle = theme.signal
+            ctx.fillStyle = theme.accent
             ctx.fillRect(14, 34, 26, 6)
             if (root.compact) {
                 ;[50, 64, 78].forEach(function (y, i) {
@@ -327,7 +327,7 @@ Item {
         case "audio":
             for (let i = 0; i < 13; i++) {
                 const v = 12 + ((root.seed >> i) & 7) * 6 + ((i * 17) % 14)
-                ctx.fillStyle = i % 4 === 0 ? theme.signal : theme.ink
+                ctx.fillStyle = i % 4 === 0 ? theme.accent : theme.ink
                 ctx.fillRect(13 + i * 5, 66 - v / 2, 3, v)
             }
             break
@@ -344,11 +344,11 @@ Item {
             ctx.globalAlpha = 0.3
             ctx.fillRect(14, 88, 62, 2)
             ctx.globalAlpha = 1
-            ctx.fillStyle = theme.signal
+            ctx.fillStyle = theme.accent
             ctx.fillRect(14, 88, 20 + (root.seed % 30), 2)
             break
         case "archive":
-            ctx.fillStyle = theme.folderTab
+            ctx.fillStyle = theme.fileColor("folder")
             ctx.fillRect(0, 0, 90, 120)
             ctx.fillStyle = theme.ink
             for (let i = 0; i < 9; i++)
@@ -357,7 +357,7 @@ Item {
             ctx.strokeRect(38, 82, 22, 14)
             break
         case "executable":
-            ctx.fillStyle = theme.folderBody
+            ctx.fillStyle = theme.fileColor("folder")
             ctx.fillRect(0, 0, 90, 120)
             ctx.fillStyle = theme.ink
             ctx.beginPath()
@@ -369,13 +369,13 @@ Item {
             break
         case "font":
             ctx.fillStyle = theme.ink
-            ctx.font = "italic 44px " + theme.serifFamily
+            ctx.font = "italic 44px " + theme.uiFamily
             ctx.textAlign = "center"
             ctx.fillText("Aa", 45, 76)
             break
         case "link":
-            rule(44, 50, theme.link, 0.9)
-            rule(56, 34, theme.link, 0.9)
+            rule(44, 50, theme.accent, 0.9)
+            rule(56, 34, theme.accent, 0.9)
             break
         default:
             ;[48, 58, 68].forEach(function (y, i) {

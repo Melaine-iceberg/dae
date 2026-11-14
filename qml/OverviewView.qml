@@ -13,7 +13,7 @@ import dae 1.0
 //
 // Each destination is a note of sticky paper with a pin through its head. The
 // material is drawn rather than photographed: a flat plate in one of six paper
-// stocks, a 1 px ink edge, the shell's hard offset shadow (`HardShadow`, which
+// stocks, a 1 px ink edge, the shell's hard offset shadow (`Shadow`, which
 // is also what makes it read as a sheet laid on the page instead of a card
 // hovering over it), and a metal pin with a cast shadow. A note is tilted by a
 // hash of its row, so a given row always lands on the same tilt and the same
@@ -29,9 +29,9 @@ Item {
     id: root
 
     property var model: null
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
     property string commandShortcut: "Ctrl+K"
 
@@ -412,7 +412,7 @@ Item {
                 anchors.topMargin: 16
                 text: qsTr("概览")
                 color: root.textColor
-                font.pixelSize: Theme.typeTitle
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
             }
 
@@ -451,7 +451,7 @@ Item {
                 anchors.topMargin: 10
                 height: Theme.rowSpacious
                 radius: Theme.radiusMd
-                color: Theme.canvasAlt
+                color: Theme.inset
                 border.width: 1
                 border.color: launcherMouse.containsMouse ? root.accent : root.hairline
 
@@ -570,7 +570,7 @@ Item {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             text: sectionBlock.modelData.label
-                            color: Theme.inkFaint
+                            color: Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                             font.weight: Font.Medium
                             font.letterSpacing: 0.88
@@ -583,7 +583,7 @@ Item {
                             anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             height: 1
-                            color: Theme.rowRule
+                            color: Theme.hairline
                         }
 
                         Text {
@@ -592,7 +592,7 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("%1 项").arg(sectionBlock.modelData.notes.length)
-                            color: Theme.inkFaint
+                            color: Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                             font.features: { "tnum": 1 }
                         }
@@ -667,10 +667,9 @@ Item {
                                 Component.onCompleted: root.registerNote(note.entry.row, note)
                                 Component.onDestruction: root.unregisterNote(note.entry.row)
 
-                                HardShadow {
+                                Shadow {
                                     target: paperPlate
-                                    offset: note.current || noteMouse.containsMouse ? 6 : 4
-                                    color: Theme.dark ? "#73000000" : Theme.ink
+                                    offset: note.current || noteMouse.containsMouse ? 4 : 2
                                 }
 
                                 Rectangle {
@@ -692,14 +691,14 @@ Item {
                                     visible: note.current
                                     color: "transparent"
                                     border.width: 2
-                                    border.color: Theme.signal
+                                    border.color: Theme.accent
                                 }
 
                                 // ── Pin ─────────────────────────────────
                                 // A thumbtack, not a dot: a warm metal head
                                 // over a tight shadow, plus a specular chip at
                                 // the top left. The shadow follows the same
-                                // down-right direction as `HardShadow`, which
+                                // down-right direction as `Shadow`, which
                                 // is what makes the head look pushed through
                                 // the sheet rather than drawn on it.
                                 Item {
@@ -773,7 +772,7 @@ Item {
                                     width: 14
                                     height: 14
                                     kind: root.glyphKind(note.entry.icon)
-                                    tint: Theme.inkMuted
+                                    tint: Theme.inkSecondary
                                 }
 
                                 Text {
@@ -788,7 +787,7 @@ Item {
                                     height: 38
                                     text: note.displayName
                                     color: Theme.ink
-                                    font.pixelSize: Theme.typeName
+                                    font.pixelSize: Theme.typeBody
                                     font.weight: Font.Medium
                                     wrapMode: Text.Wrap
                                     maximumLineCount: 2
@@ -851,9 +850,9 @@ Item {
                                         color: note.entry.kind === "project"
                                             && note.entry.changeText !== "Clean"
                                             && note.entry.changeText !== "Untracked"
-                                            ? Theme.warn
+                                            ? Theme.warning
                                             : (note.entry.changeText === "Untracked"
-                                               ? Theme.link : Theme.inkMuted)
+                                               ? Theme.accent : Theme.inkSecondary)
                                         font.pixelSize: Theme.typeCaption
                                         elide: Text.ElideMiddle
                                         textFormat: Text.PlainText
@@ -867,7 +866,7 @@ Item {
                                         visible: note.entry.timeText !== ""
                                         width: visible ? implicitWidth : 0
                                         text: root.timeLabel(note.entry.timeText)
-                                        color: Theme.inkMuted
+                                        color: Theme.inkSecondary
                                         font.pixelSize: Theme.typeCaption
                                         font.features: { "tnum": 1 }
                                     }

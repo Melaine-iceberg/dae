@@ -34,7 +34,7 @@ Item {
             width: 28
             height: Theme.controlMd
             kind: root.glyph
-            tint: Theme.inkMuted
+            tint: Theme.inkSecondary
         }
 
         Item {
@@ -56,7 +56,7 @@ Item {
             width: parent.width
             visible: root.hint !== ""
             text: root.hint
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeCaption
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
@@ -108,8 +108,8 @@ Item {
             id: labelText
             anchors.centerIn: parent
             text: button.label
-            color: Theme.signal
-            font.pixelSize: Theme.typeSmall
+            color: Theme.accent
+            font.pixelSize: Theme.typeCaption
             font.underline: buttonMouse.containsMouse
             textFormat: Text.PlainText
         }

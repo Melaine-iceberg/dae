@@ -21,9 +21,9 @@ Item {
     property string mode: "name"
     property bool busy: false
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
 
     signal queryEdited(string value)
@@ -51,7 +51,7 @@ Item {
         color: Theme.field
         border.width: 1
         border.color: input.activeFocus
-            ? Theme.signal : Theme.hairlineStrong
+            ? Theme.accent : Theme.line
 
         Glyph {
             id: leading
@@ -61,7 +61,7 @@ Item {
             height: 14
             anchors.verticalCenter: parent.verticalCenter
             kind: "search"
-            tint: Theme.inkMuted
+            tint: Theme.inkSecondary
         }
 
         Text {
@@ -72,7 +72,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: input.text.length === 0
             text: root.mode === "content" ? qsTr("搜索文件内容") : qsTr("搜索名称")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeBody
             elide: Text.ElideRight
         }
@@ -86,7 +86,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: Theme.onInteractive
+            selectedTextColor: Theme.onAccent
             font.pixelSize: Theme.typeBody
             selectByMouse: true
             clip: true

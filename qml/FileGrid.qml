@@ -330,17 +330,14 @@ Item {
 
             /// A drop target is the only thing that gets a frame; selection is
             /// carried by the ink plate under the name, not by tinting the
-            /// cell. The frame is dashed so it cannot be mistaken for the
-            /// solid ring the keyboard cursor draws.
+            /// cell. The frame is a solid accent edge — a dashed line means
+            /// "placeholder" in a file manager and nothing else (§6.7).
             Rectangle {
                 anchors.fill: parent
                 visible: cell.dropTarget
-                color: Theme.signalSoft
-            }
-
-            DashFrame {
-                anchors.fill: parent
-                visible: cell.dropTarget
+                color: "transparent"
+                border.width: 1.5
+                border.color: Theme.accent
             }
 
             Rectangle {
@@ -348,7 +345,7 @@ Item {
                 visible: cell.focusedCursor && !cell.dropTarget
                 color: "transparent"
                 border.width: Theme.edgeWidth
-                border.color: Theme.signal
+                border.color: Theme.accent
             }
 
             Item {
@@ -373,9 +370,9 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     visible: cell.showImage
-                    color: Theme.contentAlt
+                    color: Theme.inset
                     border.width: Theme.edgeWidth
-                    border.color: Theme.hairlineStrong
+                    border.color: Theme.line
                 }
 
                 Image {
@@ -449,7 +446,7 @@ Item {
                             ? cell.fileName.slice(0, -suffix.length) : cell.fileName
                     }
                     color: cell.selected ? Theme.canvas
-                        : cell.hidden ? Theme.inkFaint : Theme.ink
+                        : cell.hidden ? Theme.inkTertiary : Theme.ink
                     font.pixelSize: Theme.typeBody
                     lineHeight: Theme.leadingTight
                     horizontalAlignment: Text.AlignHCenter
@@ -463,7 +460,7 @@ Item {
                     visible: text !== ""
                     width: parent.width
                     text: cell.isDir ? "" : cell.sizeText
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     opacity: 0.8
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
@@ -666,9 +663,9 @@ Item {
             y: Math.min(root.marqueeStartY, root.marqueeY) - grid.contentY + root.padding
             width: Math.abs(root.marqueeX - root.marqueeStartX)
             height: Math.abs(root.marqueeY - root.marqueeStartY)
-            color: Theme.signalSoft
+            color: Theme.accentSoft
             border.width: 1
-            border.color: Theme.signal
+            border.color: Theme.accent
             radius: Theme.radiusXs
         }
     }

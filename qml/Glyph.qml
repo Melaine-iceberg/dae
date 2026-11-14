@@ -37,7 +37,7 @@ Item {
     /// "windowFullScreen", "windowExitFullScreen".
     /// Anything else draws nothing and the caller falls back to its label.
     property string kind: "home"
-    property color tint: Theme.inkMuted
+    property color tint: Theme.inkSecondary
     /// Strength of a silhouette's fill, as a fraction of `tint`. At 0.3 the
     /// folder keeps its outline and reads as a shape rather than a block.
     property real wash: 0.3

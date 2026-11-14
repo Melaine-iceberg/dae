@@ -218,7 +218,7 @@ Window {
     /// orange, one shade per theme. `accent` is the only colour views consume,
     /// so switching the preference retints the whole shell.
     readonly property color accent: Appearance.accent === "brand"
-        ? Theme.brand
+        ? Theme.accent
         : Workspace.accent
     /// Whether the active tab has somewhere to go back or forward to. The
     /// stacks live on the tab, so a torn-off window keeps its own.
@@ -372,7 +372,7 @@ Window {
     readonly property color solidChrome: Theme.chrome
     readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
 
     Loader {
@@ -3523,7 +3523,7 @@ Window {
                     radius: Theme.radiusSm
                     color: root.pathEditing ? Theme.field : "transparent"
                     border.width: root.pathEditing ? 1 : 0
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                 }
 
                 // The bar's normal shape is the trail: every ancestor is a
@@ -3601,9 +3601,9 @@ Window {
                     text: ""
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeSmall
+                    font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
 
@@ -3699,7 +3699,7 @@ Window {
                     implicitHeight: height
                     radius: Theme.radiusSm
                     color: root.canGoBack && backMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     opacity: root.canGoBack ? 1 : 0.32
 
                     readonly property bool canGo: root.canGoBack
@@ -3721,7 +3721,7 @@ Window {
                     /// not move when it takes focus.
                     activeFocusOnTab: canGo
                     border.width: activeFocus ? 1 : 0
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                     Keys.onReturnPressed: {
                         if (canGo)
                             root.goBack()
@@ -3750,7 +3750,7 @@ Window {
                     implicitHeight: height
                     radius: Theme.radiusSm
                     color: root.canGoForward && forwardMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     opacity: root.canGoForward ? 1 : 0.32
 
                     readonly property bool canGo: root.canGoForward
@@ -3769,7 +3769,7 @@ Window {
 
                     activeFocusOnTab: canGo
                     border.width: activeFocus ? 1 : 0
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                     Keys.onReturnPressed: {
                         if (canGo)
                             root.goForward()
@@ -3798,7 +3798,7 @@ Window {
                     implicitHeight: height
                     radius: Theme.radiusSm
                     color: root.folderActive && upMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     opacity: root.folderActive ? 1 : 0.32
 
                     Glyph {
@@ -3815,7 +3815,7 @@ Window {
 
                     activeFocusOnTab: root.folderActive
                     border.width: activeFocus ? 1 : 0
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                     Keys.onReturnPressed: {
                         if (root.folderActive)
                             root.goUp()
@@ -3887,9 +3887,9 @@ Window {
                         visible: !searchSlot.expanded
                         radius: Theme.radiusSm
                         color: searchIconMouse.containsMouse && !root.remoteLocation
-                            ? Theme.fill : "transparent"
+                            ? Theme.hover : "transparent"
                         border.width: searchSlot.activeFocus ? 1 : 0
-                        border.color: Theme.signal
+                        border.color: Theme.accent
 
                         Glyph {
                             anchors.centerIn: parent
@@ -3967,7 +3967,7 @@ Window {
 
                     activeFocusOnTab: trashClear.visible
                     border.width: trashClear.activeFocus ? 1 : 0
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                     Keys.onReturnPressed: root.requestEmptyTrash()
                     Keys.onSpacePressed: root.requestEmptyTrash()
 
@@ -4008,9 +4008,9 @@ Window {
                         anchors.fill: parent
                         radius: Theme.radiusSm
                         color: viewMouse.containsMouse || displayMenu.visible
-                            ? Theme.fill : "transparent"
+                            ? Theme.hover : "transparent"
                         border.width: viewSlot.activeFocus ? 1 : 0
-                        border.color: Theme.signal
+                        border.color: Theme.accent
 
                         Glyph {
                             anchors.centerIn: parent
@@ -4061,9 +4061,9 @@ Window {
                         anchors.fill: parent
                         radius: Theme.radiusSm
                         color: moreMouse.containsMouse || moreMenu.visible
-                            ? Theme.fill : "transparent"
+                            ? Theme.hover : "transparent"
                         border.width: moreSlot.activeFocus ? 1 : 0
-                        border.color: Theme.signal
+                        border.color: Theme.accent
 
                         Glyph {
                             anchors.centerIn: parent
@@ -4620,7 +4620,7 @@ Window {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 1
                     height: parent.height
-                    color: handleMouse.containsMouse ? Theme.signal : Theme.hairline
+                    color: handleMouse.containsMouse ? Theme.accent : Theme.hairline
                 }
 
                 MouseArea {
@@ -4736,7 +4736,7 @@ Window {
                         return base + " · " + qsTr("已选 %1 项").arg(fileList.selectionCount)
                     return base
                 }
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeCaption
                 font.features: { "tnum": 1 }
@@ -4759,7 +4759,7 @@ Window {
                 Rectangle {
                     width: 6
                     height: 12
-                    color: Theme.signal
+                    color: Theme.accent
                 }
 
                 Text {
@@ -4770,7 +4770,7 @@ Window {
                         + " · " + (Workspace.clipboardMode === "cut"
                                    ? qsTr("剪切") : qsTr("复制"))
                     // qmllint enable missing-property
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeCaption
                     font.features: { "tnum": 1 }
@@ -4817,7 +4817,7 @@ Window {
                 /// carries turns into the focus ring rather than gaining a
                 /// second one.
                 activeFocusOnTab: transferChip.visible
-                border.color: transferChip.activeFocus ? Theme.signal : Theme.hairline
+                border.color: transferChip.activeFocus ? Theme.accent : Theme.hairline
                 Keys.onReturnPressed: transferChip.openPanel()
                 Keys.onSpacePressed: transferChip.openPanel()
 
@@ -4829,7 +4829,7 @@ Window {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("%1 项传输").arg(transferChip.count)
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeMicro
                     }
 
@@ -4837,19 +4837,19 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 32
                         height: 2
-                        color: Theme.hairlineStrong
+                        color: Theme.line
 
                         Rectangle {
                             width: parent.width * transferChip.percent / 100
                             height: parent.height
-                            color: Theme.signal
+                            color: Theme.accent
                         }
                     }
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: transferChip.percent + "%"
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeMicro
                         font.family: Theme.monoFamily
                     }
@@ -4874,7 +4874,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 7
                 height: 13
-                color: Theme.signal
+                color: Theme.accent
 
                 /// Reduced motion turns the blink off rather than shortening
                 /// it: a cursor that fades in 110 ms still blinks.
@@ -4937,7 +4937,7 @@ Window {
                             kind: "clock"
                             implicitWidth: 12
                             implicitHeight: 12
-                            tint: Workspace.failureCount > 0 ? Theme.danger : Theme.inkMuted
+                            tint: Workspace.failureCount > 0 ? Theme.danger : Theme.inkSecondary
                         }
 
                         Text {
@@ -4980,7 +4980,7 @@ Window {
                         visible: gitStatus.activeFocus
                         color: "transparent"
                         border.width: 1
-                        border.color: Theme.signal
+                        border.color: Theme.accent
                         radius: Theme.radiusXs
                     }
 
@@ -5006,7 +5006,7 @@ Window {
                             kind: "branch"
                             implicitWidth: 12
                             implicitHeight: 12
-                            tint: Theme.inkMuted
+                            tint: Theme.inkSecondary
                         }
 
                         Text {
@@ -5014,7 +5014,7 @@ Window {
                             width: Math.min(implicitWidth, 120)
                             text: root.gitListing !== null ? root.gitListing.gitBranch : ""
                             color: root.gitListing !== null && root.gitListing.gitDetached
-                                ? Theme.inkFaint : Theme.inkMuted
+                                ? Theme.inkTertiary : Theme.inkSecondary
                             font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
                             textFormat: Text.PlainText
@@ -5069,7 +5069,7 @@ Window {
                         visible: previewToggle.activeFocus
                         color: "transparent"
                         border.width: 1
-                        border.color: Theme.signal
+                        border.color: Theme.accent
                         radius: Theme.radiusXs
                     }
 
@@ -5090,13 +5090,13 @@ Window {
                             kind: "panel"
                             implicitWidth: 14
                             implicitHeight: 14
-                            tint: root.previewVisible ? Theme.ink : Theme.inkFaint
+                            tint: root.previewVisible ? Theme.ink : Theme.inkTertiary
                         }
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("预览")
-                            color: root.previewVisible ? Theme.ink : Theme.inkFaint
+                            color: root.previewVisible ? Theme.ink : Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
                     }
@@ -5128,7 +5128,7 @@ Window {
                         visible: terminalToggle.activeFocus
                         color: "transparent"
                         border.width: 1
-                        border.color: Theme.signal
+                        border.color: Theme.accent
                         radius: Theme.radiusXs
                     }
 
@@ -5149,13 +5149,13 @@ Window {
                             kind: "terminal"
                             implicitWidth: 14
                             implicitHeight: 14
-                            tint: root.terminalActive ? Theme.ink : Theme.inkFaint
+                            tint: root.terminalActive ? Theme.ink : Theme.inkTertiary
                         }
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("终端")
-                            color: root.terminalActive ? Theme.ink : Theme.inkFaint
+                            color: root.terminalActive ? Theme.ink : Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
                     }
@@ -5879,14 +5879,6 @@ Window {
         dark: root.dark
 
         onUndoRequested: Workspace.undo()
-    }
-
-    /// The paper grain, over everything including menus and dialogs. It takes
-    /// no input: an Item with no MouseArea cannot swallow a click, and the
-    /// listing's own hit testing never sees it.
-    Grain {
-        anchors.fill: parent
-        z: 2000
     }
 
     Shortcut {

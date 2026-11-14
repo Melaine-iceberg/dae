@@ -13,7 +13,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     /// The shell's pane visibility. These are window state, not preferences,
     /// so the menu asks the window to flip them instead of writing prefs.
     property bool sidebarVisible: true
@@ -204,7 +204,7 @@ Item {
         onWheel: root.close()
     }
 
-    HardShadow {
+    Shadow {
         target: panel
     }
 
@@ -221,7 +221,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise
@@ -248,7 +248,7 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("图标大小")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -266,7 +266,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     height: 2
                     radius: 1
-                    color: Theme.hairlineStrong
+                    color: Theme.line
                 }
 
                 Rectangle {
@@ -276,7 +276,7 @@ Item {
                     width: 10
                     height: 10
                     radius: 5
-                    color: Theme.signal
+                    color: Theme.accent
                 }
 
                 MouseArea {
@@ -301,7 +301,7 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: ExplorerPrefs.iconSize
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeMicro
                 font.features: { "tnum": 1 }
                 width: 24

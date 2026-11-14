@@ -17,7 +17,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     /// The tick belongs to the question on screen, not to the transfer: it is
     /// cleared whenever the dialog goes away, so a later batch starts fresh.
@@ -33,10 +33,10 @@ FocusScope {
     readonly property string verb: Workspace.conflictCut ? qsTr("移动") : qsTr("复制")
     readonly property int remaining: Workspace.conflictTotal - Workspace.conflictIndex
     readonly property color panelColor: Theme.raised
-    readonly property color panelBorder: Theme.hairlineStrong
+    readonly property color panelBorder: Theme.line
     readonly property color headingColor: Theme.ink
-    readonly property color bodyColor: Theme.inkMuted
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color bodyColor: Theme.inkSecondary
+    readonly property color mutedColor: Theme.inkSecondary
 
     onVisibleChanged: {
         if (visible) {
@@ -75,8 +75,8 @@ FocusScope {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: panel
     }
 
@@ -183,7 +183,7 @@ FocusScope {
                         anchors.centerIn: parent
                         visible: root.applyToAll
                         text: "\u2713"
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                         font.pixelSize: Theme.typeMicro
                     }
                 }
@@ -220,7 +220,7 @@ FocusScope {
                     height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     border.width: 1
                     border.color: Theme.hairline
 
@@ -232,7 +232,7 @@ FocusScope {
                         id: cancelLabel
                         anchors.centerIn: parent
                         text: qsTr("取消%1").arg(root.verb)
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -281,7 +281,7 @@ FocusScope {
                                 id: skipLabel
                                 anchors.centerIn: parent
                                 text: qsTr("跳过")
-                                color: Theme.inkMuted
+                                color: Theme.inkSecondary
                                 font.pixelSize: Theme.typeCaption
                             }
 
@@ -310,7 +310,7 @@ FocusScope {
                                 id: keepLabel
                                 anchors.centerIn: parent
                                 text: qsTr("两者保留")
-                                color: Theme.inkMuted
+                                color: Theme.inkSecondary
                                 font.pixelSize: Theme.typeCaption
                             }
 
@@ -329,7 +329,7 @@ FocusScope {
                             color: {
                                 if (root.applyToAll)
                                     return replaceMouse.containsMouse ? Theme.dangerSolidHover : Theme.dangerSolid
-                                return replaceMouse.containsMouse ? Theme.interactiveHover : root.accent
+                                return replaceMouse.containsMouse ? Theme.accentHover : root.accent
                             }
 
                             Accessible.role: Accessible.Button
@@ -340,7 +340,7 @@ FocusScope {
                                 id: replaceLabel
                                 anchors.centerIn: parent
                                 text: qsTr("替换")
-                                color: Theme.onInteractive
+                                color: Theme.onAccent
                                 font.pixelSize: Theme.typeCaption
                             }
 

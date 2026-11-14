@@ -10,7 +10,7 @@ Rectangle {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property bool highlight: false
     property string heading: ""
     property string name: ""
@@ -39,7 +39,7 @@ Rectangle {
         Text {
             width: parent.width
             text: root.heading
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
@@ -73,7 +73,7 @@ Rectangle {
         Text {
             width: parent.width
             text: root.detail
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
             lineHeight: Theme.leadingBody
             wrapMode: Text.WordWrap

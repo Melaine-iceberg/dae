@@ -368,13 +368,13 @@ Item {
                     width: 14
                     height: 14
                     kind: "folder"
-                    tint: Theme.inkMuted
+                    tint: Theme.inkSecondary
                 }
 
                 Text {
                     width: Math.max(0, parent.width - 21)
                     text: pane.title
-                    color: Theme.inkMuted
+                    color: Theme.inkSecondary
                     font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
@@ -480,7 +480,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     color: row.selected ? Theme.ink
-                        : row.expanded ? Theme.fill
+                        : row.expanded ? Theme.hover
                         : (hover.containsMouse ? Theme.hover : "transparent")
                 }
 
@@ -489,7 +489,7 @@ Item {
                     visible: row.focusedCursor
                     color: "transparent"
                     border.width: 1
-                    border.color: Theme.signal
+                    border.color: Theme.accent
                 }
 
                 Image {
@@ -552,7 +552,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.fileName
                     color: row.selected ? Theme.canvas
-                        : row.hidden ? Theme.inkFaint : Theme.ink
+                        : row.hidden ? Theme.inkTertiary : Theme.ink
                     font.pixelSize: Theme.typeBody
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
@@ -567,7 +567,7 @@ Item {
                     height: 12
                     visible: row.isDir
                     kind: "chevron"
-                    tint: row.selected ? Theme.canvas : Theme.inkFaint
+                    tint: row.selected ? Theme.canvas : Theme.inkTertiary
                 }
 
                 MouseArea {
@@ -684,7 +684,7 @@ Item {
                 width: 28
                 height: Theme.controlMd
                 kind: pane.emptyError ? "file" : "folder"
-                tint: Theme.inkMuted
+                tint: Theme.inkSecondary
             }
 
             Text {
@@ -701,7 +701,7 @@ Item {
                 width: parent.width
                 visible: pane.emptyError
                 text: pane.emptyError ? Localize.message(pane.listing.status) : ""
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeCaption
                 horizontalAlignment: Text.AlignHCenter
                 textFormat: Text.PlainText

@@ -26,7 +26,7 @@ Item {
     property var tabs: []
     property int activeIndex: 0
     property var hostWindow: null
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     /// A pressed tab that could still become a drag. Cleared before the native
     /// loop starts, so a stray move after the loop cannot begin a second one.
@@ -76,10 +76,10 @@ Item {
     readonly property int tabLeft: 0
     readonly property int plusWidth: 26
 
-    readonly property color activeColor: Theme.fill
+    readonly property color activeColor: Theme.hover
     readonly property color hoverColor: Theme.hover
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
 
     function tabX(index) {
@@ -209,7 +209,7 @@ Item {
                 /// a session, and until now it was pointer-only.
                 activeFocusOnTab: true
                 border.width: tabItem.activeFocus ? 1 : 0
-                border.color: Theme.signal
+                border.color: Theme.accent
                 Accessible.role: Accessible.PageTab
                 Accessible.name: tabItem.modelData ? tabItem.modelData.title : ""
                 Accessible.selectable: true
@@ -228,7 +228,7 @@ Item {
                     y: parent.height + 4
                     height: 2
                     radius: 1
-                    color: Theme.signal
+                    color: Theme.accent
                 }
 
                 Rectangle {
@@ -240,7 +240,7 @@ Item {
                     height: 5
                     radius: 2.5
                     anchors.verticalCenter: parent.verticalCenter
-                    color: Theme.signal
+                    color: Theme.accent
                 }
 
                 Text {
@@ -253,7 +253,7 @@ Item {
                     text: tabItem.modelData ? tabItem.modelData.title : ""
                     color: root.activeIndex === tabItem.index || tabHover.hovered
                         ? root.textColor : root.mutedColor
-                    font.pixelSize: Theme.typeSmall
+                    font.pixelSize: Theme.typeCaption
                     elide: Text.ElideMiddle
                 }
 
@@ -270,7 +270,7 @@ Item {
                         anchors.fill: parent
                         radius: Theme.radiusXs
                         color: closeMouse.containsMouse
-                            ? Theme.fill : "transparent"
+                            ? Theme.hover : "transparent"
                     }
 
                     Glyph {

@@ -18,7 +18,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property bool isMac: false
     property var shortcutMap: ({})
     /// Whether this session can blur a window behind it (Wayland only). The
@@ -136,14 +136,14 @@ FocusScope {
     }
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
-    readonly property color faintColor: Theme.inkFaint
+    readonly property color mutedColor: Theme.inkSecondary
+    readonly property color faintColor: Theme.inkTertiary
     readonly property color hairline: Theme.hairline
     readonly property color fieldColor: Theme.field
     readonly property color panelColor: Theme.raised
     readonly property color sidebarColor: Theme.chrome
     readonly property color hoverFill: Theme.hover
-    readonly property color selectedFill: Theme.fill
+    readonly property color selectedFill: Theme.hover
 
     readonly property bool defaultManagerCanSet:
         Workspace.defaultManagerSupported && !Workspace.defaultManagerBusy
@@ -163,8 +163,8 @@ FocusScope {
     readonly property color defaultManagerStateColor: Workspace.defaultManagerIsDefault
         ? Theme.success
         : Workspace.defaultManagerIsRegistered
-            ? Theme.warn
-            : Theme.inkMuted
+            ? Theme.warning
+            : Theme.inkSecondary
 
     readonly property var themeOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -560,7 +560,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
         clip: true
 
         MouseArea {
@@ -603,7 +603,7 @@ FocusScope {
                 y: 16
                 text: qsTr("设置")
                 color: root.textColor
-                font.pixelSize: Theme.typeTitle
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
             }
 
@@ -658,7 +658,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("外观与语言")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -726,7 +726,7 @@ FocusScope {
                             label: modelData.label
                             selected: Appearance.accent === modelData.value
                             swatch: modelData.value === "brand"
-                                ? Theme.brand
+                                ? Theme.accent
                                 : Workspace.accent
                             onClicked: Appearance.chooseAccent(modelData.value)
                         }
@@ -1059,7 +1059,7 @@ FocusScope {
                             text: ExplorerPrefs.backgroundImage
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             selectByMouse: true
                             clip: true
@@ -1232,7 +1232,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("快捷键")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -1259,7 +1259,7 @@ FocusScope {
                     width: content.width - 48
                     visible: text !== ""
                     text: root.shortcutError
-                    color: Theme.warn
+                    color: Theme.warning
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
@@ -1434,7 +1434,7 @@ FocusScope {
                         ? shortcutFlick.contentY / (shortcutFlick.contentHeight
                             - shortcutFlick.height) * (shortcutFlick.height - height)
                         : 0)
-                    color: Theme.hairlineStrong
+                    color: Theme.line
                 }
             }
 
@@ -1459,7 +1459,7 @@ FocusScope {
                     Text {
                         text: qsTr("动作")
                         color: root.textColor
-                        font.pixelSize: Theme.typeTitle
+                        font.pixelSize: Theme.typeHeading
                         font.weight: Font.Medium
                     }
 
@@ -1511,7 +1511,7 @@ FocusScope {
                                     verticalAlignment: TextInput.AlignVCenter
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onInteractive
+                                    selectedTextColor: Theme.onAccent
                                     font.pixelSize: Theme.typeCaption
                                     selectByMouse: true
                                     clip: true
@@ -1532,7 +1532,7 @@ FocusScope {
                                     verticalAlignment: TextInput.AlignVCenter
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onInteractive
+                                    selectedTextColor: Theme.onAccent
                                     font.pixelSize: Theme.typeCaption
                                     font.family: Theme.monoFamily
                                     selectByMouse: true
@@ -1574,7 +1574,7 @@ FocusScope {
                                 onTextEdited: actionRow.editArgs = text
                                 color: root.textColor
                                 selectionColor: root.accent
-                                selectedTextColor: Theme.onInteractive
+                                selectedTextColor: Theme.onAccent
                                 font.pixelSize: Theme.typeCaption
                                 font.family: Theme.monoFamily
                                 selectByMouse: true
@@ -1668,7 +1668,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             selectByMouse: true
                             clip: true
@@ -1689,7 +1689,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -1731,7 +1731,7 @@ FocusScope {
                         onTextEdited: root.newActionArgs = text
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
+                        selectedTextColor: Theme.onAccent
                         font.pixelSize: Theme.typeCaption
                         font.family: Theme.monoFamily
                         selectByMouse: true
@@ -1801,7 +1801,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("终端")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -1833,7 +1833,7 @@ FocusScope {
                     inputMethodHints: Qt.ImhDigitsOnly
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1866,7 +1866,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1900,7 +1900,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1933,7 +1933,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -2010,7 +2010,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("标签")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -2034,7 +2034,7 @@ FocusScope {
                         radius: Theme.radiusSm
                         color: Theme.field
                         border.width: 1
-                        border.color: draftName.activeFocus ? Theme.signal : Theme.hairlineStrong
+                        border.color: draftName.activeFocus ? Theme.accent : Theme.line
 
                         TextInput {
                             id: draftName
@@ -2057,7 +2057,7 @@ FocusScope {
                         radius: Theme.radiusSm
                         color: Theme.field
                         border.width: 1
-                        border.color: draftColor.activeFocus ? Theme.signal : Theme.hairlineStrong
+                        border.color: draftColor.activeFocus ? Theme.accent : Theme.line
 
                         TextInput {
                             id: draftColor
@@ -2068,7 +2068,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: Theme.ink
                             font.family: Theme.monoFamily
-                            font.pixelSize: Theme.typeSmall
+                            font.pixelSize: Theme.typeCaption
                             selectByMouse: true
                             activeFocusOnTab: true
                             Accessible.name: qsTr("颜色")
@@ -2127,7 +2127,7 @@ FocusScope {
                             radius: Theme.radiusXs
                             color: Theme.field
                             border.width: 1
-                            border.color: nameInput.activeFocus ? Theme.signal : Theme.hairline
+                            border.color: nameInput.activeFocus ? Theme.accent : Theme.hairline
 
                             TextInput {
                                 id: nameInput
@@ -2154,7 +2154,7 @@ FocusScope {
                             radius: Theme.radiusXs
                             color: Theme.field
                             border.width: 1
-                            border.color: colorInput.activeFocus ? Theme.signal : Theme.hairline
+                            border.color: colorInput.activeFocus ? Theme.accent : Theme.hairline
 
                             TextInput {
                                 id: colorInput
@@ -2166,7 +2166,7 @@ FocusScope {
                                 verticalAlignment: TextInput.AlignVCenter
                                 color: Theme.ink
                                 font.family: Theme.monoFamily
-                                font.pixelSize: Theme.typeSmall
+                                font.pixelSize: Theme.typeCaption
                                 selectByMouse: true
                                 activeFocusOnTab: true
                                 Component.onCompleted: text = tagRow.modelData.color
@@ -2177,7 +2177,7 @@ FocusScope {
                             x: colorField.x + colorField.width + 12
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("%1 项").arg(tagRow.modelData.count)
-                            color: Theme.inkFaint
+                            color: Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
 
@@ -2243,7 +2243,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("默认文件管理器")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -2339,7 +2339,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("日志")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -2440,7 +2440,7 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     text: qsTr("完成")
-                    color: Theme.onInteractive
+                    color: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                 }
 
@@ -2571,7 +2571,7 @@ FocusScope {
             width: 2
             height: 16
             radius: Theme.radiusSm
-            color: Theme.signal
+            color: Theme.accent
             visible: root.page === nav.value
         }
 
@@ -2675,7 +2675,7 @@ FocusScope {
             id: buttonText
             anchors.centerIn: parent
             text: button.label
-            color: Theme.onInteractive
+            color: Theme.onAccent
             font.pixelSize: Theme.typeMicro
         }
 

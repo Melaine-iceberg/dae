@@ -99,8 +99,8 @@ FocusScope {
     }
 
     /// The plate's hard shadow, declared before the plate so it paints
-    /// behind it (see `HardShadow.qml`).
-    HardShadow {
+    /// behind it (see `Shadow.qml`).
+    Shadow {
         target: panel
     }
 
@@ -114,7 +114,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.line
 
         // Wheel events must not scroll the list behind the dialog; a NoButton
         // guard cannot steal presses from the buttons below it.
@@ -140,7 +140,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.heading
                 color: Theme.ink
-                font.pixelSize: Theme.typeTitle
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
                 elide: Text.ElideRight
             }
@@ -169,7 +169,7 @@ FocusScope {
                     width: 10
                     height: 10
                     kind: "close"
-                    tint: closeMouse.containsMouse ? Theme.ink : Theme.inkFaint
+                    tint: closeMouse.containsMouse ? Theme.ink : Theme.inkTertiary
                 }
 
                 MouseArea {
@@ -197,7 +197,7 @@ FocusScope {
             y: head.height + 12
             width: parent.width - 32
             text: root.message
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeBody
             lineHeight: Theme.leadingBody
             wrapMode: Text.Wrap

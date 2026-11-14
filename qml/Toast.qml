@@ -35,7 +35,7 @@ Item {
         label.text = message
         root.undoable = canUndo === true
         icon.kind = isError === true ? "close" : "check"
-        icon.tint = isError === true ? Theme.signal : Theme.canvas
+        icon.tint = isError === true ? Theme.accent : Theme.canvas
         root.opacity = 1
         timer.restart()
     }
@@ -52,10 +52,8 @@ Item {
         onTriggered: root.dismiss()
     }
 
-    HardShadow {
+    Shadow {
         target: bubble
-        offset: 4
-        color: Theme.signal
     }
 
     Rectangle {
@@ -87,7 +85,7 @@ Item {
                 width: Math.min(320, implicitWidth)
                 text: ""
                 color: Theme.canvas
-                font.pixelSize: Theme.typeSmall
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
                 Accessible.name: text
@@ -112,8 +110,8 @@ Item {
                     id: undoLabel
                     anchors.centerIn: parent
                     text: qsTr("撤销")
-                    color: Theme.signal
-                    font.pixelSize: Theme.typeSmall
+                    color: Theme.accent
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 MouseArea {
