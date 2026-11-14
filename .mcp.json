@@ -17,6 +17,9 @@
     "qt-docs": {
       "type": "http",
       "url": "https://qt-docs-mcp.qt.io/mcp"
+    },
+    "qmlpreview": {
+      "command": "K:/Qt/6.12.0/msvc2022_64/bin/QmlPreviewMcpServer.exe"
     }
   }
 }
