@@ -49,8 +49,17 @@ delegate 内不再有 Canvas」，缺的是具体落到哪一层。
 
 - 缓存键不含 DPR，`size` 已是像素边；1.25 / 1.5 / 2.0 的机器各自一份。
 - 64 项够一屏（16 族 × 最多 4 种颜色/尺寸组合）；列表通常只用一种尺寸。
-- 本阶段只迁移**列表行**。网格、分栏、冲突对话框与预览的 `DriftSheet` 不动，
-  界面里的 Solar 标记仍由 `Glyph.qml` 的 Canvas 渲染；它们各自的阶段再决定是否搬过来。
+- **2026-11-15 补充三**：`renderFileGlyph` 在 `edge >= 20` 时按 §6.3.2 追加一条
+  2 设备像素的族色底条；18 dp 行内字形仍只有纸内标记。已知目录（主目录、下载、
+  文稿、图片、音乐、视频、桌面）在 24 dp 以上由 `FileIcon.qml` 叠一个
+  `image://glyph` 的小标记，与侧栏同源，几何仍只有一份。
+- **2026-11-15 补充**：网格、分栏、回收站与属性对话框已改用 `FileIcon`；冲突卡片
+  （`ConflictSide.qml`）和音频预览的占位也换成了 `FileIcon`，`DriftSheet.qml` 已删除。
+- **2026-11-15 补充二**：界面字形（Solar 标记）也已搬走，见
+  [`ui-glyph-raster-cache.md`](ui-glyph-raster-cache.md)：`image://glyph/<kind>?size=&dp=&ink=&wash=`，
+  路径数据在 `qml/solar-marks.json`，`Glyph.qml` 现在也是一个 `Image`。delegate 里不再有
+  `Canvas`；仓库里剩下的两处（列头排序箭头、媒体预览的播放三角）都只有一个实例，不在
+  delegate 里。
 
 ## 验证
 

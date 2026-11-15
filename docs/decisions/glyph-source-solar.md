@@ -1,7 +1,7 @@
 # 界面图标换成 Solar Icons
 
 > 日期：2026-11-13 · 状态：已实施（Windows 本机验证，macOS/Linux 未跑）
-> 相关：`qml/Glyph.qml`、`qml/SolarMarks.js`、`docs/ui-instrument-migration.md` §6.4
+> 相关：`qml/Glyph.qml`、`qml/solar-marks.json`、`docs/ui-instrument-migration.md` §6.4
 
 ## 问题
 
@@ -19,10 +19,10 @@
 
 **几何来自 Solar Icons 的 `linear` 风格，`Glyph.qml` 只留渲染器。**
 
-- 数据放 `qml/SolarMarks.js`（`pragma library`），一个 `kind` → `[{ d, f, s, w }]` 的表，
+- 数据放 `qml/solar-marks.json`，一个 `kind` → `[{ d, f, s, w }]` 的表，
   与旧的 `marks` 同构，所以调用方一行没改。
 - 版本钉在 `@solar-icons/static@2.5.0`，路径数据**按原样拷贝**（小数保留两位），
-  文件头记来源、映射表与 MIT 许可全文。上游改了形状就重新拷贝，不在这里改。
+  数据文件的 `_source` / `_licence` 两个键记来源、映射表与 MIT 许可全文。上游改了形状就重新拷贝，不在这里改。
 - 风格只取 `linear`：24 单位网格、1.5 单位描边，正好是 `Glyph` 已有的描边式标记。
   `bold-duotone` 是 Solar 的「实心 + 次级层」，和本项目的 `wash` 概念同源，但一屏
   全是实心块会压过文字，故只保留 `folder` / `tag` 两个 `s` 标记。
@@ -40,9 +40,13 @@
 | 24 dp 网格 | Solar 自带 2 单位留白，16 dp 下画幅约 13.3 px（旧 sprite 约 12 px），视觉上略大 |
 
 有一处必须改：旧 `trace()` 只认 `M/L/Q/C/Z`，而库的路径数据全是 `A` 圆弧、相对命令
-与隐式重复。`Glyph.qml` 现在解析完整 SVG 语法，圆弧按规范的端点→圆心转换后切成
-≤90° 的三次贝塞尔（每个圆角都走这条路径）。没有引入 SVG 模块，也没有栅格化：
-Canvas 仍是每个标记一个，尺寸/色调变化重绘一次。
+与隐式重复。解析器补上了完整 SVG 语法，圆弧按规范的端点→圆心转换后切成
+≤90° 的三次贝塞尔（每个圆角都走这条路径）。没有引入 SVG 模块。
+
+> **2026-11-15 补充**：渲染方式已被 `docs/decisions/ui-glyph-raster-cache.md` 取代。
+> 数据从 `qml/SolarMarks.js` 移到 `qml/solar-marks.json`（同一份路径数据），解析器与
+> `QPainter` 栅格化搬到 C++ 的 `crates/dae-qt/cpp/solar_marks.cpp`，`Glyph.qml` 只剩一个
+> `Image`。上面两条渲染规则（描边补偿、剪影填充）在新实现里逐字保留。
 
 ## 为什么不选别的
 
@@ -60,7 +64,7 @@ Canvas 仍是每个标记一个，尺寸/色调变化重绘一次。
 ## 验证
 
 - `cargo build -p dae-app` 通过；`qmllint qml/Glyph.qml` 无告警。
-- `kind` 覆盖核对：QML 与两个 `glyphKind()` 映射里出现的所有取值都在 `SolarMarks.js` 中
+- `kind` 覆盖核对：QML 与两个 `glyphKind()` 映射里出现的所有取值都在 `solar-marks.json` 中
   （顺带补上了 `chevronRight`——标签页「关闭右侧标签页」原本引用的名字在表里不存在，
   那一行一直没有图标）。
 - 应用内目视：侧栏（驱动盘/星标/展开箭头）、概览便签（主目录/桌面/文档/下载/图片/

@@ -110,6 +110,16 @@ const families = {
   other: 264,
 };
 
+// The fixed tag options (§6.1.7). Stored as the light spelling; the dark list
+// is the paint-side variant. They are marks, so the bar is the 3:1 non-text
+// threshold.
+const tagPaletteLight = ["#a3392f", "#9a5a20", "#7d6a12", "#2f6b34", "#1d6560", "#2b5590", "#5b3f92", "#5c6169"];
+const tagPaletteDark = ["#e08585", "#e0a377", "#ddc274", "#8fc48c", "#7fc3bd", "#82a9dd", "#ab93dd", "#a8adb4"];
+
+// The destructive fill is not the accent, so its ink is checked separately.
+const dangerSolidLight = "#ba2b2e";
+const dangerSolidDark = "#e06b64";
+
 // ── Report ─────────────────────────────────────────────────────────────────
 const pad = (s, w) => String(s).padEnd(w);
 let failures = 0;
@@ -137,6 +147,15 @@ for (const [name, t] of [["LIGHT", light], ["DARK", dark]]) {
 
   console.log(`\n${name} — semantic text`);
   for (const role of ["danger", "warning", "success"]) check(`${role} / canvas`, t[role], t.canvas, 4.5);
+
+  console.log(`\n${name} — tag marks (non-text ≥3)`);
+  const tags = name === "LIGHT" ? tagPaletteLight : tagPaletteDark;
+  tags.forEach((colour, index) => check(`tag ${index + 1} / canvas`, colour, t.canvas, 3));
+
+  console.log(`\n${name} — destructive fill`);
+  check("canvas ink on dangerSolid",
+          name === "LIGHT" ? light.canvas : dark.canvas,
+          name === "LIGHT" ? dangerSolidLight : dangerSolidDark, 4.5);
 }
 
 console.log("\nNEUTRAL RAMP REGENERATION (hue " + NEUTRAL_HUE + ")");
