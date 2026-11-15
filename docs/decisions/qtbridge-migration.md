@@ -1,8 +1,9 @@
 # Qt Bridge 迁移执行手册
 
-> **状态：进行中。** 分支 `feat/qtbridge`，已有 4 个提交，4 个 QObject 已迁移并通过
-> 构建、单元测试和整机启动验证；其余约 20 个 QObject、`main.rs` 和 `cxx-qt-build`
-> 的移除尚未完成。本文是给下一次对话直接执行用的，不需要上一次对话的上下文。
+> **状态：进行中。** 分支 `feat/qtbridge`，已有 8 个提交，7 个 QObject 已迁移并通过
+> 构建、单元测试和整机启动验证；三个“叶子单例”已全部完成，下一步是列表模型。
+> 其余约 17 个 QObject、`main.rs` 和 `cxx-qt-build` 的移除尚未完成。本文是给下一次
+> 对话直接执行用的，不需要上一次对话的上下文。
 
 - 目标：`crates/dae-qt` 从 CXX-Qt 0.10 全量迁到 [Qt Bridge for Rust](https://doc.qt.io/qtbridge-rust/)（beta，API 已按 0.4.1 固定）。
 - 依赖版本：`qtbridge = "0.4.1"`，MSRV 1.88，Qt ≥ 6.10。本机 Qt 6.12.0：
@@ -15,6 +16,9 @@
 | `6a68e6d` | `Startup`、`Session`、`TagStore` → qtbridge |
 | `ed5f4f8` | `AppConfig` → qtbridge（保留 C++ extern 的混合形态） |
 | `c2403c0` | 本文档 |
+| `aaff2f5` | `Appearance` → qtbridge（保留 translator.h 的 C++ extern） |
+| `906bdbf` | `NetworkDiscovery` → qtbridge（`QThreadHandle` 替换 `qt_thread()`） |
+| `54dbb4d` | `ExplorerPrefs` → qtbridge（36 属性 + `notifying_setters!`） |
 
 ## 0. 三条硬约束（先读，决定后面所有写法）
 
@@ -38,14 +42,14 @@
 | `session.rs` | `Session` | 单例，2 属性 + 5 slot；`String` 替换 `QString` |
 | `tags.rs` | `TagStore` | 单例，2 属性 + 2 signal + 11 slot；`Vec<String>` 替换 `QStringList` |
 | `config.rs` | `AppConfig` | 普通 element，6 个 **Constant** 属性；C++ 调用保留在文件内的 `#[cxx_qt::bridge]` extern 块 |
+| `appearance.rs` | `Appearance` | 单例，6 属性 + 6 slot；`translator.h` 的 C++ extern 块留在原位 |
+| `network_discovery.rs` | `NetworkDiscovery` | 单例，3 属性 + 1 slot；回投用 `QThreadHandle::invoke_mut` |
+| `preferences.rs` | `ExplorerPrefs` | 单例，36 属性 + 11 slot；`notifying_setters!` 生成 36 个 `set_x` |
 
 剩余（原始规模，供排序和估算）：
 
 | 文件 | 类型 | props | slots | signals | inherit | 单例 | C++ 依赖 |
 |---|---|---:|---:|---:|---:|---|---|
-| `appearance.rs` | `Appearance` | 6 | 6 | 0 | 0 | 是 | translator.h |
-| `network_discovery.rs` | `NetworkDiscovery` | 3 | 1 | 0 | 0 | 是 | — |
-| `preferences.rs` | `ExplorerPrefs` | 36 | 11 | 0 | 0 | 是 | — |
 | `shell.rs` | `Shell` | 0 | 5 | 0 | 0 | 是 | activation / platform_watch 等 |
 | `updater.rs` | `Updater` | 12 | 2 | 1 | 0 | 是 | — |
 | `shell_command_model.rs` | `ShellCommandModel` | 4 | 8 | 0 | 2 | 否 | — |
@@ -64,8 +68,8 @@
 | `properties.rs` | `PropertiesController` | 48 | 8 | 2 | 0 | 否 | image_provider? |
 | `i18n.rs`（非 QObject） | — | — | — | — | — | — | translator.h |
 
-总计约 270 个属性、240 个 invokable、23 个 signal 待迁，28k 行里大部分是这些
-QObject 的实现体。
+总计约 270 个属性、240 个 invokable、23 个 signal；已迁掉其中 45 个属性、18 个
+slot，剩余约 225 个属性、222 个 invokable，28k 行里大部分是这些 QObject 的实现体。
 
 ## 2. 已由闸门验证的事实
 
@@ -192,6 +196,33 @@ target\debug\dae.exe
 一个模块一个提交，按现有风格 `feat(qt): port <Type> to Qt Bridge`，正文写清
 “为什么这个模块可以独立迁 / 验证了什么”。
 
+### 3.6 属性多时：`notifying_setters!`
+
+36 个属性的 `ExplorerPrefs` 证明手写 “赋值 + emit” 会在 64 个写入点上重复，且漏掉
+emit 不会有编译错误。`preferences.rs` 因此用一条文件内宏声明全部 setter：
+
+```rust
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
+}
+
+impl ExplorerPrefs {
+    notifying_setters! {
+        set_view_mode(String) => view_mode, view_mode_changed;
+        set_icon_size(i32) => icon_size, icon_size_changed;
+        // …
+    }
+}
+```
+
+属性数 ≥ 10 的模块建议照抄；少数属性（`Appearance`、`NetworkDiscovery`）直接写字面
+赋值更清楚。
+
 ## 4. 类型映射
 
 | CXX-Qt | qtbridge | 备注 |
@@ -253,8 +284,10 @@ impl QmlElement for Model { /* URI "dae"，ELEMENT_NAME，IS_SINGLETON = false *
 
 ## 6. 建议的推进顺序
 
-1. **叶子单例**：`appearance` → `network_discovery` → `preferences`（36 属性，但自成一体）。
-2. **模型**：见 §5。每迁一个都跑 `cargo test -p dae-qt --lib`（模型测试覆盖最全）。
+1. ~~**叶子单例**：`appearance` → `network_discovery` → `preferences`~~ —— 已完成
+   （`aaff2f5`、`906bdbf`、`54dbb4d`）。
+2. **模型**：见 §5。从 `sidebar_model` 开始，每迁一个都跑
+   `cargo test -p dae-qt --lib`（模型测试覆盖最全）。
 3. **中量对象**：`updater`、`shell`、`window`、`terminal`、`preview`、`properties`。
 4. **`workspace`**：45 属性 + 84 slot + 12 signal，且是跨线程重灾区（见 §7.2）。放最后，
    因为它的实现体最大，改动风险最高。
@@ -299,6 +332,29 @@ qmltypes 导出后可删。验收：`DAE_QML_AOT=1 cargo build --release` 不降
 - 目标已销毁时闭包被丢弃，不会 use-after-free；但如果 Qt 线程上该对象正被可变借用，
   会 abort（嵌套事件循环场景要检查）。
 - `workspace.rs` / `model.rs` 的 `spawn_blocking` 回投路径逐条对照迁移。
+
+`network_discovery.rs` 是第一个走通这条路的模块（`invoke_mut` 回投），可作模板：
+
+```rust
+#[qslot]
+fn refresh(&mut self) {
+    // …置 busy/scanned 并手动 emit…
+    let handle = self.get_thread_handle(); // 需要 `use qtbridge::QmlObject`
+    runtime::spawn(async move {
+        let json = /* 阻塞探针在 spawn_blocking 里跑 */;
+        handle.invoke_mut(move |discovery| {
+            discovery.services_json = json;
+            discovery.services_json_changed();
+            discovery.busy = false;
+            discovery.busy_changed();
+        });
+    });
+}
+```
+
+`&mut self` 里取 handle 不需要 `RefCell::borrow`，不会和当前槽的可变借用冲突；
+`get_thread_handle()` 只复制 QObject 指针。`QThreadHandle::new` 返回的 handle 只对
+Qt 线程上创建的对象有效。
 
 ### 7.3 `main.rs` 与引擎
 
@@ -400,10 +456,13 @@ C++ 画笔已经用 `QMetaObject::invokeMethod` 按 **`QByteArray`** 取帧和�
 ```text
 在 K:/code/dae 的 feat/qtbridge 分支上继续 Qt Bridge 迁移。先读
 docs/decisions/qtbridge-migration.md（执行手册）和 bench/qtbridge-spike/README.md
-（已通过的可行性闸门），再读 git log origin/main..HEAD 的三个提交。
+（已通过的可行性闸门），再读 git log origin/main..HEAD 的提交。
 
-从“叶子单例”继续：appearance.rs → network_discovery.rs → preferences.rs。
-每个模块严格按手册 §3 的配方改，迁完立刻跑：
+三个叶子单例已完成。按手册 §5 开始迁列表模型：
+sidebar_model.rs → trash_model.rs → spaces_model.rs → shell_command_model.rs →
+open_with_model.rs → overview_model.rs → search_model.rs →
+sidebar_tree_model.rs → model.rs。
+每个模块严格按手册 §3/§5 的配方改，迁完立刻跑：
   cargo build -p dae-app
   cargo test -p dae-qt --lib
   DAE_STARTUP_PERF=1 启动 target/debug/dae.exe，确认时间线完整且无 QML 报错
