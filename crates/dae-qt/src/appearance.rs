@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use cxx_qt_lib::QString;
+use qtbridge::{QmlElement, qobject};
 
 const FILE_NAME: &str = "appearance-qt.ini";
 
@@ -19,16 +19,17 @@ const ACCENTS: &[&str] = &["system", "brand"];
 const LANGUAGES: &[&str] = dae_core::settings::LANGUAGES;
 const MATERIALS: &[&str] = &["mica", "acrylic", "none"];
 
+/// The C++ half of the language install. Only the `extern "C++"` block is
+/// left here after the Qt Bridge port; [`crate::i18n`] still calls these three
+/// helpers. The engine address is exchanged as `size_t` because an opaque
+/// `QObject` type would be a second declaration of the same C++ class; the
+/// helper casts it back to `QObject*` before the `qobject_cast`.
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
 
-        // The engine address is exchanged as `size_t`: `QObject` is already
-        // implied by the RustQt type below, and an opaque pointer type here
-        // would be a second declaration of the same C++ class. The helper
-        // casts it back to `QObject*` before the `qobject_cast`.
         include!("translator.h");
         #[namespace = "dae_qt"]
         fn dae_qt_i18n_attach_engine(engine: usize);
@@ -41,55 +42,7 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_i18n_system_language() -> QString;
     }
-
-    unsafe extern "RustQt" {
-        /// QML usage: `Appearance.theme`, `Appearance.setTheme("dark")`.
-        ///
-        /// Theme, accent and language are separate fields rather than one
-        /// "appearance" object so changing one never re-writes the other two.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        #[qproperty(QString, theme)]
-        #[qproperty(QString, accent)]
-        #[qproperty(QString, language)]
-        #[qproperty(bool, blur_enabled, cxx_name = "blurEnabled")]
-        #[qproperty(QString, window_material, cxx_name = "windowMaterial")]
-        /// Whether the next launch presents a text-free window while the QML
-        /// tree is still being built (`docs/qml-aot.md` §16). Read by `main`
-        /// before the engine exists, so it cannot live in QML state.
-        #[qproperty(bool, shell_first, cxx_name = "shellFirst")]
-        type Appearance = super::AppearanceRust;
-
-        #[qinvokable]
-        #[cxx_name = "chooseTheme"]
-        fn change_theme(self: Pin<&mut Appearance>, value: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "chooseAccent"]
-        fn change_accent(self: Pin<&mut Appearance>, value: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "chooseLanguage"]
-        fn change_language(self: Pin<&mut Appearance>, value: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "chooseBlur"]
-        fn change_blur(self: Pin<&mut Appearance>, enabled: bool);
-
-        #[qinvokable]
-        #[cxx_name = "chooseWindowMaterial"]
-        fn change_window_material(self: Pin<&mut Appearance>, value: &QString);
-
-        /// Takes effect on the next launch: the current one has already decided
-        /// whether to show the stand-in window.
-        #[qinvokable]
-        #[cxx_name = "chooseShellFirst"]
-        fn change_shell_first(self: Pin<&mut Appearance>, enabled: bool);
-    }
 }
-
-use std::pin::Pin;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoredAppearance {
@@ -234,83 +187,132 @@ fn save(change: impl FnOnce(&mut dae_core::settings::AppSettings)) {
     }
 }
 
-pub struct AppearanceRust {
-    theme: QString,
-    accent: QString,
-    language: QString,
+/// QML usage: `Appearance.theme`, `Appearance.chooseTheme("dark")`.
+///
+/// Theme, accent and language are separate fields rather than one
+/// "appearance" object so changing one never re-writes the other two.
+pub struct Appearance {
+    theme: String,
+    accent: String,
+    language: String,
     blur_enabled: bool,
-    window_material: QString,
+    window_material: String,
+    /// Whether the next launch presents a text-free window while the QML
+    /// tree is still being built (`docs/qml-aot.md` §16). Read by `main`
+    /// before the engine exists, so it cannot live in QML state.
     shell_first: bool,
 }
 
-impl Default for AppearanceRust {
+impl Default for Appearance {
     fn default() -> Self {
         let stored = dae_core::settings::load_settings().unwrap_or_default();
         Self {
-            theme: QString::from(stored.theme.as_str()),
-            accent: QString::from(stored.accent.as_str()),
-            language: QString::from(stored.language.as_str()),
+            theme: stored.theme,
+            accent: stored.accent,
+            language: stored.language,
             blur_enabled: stored.blur,
-            window_material: QString::from(stored.window_material.as_str()),
+            window_material: stored.window_material,
             shell_first: stored.shell_first,
         }
     }
 }
 
-impl qobject::Appearance {
-    fn change_theme(mut self: Pin<&mut Self>, value: &QString) {
-        let value = value.to_string();
-        if !THEMES.contains(&value.as_str()) || self.theme.to_string() == value {
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+impl Appearance {
+    qproperty!("theme", Member = theme, Notify = theme_changed);
+    qproperty!("accent", Member = accent, Notify = accent_changed);
+    qproperty!("language", Member = language, Notify = language_changed);
+    qproperty!("blurEnabled", Member = blur_enabled, Notify = blur_enabled_changed);
+    qproperty!(
+        "windowMaterial",
+        Member = window_material,
+        Notify = window_material_changed
+    );
+    qproperty!("shellFirst", Member = shell_first, Notify = shell_first_changed);
+
+    #[qsignal]
+    fn theme_changed(&mut self);
+    #[qsignal]
+    fn accent_changed(&mut self);
+    #[qsignal]
+    fn language_changed(&mut self);
+    #[qsignal]
+    fn blur_enabled_changed(&mut self);
+    #[qsignal]
+    fn window_material_changed(&mut self);
+    #[qsignal]
+    fn shell_first_changed(&mut self);
+
+    #[qslot]
+    fn change_theme(&mut self, value: String) {
+        if !THEMES.contains(&value.as_str()) || self.theme == value {
             return;
         }
-        self.as_mut().set_theme(QString::from(value.as_str()));
+        self.theme.clone_from(&value);
+        self.theme_changed();
         save(|settings| settings.theme = value);
     }
 
-    fn change_accent(mut self: Pin<&mut Self>, value: &QString) {
-        let value = value.to_string();
-        if !ACCENTS.contains(&value.as_str()) || self.accent.to_string() == value {
+    #[qslot]
+    fn change_accent(&mut self, value: String) {
+        if !ACCENTS.contains(&value.as_str()) || self.accent == value {
             return;
         }
-        self.as_mut().set_accent(QString::from(value.as_str()));
+        self.accent.clone_from(&value);
+        self.accent_changed();
         save(|settings| settings.accent = value);
     }
 
-    fn change_language(mut self: Pin<&mut Self>, value: &QString) {
-        let value = value.to_string();
-        if !LANGUAGES.contains(&value.as_str()) || self.language.to_string() == value {
+    #[qslot]
+    fn change_language(&mut self, value: String) {
+        if !LANGUAGES.contains(&value.as_str()) || self.language == value {
             return;
         }
-        self.as_mut().set_language(QString::from(value.as_str()));
+        self.language.clone_from(&value);
+        self.language_changed();
         save(|settings| settings.language = value.clone());
         crate::i18n::apply(&value);
     }
 
-    fn change_blur(mut self: Pin<&mut Self>, enabled: bool) {
+    #[qslot]
+    fn change_blur(&mut self, enabled: bool) {
         if self.blur_enabled == enabled {
             return;
         }
-        self.as_mut().set_blur_enabled(enabled);
+        self.blur_enabled = enabled;
+        self.blur_enabled_changed();
         save(|settings| settings.blur = enabled);
     }
 
-    fn change_shell_first(mut self: Pin<&mut Self>, enabled: bool) {
+    #[qslot]
+    fn change_window_material(&mut self, value: String) {
+        if !MATERIALS.contains(&value.as_str()) || self.window_material == value {
+            return;
+        }
+        self.window_material.clone_from(&value);
+        self.window_material_changed();
+        save(|settings| settings.window_material = value);
+    }
+
+    /// Takes effect on the next launch: the current one has already decided
+    /// whether to show the stand-in window.
+    #[qslot]
+    fn change_shell_first(&mut self, enabled: bool) {
         if self.shell_first == enabled {
             return;
         }
-        self.as_mut().set_shell_first(enabled);
+        self.shell_first = enabled;
+        self.shell_first_changed();
         save(|settings| settings.shell_first = enabled);
     }
+}
 
-    fn change_window_material(mut self: Pin<&mut Self>, value: &QString) {
-        let value = value.to_string();
-        if !MATERIALS.contains(&value.as_str()) || self.window_material.to_string() == value {
-            return;
-        }
-        self.as_mut()
-            .set_window_material(QString::from(value.as_str()));
-        save(|settings| settings.window_material = value);
-    }
+impl QmlElement for Appearance {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "Appearance";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
 }
 
 #[cfg(test)]
