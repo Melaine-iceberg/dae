@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use cxx_qt_lib::QString;
+use qtbridge::{QmlElement, qobject};
 
 const FILE_NAME: &str = "explorer-qt.ini";
 /// Per-directory layouts live beside the global document rather than in it:
@@ -48,182 +48,6 @@ const SIZE_FILTERS: &[&str] = &["any", "small", "medium", "large"];
 const SIZE_UNITS: &[&str] = &["binary", "decimal"];
 /// Grid thumbnail box: 3:4 portrait (the default) or 1:1.
 const GRID_THUMBS: &[&str] = &["portrait", "square"];
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    unsafe extern "RustQt" {
-        /// QML usage: read `ExplorerPrefs.sortKey`, call
-        /// `ExplorerPrefs.setString("sortKey", "size")`.
-        ///
-        /// `setString`/`setBool` are keyed rather than one method per field so
-        /// adding a preference costs a match arm instead of a bridge method.
-        /// Unknown keys and unknown values are ignored: QML is the only caller
-        /// and a typo must not corrupt the document on disk.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        #[qproperty(QString, view_mode, cxx_name = "viewMode")]
-        #[qproperty(QString, density)]
-        #[qproperty(QString, sort_key, cxx_name = "sortKey")]
-        #[qproperty(QString, sort_order, cxx_name = "sortOrder")]
-        /// `foldersFirst`, `filesFirst` or `mixed`. Replaces the old boolean;
-        /// a stored `foldersFirst=false` migrates to `mixed`.
-        #[qproperty(QString, folder_order, cxx_name = "folderOrder")]
-        /// The section key (`""` for none) and, for the two date keys, the
-        /// bucket precision.
-        #[qproperty(QString, group_key, cxx_name = "groupKey")]
-        #[qproperty(QString, group_date, cxx_name = "groupDate")]
-        /// Grid tile / list thumbnail size, 24–96 dp.
-        #[qproperty(i32, icon_size, cxx_name = "iconSize")]
-        /// Whether names are painted with their extension. Display only: it
-        /// never changes what a rename, a search or a sort sees.
-        #[qproperty(bool, show_extensions, cxx_name = "showExtensions")]
-        /// The visible details columns, comma-separated.
-        #[qproperty(QString, columns)]
-        /// Their widths, comma-separated, in the same order as `columns`.
-        #[qproperty(QString, column_widths, cxx_name = "columnWidths")]
-        /// Layout follows the directory when off, and one global layout when
-        /// on.
-        #[qproperty(bool, sync_layout, cxx_name = "syncLayout")]
-        /// Pick a starting layout for a directory that has none, from what it
-        /// contains.
-        #[qproperty(bool, adaptive_layout, cxx_name = "adaptiveLayout")]
-        /// The last 20 name searches, newest first, as JSON. The search field
-        /// shows them when it is focused and empty; `rememberSearch` writes
-        /// them.
-        #[qproperty(QString, search_history, cxx_name = "searchHistory")]
-        /// Named searches, newest first, as JSON: the query plus the mode,
-        /// scope and filters it ran with. Written by `saveSearch`, read by the
-        /// sidebar section and the search bar's "保存" chip.
-        #[qproperty(QString, saved_searches, cxx_name = "savedSearches")]
-        /// The directory whose stored layout is on screen. Write it with
-        /// `setString("currentPath", …)`; the setter also restores that
-        /// directory's layout when `syncLayout` is off.
-        #[qproperty(QString, current_path, cxx_name = "currentPath")]
-        #[qproperty(QString, icon_style, cxx_name = "iconStyle")]
-        #[qproperty(bool, row_thumbnails, cxx_name = "rowThumbnails")]
-        #[qproperty(bool, show_hidden_files, cxx_name = "showHiddenFiles")]
-        #[qproperty(QString, kind_filter, cxx_name = "kindFilter")]
-        #[qproperty(QString, modified_filter, cxx_name = "modifiedFilter")]
-        #[qproperty(QString, size_filter, cxx_name = "sizeFilter")]
-        /// `binary` (KiB/MiB) or `decimal` (KB/MB). Read by the formatter for
-        /// every row, so it is a display preference rather than a layout key.
-        #[qproperty(QString, size_units, cxx_name = "sizeUnits")]
-        /// Grid thumbnail proportions: `portrait` (3:4) or `square` (1:1).
-        #[qproperty(QString, grid_thumb, cxx_name = "gridThumb")]
-        /// Reopen the previous session's windows and tabs on launch.
-        #[qproperty(bool, restore_session, cxx_name = "restoreSession")]
-        /// Landing-page sections to hide, comma-separated. A free-text value:
-        /// the model drops names it does not know.
-        #[qproperty(QString, hidden_home_sections, cxx_name = "hiddenHomeSections")]
-        /// Sidebar groups the user folded, comma-separated (§7.3.2). Same
-        /// free-text rule as the landing page's hidden sections: a name the
-        /// model no longer emits is ignored rather than cleaned up here.
-        #[qproperty(QString, folded_sidebar_sections, cxx_name = "foldedSidebarSections")]
-        #[qproperty(bool, split_enabled, cxx_name = "splitEnabled")]
-        /// Off by default: the shell animates, and this is the single switch the
-        /// spec calls for. Qt 6 has no system-wide reduced-motion query, so the
-        /// preference has to live here and QML has to ask before every Behavior.
-        #[qproperty(bool, reduce_motion, cxx_name = "reduceMotion")]
-        /// Panel widths, in dp. A drag handle writes them; the window reads
-        /// them back on the next launch so a widened preview stays widened.
-        #[qproperty(i32, preview_width, cxx_name = "previewWidth")]
-        #[qproperty(i32, sidebar_width, cxx_name = "sidebarWidth")]
-        /// The executable a new terminal starts. Empty means the shell picks
-        /// the platform default (pwsh/PowerShell, `$SHELL`, …).
-        #[qproperty(QString, terminal_shell, cxx_name = "terminalShell")]
-        /// Toolbar action ids, comma-separated, in display order. The leading
-        /// group sits before the address bar, the trailing group after it.
-        /// QML normalizes unknown or duplicated ids against its own model.
-        #[qproperty(QString, toolbar_leading, cxx_name = "toolbarLeading")]
-        #[qproperty(QString, toolbar_trailing, cxx_name = "toolbarTrailing")]
-        /// An image path painted behind the listing. Empty means none.
-        #[qproperty(QString, background_image, cxx_name = "backgroundImage")]
-        /// How much of the theme canvas covers the image, 0–90: higher is
-        /// calmer and keeps text contrast; the listing never becomes fully
-        /// transparent.
-        #[qproperty(i32, background_dim, cxx_name = "backgroundDim")]
-        type ExplorerPrefs = super::ExplorerPrefsRust;
-
-        #[qinvokable]
-        #[cxx_name = "setString"]
-        fn set_string(self: Pin<&mut ExplorerPrefs>, key: &QString, value: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "setBool"]
-        fn set_bool(self: Pin<&mut ExplorerPrefs>, key: &QString, value: bool);
-
-        /// Widths are clamped on the way in, not by the caller: a preference
-        /// file edited by hand should not be able to make a panel invisible.
-        #[qinvokable]
-        #[cxx_name = "setNumber"]
-        fn set_number(self: Pin<&mut ExplorerPrefs>, key: &QString, value: i32);
-
-        /// `grid`, `column` or `list` for a directory with no stored layout,
-        /// from its contents. Returns the mode it applied, or an empty string
-        /// when the user has a stored layout or adaptive layout is off.
-        #[qinvokable]
-        #[cxx_name = "applyAdaptiveView"]
-        fn apply_adaptive_view(
-            self: Pin<&mut ExplorerPrefs>,
-            path: &QString,
-            images: i32,
-            files: i32,
-            depth: i32,
-        ) -> QString;
-
-        /// Records a query at the front of the history, de-duplicated and
-        /// capped at 20.
-        #[qinvokable]
-        #[cxx_name = "rememberSearch"]
-        fn remember_search(self: Pin<&mut ExplorerPrefs>, query: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "clearSearchHistory"]
-        fn clear_search_history(self: Pin<&mut ExplorerPrefs>);
-
-        /// Stores `spec` (a `SavedSearch` as JSON) under `name`. A name that
-        /// already exists replaces that entry instead of adding a second one
-        /// with the same label. False when the name or the query is empty, or
-        /// when the spec is not valid JSON.
-        #[qinvokable]
-        #[cxx_name = "saveSearch"]
-        fn save_search(
-            self: Pin<&mut ExplorerPrefs>,
-            name: &QString,
-            spec: &QString,
-        ) -> bool;
-
-        #[qinvokable]
-        #[cxx_name = "deleteSavedSearch"]
-        fn delete_saved_search(self: Pin<&mut ExplorerPrefs>, id: &QString) -> bool;
-
-        #[qinvokable]
-        #[cxx_name = "renameSavedSearch"]
-        fn rename_saved_search(
-            self: Pin<&mut ExplorerPrefs>,
-            id: &QString,
-            name: &QString,
-        ) -> bool;
-
-        /// Drops a directory's stored layout, returning it to the defaults.
-        #[qinvokable]
-        #[cxx_name = "forgetView"]
-        fn forget_view(self: Pin<&mut ExplorerPrefs>, path: &QString);
-
-        /// Kinds, modified-time buckets and size buckets back to "all/any/any".
-        #[qinvokable]
-        #[cxx_name = "resetFilters"]
-        fn reset_filters(self: Pin<&mut ExplorerPrefs>);
-    }
-}
-
-use std::pin::Pin;
 
 /// One named search: the query and everything the bar needs to re-run it
 /// exactly as it ran. Every field but `id`, `name` and `query` is optional in
@@ -738,46 +562,46 @@ fn save(prefs: &StoredPrefs) {
     }
 }
 
-pub struct ExplorerPrefsRust {
-    view_mode: QString,
-    density: QString,
-    sort_key: QString,
-    sort_order: QString,
-    folder_order: QString,
-    group_key: QString,
-    group_date: QString,
-    icon_style: QString,
+pub struct ExplorerPrefs {
+    view_mode: String,
+    density: String,
+    sort_key: String,
+    sort_order: String,
+    folder_order: String,
+    group_key: String,
+    group_date: String,
+    icon_style: String,
     icon_size: i32,
     row_thumbnails: bool,
     show_extensions: bool,
-    columns: QString,
-    column_widths: QString,
+    columns: String,
+    column_widths: String,
     show_hidden_files: bool,
-    kind_filter: QString,
-    modified_filter: QString,
-    size_filter: QString,
-    size_units: QString,
-    grid_thumb: QString,
+    kind_filter: String,
+    modified_filter: String,
+    size_filter: String,
+    size_units: String,
+    grid_thumb: String,
     restore_session: bool,
-    hidden_home_sections: QString,
-    folded_sidebar_sections: QString,
+    hidden_home_sections: String,
+    folded_sidebar_sections: String,
     split_enabled: bool,
     reduce_motion: bool,
     sync_layout: bool,
     adaptive_layout: bool,
     preview_width: i32,
     sidebar_width: i32,
-    terminal_shell: QString,
-    toolbar_leading: QString,
-    toolbar_trailing: QString,
-    background_image: QString,
+    terminal_shell: String,
+    toolbar_leading: String,
+    toolbar_trailing: String,
+    background_image: String,
     background_dim: i32,
-    search_history: QString,
-    saved_searches: QString,
-    current_path: QString,
+    search_history: String,
+    saved_searches: String,
+    current_path: String,
 }
 
-impl Default for ExplorerPrefsRust {
+impl Default for ExplorerPrefs {
     fn default() -> Self {
         let stored = preferences_path()
             .map(|path| StoredPrefs::read(&path))
@@ -786,31 +610,31 @@ impl Default for ExplorerPrefsRust {
     }
 }
 
-impl ExplorerPrefsRust {
+impl ExplorerPrefs {
     fn from_stored(prefs: &StoredPrefs) -> Self {
         Self {
-            view_mode: QString::from(prefs.view_mode.as_str()),
-            density: QString::from(prefs.density.as_str()),
-            sort_key: QString::from(prefs.sort_key.as_str()),
-            sort_order: QString::from(prefs.sort_order.as_str()),
-            folder_order: QString::from(prefs.folder_order.as_str()),
-            group_key: QString::from(prefs.group_key.as_str()),
-            group_date: QString::from(prefs.group_date.as_str()),
-            icon_style: QString::from(prefs.icon_style.as_str()),
+            view_mode: String::from(prefs.view_mode.as_str()),
+            density: String::from(prefs.density.as_str()),
+            sort_key: String::from(prefs.sort_key.as_str()),
+            sort_order: String::from(prefs.sort_order.as_str()),
+            folder_order: String::from(prefs.folder_order.as_str()),
+            group_key: String::from(prefs.group_key.as_str()),
+            group_date: String::from(prefs.group_date.as_str()),
+            icon_style: String::from(prefs.icon_style.as_str()),
             icon_size: prefs.icon_size,
             row_thumbnails: prefs.row_thumbnails,
             show_extensions: prefs.show_extensions,
-            columns: QString::from(prefs.columns.as_str()),
-            column_widths: QString::from(prefs.column_widths.as_str()),
+            columns: String::from(prefs.columns.as_str()),
+            column_widths: String::from(prefs.column_widths.as_str()),
             show_hidden_files: prefs.show_hidden_files,
-            kind_filter: QString::from(prefs.kind_filter.as_str()),
-            modified_filter: QString::from(prefs.modified_filter.as_str()),
-            size_filter: QString::from(prefs.size_filter.as_str()),
-            size_units: QString::from(prefs.size_units.as_str()),
-            grid_thumb: QString::from(prefs.grid_thumb.as_str()),
+            kind_filter: String::from(prefs.kind_filter.as_str()),
+            modified_filter: String::from(prefs.modified_filter.as_str()),
+            size_filter: String::from(prefs.size_filter.as_str()),
+            size_units: String::from(prefs.size_units.as_str()),
+            grid_thumb: String::from(prefs.grid_thumb.as_str()),
             restore_session: prefs.restore_session,
-            hidden_home_sections: QString::from(prefs.hidden_home_sections.as_str()),
-            folded_sidebar_sections: QString::from(
+            hidden_home_sections: String::from(prefs.hidden_home_sections.as_str()),
+            folded_sidebar_sections: String::from(
                 prefs.folded_sidebar_sections.as_str(),
             ),
             split_enabled: prefs.split_enabled,
@@ -819,64 +643,62 @@ impl ExplorerPrefsRust {
             adaptive_layout: prefs.adaptive_layout,
             preview_width: prefs.preview_width,
             sidebar_width: prefs.sidebar_width,
-            terminal_shell: QString::from(prefs.terminal_shell.as_str()),
-            toolbar_leading: QString::from(prefs.toolbar_leading.as_str()),
-            toolbar_trailing: QString::from(prefs.toolbar_trailing.as_str()),
-            background_image: QString::from(prefs.background_image.as_str()),
+            terminal_shell: String::from(prefs.terminal_shell.as_str()),
+            toolbar_leading: String::from(prefs.toolbar_leading.as_str()),
+            toolbar_trailing: String::from(prefs.toolbar_trailing.as_str()),
+            background_image: String::from(prefs.background_image.as_str()),
             background_dim: prefs.background_dim,
-            search_history: QString::from(
+            search_history: String::from(
                 serde_json::to_string(&prefs.search_history)
                     .unwrap_or_else(|_| "[]".to_owned())
                     .as_str(),
             ),
-            saved_searches: QString::from(
+            saved_searches: String::from(
                 serde_json::to_string(&prefs.saved_searches)
                     .unwrap_or_else(|_| "[]".to_owned())
                     .as_str(),
             ),
-            current_path: QString::default(),
+            current_path: String::default(),
         }
     }
 
     fn stored(&self) -> StoredPrefs {
         StoredPrefs {
-            view_mode: self.view_mode.to_string(),
-            density: self.density.to_string(),
-            sort_key: self.sort_key.to_string(),
-            sort_order: self.sort_order.to_string(),
-            folder_order: self.folder_order.to_string(),
-            group_key: self.group_key.to_string(),
-            group_date: self.group_date.to_string(),
-            icon_style: self.icon_style.to_string(),
+            view_mode: self.view_mode.clone(),
+            density: self.density.clone(),
+            sort_key: self.sort_key.clone(),
+            sort_order: self.sort_order.clone(),
+            folder_order: self.folder_order.clone(),
+            group_key: self.group_key.clone(),
+            group_date: self.group_date.clone(),
+            icon_style: self.icon_style.clone(),
             icon_size: self.icon_size,
             row_thumbnails: self.row_thumbnails,
             show_extensions: self.show_extensions,
-            columns: self.columns.to_string(),
-            column_widths: self.column_widths.to_string(),
+            columns: self.columns.clone(),
+            column_widths: self.column_widths.clone(),
             show_hidden_files: self.show_hidden_files,
-            kind_filter: self.kind_filter.to_string(),
-            modified_filter: self.modified_filter.to_string(),
-            size_filter: self.size_filter.to_string(),
-            size_units: self.size_units.to_string(),
-            grid_thumb: self.grid_thumb.to_string(),
+            kind_filter: self.kind_filter.clone(),
+            modified_filter: self.modified_filter.clone(),
+            size_filter: self.size_filter.clone(),
+            size_units: self.size_units.clone(),
+            grid_thumb: self.grid_thumb.clone(),
             restore_session: self.restore_session,
-            hidden_home_sections: self.hidden_home_sections.to_string(),
-            folded_sidebar_sections: self.folded_sidebar_sections.to_string(),
+            hidden_home_sections: self.hidden_home_sections.clone(),
+            folded_sidebar_sections: self.folded_sidebar_sections.clone(),
             split_enabled: self.split_enabled,
             reduce_motion: self.reduce_motion,
             sync_layout: self.sync_layout,
             adaptive_layout: self.adaptive_layout,
             preview_width: self.preview_width,
             sidebar_width: self.sidebar_width,
-            terminal_shell: self.terminal_shell.to_string(),
-            toolbar_leading: self.toolbar_leading.to_string(),
-            toolbar_trailing: self.toolbar_trailing.to_string(),
-            background_image: self.background_image.to_string(),
+            terminal_shell: self.terminal_shell.clone(),
+            toolbar_leading: self.toolbar_leading.clone(),
+            toolbar_trailing: self.toolbar_trailing.clone(),
+            background_image: self.background_image.clone(),
             background_dim: self.background_dim,
-            search_history: serde_json::from_str(&self.search_history.to_string())
-                .unwrap_or_default(),
-            saved_searches: serde_json::from_str(&self.saved_searches.to_string())
-                .unwrap_or_default(),
+            search_history: serde_json::from_str(&self.search_history).unwrap_or_default(),
+            saved_searches: serde_json::from_str(&self.saved_searches).unwrap_or_default(),
         }
     }
 
@@ -884,11 +706,11 @@ impl ExplorerPrefsRust {
     /// preferences while `syncLayout` is on (or no directory is known), the
     /// current directory's entry otherwise.
     fn persist_layout(&self) {
-        if self.sync_layout || self.current_path.as_slice().is_empty() {
+        if self.sync_layout || self.current_path.is_empty() {
             save(&self.stored());
             return;
         }
-        let key = view_key(&self.current_path.to_string());
+        let key = view_key(&self.current_path);
         let mut views = read_views();
         views.views.insert(key, self.stored().view(now_millis()));
         write_views(&mut views);
@@ -915,8 +737,8 @@ fn decode_saved_searches(json: &str) -> Vec<SavedSearch> {
     entries
 }
 
-fn encode_saved_searches(entries: &[SavedSearch]) -> QString {
-    QString::from(
+fn encode_saved_searches(entries: &[SavedSearch]) -> String {
+    String::from(
         serde_json::to_string(entries)
             .unwrap_or_else(|_| "[]".to_owned())
             .as_str(),
@@ -943,8 +765,24 @@ fn now_millis() -> u64 {
         .unwrap_or(0)
 }
 
-impl qobject::ExplorerPrefs {
-    fn restore_view(mut self: Pin<&mut Self>, path: &str) {
+/// One setter per property: assign the field, then emit its notify signal.
+///
+/// Qt Bridge does not generate setters, and a field write that forgets the
+/// emit leaves QML bound to a stale value with no compile error. Keeping the
+/// pair in one place is what makes every write site correct by construction.
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(
+            fn $setter(&mut self, value: $ty) {
+                self.$field = value;
+                self.$notify();
+            }
+        )*
+    };
+}
+
+impl ExplorerPrefs {
+    fn restore_view(&mut self, path: &str) {
         if self.sync_layout {
             return;
         }
@@ -955,71 +793,304 @@ impl qobject::ExplorerPrefs {
             stored.apply_view(view);
         }
 
-        self.as_mut()
-            .set_view_mode(QString::from(stored.view_mode.as_str()));
-        self.as_mut()
-            .set_density(QString::from(stored.density.as_str()));
-        self.as_mut()
-            .set_sort_key(QString::from(stored.sort_key.as_str()));
-        self.as_mut()
-            .set_sort_order(QString::from(stored.sort_order.as_str()));
-        self.as_mut()
-            .set_folder_order(QString::from(stored.folder_order.as_str()));
-        self.as_mut()
-            .set_group_key(QString::from(stored.group_key.as_str()));
-        self.as_mut()
-            .set_group_date(QString::from(stored.group_date.as_str()));
-        self.as_mut().set_icon_size(stored.icon_size);
-        self.as_mut().set_show_extensions(stored.show_extensions);
-        self.as_mut()
-            .set_columns(QString::from(stored.columns.as_str()));
-        self.as_mut()
-            .set_column_widths(QString::from(stored.column_widths.as_str()));
+        self.set_view_mode(stored.view_mode);
+        self.set_density(stored.density);
+        self.set_sort_key(stored.sort_key);
+        self.set_sort_order(stored.sort_order);
+        self.set_folder_order(stored.folder_order);
+        self.set_group_key(stored.group_key);
+        self.set_group_date(stored.group_date);
+        self.set_icon_size(stored.icon_size);
+        self.set_show_extensions(stored.show_extensions);
+        self.set_columns(stored.columns);
+        self.set_column_widths(stored.column_widths);
     }
 
-    fn apply_adaptive_view(
-        mut self: Pin<&mut Self>,
-        path: &QString,
-        images: i32,
-        files: i32,
-        depth: i32,
-    ) -> QString {
-        let path = path.to_string();
+    notifying_setters! {
+        set_view_mode(String) => view_mode, view_mode_changed;
+        set_density(String) => density, density_changed;
+        set_sort_key(String) => sort_key, sort_key_changed;
+        set_sort_order(String) => sort_order, sort_order_changed;
+        set_folder_order(String) => folder_order, folder_order_changed;
+        set_group_key(String) => group_key, group_key_changed;
+        set_group_date(String) => group_date, group_date_changed;
+        set_icon_size(i32) => icon_size, icon_size_changed;
+        set_show_extensions(bool) => show_extensions, show_extensions_changed;
+        set_columns(String) => columns, columns_changed;
+        set_column_widths(String) => column_widths, column_widths_changed;
+        set_sync_layout(bool) => sync_layout, sync_layout_changed;
+        set_adaptive_layout(bool) => adaptive_layout, adaptive_layout_changed;
+        set_search_history(String) => search_history, search_history_changed;
+        set_saved_searches(String) => saved_searches, saved_searches_changed;
+        set_current_path(String) => current_path, current_path_changed;
+        set_icon_style(String) => icon_style, icon_style_changed;
+        set_row_thumbnails(bool) => row_thumbnails, row_thumbnails_changed;
+        set_show_hidden_files(bool) => show_hidden_files, show_hidden_files_changed;
+        set_kind_filter(String) => kind_filter, kind_filter_changed;
+        set_modified_filter(String) => modified_filter, modified_filter_changed;
+        set_size_filter(String) => size_filter, size_filter_changed;
+        set_size_units(String) => size_units, size_units_changed;
+        set_grid_thumb(String) => grid_thumb, grid_thumb_changed;
+        set_restore_session(bool) => restore_session, restore_session_changed;
+        set_hidden_home_sections(String) => hidden_home_sections, hidden_home_sections_changed;
+        set_folded_sidebar_sections(String) => folded_sidebar_sections, folded_sidebar_sections_changed;
+        set_split_enabled(bool) => split_enabled, split_enabled_changed;
+        set_reduce_motion(bool) => reduce_motion, reduce_motion_changed;
+        set_preview_width(i32) => preview_width, preview_width_changed;
+        set_sidebar_width(i32) => sidebar_width, sidebar_width_changed;
+        set_terminal_shell(String) => terminal_shell, terminal_shell_changed;
+        set_toolbar_leading(String) => toolbar_leading, toolbar_leading_changed;
+        set_toolbar_trailing(String) => toolbar_trailing, toolbar_trailing_changed;
+        set_background_image(String) => background_image, background_image_changed;
+        set_background_dim(i32) => background_dim, background_dim_changed;
+    }
+}
+
+/// QML usage: read `ExplorerPrefs.sortKey`, call
+/// `ExplorerPrefs.setString("sortKey", "size")`.
+///
+/// `setString`/`setBool` are keyed rather than one method per field so adding a
+/// preference costs a match arm instead of a bridge method. Unknown keys and
+/// unknown values are ignored: QML is the only caller and a typo must not
+/// corrupt the document on disk. The property strings are the QML names, so
+/// the rename to Qt Bridge left every binding untouched.
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+impl ExplorerPrefs {
+    qproperty!("viewMode", Member = view_mode, Notify = view_mode_changed);
+    qproperty!("density", Member = density, Notify = density_changed);
+    qproperty!("sortKey", Member = sort_key, Notify = sort_key_changed);
+    qproperty!("sortOrder", Member = sort_order, Notify = sort_order_changed);
+    qproperty!(
+        "folderOrder",
+        Member = folder_order,
+        Notify = folder_order_changed
+    );
+    qproperty!("groupKey", Member = group_key, Notify = group_key_changed);
+    qproperty!("groupDate", Member = group_date, Notify = group_date_changed);
+    qproperty!("iconSize", Member = icon_size, Notify = icon_size_changed);
+    qproperty!(
+        "showExtensions",
+        Member = show_extensions,
+        Notify = show_extensions_changed
+    );
+    qproperty!("columns", Member = columns, Notify = columns_changed);
+    qproperty!(
+        "columnWidths",
+        Member = column_widths,
+        Notify = column_widths_changed
+    );
+    qproperty!("syncLayout", Member = sync_layout, Notify = sync_layout_changed);
+    qproperty!(
+        "adaptiveLayout",
+        Member = adaptive_layout,
+        Notify = adaptive_layout_changed
+    );
+    qproperty!(
+        "searchHistory",
+        Member = search_history,
+        Notify = search_history_changed
+    );
+    qproperty!(
+        "savedSearches",
+        Member = saved_searches,
+        Notify = saved_searches_changed
+    );
+    qproperty!(
+        "currentPath",
+        Member = current_path,
+        Notify = current_path_changed
+    );
+    qproperty!("iconStyle", Member = icon_style, Notify = icon_style_changed);
+    qproperty!(
+        "rowThumbnails",
+        Member = row_thumbnails,
+        Notify = row_thumbnails_changed
+    );
+    qproperty!(
+        "showHiddenFiles",
+        Member = show_hidden_files,
+        Notify = show_hidden_files_changed
+    );
+    qproperty!("kindFilter", Member = kind_filter, Notify = kind_filter_changed);
+    qproperty!(
+        "modifiedFilter",
+        Member = modified_filter,
+        Notify = modified_filter_changed
+    );
+    qproperty!("sizeFilter", Member = size_filter, Notify = size_filter_changed);
+    qproperty!("sizeUnits", Member = size_units, Notify = size_units_changed);
+    qproperty!("gridThumb", Member = grid_thumb, Notify = grid_thumb_changed);
+    qproperty!(
+        "restoreSession",
+        Member = restore_session,
+        Notify = restore_session_changed
+    );
+    qproperty!(
+        "hiddenHomeSections",
+        Member = hidden_home_sections,
+        Notify = hidden_home_sections_changed
+    );
+    qproperty!(
+        "foldedSidebarSections",
+        Member = folded_sidebar_sections,
+        Notify = folded_sidebar_sections_changed
+    );
+    qproperty!(
+        "splitEnabled",
+        Member = split_enabled,
+        Notify = split_enabled_changed
+    );
+    qproperty!(
+        "reduceMotion",
+        Member = reduce_motion,
+        Notify = reduce_motion_changed
+    );
+    qproperty!(
+        "previewWidth",
+        Member = preview_width,
+        Notify = preview_width_changed
+    );
+    qproperty!(
+        "sidebarWidth",
+        Member = sidebar_width,
+        Notify = sidebar_width_changed
+    );
+    qproperty!(
+        "terminalShell",
+        Member = terminal_shell,
+        Notify = terminal_shell_changed
+    );
+    qproperty!(
+        "toolbarLeading",
+        Member = toolbar_leading,
+        Notify = toolbar_leading_changed
+    );
+    qproperty!(
+        "toolbarTrailing",
+        Member = toolbar_trailing,
+        Notify = toolbar_trailing_changed
+    );
+    qproperty!(
+        "backgroundImage",
+        Member = background_image,
+        Notify = background_image_changed
+    );
+    qproperty!(
+        "backgroundDim",
+        Member = background_dim,
+        Notify = background_dim_changed
+    );
+
+    #[qsignal]
+    fn view_mode_changed(&mut self);
+    #[qsignal]
+    fn density_changed(&mut self);
+    #[qsignal]
+    fn sort_key_changed(&mut self);
+    #[qsignal]
+    fn sort_order_changed(&mut self);
+    #[qsignal]
+    fn folder_order_changed(&mut self);
+    #[qsignal]
+    fn group_key_changed(&mut self);
+    #[qsignal]
+    fn group_date_changed(&mut self);
+    #[qsignal]
+    fn icon_size_changed(&mut self);
+    #[qsignal]
+    fn show_extensions_changed(&mut self);
+    #[qsignal]
+    fn columns_changed(&mut self);
+    #[qsignal]
+    fn column_widths_changed(&mut self);
+    #[qsignal]
+    fn sync_layout_changed(&mut self);
+    #[qsignal]
+    fn adaptive_layout_changed(&mut self);
+    #[qsignal]
+    fn search_history_changed(&mut self);
+    #[qsignal]
+    fn saved_searches_changed(&mut self);
+    #[qsignal]
+    fn current_path_changed(&mut self);
+    #[qsignal]
+    fn icon_style_changed(&mut self);
+    #[qsignal]
+    fn row_thumbnails_changed(&mut self);
+    #[qsignal]
+    fn show_hidden_files_changed(&mut self);
+    #[qsignal]
+    fn kind_filter_changed(&mut self);
+    #[qsignal]
+    fn modified_filter_changed(&mut self);
+    #[qsignal]
+    fn size_filter_changed(&mut self);
+    #[qsignal]
+    fn size_units_changed(&mut self);
+    #[qsignal]
+    fn grid_thumb_changed(&mut self);
+    #[qsignal]
+    fn restore_session_changed(&mut self);
+    #[qsignal]
+    fn hidden_home_sections_changed(&mut self);
+    #[qsignal]
+    fn folded_sidebar_sections_changed(&mut self);
+    #[qsignal]
+    fn split_enabled_changed(&mut self);
+    #[qsignal]
+    fn reduce_motion_changed(&mut self);
+    #[qsignal]
+    fn preview_width_changed(&mut self);
+    #[qsignal]
+    fn sidebar_width_changed(&mut self);
+    #[qsignal]
+    fn terminal_shell_changed(&mut self);
+    #[qsignal]
+    fn toolbar_leading_changed(&mut self);
+    #[qsignal]
+    fn toolbar_trailing_changed(&mut self);
+    #[qsignal]
+    fn background_image_changed(&mut self);
+    #[qsignal]
+    fn background_dim_changed(&mut self);
+
+    /// `grid`, `column` or `list` for a directory with no stored layout,
+    /// from its contents. Returns the mode it applied, or an empty string
+    /// when the user has a stored layout or adaptive layout is off.
+    #[qslot]
+    fn apply_adaptive_view(&mut self, path: String, images: i32, files: i32, depth: i32) -> String {
         if self.sync_layout || !self.adaptive_layout || path.trim().is_empty() {
-            return QString::default();
+            return String::default();
         }
         if read_views().views.contains_key(&view_key(&path)) {
-            return QString::default();
+            return String::default();
         }
         let mode = suggest_view(images, files, depth);
-        self.as_mut().set_current_path(QString::from(path.as_str()));
-        self.as_mut().set_view_mode(QString::from(mode));
-        self.as_mut().persist_layout();
-        QString::from(mode)
+        self.set_current_path(path);
+        self.set_view_mode(String::from(mode));
+        self.persist_layout();
+        String::from(mode)
     }
 
-    fn forget_view(mut self: Pin<&mut Self>, path: &QString) {
-        let key = view_key(&path.to_string());
+    /// Drops a directory's stored layout, returning it to the defaults.
+    #[qslot]
+    fn forget_view(&mut self, path: String) {
+        let key = view_key(&path);
         let mut views = read_views();
         if views.views.remove(&key).is_some() {
             write_views(&mut views);
         }
-        let path = path.to_string();
-        self.as_mut().restore_view(&path);
+        self.restore_view(&path);
     }
-}
 
-impl qobject::ExplorerPrefs {
-    fn set_string(mut self: Pin<&mut Self>, key: &QString, value: &QString) {
-        let key = key.to_string();
-        let value = value.to_string();
-
+    #[qslot]
+    fn set_string(&mut self, key: String, value: String) {
         // The one free-text preference: an executable name or path. Empty
         // clears it so the platform default is used again.
         if key == "terminalShell" {
-            let next = QString::from(value.trim());
+            let next = String::from(value.trim());
             if self.terminal_shell != next {
-                self.as_mut().set_terminal_shell(next);
+                self.set_terminal_shell(next);
                 save(&self.stored());
             }
             return;
@@ -1028,28 +1099,28 @@ impl qobject::ExplorerPrefs {
         // The directory whose layout is on screen. Writing it is how the shell
         // asks for that directory's stored layout; it is not persisted itself.
         if key == "currentPath" {
-            let next = QString::from(value.as_str());
+            let next = String::from(value.as_str());
             if self.current_path == next {
                 return;
             }
-            self.as_mut().set_current_path(next);
-            self.as_mut().restore_view(&value);
+            self.set_current_path(next);
+            self.restore_view(&value);
             return;
         }
 
         if key == "hiddenHomeSections" {
-            let next = QString::from(value.trim());
+            let next = String::from(value.trim());
             if self.hidden_home_sections != next {
-                self.as_mut().set_hidden_home_sections(next);
+                self.set_hidden_home_sections(next);
                 save(&self.stored());
             }
             return;
         }
 
         if key == "foldedSidebarSections" {
-            let next = QString::from(value.trim());
+            let next = String::from(value.trim());
             if self.folded_sidebar_sections != next {
-                self.as_mut().set_folded_sidebar_sections(next);
+                self.set_folded_sidebar_sections(next);
                 save(&self.stored());
             }
             return;
@@ -1058,27 +1129,27 @@ impl qobject::ExplorerPrefs {
         // Free text, like `terminalShell`: QML owns the toolbar id model and
         // the image path comes from a file dialog. An empty image clears it.
         if key == "toolbarLeading" || key == "toolbarTrailing" || key == "backgroundImage" {
-            let next = QString::from(value.trim());
+            let next = String::from(value.trim());
             let changed = match key.as_str() {
                 "toolbarLeading" => {
                     if self.toolbar_leading == next {
                         return;
                     }
-                    self.as_mut().set_toolbar_leading(next);
+                    self.set_toolbar_leading(next);
                     true
                 }
                 "toolbarTrailing" => {
                     if self.toolbar_trailing == next {
                         return;
                     }
-                    self.as_mut().set_toolbar_trailing(next);
+                    self.set_toolbar_trailing(next);
                     true
                 }
                 _ => {
                     if self.background_image == next {
                         return;
                     }
-                    self.as_mut().set_background_image(next);
+                    self.set_background_image(next);
                     true
                 }
             };
@@ -1089,19 +1160,19 @@ impl qobject::ExplorerPrefs {
         }
 
         if key == "columns" {
-            let next = QString::from(sanitize_columns(&value).as_str());
+            let next = String::from(sanitize_columns(&value).as_str());
             if self.columns != next {
-                self.as_mut().set_columns(next);
-                self.as_mut().persist_layout();
+                self.set_columns(next);
+                self.persist_layout();
             }
             return;
         }
 
         if key == "columnWidths" {
-            let next = QString::from(sanitize_widths(&value).as_str());
+            let next = String::from(sanitize_widths(&value).as_str());
             if self.column_widths != next {
-                self.as_mut().set_column_widths(next);
-                self.as_mut().persist_layout();
+                self.set_column_widths(next);
+                self.persist_layout();
             }
             return;
         }
@@ -1110,9 +1181,9 @@ impl qobject::ExplorerPrefs {
             if !GRID_THUMBS.contains(&value.as_str()) {
                 return;
             }
-            let next = QString::from(value.as_str());
+            let next = String::from(value.as_str());
             if self.grid_thumb != next {
-                self.as_mut().set_grid_thumb(next);
+                self.set_grid_thumb(next);
                 save(&self.stored());
             }
             return;
@@ -1139,99 +1210,99 @@ impl qobject::ExplorerPrefs {
 
         let changed = match key.as_str() {
             "viewMode" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.view_mode == next {
                     return;
                 }
-                self.as_mut().set_view_mode(next);
+                self.set_view_mode(next);
                 true
             }
             "density" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.density == next {
                     return;
                 }
-                self.as_mut().set_density(next);
+                self.set_density(next);
                 true
             }
             "sortKey" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.sort_key == next {
                     return;
                 }
-                self.as_mut().set_sort_key(next);
+                self.set_sort_key(next);
                 true
             }
             "sortOrder" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.sort_order == next {
                     return;
                 }
-                self.as_mut().set_sort_order(next);
+                self.set_sort_order(next);
                 true
             }
             "folderOrder" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.folder_order == next {
                     return;
                 }
-                self.as_mut().set_folder_order(next);
+                self.set_folder_order(next);
                 true
             }
             "groupKey" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.group_key == next {
                     return;
                 }
-                self.as_mut().set_group_key(next);
+                self.set_group_key(next);
                 true
             }
             "groupDate" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.group_date == next {
                     return;
                 }
-                self.as_mut().set_group_date(next);
+                self.set_group_date(next);
                 true
             }
             "iconStyle" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.icon_style == next {
                     return;
                 }
-                self.as_mut().set_icon_style(next);
+                self.set_icon_style(next);
                 true
             }
             "kindFilter" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.kind_filter == next {
                     return;
                 }
-                self.as_mut().set_kind_filter(next);
+                self.set_kind_filter(next);
                 true
             }
             "modifiedFilter" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.modified_filter == next {
                     return;
                 }
-                self.as_mut().set_modified_filter(next);
+                self.set_modified_filter(next);
                 true
             }
             "sizeFilter" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.size_filter == next {
                     return;
                 }
-                self.as_mut().set_size_filter(next);
+                self.set_size_filter(next);
                 true
             }
             "sizeUnits" => {
-                let next = QString::from(value.as_str());
+                let next = String::from(value.as_str());
                 if self.size_units == next {
                     return;
                 }
-                self.as_mut().set_size_units(next);
+                self.set_size_units(next);
                 // Every subsequent `format::size` call follows the new unit.
                 crate::format::set_size_units(size_units_of(&value));
                 true
@@ -1254,15 +1325,17 @@ impl qobject::ExplorerPrefs {
                     | "groupDate"
             );
             if layout_key {
-                self.as_mut().persist_layout();
+                self.persist_layout();
             } else {
                 save(&self.stored());
             }
         }
     }
 
-    fn set_number(mut self: Pin<&mut Self>, key: &QString, value: i32) {
-        let key = key.to_string();
+    /// Widths are clamped on the way in, not by the caller: a preference
+    /// file edited by hand should not be able to make a panel invisible.
+    #[qslot]
+    fn set_number(&mut self, key: String, value: i32) {
         let changed = match key.as_str() {
             "previewWidth" => {
                 // 260–420, the range the grip and its arrow keys share.
@@ -1270,7 +1343,7 @@ impl qobject::ExplorerPrefs {
                 if self.preview_width == next {
                     return;
                 }
-                self.as_mut().set_preview_width(next);
+                self.set_preview_width(next);
                 true
             }
             "sidebarWidth" => {
@@ -1278,7 +1351,7 @@ impl qobject::ExplorerPrefs {
                 if self.sidebar_width == next {
                     return;
                 }
-                self.as_mut().set_sidebar_width(next);
+                self.set_sidebar_width(next);
                 true
             }
             // The grid's slider and the list's thumbnails share one value.
@@ -1287,8 +1360,8 @@ impl qobject::ExplorerPrefs {
                 if self.icon_size == next {
                     return;
                 }
-                self.as_mut().set_icon_size(next);
-                self.as_mut().persist_layout();
+                self.set_icon_size(next);
+                self.persist_layout();
                 return;
             }
             // The veil over the background image: 0 shows the picture, 90 is
@@ -1299,7 +1372,7 @@ impl qobject::ExplorerPrefs {
                 if self.background_dim == next {
                     return;
                 }
-                self.as_mut().set_background_dim(next);
+                self.set_background_dim(next);
                 true
             }
             _ => false,
@@ -1310,60 +1383,60 @@ impl qobject::ExplorerPrefs {
         }
     }
 
-    fn set_bool(mut self: Pin<&mut Self>, key: &QString, value: bool) {
-        let key = key.to_string();
+    #[qslot]
+    fn set_bool(&mut self, key: String, value: bool) {
         let changed = match key.as_str() {
             "rowThumbnails" => {
                 if self.row_thumbnails == value {
                     return;
                 }
-                self.as_mut().set_row_thumbnails(value);
+                self.set_row_thumbnails(value);
                 true
             }
             "showExtensions" => {
                 if self.show_extensions == value {
                     return;
                 }
-                self.as_mut().set_show_extensions(value);
-                self.as_mut().persist_layout();
+                self.set_show_extensions(value);
+                self.persist_layout();
                 return;
             }
             "showHiddenFiles" => {
                 if self.show_hidden_files == value {
                     return;
                 }
-                self.as_mut().set_show_hidden_files(value);
+                self.set_show_hidden_files(value);
                 true
             }
             "reduceMotion" => {
                 if self.reduce_motion == value {
                     return;
                 }
-                self.as_mut().set_reduce_motion(value);
+                self.set_reduce_motion(value);
                 true
             }
             "splitEnabled" => {
                 if self.split_enabled == value {
                     return;
                 }
-                self.as_mut().set_split_enabled(value);
+                self.set_split_enabled(value);
                 true
             }
             "syncLayout" => {
                 if self.sync_layout == value {
                     return;
                 }
-                self.as_mut().set_sync_layout(value);
+                self.set_sync_layout(value);
                 // Turning sync on makes the global document the truth again;
                 // turning it off starts the current directory from what is on
                 // screen in the global defaults.
                 if value {
                     save(&self.stored());
-                } else if !self.current_path.as_slice().is_empty() {
+                } else if !self.current_path.is_empty() {
                     // Start the directory from the layout on screen, so the
                     // next folder does not inherit a per-directory edit from
                     // the moment before the switch.
-                    self.as_mut().persist_layout();
+                    self.persist_layout();
                 }
                 return;
             }
@@ -1371,14 +1444,14 @@ impl qobject::ExplorerPrefs {
                 if self.adaptive_layout == value {
                     return;
                 }
-                self.as_mut().set_adaptive_layout(value);
+                self.set_adaptive_layout(value);
                 true
             }
             "restoreSession" => {
                 if self.restore_session == value {
                     return;
                 }
-                self.as_mut().set_restore_session(value);
+                self.set_restore_session(value);
                 true
             }
             _ => false,
@@ -1388,38 +1461,45 @@ impl qobject::ExplorerPrefs {
         }
     }
 
-    fn remember_search(mut self: Pin<&mut Self>, query: &QString) {
-        let query = query.to_string().trim().to_owned();
+    /// Records a query at the front of the history, de-duplicated and
+    /// capped at 20.
+    #[qslot]
+    fn remember_search(&mut self, query: String) {
+        let query = query.trim().to_owned();
         if query.is_empty() {
             return;
         }
         let mut entries: Vec<String> =
-            serde_json::from_str(&self.search_history.to_string()).unwrap_or_default();
+            serde_json::from_str(&self.search_history).unwrap_or_default();
         entries.retain(|entry| entry != &query);
         entries.insert(0, query);
         entries.truncate(SEARCH_HISTORY_LIMIT);
-        self.as_mut().set_search_history(QString::from(
-            serde_json::to_string(&entries)
-                .unwrap_or_else(|_| "[]".to_owned())
-                .as_str(),
-        ));
+        self.set_search_history(
+            serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned()),
+        );
         save(&self.stored());
     }
 
-    fn clear_search_history(mut self: Pin<&mut Self>) {
-        if self.search_history.to_string() == "[]" {
+    #[qslot]
+    fn clear_search_history(&mut self) {
+        if self.search_history == "[]" {
             return;
         }
-        self.as_mut().set_search_history(QString::from("[]"));
+        self.set_search_history("[]".to_owned());
         save(&self.stored());
     }
 
-    fn save_search(mut self: Pin<&mut Self>, name: &QString, spec: &QString) -> bool {
-        let name = name.to_string().trim().to_owned();
+    /// Stores `spec` (a `SavedSearch` as JSON) under `name`. A name that
+    /// already exists replaces that entry instead of adding a second one
+    /// with the same label. False when the name or the query is empty, or
+    /// when the spec is not valid JSON.
+    #[qslot]
+    fn save_search(&mut self, name: String, spec: String) -> bool {
+        let name = name.trim().to_owned();
         if name.is_empty() {
             return false;
         }
-        let Ok(mut draft) = serde_json::from_str::<SavedSearch>(&spec.to_string()) else {
+        let Ok(mut draft) = serde_json::from_str::<SavedSearch>(&spec) else {
             return false;
         };
         if draft.query.trim().is_empty() {
@@ -1428,7 +1508,7 @@ impl qobject::ExplorerPrefs {
         draft.query = draft.query.trim().to_owned();
         draft.name = name;
 
-        let mut entries = decode_saved_searches(&self.saved_searches.to_string());
+        let mut entries = decode_saved_searches(&self.saved_searches);
         match entries
             .iter()
             .position(|entry| entry.name.eq_ignore_ascii_case(&draft.name))
@@ -1449,64 +1529,71 @@ impl qobject::ExplorerPrefs {
                 entries.truncate(SAVED_SEARCH_LIMIT);
             }
         }
-        self.as_mut()
-            .set_saved_searches(encode_saved_searches(&entries));
+        self.set_saved_searches(encode_saved_searches(&entries));
         save(&self.stored());
         true
     }
 
-    fn delete_saved_search(mut self: Pin<&mut Self>, id: &QString) -> bool {
-        let id = id.to_string();
+    #[qslot]
+    fn delete_saved_search(&mut self, id: String) -> bool {
         if id.is_empty() {
             return false;
         }
-        let mut entries = decode_saved_searches(&self.saved_searches.to_string());
+        let mut entries = decode_saved_searches(&self.saved_searches);
         let before = entries.len();
         entries.retain(|entry| entry.id != id);
         if entries.len() == before {
             return false;
         }
-        self.as_mut()
-            .set_saved_searches(encode_saved_searches(&entries));
+        self.set_saved_searches(encode_saved_searches(&entries));
         save(&self.stored());
         true
     }
 
-    fn rename_saved_search(mut self: Pin<&mut Self>, id: &QString, name: &QString) -> bool {
-        let id = id.to_string();
-        let name = name.to_string().trim().to_owned();
+    #[qslot]
+    fn rename_saved_search(&mut self, id: String, name: String) -> bool {
+        let name = name.trim().to_owned();
         if id.is_empty() || name.is_empty() {
             return false;
         }
-        let mut entries = decode_saved_searches(&self.saved_searches.to_string());
+        let mut entries = decode_saved_searches(&self.saved_searches);
         let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) else {
             return false;
         };
         entry.name = name;
-        self.as_mut()
-            .set_saved_searches(encode_saved_searches(&entries));
+        self.set_saved_searches(encode_saved_searches(&entries));
         save(&self.stored());
         true
     }
 
-    fn reset_filters(mut self: Pin<&mut Self>) {
+    /// Kinds, modified-time buckets and size buckets back to "all/any/any".
+    #[qslot]
+    fn reset_filters(&mut self) {
         let mut changed = false;
-        if self.kind_filter.to_string() != "all" {
-            self.as_mut().set_kind_filter(QString::from("all"));
+        if self.kind_filter != "all" {
+            self.set_kind_filter("all".to_owned());
             changed = true;
         }
-        if self.modified_filter.to_string() != "any" {
-            self.as_mut().set_modified_filter(QString::from("any"));
+        if self.modified_filter != "any" {
+            self.set_modified_filter("any".to_owned());
             changed = true;
         }
-        if self.size_filter.to_string() != "any" {
-            self.as_mut().set_size_filter(QString::from("any"));
+        if self.size_filter != "any" {
+            self.set_size_filter("any".to_owned());
             changed = true;
         }
         if changed {
             save(&self.stored());
         }
     }
+}
+
+impl QmlElement for ExplorerPrefs {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "ExplorerPrefs";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
 }
 
 #[cfg(test)]
