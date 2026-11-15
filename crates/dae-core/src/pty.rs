@@ -485,56 +485,56 @@ fn indexed(index: u8) -> Rgb {
 
 /// The shell palette, chosen for the theme the terminal is drawn against.
 ///
-/// The dark table sits next to the listing's dark chrome rather than copying a
-/// terminal's default theme. The light table is the matching daylight read:
-/// slot 0 carries the ink and slots 7/15 are fills, because white-on-white is
-/// the one thing a paper terminal cannot print. The neutral slots track
-/// `Theme.canvas` / `Theme.ink` so the grid meets the panel without a seam.
+/// The neutral slots track `Theme.canvas` / `Theme.ink`, so the grid meets the
+/// panel without a seam. The semantic slots use the same hues as the rest of
+/// the shell: danger red, success green, warning yellow, code blue, font
+/// magenta and accent teal. The light table keeps the ink dark and the fills
+/// light because white-on-white is the one thing it cannot print.
 fn palette(dark: bool) -> &'static [Rgb; 19] {
     const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
         Rgb { r, g, b }
     }
     const DARK: [Rgb; 19] = [
-        rgb(0x1c, 0x1f, 0x24), // black
-        rgb(0xe0, 0x6c, 0x75), // red
-        rgb(0x98, 0xc3, 0x79), // green
-        rgb(0xe5, 0xc0, 0x7b), // yellow
-        rgb(0x61, 0xaf, 0xef), // blue
-        rgb(0xc6, 0x78, 0xdd), // magenta
-        rgb(0x56, 0xb6, 0xc2), // cyan
-        rgb(0xdc, 0xdf, 0xe4), // white
-        rgb(0x5c, 0x63, 0x70), // bright black
-        rgb(0xff, 0x7b, 0x86), // bright red
-        rgb(0xb5, 0xe8, 0x90), // bright green
-        rgb(0xff, 0xd6, 0x8a), // bright yellow
-        rgb(0x82, 0xc4, 0xff), // bright blue
-        rgb(0xe2, 0x9b, 0xf0), // bright magenta
-        rgb(0x7f, 0xd6, 0xdf), // bright cyan
-        rgb(0xff, 0xff, 0xff), // bright white
-        rgb(0xd8, 0xde, 0xe9), // foreground
-        rgb(0x0b, 0x0b, 0x0c), // background — the same near-black as `Theme.terminalCanvas`
-        rgb(0x6e, 0xa8, 0xfe), // cursor
+        rgb(0x29, 0x2b, 0x30), // black
+        rgb(0xf4, 0x7b, 0x74), // red
+        rgb(0x7b, 0xc4, 0x95), // green
+        rgb(0xe6, 0xb5, 0x5d), // yellow
+        rgb(0x95, 0xc1, 0xdc), // blue
+        rgb(0xbb, 0xb4, 0xdf), // magenta
+        rgb(0x6b, 0xca, 0xc9), // cyan
+        rgb(0xbc, 0xbe, 0xc2), // white
+        rgb(0x6b, 0x6d, 0x72), // bright black
+        rgb(0xf7, 0x9a, 0x94), // bright red
+        rgb(0xa2, 0xd6, 0xb2), // bright green
+        rgb(0xf0, 0xc8, 0x77), // bright yellow
+        rgb(0xb3, 0xd5, 0xe8), // bright blue
+        rgb(0xd0, 0xc8, 0xec), // bright magenta
+        rgb(0x8f, 0xdc, 0xdb), // bright cyan
+        rgb(0xf7, 0xf7, 0xf9), // bright white
+        rgb(0xf7, 0xf7, 0xf9), // foreground
+        rgb(0x10, 0x12, 0x16), // background — `Theme.canvas`
+        rgb(0x6b, 0xca, 0xc9), // cursor — `Theme.accent`
     ];
     const LIGHT: [Rgb; 19] = [
-        rgb(0x10, 0x12, 0x16), // black — the ink
-        rgb(0xc2, 0x2f, 0x2f), // red
-        rgb(0x17, 0x80, 0x4a), // green
-        rgb(0xc7, 0x86, 0x00), // yellow
-        rgb(0x3f, 0x68, 0xc8), // blue
-        rgb(0xb8, 0x43, 0x8a), // magenta
-        rgb(0x0a, 0x86, 0xb4), // cyan
-        rgb(0xd2, 0xd7, 0xde), // white — the paper step, a fill
-        rgb(0x5b, 0x61, 0x69), // bright black — dim text
-        rgb(0xc1, 0x34, 0x34), // bright red
-        rgb(0x1f, 0x9a, 0x5c), // bright green
-        rgb(0xe8, 0x9d, 0x01), // bright yellow
-        rgb(0x5b, 0x7f, 0xd6), // bright blue
-        rgb(0xcb, 0x5f, 0xa4), // bright magenta
-        rgb(0x22, 0xa3, 0xc8), // bright cyan
-        rgb(0xee, 0xf0, 0xf3), // bright white — the canvas below the card, a fill
-        rgb(0x10, 0x12, 0x16), // foreground
-        rgb(0xfb, 0xfb, 0xf9), // background — the same paper as `Theme.terminalCanvas`
-        rgb(0x1f, 0x63, 0xcc), // cursor
+        rgb(0x1c, 0x1e, 0x23), // black — the ink
+        rgb(0xba, 0x2b, 0x2e), // red
+        rgb(0x22, 0x78, 0x49), // green
+        rgb(0x8d, 0x5a, 0x00), // yellow
+        rgb(0x33, 0x6a, 0x88), // blue
+        rgb(0x64, 0x5b, 0x8b), // magenta
+        rgb(0x00, 0x7a, 0x7b), // cyan
+        rgb(0xd7, 0xd9, 0xdc), // white — a fill
+        rgb(0x6b, 0x6d, 0x72), // bright black — dim text
+        rgb(0xa3, 0x27, 0x2a), // bright red
+        rgb(0x1a, 0x5f, 0x3a), // bright green
+        rgb(0x7a, 0x4e, 0x00), // bright yellow
+        rgb(0x2b, 0x5b, 0x76), // bright blue
+        rgb(0x55, 0x4b, 0x7a), // bright magenta
+        rgb(0x00, 0x69, 0x6a), // bright cyan
+        rgb(0xf7, 0xf7, 0xf9), // bright white
+        rgb(0x1c, 0x1e, 0x23), // foreground
+        rgb(0xfd, 0xfd, 0xfd), // background — `Theme.canvas`
+        rgb(0x00, 0x7a, 0x7b), // cursor — `Theme.accent`
     ];
     if dark { &DARK } else { &LIGHT }
 }
@@ -629,15 +629,15 @@ mod tests {
     }
 
     /// The two default cells have to meet their panel: the light grid paints
-    /// ink on paper, the dark one paints paper on ink.
+    /// ink on canvas, the dark one canvas ink on near-black.
     #[test]
     fn the_default_cell_follows_the_theme() {
         let light = CellSnapshot::blank(false);
-        assert_eq!(light.fg, 0xff10_1216);
-        assert_eq!(light.bg, 0xfffb_fbf9);
+        assert_eq!(light.fg, 0xff1c_1e23);
+        assert_eq!(light.bg, 0xfffd_fdfd);
         let dark = CellSnapshot::blank(true);
-        assert_eq!(dark.fg, 0xffd8_dee9);
-        assert_eq!(dark.bg, 0xff0b_0b0c);
+        assert_eq!(dark.fg, 0xfff7_f7f9);
+        assert_eq!(dark.bg, 0xff10_1216);
     }
 
     #[test]

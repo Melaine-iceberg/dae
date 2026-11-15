@@ -258,12 +258,12 @@ fn pre_open(theme: &Theme, dark: bool) -> String {
         .settings
         .background
         .map(color_hex)
-        .unwrap_or_else(|| if dark { "#1d1b17" } else { "#f6f2e8" }.to_owned());
+        .unwrap_or_else(|| if dark { "#101216" } else { "#fdfdfd" }.to_owned());
     let foreground = theme
         .settings
         .foreground
         .map(color_hex)
-        .unwrap_or_else(|| if dark { "#ece6d8" } else { "#16140f" }.to_owned());
+        .unwrap_or_else(|| if dark { "#f7f7f9" } else { "#1c1e23" }.to_owned());
     format!(
         "<pre style=\"margin:0; background-color:{background}; color:{foreground}; \
          font-family:'JetBrains Mono','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
@@ -317,25 +317,25 @@ impl Palette {
     pub(crate) fn new(dark: bool) -> Self {
         if dark {
             Self {
-                text: "#e6e9ef",
-                muted: "#8f98aa",
-                hairline: "#3a414c",
-                link: "#6ea8ff",
-                inline_code_bg: "#262b33",
-                inline_code_fg: "#d6deeb",
-                table_border: "#4a5260",
-                table_head_bg: "#262b33",
+                text: "#f7f7f9",
+                muted: "#96989d",
+                hairline: "#1c1e23",
+                link: "#6bcac9",
+                inline_code_bg: "#15171c",
+                inline_code_fg: "#f7f7f9",
+                table_border: "#292b30",
+                table_head_bg: "#15171c",
             }
         } else {
             Self {
-                text: "#1c1f24",
-                muted: "#657080",
-                hairline: "#dfe4ea",
-                link: "#2f6fdf",
-                inline_code_bg: "#f1f3f5",
-                inline_code_fg: "#24292f",
-                table_border: "#c9d1db",
-                table_head_bg: "#eef1f4",
+                text: "#1c1e23",
+                muted: "#6b6d72",
+                hairline: "#e5e6e9",
+                link: "#007a7b",
+                inline_code_bg: "#f7f7f9",
+                inline_code_fg: "#1c1e23",
+                table_border: "#d7d9dc",
+                table_head_bg: "#f7f7f9",
             }
         }
     }

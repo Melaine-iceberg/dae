@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  The code preview's light palette: the same ink-on-paper stock as the dark
-  one, printed the other way round. Contrast on #f6f2e8 is 4.94:1 for comments
-  and at least 5.3:1 for every other colour. Rule order and scope names match
-  `preview-dark.tmTheme`; see that file for why.
+  The code preview's light palette: Graphite's canvas, ink and file-family
+  colours. Contrast on #fdfdfd is at least 5.0:1 for every colour, comments
+  included. Rule order and scope names match `preview-dark.tmTheme`.
 -->
 <plist version="1.0">
 <dict>
@@ -16,15 +15,15 @@
             <key>settings</key>
             <dict>
                 <key>background</key>
-                <string>#f6f2e8</string>
+                <string>#fdfdfd</string>
                 <key>foreground</key>
-                <string>#16140f</string>
+                <string>#1c1e23</string>
                 <key>caret</key>
-                <string>#ff4d1f</string>
+                <string>#007a7b</string>
                 <key>selection</key>
-                <string>#e3d9c2</string>
+                <string>#e0eeee</string>
                 <key>invisibles</key>
-                <string>#625c50</string>
+                <string>#6b6d72</string>
             </dict>
         </dict>
         <dict>
@@ -35,7 +34,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#b5360f</string>
+                <string>#336a88</string>
             </dict>
         </dict>
         <dict>
@@ -46,7 +45,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#625c50</string>
+                <string>#6b6d72</string>
             </dict>
         </dict>
         <dict>
@@ -57,7 +56,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#6f685a</string>
+                <string>#6b6d72</string>
                 <key>fontStyle</key>
                 <string>italic</string>
             </dict>
@@ -70,7 +69,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#386b34</string>
+                <string>#476f48</string>
             </dict>
         </dict>
         <dict>
@@ -81,7 +80,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#8a5514</string>
+                <string>#815a33</string>
             </dict>
         </dict>
         <dict>
@@ -92,7 +91,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#1f4d7a</string>
+                <string>#57608e</string>
             </dict>
         </dict>
         <dict>
@@ -103,7 +102,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#5b4a86</string>
+                <string>#645b8b</string>
             </dict>
         </dict>
         <dict>
@@ -114,7 +113,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#8a4a1c</string>
+                <string>#87553e</string>
             </dict>
         </dict>
         <dict>
@@ -125,7 +124,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#3d382f</string>
+                <string>#505358</string>
             </dict>
         </dict>
         <dict>
@@ -136,7 +135,7 @@
             <key>settings</key>
             <dict>
                 <key>foreground</key>
-                <string>#b3261e</string>
+                <string>#ba2b2e</string>
             </dict>
         </dict>
     </array>
