@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import QtQuick.Dialogs
 import dae 1.0
 import "Shortcut.js" as ShortcutJS
@@ -18,7 +19,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property bool isMac: false
     property var shortcutMap: ({})
     /// Whether this session can blur a window behind it (Wayland only). The
@@ -48,6 +49,9 @@ FocusScope {
     property string terminalError: ""
     property string terminalStatus: ""
     property string tagError: ""
+    /// Which of the eight fixed tag colours the next tag gets. A picked option
+    /// is stored as its light hex, so a tag keeps its identity across themes.
+    property int draftTagIndex: 0
     /// Outcome of the last export/import/rebuild. `tagTaskFailed` only picks
     /// the colour; the text says what happened, including the skipped
     /// definitions an import refused.
@@ -136,14 +140,14 @@ FocusScope {
     }
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
-    readonly property color faintColor: Theme.inkFaint
+    readonly property color mutedColor: Theme.inkSecondary
+    readonly property color faintColor: Theme.inkTertiary
     readonly property color hairline: Theme.hairline
     readonly property color fieldColor: Theme.field
     readonly property color panelColor: Theme.raised
     readonly property color sidebarColor: Theme.chrome
     readonly property color hoverFill: Theme.hover
-    readonly property color selectedFill: Theme.fill
+    readonly property color selectedFill: Theme.hover
 
     readonly property bool defaultManagerCanSet:
         Workspace.defaultManagerSupported && !Workspace.defaultManagerBusy
@@ -163,8 +167,8 @@ FocusScope {
     readonly property color defaultManagerStateColor: Workspace.defaultManagerIsDefault
         ? Theme.success
         : Workspace.defaultManagerIsRegistered
-            ? Theme.warn
-            : Theme.inkMuted
+            ? Theme.warning
+            : Theme.inkSecondary
 
     readonly property var themeOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -173,7 +177,7 @@ FocusScope {
     ]
     readonly property var accentOptions: [
         { value: "system", label: qsTr("系统强调色") },
-        { value: "brand", label: qsTr("信号橙") }
+        { value: "brand", label: qsTr("青蓝") }
     ]
     readonly property var languageOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -182,6 +186,7 @@ FocusScope {
         { value: "en", label: "English" }
     ]
     readonly property var materialOptions: [
+        { value: "none", label: qsTr("不透明") },
         { value: "mica", label: qsTr("云母 (Mica)") },
         { value: "acrylic", label: qsTr("亚克力 (Acrylic)") }
     ]
@@ -227,7 +232,9 @@ FocusScope {
                 { id: "app.previousTab", label: qsTr("上一个标签页"),
                   detail: qsTr("按顺序切换到上一个标签页") },
                 { id: "app.toggleSidebar", label: qsTr("切换侧栏"),
-                  detail: qsTr("显示或隐藏侧栏") }
+                  detail: qsTr("显示或隐藏侧栏") },
+                { id: "app.toggleInspector", label: qsTr("切换检查器"),
+                  detail: qsTr("显示或隐藏右侧检查器") }
             ]
         },
         {
@@ -265,6 +272,12 @@ FocusScope {
                   detail: qsTr("打开类型、时间与大小过滤") },
                 { id: "explorer.cycleView", label: qsTr("切换视图"),
                   detail: qsTr("在列表、网格与分栏之间循环") },
+                { id: "explorer.viewList", label: qsTr("列表视图"),
+                  detail: qsTr("直接切换到详细列表") },
+                { id: "explorer.viewGrid", label: qsTr("网格视图"),
+                  detail: qsTr("直接切换到图标网格") },
+                { id: "explorer.viewColumn", label: qsTr("分栏视图"),
+                  detail: qsTr("直接切换到 Miller 分栏") },
                 { id: "explorer.toggleSizeUnits", label: qsTr("切换大小单位"),
                   detail: qsTr("在 KB/MB 与 KiB/MiB 之间切换") }
             ]
@@ -530,37 +543,106 @@ FocusScope {
     // being recorded that handler is disabled and the capture layer cancels
     // instead of closing the whole panel.
 
+    /// §11.7: settings is a page, and every key-value row is 40 dp with the
+    /// control on the right and a per-row default beside it.
+    component SettingsRow: Item {
+        id: setting
+
+        property string label
+        property string description
+        property bool showReset: true
+        default property alias control: controlHost.data
+        signal reset()
+
+        width: parent ? parent.width : 0
+        /// §11.7: every row is 40 dp, even when it carries a second line.
+        height: 40
+
+        Text {
+            id: rowLabel
+            x: 0
+            y: setting.description !== ""
+                ? 6 : Math.round((setting.height - rowLabel.height) / 2)
+            width: Math.max(80, controlHost.x - 12)
+            text: setting.label
+            color: root.textColor
+            font.pixelSize: Theme.typeBody
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+        }
+
+        Text {
+            visible: setting.description !== ""
+            x: 0
+            y: 23
+            width: Math.max(80, controlHost.x - 12)
+            text: setting.description
+            color: root.mutedColor
+            font.pixelSize: Theme.typeMicro
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+        }
+
+        Item {
+            id: controlHost
+            anchors.right: setting.showReset ? resetButton.left : parent.right
+            anchors.rightMargin: setting.showReset ? 12 : 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: childrenRect.width
+            height: childrenRect.height
+        }
+
+        Rectangle {
+            id: resetButton
+            visible: setting.showReset
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: 60
+            height: 24
+            radius: Theme.radiusSm
+            color: resetMouse.containsMouse ? Theme.hover : "transparent"
+
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("恢复默认")
+                color: resetMouse.containsMouse ? root.textColor : root.mutedColor
+                font.pixelSize: Theme.typeMicro
+            }
+
+            MouseArea {
+                id: resetMouse
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("恢复%1的默认值").arg(setting.label)
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: setting.reset()
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
+            color: root.hairline
+            opacity: 0.7
+        }
+    }
+
     Timer {
         id: terminalStatusTimer
         interval: 2200
         onTriggered: root.terminalStatus = ""
     }
 
-    Rectangle {
-        anchors.fill: parent
-        color: Theme.scrim
-
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.AllButtons
-            onClicked: {
-                if (root.captureId !== "")
-                    root.cancelCapture()
-                else
-                    root.close()
-            }
-        }
-    }
-
+    // A full page, not a dialog: the chrome bar stays live so the window can
+    // still be moved and closed; everything below it belongs to settings.
     Rectangle {
         id: panel
-        anchors.centerIn: parent
-        width: Math.min(820, parent.width - 64)
-        height: Math.min(580, parent.height - 64)
-        radius: Theme.radiusLg
+        anchors.fill: parent
+        anchors.topMargin: Theme.shellTitle
         color: root.panelColor
-        border.width: 1
-        border.color: Theme.hairlineStrong
         clip: true
 
         MouseArea {
@@ -571,45 +653,30 @@ FocusScope {
         // ---------------------------------------------------------------- nav
         Rectangle {
             id: sidebar
-            width: 176
+            width: 200
             height: parent.height
             color: root.sidebarColor
-            radius: Theme.radiusLg
-
-            // Square off the inner edge so the sidebar reads as a column, not
-            // as a floating card. The cover has to be as wide as the corner it
-            // is hiding: at a 16 dp radius a 10 dp plate left a visible arc in
-            // the top-right and bottom-right corners. Bound to the token
-            // rather than written as 16, so raising the radius again cannot
-            // bring the arc back.
-            Rectangle {
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Theme.radiusLg
-                color: parent.color
-            }
 
             Rectangle {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 1
+                width: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 
             Text {
-                x: 18
-                y: 16
+                x: 20
+                y: 20
                 text: qsTr("设置")
                 color: root.textColor
-                font.pixelSize: Theme.typeTitle
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
             }
 
             Text {
-                x: 18
-                y: 42
+                x: 20
+                y: 46
                 text: qsTr("dae · Qt 桌面壳")
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
@@ -617,11 +684,8 @@ FocusScope {
 
             Column {
                 x: 8
-                y: 66
-                // 8 dp of leading inset plus the cover below, which is now as
-                // wide as the corner radius. The rows stop where the cover
-                // starts so a selection fill cannot paint under it.
-                width: parent.width - 8 - Theme.radiusLg
+                y: 76
+                width: parent.width - 16
                 spacing: 2
 
                 NavItem { label: qsTr("外观与语言"); value: "appearance" }
@@ -646,581 +710,529 @@ FocusScope {
             // Appearance outgrew the frame once background effects joined it,
             // so this page is the one that scrolls.
             Flickable {
+                id: appearancePage
+
                 anchors.fill: parent
                 visible: root.page === "appearance"
                 contentWidth: width
-                contentHeight: appearanceFooterNote.y + appearanceFooterNote.height + 24
+                contentHeight: appearanceColumn.implicitHeight + 48
                 clip: true
                 flickableDirection: Flickable.VerticalFlick
                 boundsBehavior: Flickable.StopAtBounds
 
-                Text {
-                    x: 24; y: 20
-                    text: qsTr("外观与语言")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeTitle
-                    font.weight: Font.Medium
-                }
-                Text {
-                    x: 24; y: 50
-                    text: qsTr("主题、强调色、界面语言和背景效果对本 shell 立即生效。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                }
+                Column {
+                    id: appearanceColumn
 
-                Text {
-                    x: 24; y: 88
-                    text: qsTr("主题")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-                Text {
-                    x: 24; y: 108
-                    width: content.width - 48
-                    text: qsTr("跟随系统时，系统切换深浅色会同步更新窗口、标题栏与面板。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    x: 24; y: 132
-                    spacing: 8
-
-                    Repeater {
-                        model: root.themeOptions
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: Appearance.theme === modelData.value
-                            onClicked: Appearance.chooseTheme(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    x: 24; y: 192
-                    text: qsTr("强调色")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-                Text {
-                    x: 24; y: 212
-                    width: content.width - 48
-                    text: qsTr("“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    x: 24; y: 236
-                    spacing: 8
-
-                    Repeater {
-                        model: root.accentOptions
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: Appearance.accent === modelData.value
-                            swatch: modelData.value === "brand"
-                                ? Theme.brand
-                                : Workspace.accent
-                            onClicked: Appearance.chooseAccent(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    x: 24; y: 296
-                    text: qsTr("界面语言")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-                Text {
-                    x: 24; y: 316
-                    width: content.width - 48
-                    text: qsTr("切换后整个窗口立即重新翻译。菜单、对话框和本面板共用同一份词条。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    x: 24; y: 340
-                    spacing: 8
-
-                    Repeater {
-                        model: root.languageOptions
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: Appearance.language === modelData.value
-                            onClicked: Appearance.chooseLanguage(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    x: 24; y: 396
-                    text: qsTr("动效")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    x: 24; y: 416
-                    width: content.width - 48
-                    // One sentence, one `qsTr`: splitting it mid-clause forced
-                    // translators to translate half a sentence and hope the
-                    // other half still parsed after it.
-                    text: qsTr("关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级“减少动效”查询，所以这个开关在 dae 自己这里。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    x: 24; y: 448
-                    spacing: 8
-
-                    Repeater {
-                        model: [
-                            { value: false, label: qsTr("完整") },
-                            { value: true, label: qsTr("减少") }
-                        ]
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: ExplorerPrefs.reduceMotion === modelData.value
-                            onClicked: ExplorerPrefs.setBool("reduceMotion",
-                                                             modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    x: 24; y: 496
-                    text: qsTr("背景效果")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    x: 24; y: 516
-                    width: content.width - 48
-                    text: qsTr("开启后窗口使用系统合成的半透明背景；关闭则使用实色，适合低性能或远程桌面环境。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    x: 24; y: 540
-                    spacing: 8
-
-                    Repeater {
-                        model: [
-                            { value: true, label: qsTr("开启") },
-                            { value: false, label: qsTr("关闭") }
-                        ]
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: Appearance.blurEnabled === modelData.value
-                            onClicked: Appearance.chooseBlur(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    x: 24; y: 584
-                    visible: root.showMaterialChoices
-                    text: qsTr("窗口材质")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    x: 24; y: 604
-                    visible: root.showMaterialChoices
-                    width: content.width - 48
-                    text: qsTr("Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    id: materialRow
-                    x: 24; y: 648
-                    visible: root.showMaterialChoices
-                    spacing: 8
-
-                    Repeater {
-                        model: root.materialOptions
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: Appearance.windowMaterial === modelData.value
-                            onClicked: Appearance.chooseWindowMaterial(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    id: platformNote
                     x: 24
-                    y: root.showMaterialChoices ? 672 : 584
-                    width: content.width - 48
-                    visible: text !== ""
-                    text: root.backgroundNote
-                    color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
+                    y: 20
+                    width: Math.max(320, content.width - 48)
+                    spacing: 0
 
-                Text {
-                    id: startupTitle
-                    x: 24
-                    y: root.showMaterialChoices
-                       ? materialRow.y + materialRow.height + 24
-                       : platformNote.y + (platformNote.visible ? platformNote.height + 24 : 0)
-                    text: qsTr("启动")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    id: startupNote
-                    x: 24
-                    y: startupTitle.y + 20
-                    width: content.width - 48
-                    text: qsTr("开启后启动时先显示一个纯色窗口，界面在它后面加载：首帧从 ~955 ms 提前到 ~302 ms，代价是界面就绪前约 0.6 s 的空白。下次启动生效。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    id: startupRow
-                    x: 24
-                    y: startupNote.y + startupNote.height + 8
-                    spacing: 8
-
-                    Repeater {
-                        model: [
-                            { value: true, label: qsTr("开启") },
-                            { value: false, label: qsTr("关闭") }
-                        ]
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: Appearance.shellFirst === modelData.value
-                            onClicked: Appearance.chooseShellFirst(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    id: unitsTitle
-                    x: 24
-                    y: startupRow.y + startupRow.height + 24
-                    text: qsTr("文件大小单位")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    id: unitsNote
-                    x: 24
-                    y: unitsTitle.y + 20
-                    width: content.width - 48
-                    text: qsTr("二进制按 1024 进位并写作 KiB/MiB；十进制按 1000 进位并写作 KB/MB。只影响显示，排序与比较仍用字节数。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    id: unitsRow
-                    x: 24
-                    y: unitsNote.y + unitsNote.height + 8
-                    spacing: 8
-
-                    Repeater {
-                        model: [
-                            { value: "binary", label: qsTr("二进制（KiB）") },
-                            { value: "decimal", label: qsTr("十进制（KB）") }
-                        ]
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: ExplorerPrefs.sizeUnits === modelData.value
-                            onClicked: ExplorerPrefs.setString("sizeUnits", modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    id: homeTitle
-                    x: 24
-                    y: unitsRow.y + unitsRow.height + 24
-                    text: qsTr("主页小部件")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    id: homeNote
-                    x: 24
-                    y: homeTitle.y + 20
-                    width: content.width - 48
-                    text: qsTr("关闭一项后，概览页对应的分组整段隐藏；分组本身没有内容时也不会留下空标题。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    id: homeRow
-                    x: 24
-                    y: homeNote.y + homeNote.height + 8
-                    spacing: 8
-
-                    Repeater {
-                        model: [
-                            { value: "Projects", label: qsTr("项目") },
-                            { value: "Favorites", label: qsTr("收藏") },
-                            { value: "Recent", label: qsTr("最近") },
-                            { value: "Spaces", label: qsTr("空间") },
-                            { value: "Tags", label: qsTr("标签") },
-                            { value: "Drives", label: qsTr("驱动器") }
-                        ]
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: !root.homeSectionHidden(modelData.value)
-                            onClicked: root.toggleHomeSection(modelData.value)
-                        }
-                    }
-                }
-
-                Text {
-                    id: backgroundTitle
-                    x: 24
-                    y: homeRow.y + homeRow.height + 24
-                    text: qsTr("背景图")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    id: backgroundNote
-                    x: 24
-                    y: backgroundTitle.y + 20
-                    width: content.width - 48
-                    text: qsTr("图片铺在列表后面，列表用半透明画布盖住它；“遮罩”越高，文字越清楚。标题栏、侧栏和地址栏保持实色。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    id: backgroundRow
-                    x: 24
-                    y: backgroundNote.y + backgroundNote.height + 8
-                    spacing: 8
-
-                    Item {
-                        width: Math.max(120, content.width - 48 - 152)
-                        height: Theme.controlMd
-
-                        FieldFrame {
-                            anchors.fill: parent
-                        }
-                        TextInput {
-                            Accessible.role: Accessible.EditableText
-                            Accessible.name: qsTr("背景图片路径")
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
-                            verticalAlignment: TextInput.AlignVCenter
-                            text: ExplorerPrefs.backgroundImage
-                            color: root.textColor
-                            selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
-                            font.pixelSize: Theme.typeCaption
-                            selectByMouse: true
-                            clip: true
-                            onEditingFinished:
-                                ExplorerPrefs.setString("backgroundImage", text)
-                        }
+                    Text {
+                        text: qsTr("外观与语言")
+                        color: root.textColor
+                        font.pixelSize: Theme.typeHeading
+                        font.weight: Font.Medium
                     }
 
-                    Rectangle {
-                        width: 68
-                        height: Theme.controlMd
-                        radius: Theme.radiusSm
-                        color: chooseMouse.containsMouse ? root.hoverFill : "transparent"
-                        border.width: 1
-                        border.color: root.hairline
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: qsTr("选择…")
-                            color: root.textColor
-                            font.pixelSize: Theme.typeCaption
-                        }
-
-                        MouseArea {
-                            id: chooseMouse
-                            Accessible.role: Accessible.Button
-                            Accessible.name: qsTr("选择背景图片")
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: backgroundDialog.open()
-                        }
+                    Text {
+                        y: 4
+                        text: qsTr("颜色、密度、材质与背景都在这里；改动立即生效。")
+                        color: root.mutedColor
+                        font.pixelSize: Theme.typeMicro
                     }
 
-                    Rectangle {
-                        width: 68
-                        height: Theme.controlMd
-                        radius: Theme.radiusSm
-                        color: clearMouse.containsMouse ? root.hoverFill : "transparent"
-                        border.width: 1
-                        border.color: root.hairline
-                        enabled: ExplorerPrefs.backgroundImage !== ""
-                        opacity: enabled ? 1 : 0.45
+                    Item { width: 1; height: 18 }
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: qsTr("清除")
-                            color: root.mutedColor
-                            font.pixelSize: Theme.typeCaption
-                        }
-
-                        MouseArea {
-                            id: clearMouse
-                            Accessible.role: Accessible.Button
-                            Accessible.name: qsTr("清除背景图片")
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            enabled: parent.enabled
-                            onClicked: ExplorerPrefs.setString("backgroundImage", "")
-                        }
+                    // ── 颜色 ────────────────────────────────────────────────
+                    Text {
+                        height: 28
+                        verticalAlignment: Text.AlignBottom
+                        text: qsTr("颜色")
+                        color: Theme.inkTertiary
+                        font.pixelSize: Theme.typeMicro
+                        font.weight: Font.Medium
                     }
-                }
 
-                Row {
-                    id: backgroundDimRow
-                    x: 24
-                    y: backgroundRow.y + backgroundRow.height + 8
-                    spacing: 8
+                    SettingsRow {
+                        label: qsTr("主题")
+                        description: qsTr("跟随系统时，深浅色会随系统切换。")
+                        onReset: Appearance.chooseTheme("system")
 
-                    Repeater {
-                        model: [
-                            { value: 0, label: qsTr("无遮罩") },
-                            { value: 40, label: qsTr("轻") },
-                            { value: 70, label: qsTr("中") },
-                            { value: 90, label: qsTr("强") }
-                        ]
-                        delegate: ChoiceChip {
-                            required property var modelData
-                            label: modelData.label
-                            selected: ExplorerPrefs.backgroundDim === modelData.value
-                            onClicked: ExplorerPrefs.setNumber("backgroundDim", modelData.value)
-                        }
-                    }
-                }
+                        Row {
+                            spacing: 8
 
-                Text {
-                    id: toolbarTitle
-                    x: 24
-                    y: backgroundDimRow.y + backgroundDimRow.height + 24
-                    text: qsTr("工具栏")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeCaption
-                    font.weight: Font.Medium
-                }
-
-                Text {
-                    id: toolbarNote
-                    x: 24
-                    y: toolbarTitle.y + 20
-                    width: content.width - 48
-                    text: qsTr("拖动地址栏两侧的按钮可以调整顺序；导航按钮与右侧操作各自排序，重启后保留。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                Row {
-                    id: toolbarRow
-                    x: 24
-                    y: toolbarNote.y + toolbarNote.height + 8
-                    spacing: 8
-
-                    Rectangle {
-                        width: 96
-                        height: Theme.controlMd
-                        radius: Theme.radiusSm
-                        color: toolbarResetMouse.containsMouse
-                            ? root.hoverFill : "transparent"
-                        border.width: 1
-                        border.color: root.hairline
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: qsTr("恢复默认")
-                            color: root.textColor
-                            font.pixelSize: Theme.typeCaption
-                        }
-
-                        MouseArea {
-                            id: toolbarResetMouse
-                            Accessible.role: Accessible.Button
-                            Accessible.name: qsTr("恢复默认工具栏")
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
-                                ExplorerPrefs.setString("toolbarLeading", "back,forward,up")
-                                ExplorerPrefs.setString("toolbarTrailing",
-                                                        "search,trash,view,more")
+                            Repeater {
+                                model: root.themeOptions
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: Appearance.theme === modelData.value
+                                    onClicked: Appearance.chooseTheme(modelData.value)
+                                }
                             }
                         }
                     }
-                }
 
-                Rectangle {
-                    id: appearanceHairline
-                    x: 24
-                    y: toolbarRow.y + toolbarRow.height + 20
-                    width: content.width - 48
-                    height: 1
-                    color: root.hairline
-                }
+                    SettingsRow {
+                        label: qsTr("强调色")
+                        description: qsTr("“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。")
+                        onReset: Appearance.chooseAccent("system")
 
-                Text {
-                    id: appearanceFooterNote
-                    x: 24
-                    y: appearanceHairline.y + 20
-                    width: content.width - 48
-                    text: qsTr("外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml；大小单位与视图偏好保存在 explorer-qt.ini。")
-                    color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
-                    wrapMode: Text.WordWrap
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: root.accentOptions
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: Appearance.accent === modelData.value
+                                    swatch: modelData.value === "brand"
+                                        ? Theme.brandAccent : Workspace.accent
+                                    onClicked: Appearance.chooseAccent(modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("界面语言")
+                        description: qsTr("切换后整个窗口立即重新翻译。")
+                        onReset: Appearance.chooseLanguage("system")
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: root.languageOptions
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: Appearance.language === modelData.value
+                                    onClicked: Appearance.chooseLanguage(modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    Item { width: 1; height: 14 }
+
+                    // ── 网格与密度 ──────────────────────────────────────────
+                    Text {
+                        height: 28
+                        verticalAlignment: Text.AlignBottom
+                        text: qsTr("网格与密度")
+                        color: Theme.inkTertiary
+                        font.pixelSize: Theme.typeMicro
+                        font.weight: Font.Medium
+                    }
+
+                    SettingsRow {
+                        label: qsTr("界面密度")
+                        description: qsTr("影响文件列表的行高与网格间距。")
+                        onReset: ExplorerPrefs.setString("density", "comfortable")
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: "compact", label: qsTr("紧凑") },
+                                    { value: "comfortable", label: qsTr("标准") },
+                                    { value: "spacious", label: qsTr("宽松") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: ExplorerPrefs.density === modelData.value
+                                    onClicked: ExplorerPrefs.setString("density",
+                                                                       modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("缩略图形状")
+                        description: qsTr("网格视图的缩略图比例；1:1 更适合图标。")
+                        onReset: ExplorerPrefs.setString("gridThumb", "portrait")
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: "portrait", label: qsTr("3:4") },
+                                    { value: "square", label: qsTr("1:1") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: ExplorerPrefs.gridThumb === modelData.value
+                                    onClicked: ExplorerPrefs.setString("gridThumb",
+                                                                       modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("文件大小单位")
+                        description: qsTr("只影响显示；排序与比较仍用字节数。")
+                        onReset: ExplorerPrefs.setString("sizeUnits", "binary")
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: "binary", label: qsTr("二进制（KiB）") },
+                                    { value: "decimal", label: qsTr("十进制（KB）") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: ExplorerPrefs.sizeUnits === modelData.value
+                                    onClicked: ExplorerPrefs.setString("sizeUnits",
+                                                                       modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    Item { width: 1; height: 14 }
+
+                    // ── 界面 ────────────────────────────────────────────────
+                    Text {
+                        height: 28
+                        verticalAlignment: Text.AlignBottom
+                        text: qsTr("界面")
+                        color: Theme.inkTertiary
+                        font.pixelSize: Theme.typeMicro
+                        font.weight: Font.Medium
+                    }
+
+                    SettingsRow {
+                        label: qsTr("动效")
+                        description: qsTr("关闭后所有过渡改为瞬时切换。")
+                        onReset: ExplorerPrefs.setBool("reduceMotion", false)
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: false, label: qsTr("完整") },
+                                    { value: true, label: qsTr("减少") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: ExplorerPrefs.reduceMotion === modelData.value
+                                    onClicked: ExplorerPrefs.setBool("reduceMotion",
+                                                                     modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("窗口材质")
+                        description: qsTr("Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。")
+                        visible: root.showMaterialChoices
+                        onReset: Appearance.chooseWindowMaterial("none")
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: root.materialOptions
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: Appearance.windowMaterial === modelData.value
+                                    onClicked: {
+                                        Appearance.chooseWindowMaterial(modelData.value)
+                                        // A material cannot composite while the
+                                        // background effect is off; picking one
+                                        // is the request to turn it on.
+                                        if (modelData.value !== "none"
+                                                && !Appearance.blurEnabled)
+                                            Appearance.chooseBlur(true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("背景效果")
+                        description: root.backgroundNote !== ""
+                            ? root.backgroundNote : qsTr("关闭则使用实色，适合远程桌面环境。")
+                        onReset: Appearance.chooseBlur(false)
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: true, label: qsTr("开启") },
+                                    { value: false, label: qsTr("关闭") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: Appearance.blurEnabled === modelData.value
+                                    onClicked: Appearance.chooseBlur(modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("启动")
+                        description: qsTr("先显示纯色窗口，界面在它后面加载；下次启动生效。")
+                        onReset: Appearance.chooseShellFirst(true)
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: true, label: qsTr("开启") },
+                                    { value: false, label: qsTr("关闭") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: Appearance.shellFirst === modelData.value
+                                    onClicked: Appearance.chooseShellFirst(modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("主页小部件")
+                        description: qsTr("关闭一项后，概览页对应的分组整段隐藏。")
+                        onReset: ExplorerPrefs.setString("hiddenHomeSections", "")
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: "Projects", label: qsTr("项目") },
+                                    { value: "Favorites", label: qsTr("收藏") },
+                                    { value: "Recent", label: qsTr("最近") },
+                                    { value: "Spaces", label: qsTr("空间") },
+                                    { value: "Tags", label: qsTr("标签") },
+                                    { value: "Drives", label: qsTr("驱动器") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: !root.homeSectionHidden(modelData.value)
+                                    onClicked: root.toggleHomeSection(modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    Item { width: 1; height: 14 }
+
+                    // ── 背景与工具栏 ────────────────────────────────────────
+                    Text {
+                        height: 28
+                        verticalAlignment: Text.AlignBottom
+                        text: qsTr("背景与工具栏")
+                        color: Theme.inkTertiary
+                        font.pixelSize: Theme.typeMicro
+                        font.weight: Font.Medium
+                    }
+
+                    SettingsRow {
+                        label: qsTr("背景图")
+                        description: qsTr("图片铺在列表后面，列表用半透明画布盖住它。")
+                        onReset: ExplorerPrefs.setString("backgroundImage", "")
+
+                        Row {
+                            spacing: 8
+
+                            Item {
+                                width: 220
+                                height: Theme.controlMd
+
+                                FieldFrame {
+                                    anchors.fill: parent
+                                }
+
+                                TextInput {
+                                    Accessible.role: Accessible.EditableText
+                                    Accessible.name: qsTr("背景图片路径")
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    text: ExplorerPrefs.backgroundImage
+                                    color: root.textColor
+                                    selectionColor: root.accent
+                                    selectedTextColor: Theme.onAccent
+                                    font.pixelSize: Theme.typeCaption
+                                    selectByMouse: true
+                                    clip: true
+                                    onEditingFinished:
+                                        ExplorerPrefs.setString("backgroundImage", text)
+                                }
+                            }
+
+                            Rectangle {
+                                width: 68
+                                height: Theme.controlMd
+                                radius: Theme.radiusSm
+                                color: chooseMouse.containsMouse
+                                    ? root.hoverFill : "transparent"
+                                border.width: 1
+                                border.color: root.hairline
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: qsTr("选择…")
+                                    color: root.textColor
+                                    font.pixelSize: Theme.typeCaption
+                                }
+
+                                MouseArea {
+                                    id: chooseMouse
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("选择背景图片")
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: backgroundDialog.open()
+                                }
+                            }
+
+                            Rectangle {
+                                width: 68
+                                height: Theme.controlMd
+                                radius: Theme.radiusSm
+                                color: clearMouse.containsMouse
+                                    ? root.hoverFill : "transparent"
+                                border.width: 1
+                                border.color: root.hairline
+                                enabled: ExplorerPrefs.backgroundImage !== ""
+                                opacity: enabled ? 1 : 0.45
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: qsTr("清除")
+                                    color: root.mutedColor
+                                    font.pixelSize: Theme.typeCaption
+                                }
+
+                                MouseArea {
+                                    id: clearMouse
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("清除背景图片")
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: parent.enabled
+                                    onClicked:
+                                        ExplorerPrefs.setString("backgroundImage", "")
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("遮罩")
+                        description: qsTr("遮罩越高，背景图上的文字越清楚。")
+                        onReset: ExplorerPrefs.setNumber("backgroundDim", 70)
+
+                        Row {
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { value: 0, label: qsTr("无遮罩") },
+                                    { value: 40, label: qsTr("轻") },
+                                    { value: 70, label: qsTr("中") },
+                                    { value: 90, label: qsTr("强") }
+                                ]
+                                delegate: ChoiceChip {
+                                    required property var modelData
+                                    label: modelData.label
+                                    selected: ExplorerPrefs.backgroundDim === modelData.value
+                                    onClicked: ExplorerPrefs.setNumber("backgroundDim",
+                                                                      modelData.value)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("工具栏")
+                        description: qsTr("拖动地址栏两侧的按钮调整顺序，重启后保留。")
+                        showReset: false
+
+                        Rectangle {
+                            width: 96
+                            height: Theme.controlMd
+                            radius: Theme.radiusSm
+                            color: toolbarResetMouse.containsMouse
+                                ? root.hoverFill : "transparent"
+                            border.width: 1
+                            border.color: root.hairline
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: qsTr("恢复默认")
+                                color: root.textColor
+                                font.pixelSize: Theme.typeCaption
+                            }
+
+                            MouseArea {
+                                id: toolbarResetMouse
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("恢复默认工具栏")
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    ExplorerPrefs.setString("toolbarLeading",
+                                                            "back,forward,up")
+                                    ExplorerPrefs.setString("toolbarTrailing",
+                                                            "search,trash,view,more")
+                                }
+                            }
+                        }
+                    }
+
+                    Item { width: 1; height: 18 }
+
+                    Rectangle {
+                        width: parent.width
+                        height: Theme.ruleWidth(Screen.devicePixelRatio)
+                        color: root.hairline
+                    }
+
+                    Text {
+                        y: 12
+                        width: parent.width
+                        text: qsTr("外观、语言、背景效果、启动方式与终端排版保存在 settings.toml；大小单位与视图偏好保存在 explorer-qt.ini。")
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeMicro
+                        wrapMode: Text.WordWrap
+                    }
                 }
+            }
+
+            ScrollBar {
+                target: root.page === "appearance" ? appearancePage : null
+                anchors.right: parent.right
+                anchors.rightMargin: 18
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
             }
 
             // ------------------------------------------------------- shortcuts
@@ -1232,7 +1244,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("快捷键")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -1259,7 +1271,7 @@ FocusScope {
                     width: content.width - 48
                     visible: text !== ""
                     text: root.shortcutError
-                    color: Theme.warn
+                    color: Theme.warning
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
@@ -1422,19 +1434,14 @@ FocusScope {
                     }
                 }
 
-                Rectangle {
-                    visible: shortcutFlick.contentHeight > shortcutFlick.height
-                    x: shortcutFlick.x + shortcutFlick.width + 4
-                    width: 3
-                    radius: width / 2
-                    height: Math.max(20, shortcutFlick.height
-                        * shortcutFlick.height / shortcutFlick.contentHeight)
-                    y: shortcutFlick.y + (shortcutFlick.contentHeight
-                        - shortcutFlick.height > 0
-                        ? shortcutFlick.contentY / (shortcutFlick.contentHeight
-                            - shortcutFlick.height) * (shortcutFlick.height - height)
-                        : 0)
-                    color: Theme.hairlineStrong
+                /// The shortcut table is its own scroller under the page
+                /// header; its bar is the shared capsule, not a thinner
+                /// special case.
+                ScrollBar {
+                    target: shortcutFlick
+                    x: shortcutFlick.x + shortcutFlick.width + 2
+                    y: shortcutFlick.y
+                    height: shortcutFlick.height
                 }
             }
 
@@ -1459,7 +1466,7 @@ FocusScope {
                     Text {
                         text: qsTr("动作")
                         color: root.textColor
-                        font.pixelSize: Theme.typeTitle
+                        font.pixelSize: Theme.typeHeading
                         font.weight: Font.Medium
                     }
 
@@ -1489,7 +1496,7 @@ FocusScope {
 
                             Rectangle {
                                 width: parent.width
-                                height: 1
+                                height: Theme.ruleWidth(Screen.devicePixelRatio)
                                 color: root.hairline
                             }
 
@@ -1511,7 +1518,7 @@ FocusScope {
                                     verticalAlignment: TextInput.AlignVCenter
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onInteractive
+                                    selectedTextColor: Theme.onAccent
                                     font.pixelSize: Theme.typeCaption
                                     selectByMouse: true
                                     clip: true
@@ -1532,7 +1539,7 @@ FocusScope {
                                     verticalAlignment: TextInput.AlignVCenter
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onInteractive
+                                    selectedTextColor: Theme.onAccent
                                     font.pixelSize: Theme.typeCaption
                                     font.family: Theme.monoFamily
                                     selectByMouse: true
@@ -1574,7 +1581,7 @@ FocusScope {
                                 onTextEdited: actionRow.editArgs = text
                                 color: root.textColor
                                 selectionColor: root.accent
-                                selectedTextColor: Theme.onInteractive
+                                selectedTextColor: Theme.onAccent
                                 font.pixelSize: Theme.typeCaption
                                 font.family: Theme.monoFamily
                                 selectByMouse: true
@@ -1633,7 +1640,7 @@ FocusScope {
 
                     Rectangle {
                         width: parent.width
-                        height: 1
+                        height: Theme.ruleWidth(Screen.devicePixelRatio)
                         color: root.hairline
                     }
 
@@ -1668,7 +1675,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             selectByMouse: true
                             clip: true
@@ -1689,7 +1696,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -1731,7 +1738,7 @@ FocusScope {
                         onTextEdited: root.newActionArgs = text
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
+                        selectedTextColor: Theme.onAccent
                         font.pixelSize: Theme.typeCaption
                         font.family: Theme.monoFamily
                         selectByMouse: true
@@ -1792,6 +1799,14 @@ FocusScope {
                 }
             }
 
+            ScrollBar {
+                target: root.page === "actions" ? actionsPage : null
+                anchors.right: parent.right
+                anchors.rightMargin: 18
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+            }
+
             // -------------------------------------------------------- terminal
             Item {
                 anchors.fill: parent
@@ -1801,7 +1816,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("终端")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -1833,7 +1848,7 @@ FocusScope {
                     inputMethodHints: Qt.ImhDigitsOnly
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1866,7 +1881,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1900,7 +1915,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1908,7 +1923,7 @@ FocusScope {
                 }
                 Text {
                     x: 130; y: 222
-                    text: qsTr("留空使用 Cascadia Mono / Consolas")
+                    text: qsTr("留空使用 JetBrains Mono")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                 }
@@ -1933,7 +1948,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onInteractive
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -2010,7 +2025,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("标签")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -2034,7 +2049,7 @@ FocusScope {
                         radius: Theme.radiusSm
                         color: Theme.field
                         border.width: 1
-                        border.color: draftName.activeFocus ? Theme.signal : Theme.hairlineStrong
+                        border.color: draftName.activeFocus ? Theme.accent : Theme.line
 
                         TextInput {
                             id: draftName
@@ -2047,38 +2062,32 @@ FocusScope {
                             selectByMouse: true
                             activeFocusOnTab: true
                             Accessible.name: qsTr("新标签名称")
-                            onAccepted: root.createTag(draftName.text, draftColor.text)
+                            onAccepted: root.createTag(draftName.text,
+                                Theme.tagPaletteLight[root.draftTagIndex])
                         }
                     }
 
-                    Rectangle {
-                        width: 92
+                    Row {
                         height: parent.height
-                        radius: Theme.radiusSm
-                        color: Theme.field
-                        border.width: 1
-                        border.color: draftColor.activeFocus ? Theme.signal : Theme.hairlineStrong
+                        spacing: 3
 
-                        TextInput {
-                            id: draftColor
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
-                            text: "#4c8dff"
-                            verticalAlignment: TextInput.AlignVCenter
-                            color: Theme.ink
-                            font.family: Theme.monoFamily
-                            font.pixelSize: Theme.typeSmall
-                            selectByMouse: true
-                            activeFocusOnTab: true
-                            Accessible.name: qsTr("颜色")
-                            onAccepted: root.createTag(draftName.text, draftColor.text)
+                        Repeater {
+                            model: [0, 1, 2, 3, 4, 5, 6, 7]
+
+                            TagSwatch {
+                                required property int modelData
+                                anchors.verticalCenter: parent.verticalCenter
+                                option: modelData
+                                selected: root.draftTagIndex === modelData
+                                onClicked: root.draftTagIndex = modelData
+                            }
                         }
                     }
 
                     PrimaryButton {
                         label: qsTr("添加")
-                        onClicked: root.createTag(draftName.text, draftColor.text)
+                        onClicked: root.createTag(draftName.text,
+                            Theme.tagPaletteLight[root.draftTagIndex])
                     }
                 }
 
@@ -2115,7 +2124,7 @@ FocusScope {
                             height: 8
                             radius: 4
                             anchors.verticalCenter: parent.verticalCenter
-                            color: tagRow.modelData.color
+                            color: Theme.tagColorFor(tagRow.modelData.color)
                         }
 
                         Rectangle {
@@ -2127,7 +2136,7 @@ FocusScope {
                             radius: Theme.radiusXs
                             color: Theme.field
                             border.width: 1
-                            border.color: nameInput.activeFocus ? Theme.signal : Theme.hairline
+                            border.color: nameInput.activeFocus ? Theme.accent : Theme.hairline
 
                             TextInput {
                                 id: nameInput
@@ -2145,39 +2154,33 @@ FocusScope {
                             }
                         }
 
-                        Rectangle {
-                            id: colorField
+                        Row {
                             x: nameField.x + nameField.width + 8
-                            width: 92
-                            height: Theme.controlMd
+                            height: parent.height
                             anchors.verticalCenter: parent.verticalCenter
-                            radius: Theme.radiusXs
-                            color: Theme.field
-                            border.width: 1
-                            border.color: colorInput.activeFocus ? Theme.signal : Theme.hairline
+                            spacing: 3
 
-                            TextInput {
-                                id: colorInput
-                                Accessible.role: Accessible.EditableText
-                                Accessible.name: qsTr("标签颜色")
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                verticalAlignment: TextInput.AlignVCenter
-                                color: Theme.ink
-                                font.family: Theme.monoFamily
-                                font.pixelSize: Theme.typeSmall
-                                selectByMouse: true
-                                activeFocusOnTab: true
-                                Component.onCompleted: text = tagRow.modelData.color
+                            Repeater {
+                                model: [0, 1, 2, 3, 4, 5, 6, 7]
+
+                                TagSwatch {
+                                    required property int modelData
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    option: modelData
+                                    selected: Theme.tagColorIndex(tagRow.modelData.color)
+                                        === modelData
+                                    onClicked: root.updateTag(tagRow.modelData.id,
+                                        nameInput.text,
+                                        Theme.tagPaletteLight[modelData])
+                                }
                             }
                         }
 
                         Text {
-                            x: colorField.x + colorField.width + 12
+                            x: nameField.x + nameField.width + 8 + 8 * 14 + 7 * 3 + 12
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("%1 项").arg(tagRow.modelData.count)
-                            color: Theme.inkFaint
+                            color: Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
 
@@ -2189,7 +2192,8 @@ FocusScope {
                             SmallButton {
                                 label: qsTr("保存")
                                 onClicked: root.updateTag(tagRow.modelData.id,
-                                                          nameInput.text, colorInput.text)
+                                                          nameInput.text,
+                                                          tagRow.modelData.color)
                             }
 
                             SmallButton {
@@ -2243,7 +2247,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("默认文件管理器")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -2339,7 +2343,7 @@ FocusScope {
                     x: 24; y: 20
                     text: qsTr("日志")
                     color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    font.pixelSize: Theme.typeHeading
                     font.weight: Font.Medium
                 }
                 Text {
@@ -2415,7 +2419,7 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 
@@ -2440,7 +2444,7 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     text: qsTr("完成")
-                    color: Theme.onInteractive
+                    color: Theme.onAccent
                     font.pixelSize: Theme.typeCaption
                 }
 
@@ -2571,7 +2575,7 @@ FocusScope {
             width: 2
             height: 16
             radius: Theme.radiusSm
-            color: Theme.signal
+            color: Theme.accent
             visible: root.page === nav.value
         }
 
@@ -2675,7 +2679,7 @@ FocusScope {
             id: buttonText
             anchors.centerIn: parent
             text: button.label
-            color: Theme.onInteractive
+            color: Theme.onAccent
             font.pixelSize: Theme.typeMicro
         }
 
@@ -2748,6 +2752,34 @@ FocusScope {
             anchors.fill: parent
             hoverEnabled: true
             onClicked: button.clicked()
+        }
+    }
+
+    component TagSwatch: Rectangle {
+        id: swatch
+
+        property int option: 0
+        property bool selected: false
+
+        signal clicked()
+
+        width: 14
+        height: 14
+        radius: width / 2
+        color: Theme.tagColor(option)
+        border.width: selected ? 2 : 1
+        border.color: selected ? Theme.ink : Theme.hairline
+
+        Accessible.role: Accessible.RadioButton
+        Accessible.name: qsTr("标签颜色 %1").arg(swatch.option + 1)
+        Accessible.checkable: true
+        Accessible.checked: swatch.selected
+        Accessible.onPressAction: swatch.clicked()
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: swatch.clicked()
         }
     }
 

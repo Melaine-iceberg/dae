@@ -10,7 +10,7 @@ Rectangle {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property bool highlight: false
     property string heading: ""
     property string name: ""
@@ -39,7 +39,7 @@ Rectangle {
         Text {
             width: parent.width
             text: root.heading
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
@@ -49,11 +49,10 @@ Rectangle {
             height: 16
             spacing: 6
 
-            ThemedIcon {
+            FileIcon {
                 anchors.verticalCenter: parent.verticalCenter
+                edge: 16
                 category: root.category
-                isDir: root.category === "folder"
-                size: 16
                 Accessible.ignored: true
             }
 
@@ -72,7 +71,7 @@ Rectangle {
         Text {
             width: parent.width
             text: root.detail
-            color: Theme.inkMuted
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
             lineHeight: Theme.leadingBody
             wrapMode: Text.WordWrap

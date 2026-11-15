@@ -29,6 +29,7 @@ use dae_core::types::{
 
 use crate::errors::friendly_error;
 use crate::format;
+use crate::model::category_of;
 use crate::runtime;
 
 #[cxx_qt::bridge]
@@ -49,6 +50,9 @@ pub mod qobject {
         /// The containing folder, as the dialog's "位置" row spells it.
         #[qproperty(QString, location)]
         #[qproperty(QString, kind_text, cxx_name = "kindText")]
+        /// The listing's icon family (`folder`, `image`, `archive`, …), so the
+        /// two-column preview draws the same glyph the row does.
+        #[qproperty(QString, category)]
         /// A symlink's destination, empty for anything else.
         #[qproperty(QString, target_text, cxx_name = "targetText")]
         #[qproperty(QString, size_text, cxx_name = "sizeText")]
@@ -177,6 +181,7 @@ pub struct PropertiesControllerRust {
     name: QString,
     location: QString,
     kind_text: QString,
+    category: QString,
     target_text: QString,
     size_text: QString,
     created_text: QString,
@@ -352,6 +357,10 @@ impl qobject::PropertiesController {
                     .set_location(QString::from(parent_of(&properties.path).as_str()));
                 self.as_mut()
                     .set_kind_text(QString::from(kind_label(properties.kind)));
+                self.as_mut().set_category(QString::from(category_of(
+                    properties.kind,
+                    &properties.name,
+                )));
                 self.as_mut()
                     .set_target_text(QString::from(properties.target.as_deref().unwrap_or("")));
                 self.as_mut().set_size_text(QString::from(

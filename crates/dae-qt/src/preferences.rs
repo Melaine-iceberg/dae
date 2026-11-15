@@ -46,6 +46,8 @@ const MODIFIED_FILTERS: &[&str] = &["any", "today", "week", "month"];
 const SIZE_FILTERS: &[&str] = &["any", "small", "medium", "large"];
 /// `binary` prints KiB/MiB (the 1024 divisor); `decimal` prints KB/MB.
 const SIZE_UNITS: &[&str] = &["binary", "decimal"];
+/// Grid thumbnail box: 3:4 portrait (the default) or 1:1.
+const GRID_THUMBS: &[&str] = &["portrait", "square"];
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -112,11 +114,17 @@ pub mod qobject {
         /// `binary` (KiB/MiB) or `decimal` (KB/MB). Read by the formatter for
         /// every row, so it is a display preference rather than a layout key.
         #[qproperty(QString, size_units, cxx_name = "sizeUnits")]
+        /// Grid thumbnail proportions: `portrait` (3:4) or `square` (1:1).
+        #[qproperty(QString, grid_thumb, cxx_name = "gridThumb")]
         /// Reopen the previous session's windows and tabs on launch.
         #[qproperty(bool, restore_session, cxx_name = "restoreSession")]
         /// Landing-page sections to hide, comma-separated. A free-text value:
         /// the model drops names it does not know.
         #[qproperty(QString, hidden_home_sections, cxx_name = "hiddenHomeSections")]
+        /// Sidebar groups the user folded, comma-separated (§7.3.2). Same
+        /// free-text rule as the landing page's hidden sections: a name the
+        /// model no longer emits is ignored rather than cleaned up here.
+        #[qproperty(QString, folded_sidebar_sections, cxx_name = "foldedSidebarSections")]
         #[qproperty(bool, split_enabled, cxx_name = "splitEnabled")]
         /// Off by default: the shell animates, and this is the single switch the
         /// spec calls for. Qt 6 has no system-wide reduced-motion query, so the
@@ -262,8 +270,10 @@ struct StoredPrefs {
     modified_filter: String,
     size_filter: String,
     size_units: String,
+    grid_thumb: String,
     restore_session: bool,
     hidden_home_sections: String,
+    folded_sidebar_sections: String,
     split_enabled: bool,
     reduce_motion: bool,
     sync_layout: bool,
@@ -298,7 +308,7 @@ impl Default for StoredPrefs {
             row_thumbnails: false,
             show_extensions: true,
             columns: "type,size,modified".to_owned(),
-            column_widths: "108,92,142,142,120".to_owned(),
+            column_widths: "104,88,150,150,120".to_owned(),
             // The app has always listed hidden entries; the toggle is for
             // people who want the classic hidden-by-default reading.
             show_hidden_files: true,
@@ -306,14 +316,16 @@ impl Default for StoredPrefs {
             modified_filter: "any".to_owned(),
             size_filter: "any".to_owned(),
             size_units: "binary".to_owned(),
+            grid_thumb: "portrait".to_owned(),
             restore_session: true,
             hidden_home_sections: String::new(),
+            folded_sidebar_sections: String::new(),
             split_enabled: false,
             reduce_motion: false,
             sync_layout: true,
             adaptive_layout: false,
             preview_width: 300,
-            sidebar_width: 216,
+            sidebar_width: 240,
             terminal_shell: String::new(),
             toolbar_leading: "back,forward,up".to_owned(),
             toolbar_trailing: "search,trash,view,more".to_owned(),
@@ -399,9 +411,13 @@ impl StoredPrefs {
         );
         string("sizeFilter", SIZE_FILTERS, &mut self.size_filter);
         string("sizeUnits", SIZE_UNITS, &mut self.size_units);
+        string("gridThumb", GRID_THUMBS, &mut self.grid_thumb);
         boolean("restoreSession", &mut self.restore_session);
         if let Some(value) = fields.get("hiddenHomeSections") {
             self.hidden_home_sections = (*value).to_owned();
+        }
+        if let Some(value) = fields.get("foldedSidebarSections") {
+            self.folded_sidebar_sections = (*value).to_owned();
         }
         boolean("splitEnabled", &mut self.split_enabled);
         boolean("reduceMotion", &mut self.reduce_motion);
@@ -476,8 +492,14 @@ impl StoredPrefs {
         write(&mut out, "modifiedFilter", &self.modified_filter);
         write(&mut out, "sizeFilter", &self.size_filter);
         write(&mut out, "sizeUnits", &self.size_units);
+        write(&mut out, "gridThumb", &self.grid_thumb);
         write(&mut out, "restoreSession", bool_text(self.restore_session));
         write(&mut out, "hiddenHomeSections", &self.hidden_home_sections);
+        write(
+            &mut out,
+            "foldedSidebarSections",
+            &self.folded_sidebar_sections,
+        );
         write(&mut out, "splitEnabled", bool_text(self.split_enabled));
         write(&mut out, "reduceMotion", bool_text(self.reduce_motion));
         write(&mut out, "syncLayout", bool_text(self.sync_layout));
@@ -660,7 +682,9 @@ fn sanitize_columns(value: &str) -> String {
 /// defaults. The list is keyed by [`COLUMN_IDS`] order, not by which columns
 /// are visible, so hiding a column does not shift the widths of the rest.
 fn sanitize_widths(value: &str) -> String {
-    const DEFAULTS: [i32; 5] = [108, 92, 142, 142, 120];
+    /// §7.1.2: type 104, size 88, modified 150, created 150, tags 120. Keyed
+    /// by [`COLUMN_IDS`] order.
+    const DEFAULTS: [i32; 5] = [104, 88, 150, 150, 120];
     let mut widths: Vec<String> = value
         .split(',')
         .map(|part| part.trim())
@@ -733,8 +757,10 @@ pub struct ExplorerPrefsRust {
     modified_filter: QString,
     size_filter: QString,
     size_units: QString,
+    grid_thumb: QString,
     restore_session: bool,
     hidden_home_sections: QString,
+    folded_sidebar_sections: QString,
     split_enabled: bool,
     reduce_motion: bool,
     sync_layout: bool,
@@ -781,8 +807,12 @@ impl ExplorerPrefsRust {
             modified_filter: QString::from(prefs.modified_filter.as_str()),
             size_filter: QString::from(prefs.size_filter.as_str()),
             size_units: QString::from(prefs.size_units.as_str()),
+            grid_thumb: QString::from(prefs.grid_thumb.as_str()),
             restore_session: prefs.restore_session,
             hidden_home_sections: QString::from(prefs.hidden_home_sections.as_str()),
+            folded_sidebar_sections: QString::from(
+                prefs.folded_sidebar_sections.as_str(),
+            ),
             split_enabled: prefs.split_enabled,
             reduce_motion: prefs.reduce_motion,
             sync_layout: prefs.sync_layout,
@@ -828,8 +858,10 @@ impl ExplorerPrefsRust {
             modified_filter: self.modified_filter.to_string(),
             size_filter: self.size_filter.to_string(),
             size_units: self.size_units.to_string(),
+            grid_thumb: self.grid_thumb.to_string(),
             restore_session: self.restore_session,
             hidden_home_sections: self.hidden_home_sections.to_string(),
+            folded_sidebar_sections: self.folded_sidebar_sections.to_string(),
             split_enabled: self.split_enabled,
             reduce_motion: self.reduce_motion,
             sync_layout: self.sync_layout,
@@ -1014,6 +1046,15 @@ impl qobject::ExplorerPrefs {
             return;
         }
 
+        if key == "foldedSidebarSections" {
+            let next = QString::from(value.trim());
+            if self.folded_sidebar_sections != next {
+                self.as_mut().set_folded_sidebar_sections(next);
+                save(&self.stored());
+            }
+            return;
+        }
+
         // Free text, like `terminalShell`: QML owns the toolbar id model and
         // the image path comes from a file dialog. An empty image clears it.
         if key == "toolbarLeading" || key == "toolbarTrailing" || key == "backgroundImage" {
@@ -1061,6 +1102,18 @@ impl qobject::ExplorerPrefs {
             if self.column_widths != next {
                 self.as_mut().set_column_widths(next);
                 self.as_mut().persist_layout();
+            }
+            return;
+        }
+
+        if key == "gridThumb" {
+            if !GRID_THUMBS.contains(&value.as_str()) {
+                return;
+            }
+            let next = QString::from(value.as_str());
+            if self.grid_thumb != next {
+                self.as_mut().set_grid_thumb(next);
+                save(&self.stored());
             }
             return;
         }
@@ -1221,7 +1274,7 @@ impl qobject::ExplorerPrefs {
                 true
             }
             "sidebarWidth" => {
-                let next = value.clamp(180, 280);
+                let next = value.clamp(180, 300);
                 if self.sidebar_width == next {
                     return;
                 }
@@ -1493,7 +1546,7 @@ mod tests {
         assert_eq!(prefs.kind_filter, "images");
         assert_eq!(prefs.size_filter, "small");
         assert_eq!(prefs.columns, "modified,tags", "canonical order");
-        assert_eq!(prefs.column_widths, "140,200,142,142,120");
+        assert_eq!(prefs.column_widths, "140,200,150,150,120");
 
         let reparsed = {
             let mut next = StoredPrefs::default();
@@ -1603,8 +1656,8 @@ mod tests {
     fn column_lists_are_canonical_and_widths_are_clamped() {
         assert_eq!(sanitize_columns("tags,size,tags,bogus"), "size,tags");
         assert_eq!(sanitize_columns(""), "");
-        assert_eq!(sanitize_widths("10,900,120"), "60,420,120,142,120");
-        assert_eq!(sanitize_widths("nonsense"), "108,92,142,142,120");
+        assert_eq!(sanitize_widths("10,900,120"), "60,420,120,150,120");
+        assert_eq!(sanitize_widths("nonsense"), "104,88,150,150,120");
     }
 
     #[test]

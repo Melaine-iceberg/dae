@@ -62,6 +62,10 @@ pub fn search_directory_sync(
 
     let mut builder = WalkBuilder::new(root.as_path());
     builder.standard_filters(false).follow_links(false);
+    // The three search scopes are one walk with a bound: "this folder" is a
+    // depth of one, "subfolders" and "all locations" are unbounded. A depth
+    // cap is cheaper than walking a volume and dropping the deep rows after.
+    builder.max_depth(filters.max_depth);
     // VCS and dependency directories are not what a name search is looking for;
     // see [`ignores`] for the list and why it is a descendant rule.
     builder.overrides(ignores::default_overrides(root.as_path())?);
@@ -260,6 +264,34 @@ mod tests {
         assert_eq!(file_entry.size, Some(6));
         assert!(file_entry.modified_at.is_some());
         assert!(!response.truncated);
+
+        fs::remove_dir_all(directory).expect("remove search test directory");
+    }
+
+    /// §10.7's 此文件夹 scope: a depth-one walk finds the directory's own
+    /// entries and nothing below them, which is what makes the scope cheap.
+    #[test]
+    fn a_depth_one_search_skips_descendants() {
+        let directory = std::env::temp_dir()
+            .join(format!("dae-search-depth-test-{}", std::process::id()));
+        let nested = directory.join("reports");
+        fs::create_dir_all(&nested).expect("create nested directory");
+        fs::write(directory.join("report-top.txt"), "top").expect("create top file");
+        fs::write(nested.join("report-deep.txt"), "deep").expect("create deep file");
+
+        let filters = SearchFilters {
+            max_depth: Some(1),
+            ..SearchFilters::default()
+        };
+        let response = search_directory_sync(directory.clone(), "report", &filters, &|| true)
+            .expect("search test directory");
+        let names = response
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["reports", "report-top.txt"]);
 
         fs::remove_dir_all(directory).expect("remove search test directory");
     }

@@ -1,5 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Layouts
+import QtQuick.Window
 import dae 1.0
 import "Localize.js" as Localize
 
@@ -20,19 +22,16 @@ Item {
     property int selectionVersion: 0
     property int anchorIndex: -1
 
-    readonly property int rowHeight: Theme.controlLg
+    readonly property int rowHeight: Theme.rowSpacious
 
     /// Below this width the four columns cannot all be read: the name column
     /// would be squeezed under the original location and the two would paint on
     /// top of each other. The pane is narrow whenever the preview is open, so
     /// the location column steps out and the name takes its room.
     readonly property bool compactColumns: width < 560
-    /// 54 for the checkbox and the name gutter, 228 for what the three trailing
-    /// columns need at their smallest.
-    readonly property int nameColumnSpan: 282
     readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
     /// Set while an arrow key owns the cursor, so the focus ring only shows
     /// for keyboard movement, never for a click — the same rule as the list.
@@ -184,7 +183,7 @@ Item {
         root.selectMany(ids)
     }
 
-    function handleClick(index, shift) {
+    function handleClick(index, shift, ctrl) {
         if (root.model === null)
             return
         root.keyboardCursor = false
@@ -200,7 +199,10 @@ Item {
             root.selectMany(ids)
             return
         }
-        root.toggle(id)
+        if (ctrl)
+            root.toggle(id)
+        else
+            root.selectOnly(id)
         root.anchorIndex = index
     }
 
@@ -256,84 +258,112 @@ Item {
         color: root.contentColor
     }
 
-    // Actions. The counts are part of the label because the list itself is the
-    // only other place a selection is visible.
-    Item {
-        id: actions
+    // A quiet explanation, not a warning banner: nothing here is in danger,
+    // and a red strip would make an ordinary page feel like a fault.
+    Rectangle {
+        id: infoBar
+
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: Theme.rowSpacious
+        height: 36
+        color: Theme.chrome
 
-        /// The buttons keep their size; the heading gives way. With the preview
-        /// open the pane is ~440 wide and four buttons already take most of it,
-        /// so the title can only have what is left of the row — never an
-        /// overlap, which is what anchored-and-unclipped produced.
-        readonly property real titleRoom: Math.max(0, actionRow.x - 26)
-
-        Text {
-            id: heading
-            x: 16
-            width: Math.min(heading.implicitWidth, actions.titleRoom)
-            visible: width >= 44
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("回收站")
-            color: root.textColor
-            font.pixelSize: Theme.typeBody
-            font.weight: Font.Medium
-            elide: Text.ElideRight
-        }
-
-        Text {
-            x: heading.visible ? heading.x + heading.width + 10 : 16
-            width: Math.max(0, actionRow.x - x - 12)
-            visible: width >= 40
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.model === null ? ""
-                : (root.model.loaded
-                    ? Localize.message(root.model.status) : qsTr("读取回收站…"))
-            color: root.mutedColor
-            font.pixelSize: Theme.typeMicro
-            elide: Text.ElideRight
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
+            color: root.hairline
         }
 
         Row {
-            id: actionRow
+            anchors.left: parent.left
+            anchors.leftMargin: 16
             anchors.right: parent.right
-            anchors.rightMargin: 12
+            anchors.rightMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            Glyph {
+                width: 14
+                height: 14
+                anchors.verticalCenter: parent.verticalCenter
+                kind: "info"
+                tint: Theme.inkTertiary
+            }
+
+            Text {
+                width: Math.max(0, parent.width - 22)
+                text: qsTr("回收站中的项目不会被自动清理；还原会回到原位置，原位置不存在时放回主目录。")
+                color: Theme.inkSecondary
+                font.pixelSize: Theme.typeCaption
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+            }
+        }
+    }
+
+    // Actions. They never move: restore, destroy and empty are on the page's
+    // floor, with the selection figure on the right of the same line.
+    Rectangle {
+        id: actionBar
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 44
+        color: Theme.chrome
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
+            color: root.hairline
+        }
+
+        Row {
+            anchors.left: parent.left
+            anchors.leftMargin: 12
             anchors.verticalCenter: parent.verticalCenter
             spacing: 6
 
             ActionButton {
-                visible: root.selectionCount > 0
-                label: qsTr("恢复 (") + root.selectionCount + ")"
-                enabled: !Workspace.busy
+                label: qsTr("还原")
+                enabled: root.selectionCount > 0 && !Workspace.busy
                 onClicked: root.restoreRequested(root.selectedIdList())
             }
 
             ActionButton {
-                visible: root.selectionCount > 0
-                label: qsTr("永久删除 (") + root.selectionCount + ")"
+                label: qsTr("永久删除")
                 danger: true
-                enabled: !Workspace.busy
+                enabled: root.selectionCount > 0 && !Workspace.busy
                 onClicked: root.purgeRequested(root.selectedIdList())
             }
 
             ActionButton {
                 visible: root.model !== null && root.model.count > 0
                 label: qsTr("清空回收站")
+                danger: true
                 enabled: !Workspace.busy
                 onClicked: root.emptyRequested()
             }
+        }
 
-            ActionButton {
-                label: qsTr("刷新")
-                enabled: !Workspace.busy
-                onClicked: {
-                    if (root.model !== null)
-                        root.model.refresh()
-                }
-            }
+        Text {
+            anchors.right: parent.right
+            anchors.rightMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            visible: text !== ""
+            text: root.selectionCount > 0
+                ? qsTr("已选 %1 项").arg(root.selectionCount)
+                : (root.model !== null && root.model.error !== ""
+                    ? Localize.message(root.model.error) : "")
+            color: root.mutedColor
+            font.pixelSize: Theme.typeMicro
+            font.features: { "tnum": 1 }
+            elide: Text.ElideRight
         }
     }
 
@@ -342,8 +372,8 @@ Item {
         id: columnHeader
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: actions.bottom
-        height: Theme.controlLg
+        anchors.top: infoBar.bottom
+        height: Theme.rowCompact
 
         Rectangle {
             anchors.fill: parent
@@ -353,100 +383,92 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
         }
 
-        Rectangle {
-            x: 14
-            anchors.verticalCenter: parent.verticalCenter
-            width: 14
-            height: 14
-            radius: Theme.radiusSm
-            border.width: 1
-            border.color: root.allSelected ? Theme.signal
-                : Theme.hairlineStrong
-            color: root.allSelected ? Theme.signal : "transparent"
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            spacing: 10
 
-            Text {
-                anchors.centerIn: parent
-                visible: root.allSelected
-                text: "\u2713"
-                color: Theme.onInteractive
-                font.pixelSize: Theme.typeMicro
-            }
+            Item {
+                Layout.preferredWidth: 42
+                Layout.preferredHeight: 14
 
-            MouseArea {
-                Accessible.role: Accessible.CheckBox
-                Accessible.name: qsTr("全选")
-                Accessible.checkable: true
-                Accessible.checked: root.allSelected
-                anchors.fill: parent
-                onClicked: {
-                    if (root.allSelected)
-                        root.clearSelection()
-                    else
-                        root.selectAll()
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 14
+                    height: 14
+                    radius: Theme.radiusXs
+                    border.width: 1
+                    border.color: root.allSelected ? Theme.accent : Theme.line
+                    color: root.allSelected ? Theme.accent : "transparent"
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        visible: root.allSelected
+                        width: 9
+                        height: 9
+                        kind: "check"
+                        tint: Theme.onAccent
+                    }
+
+                    MouseArea {
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: qsTr("全选")
+                        Accessible.checkable: true
+                        Accessible.checked: root.allSelected
+                        anchors.fill: parent
+                        onClicked: {
+                            if (root.allSelected)
+                                root.clearSelection()
+                            else
+                                root.selectAll()
+                        }
+                    }
                 }
             }
-        }
 
-        Text {
-            id: nameHeader
-            x: 54
-            width: root.compactColumns
-                ? Math.max(110, columnHeader.width - root.nameColumnSpan)
-                : Math.round(columnHeader.width * 0.32)
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("名称")
-            color: Theme.inkFaint
-            font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.55
-            elide: Text.ElideRight
-        }
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("名称")
+                color: Theme.inkTertiary
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
 
-        Text {
-            visible: !root.compactColumns
-            x: nameHeader.x + nameHeader.width + 14
-            width: Math.max(0, deletedHeader.x - 14 - nameHeader.x
-                            - nameHeader.width - 14)
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("原位置")
-            color: Theme.inkFaint
-            font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.55
-            elide: Text.ElideRight
-        }
+            Text {
+                Layout.preferredWidth: 180
+                visible: !root.compactColumns
+                text: qsTr("原位置")
+                color: Theme.inkTertiary
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
 
-        Text {
-            id: deletedHeader
-            anchors.right: sizeHeader.left
-            anchors.rightMargin: 16
-            anchors.verticalCenter: parent.verticalCenter
-            width: 118
-            horizontalAlignment: Text.AlignRight
-            text: qsTr("删除时间")
-            color: Theme.inkFaint
-            font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.55
-        }
+            Text {
+                Layout.preferredWidth: 76
+                horizontalAlignment: Text.AlignRight
+                text: qsTr("大小")
+                color: Theme.inkTertiary
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+            }
 
-        Text {
-            id: sizeHeader
-            anchors.right: parent.right
-            anchors.rightMargin: 14
-            anchors.verticalCenter: parent.verticalCenter
-            width: 68
-            horizontalAlignment: Text.AlignRight
-            text: qsTr("大小")
-            color: Theme.inkFaint
-            font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.55
+            Text {
+                Layout.preferredWidth: 150
+                horizontalAlignment: Text.AlignRight
+                text: qsTr("删除时间")
+                color: Theme.inkTertiary
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+            }
         }
     }
 
@@ -454,10 +476,9 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: columnHeader.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: actionBar.top
         visible: root.model !== null && root.model.loaded
                  && root.model.error === "" && root.model.count === 0
-        glyph: "trash"
         title: qsTr("回收站为空")
         hint: qsTr("删除的文件会先放在这里，可以随时还原。")
     }
@@ -467,7 +488,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: columnHeader.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: actionBar.top
         acceptedButtons: Qt.RightButton
         enabled: root.model !== null
         onClicked: root.clearSelection()
@@ -478,7 +499,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: columnHeader.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: actionBar.top
         model: root.model
         reuseItems: true
         cacheBuffer: 1600
@@ -489,9 +510,10 @@ Item {
         spacing: 0
         currentIndex: -1
 
+        // The tap only moves focus into the list. Focus is not an action, and
+        // the list itself already carries the name.
+        // a11y:decorative
         TapHandler {
-            /// The tap only moves focus into the list. Focus is not an action, and
-            /// the list itself already carries the name.
             acceptedButtons: Qt.LeftButton
             onTapped: root.takeFocus()
         }
@@ -505,7 +527,7 @@ Item {
                 event.accepted = true
         }
 
-        delegate: Item {
+        delegate: ListRow {
             id: row
 
             required property int index
@@ -515,156 +537,137 @@ Item {
             required property string deletedText
             required property string sizeText
             required property bool isDir
+            required property string category
 
-            width: ListView.view.width
-            height: root.rowHeight
+            width: list.width
+            rowHeight: root.rowHeight
+            contentInset: 8
+            spacing: 10
 
             readonly property bool selected: root.isSelected(row.entryId)
+            readonly property bool rowAboveSelected: row.index > 0
+                && root.isSelected(root.idAt(row.index - 1))
+            readonly property bool rowBelowSelected: root.model !== null
+                && row.index < root.model.count - 1
+                && root.isSelected(root.idAt(row.index + 1))
 
-            /// A trashed item is one row, and its "open" gesture is restore —
-            /// the same thing a double click does, because the only thing that
-            /// can happen to it here is coming back.
-            Accessible.role: Accessible.ListItem
-            Accessible.name: row.fileName
-            Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
-            Accessible.selectable: true
-            Accessible.selected: row.selected
-            Accessible.onPressAction: root.restoreRequested([row.entryId])
+            isSelected: row.selected
+            previousSelected: row.rowAboveSelected
+            nextSelected: row.rowBelowSelected
+            isCurrent: list.currentIndex === row.index
+            keyboardCursor: root.keyboardCursor && list.activeFocus
+            title: row.fileName
+            accessibleName: row.fileName
+            accessibleDescription: row.originalParent !== ""
+                ? row.originalParent : qsTr("原位置未知")
 
-            Rectangle {
-                anchors.fill: parent
-                color: row.selected
-                    ? (rowMouse.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
-                    : (rowMouse.containsMouse ? Theme.hover : "transparent")
-            }
+            /// A trashed item is one row, and its "open" gesture is restore.
+            showIcon: false
+            showLeading: true
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: 3
-                color: Theme.signal
-                visible: row.selected
-            }
+            leading: Row {
+                width: 42
+                height: 18
+                spacing: 10
 
-            Rectangle {
-                anchors.fill: parent
-                visible: root.keyboardCursor && list.currentIndex === row.index
-                color: "transparent"
-                border.width: 1
-                border.color: Theme.signal
-            }
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 14
+                    height: 14
+                    radius: Theme.radiusXs
+                    border.width: 1
+                    border.color: row.selected ? Theme.accent : Theme.line
+                    color: row.selected ? Theme.accent : "transparent"
 
-            Rectangle {
-                x: 14
-                anchors.verticalCenter: parent.verticalCenter
-                width: 14
-                height: 14
-                radius: Theme.radiusSm
-                border.width: 1
-                border.color: row.selected ? Theme.signal
-                    : Theme.hairlineStrong
-                color: row.selected ? Theme.signal : "transparent"
+                    Glyph {
+                        anchors.centerIn: parent
+                        visible: row.selected
+                        width: 9
+                        height: 9
+                        kind: "check"
+                        tint: Theme.onAccent
+                    }
 
-                Text {
-                    anchors.centerIn: parent
-                    visible: row.selected
-                    text: "\u2713"
-                    color: Theme.onInteractive
-                    font.pixelSize: Theme.typeMicro
+                    MouseArea {
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: qsTr("选择此行")
+                        Accessible.checkable: true
+                        Accessible.checked: row.selected
+                        anchors.fill: parent
+                        onClicked: {
+                            root.takeFocus()
+                            list.currentIndex = row.index
+                            root.toggle(row.entryId)
+                            root.anchorIndex = row.index
+                        }
+                    }
+                }
+
+                FileIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    category: row.isDir ? "folder" : row.category
+                    edge: 18
                 }
             }
 
-            Rectangle {
-                x: 34
-                anchors.verticalCenter: parent.verticalCenter
-                width: 14
-                height: 14
-                radius: Theme.radiusSm
-                color: Theme.inkFaint
-            }
-
+            /// The original location is the column that gives way first; the
+            /// delete time and the size stay.
             Text {
-                id: nameText
-                x: 54
-                width: root.compactColumns
-                    ? Math.max(110, row.width - root.nameColumnSpan)
-                    : Math.round(row.width * 0.32)
-                anchors.verticalCenter: parent.verticalCenter
-                text: row.fileName
-                color: root.textColor
-                font.pixelSize: Theme.typeName
-                elide: Text.ElideRight
-                textFormat: Text.PlainText
-            }
-
-            Text {
+                Layout.preferredWidth: 180
                 visible: !root.compactColumns
-                x: nameText.x + nameText.width + 14
-                width: Math.max(0, deletedTextItem.x - 14 - nameText.x
-                                - nameText.width - 14)
-                anchors.verticalCenter: parent.verticalCenter
                 text: row.originalParent !== "" ? row.originalParent : qsTr("原位置未知")
-                color: root.mutedColor
-                font.pixelSize: Theme.typeSmall
+                color: Theme.inkSecondary
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText
             }
 
-            Text {
-                id: deletedTextItem
-                anchors.right: sizeTextItem.left
-                anchors.rightMargin: 16
-                anchors.verticalCenter: parent.verticalCenter
-                width: 118
+            meta: row.sizeText
+            metaWidth: 76
+
+            trailing: Text {
+                width: 150
                 horizontalAlignment: Text.AlignRight
                 text: row.deletedText
-                color: root.mutedColor
-                font.pixelSize: Theme.typeSmall
+                color: Theme.inkSecondary
+                font.pixelSize: Theme.typeCaption
                 font.features: { "tnum": 1 }
                 textFormat: Text.PlainText
+                elide: Text.ElideRight
             }
 
-            Text {
-                id: sizeTextItem
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                width: 68
-                horizontalAlignment: Text.AlignRight
-                text: row.sizeText
-                color: root.mutedColor
-                font.pixelSize: Theme.typeSmall
-                font.features: { "tnum": 1 }
-                textFormat: Text.PlainText
-            }
-
-            MouseArea {
-                id: rowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                onClicked: function (mouse) {
-                    if (mouse.button === Qt.RightButton) {
-                        list.forceActiveFocus()
-                        root.keyboardCursor = false
-                        list.currentIndex = row.index
-                        root.anchorIndex = row.index
-                        if (!root.isSelected(row.entryId))
-                            root.selectOnly(row.entryId)
-                        const point = row.mapToItem(null, mouse.x, mouse.y)
-                        root.contextRequested(row.entryId, row.originalParent, point.x, point.y)
-                        return
-                    }
-                    const shift = (mouse.modifiers & Qt.ShiftModifier) !== 0
-                    root.handleClick(row.index, shift)
+            onClicked: function (mouse) {
+                if (mouse.button === Qt.RightButton) {
+                    list.forceActiveFocus()
+                    root.keyboardCursor = false
+                    list.currentIndex = row.index
+                    root.anchorIndex = row.index
+                    if (!root.isSelected(row.entryId))
+                        root.selectOnly(row.entryId)
+                    const point = row.mapToItem(null, mouse.x, mouse.y)
+                    root.contextRequested(row.entryId, row.originalParent, point.x, point.y)
+                    return
                 }
-                onDoubleClicked: function (mouse) {
-                    if (mouse.button === Qt.LeftButton)
-                        root.restoreRequested([row.entryId])
-                }
+                root.handleClick(row.index,
+                                 (mouse.modifiers & Qt.ShiftModifier) !== 0,
+                                 (mouse.modifiers & Qt.ControlModifier) !== 0)
             }
+            onDoubleClicked: function (mouse) {
+                if (mouse.button === Qt.LeftButton)
+                    root.restoreRequested([row.entryId])
+            }
+            onActivated: root.restoreRequested([row.entryId])
         }
+    }
+
+    /// The bin is one list between the column header and the fixed action
+    /// strip; its bar covers exactly that range.
+    ScrollBar {
+        target: list
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        anchors.top: columnHeader.bottom
+        anchors.bottom: actionBar.top
     }
 
     Column {
@@ -718,7 +721,7 @@ Item {
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? Theme.canvasAlt : "transparent")
+                ? Theme.inset : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
 
@@ -736,7 +739,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? Theme.onSolid
+            color: button.danger ? Theme.onDanger
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: Theme.typeMicro
         }

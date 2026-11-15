@@ -14,7 +14,8 @@
 //!   the models (`model.rs`, `overview_model.rs`) rather than by QML: a QML
 //!   handler runs after the view's own model connection, so it would report
 //!   the layout pass as the data moment and invert the split.
-//! * `qml-first-list` — that list laid those rows out (`contentHeight` grew).
+//! * `qml-first-list` — that surface laid those rows out (`contentHeight`
+//!   grew). The explorer list and the overview board both mark it.
 //!
 //! Both the overview and the explorer list observe their models, and the
 //! non-visible one can publish rows too, so `mark` is once per stage: the

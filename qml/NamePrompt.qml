@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import "DialogFocus.js" as DialogFocus
 
@@ -5,34 +6,28 @@ import "DialogFocus.js" as DialogFocus
 // A real modal is overkill for a single input, and the frameless window has no
 // native dialog to hang off; this overlay keeps focus inside the QML scene.
 //
-// It matches `ConfirmDialog`: 440 wide, 64 from the top, 12 px corners, a 44 px
-// title band and a 44 px foot. The field is 28 high on the `field` plate with a
-// 1 px signal edge while focused, which is the same treatment the path editor
-// and the search field use.
-Item {
+// The plate, the scrim, the head and the foot are `Dialog`'s; this file owns
+// the one field and the two things a name needs — a hint and an inline error.
+Dialog {
     id: root
 
-    property bool dark: true
-    property string heading: ""
     property string hint: ""
     property string submitLabel: qsTr("确定")
 
     signal accepted(string text)
     signal canceled()
 
-    visible: false
-    z: 1001
-    focus: visible
+    /// The field (28) plus the hint line (6 + 14).
+    bodyHeight: 48
 
-    Accessible.role: Accessible.Dialog
-    Accessible.name: root.heading
+    onCancelRequested: root.cancel()
 
     function open(title, initial, placeholder) {
         root.heading = title
         root.hint = placeholder || ""
         input.text = initial || ""
         errorText.text = ""
-        root.visible = true
+        root.show()
         input.forceActiveFocus()
         // The release that opened the prompt runs after this call; without
         // the second attempt the field is focused but the dialog is not, and
@@ -66,7 +61,6 @@ Item {
         root.canceled()
     }
 
-    Keys.onEscapePressed: root.cancel()
     Keys.onTabPressed: function (event) {
         event.accepted = DialogFocus.cycle(root, true)
     }
@@ -75,171 +69,60 @@ Item {
     }
 
     Rectangle {
-        anchors.fill: parent
-        color: Theme.scrim
+        id: field
 
-        MouseArea {
+        width: parent.width
+        height: Theme.controlMd
+        radius: Theme.radiusSm
+        color: Theme.field
+        border.width: 1
+        border.color: input.activeFocus ? Theme.accent : Theme.line
+
+        TextInput {
+            id: input
             anchors.fill: parent
-            acceptedButtons: Qt.AllButtons
-            onClicked: root.cancel()
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            verticalAlignment: TextInput.AlignVCenter
+            color: Theme.ink
+            selectionColor: Theme.accent
+            selectedTextColor: Theme.onAccent
+            font.pixelSize: Theme.typeBody
+            selectByMouse: true
+            clip: true
+
+            Accessible.role: Accessible.EditableText
+            Accessible.name: root.heading
+
+            onAccepted: root.submit()
         }
     }
 
-    Rectangle {
-        id: panel
+    Text {
+        id: errorText
+        y: field.height + 6
+        text: ""
+        color: Theme.danger
+        font.pixelSize: Theme.typeMicro
+    }
 
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: 64
-        width: Math.min(440, root.width - 32)
-        height: 160
-        radius: Theme.radiusLg
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.hairlineStrong
+    Text {
+        anchors.baseline: errorText.baseline
+        x: errorText.implicitWidth > 0 ? errorText.implicitWidth + 8 : 0
+        text: errorText.text === "" ? root.hint : ""
+        color: Theme.inkTertiary
+        font.pixelSize: Theme.typeMicro
+    }
 
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.NoButton
-            onWheel: function (wheel) { wheel.accepted = true }
-        }
-
+    footer: Component {
         Item {
-            id: head
-
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            height: Theme.shellTitle
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 16
-                anchors.right: closeButton.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.heading
-                color: Theme.ink
-                font.pixelSize: Theme.typeTitle
-                font.weight: Font.Medium
-                elide: Text.ElideRight
-            }
-
-            Item {
-                id: closeButton
-
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                width: 20
-                height: Theme.controlXs
-
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("关闭")
-                Accessible.onPressAction: root.cancel()
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Theme.radiusSm
-                    color: closeMouse.containsMouse ? Theme.hover : "transparent"
-                }
-
-                Glyph {
-                    anchors.centerIn: parent
-                    width: 10
-                    height: 10
-                    kind: "close"
-                    tint: closeMouse.containsMouse ? Theme.ink : Theme.inkFaint
-                }
-
-                MouseArea {
-                    id: closeMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.cancel()
-                }
-            }
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 1
-                color: Theme.hairline
-            }
-        }
-
-        Rectangle {
-            id: field
-
-            x: 16
-            y: head.height + 12
-            width: parent.width - 32
-            height: Theme.controlMd
-            radius: Theme.radiusSm
-            color: Theme.field
-            border.width: 1
-            border.color: input.activeFocus ? Theme.signal : Theme.hairlineStrong
-
-            TextInput {
-                id: input
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                verticalAlignment: TextInput.AlignVCenter
-                color: Theme.ink
-                selectionColor: Theme.interactive
-                selectedTextColor: Theme.onInteractive
-                font.pixelSize: Theme.typeBody
-                selectByMouse: true
-                clip: true
-
-                Accessible.role: Accessible.EditableText
-                Accessible.name: root.heading
-
-                onAccepted: root.submit()
-            }
-        }
-
-        Text {
-            id: errorText
-            x: 16
-            y: field.y + field.height + 6
-            text: ""
-            color: Theme.danger
-            font.pixelSize: Theme.typeMicro
-        }
-
-        Text {
-            x: 16
-            anchors.baseline: errorText.baseline
-            text: errorText.text === "" ? root.hint : ""
-            color: Theme.inkFaint
-            font.pixelSize: Theme.typeMicro
-        }
-
-        Item {
-            id: foot
-
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: Theme.shellTitle
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                height: 1
-                color: Theme.hairline
-            }
+            implicitHeight: Theme.controlMd
 
             DialogButton {
                 id: submitButton
                 anchors.right: parent.right
                 anchors.rightMargin: 16
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
                 label: root.submitLabel
                 tone: "primary"
                 onClicked: root.submit()
@@ -248,8 +131,7 @@ Item {
             DialogButton {
                 anchors.right: submitButton.left
                 anchors.rightMargin: 8
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
                 label: qsTr("取消")
                 tone: "quiet"
                 onClicked: root.cancel()

@@ -3,7 +3,7 @@ import QtMultimedia
 
 // In-pane playback for the selected audio or video file.
 //
-// Loaded through a `Loader` from PreviewPanel so a build without Qt
+// Loaded through a `Loader` from Inspector so a build without Qt
 // Multimedia degrades to the metadata card instead of failing the whole pane.
 // Nothing plays until the user asks: a selection change must not make noise.
 Item {
@@ -13,11 +13,14 @@ Item {
     property string mediaKind: "video"
     property string posterSource: ""
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
-    property color sectionColor: Theme.canvasAlt
+    property color mutedColor: Theme.inkSecondary
+    property color sectionColor: Theme.inset
     property color hairline: Theme.hairline
+    /// The play triangle sits on an accent plate, so its ink has to follow the
+    /// resolved accent rather than stay white (§6.1.4).
+    readonly property color playInk: Theme.onAccent
 
     property bool muted: false
     /// True once playback has started, so the poster steps aside for the
@@ -159,11 +162,13 @@ Item {
                 onSourceChanged: if (source === "") hadPoster = false
             }
 
-            ThemedIcon {
+            /// No poster, no album art: the family glyph is what the player
+            /// has to show. Drawn at 44 dp so the family mark reads.
+            FileIcon {
                 visible: !root.video
                 anchors.centerIn: parent
+                edge: 44
                 category: "audio"
-                size: 40
             }
 
             Item {
@@ -192,7 +197,7 @@ Item {
                         context.lineTo(16, 10)
                         context.lineTo(0, 20)
                         context.closePath()
-                        context.fillStyle = "#ffffff"
+                        context.fillStyle = root.playInk.toString()
                         context.fill()
                     }
                 }
@@ -224,7 +229,7 @@ Item {
                 width: parent.width - 24
                 visible: root.failureText !== ""
                 text: root.failureText
-                color: "#e06c75"
+                color: Theme.danger
                 font.pixelSize: Theme.typeMicro
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
@@ -236,7 +241,7 @@ Item {
                 anchors.margins: 8
                 visible: root.video && root.started && root.playing
                 text: root.durationLabel(player.position)
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeMicro
             }
         }
@@ -251,7 +256,7 @@ Item {
                 width: parent.width
                 height: 4
                 radius: Theme.radiusSm
-                color: Theme.hairlineStrong
+                color: Theme.line
             }
 
             Rectangle {
@@ -321,7 +326,7 @@ Item {
                         context.lineTo(9, 5.5)
                         context.lineTo(0, 11)
                         context.closePath()
-                        context.fillStyle = "#ffffff"
+                        context.fillStyle = root.playInk.toString()
                         context.fill()
                     }
                 }
@@ -335,14 +340,14 @@ Item {
                         width: 3
                         height: 11
                         radius: Theme.radiusSm
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                     }
 
                     Rectangle {
                         width: 3
                         height: 11
                         radius: Theme.radiusSm
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                     }
                 }
 

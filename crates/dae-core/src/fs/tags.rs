@@ -929,14 +929,33 @@ fn now_millis() -> u64 {
 /// `#rrggbb` or the palette colour at `position`. Written as a function rather
 /// than a regex so a hand-edited file cannot smuggle anything else into QML's
 /// colour parser.
+///
+/// The eight options are the fixed tag colours in proposal §6.1.7; they must
+/// match `Theme.tagPaletteLight` in `qml/Theme.qml`, which is the paint-side
+/// list. Tags persisted by the pre-Graphite palette are translated to the
+/// option they stood for instead of being shown in a retired rainbow.
 fn normalise_color(value: &str, position: usize) -> String {
     const PALETTE: [&str; 8] = [
-        "#4c8dff", "#e0524d", "#e5a13a", "#3fa66b", "#8b6cf0", "#d95fa3", "#2aa9b8", "#8a94a6",
+        "#a3392f", "#9a5a20", "#7d6a12", "#2f6b34", "#1d6560", "#2b5590", "#5b3f92", "#5c6169",
     ];
     let trimmed = value.trim();
-    let hex = trimmed.strip_prefix('#').unwrap_or(trimmed);
+    let hex = trimmed.strip_prefix('#').unwrap_or(trimmed).to_ascii_lowercase();
+    let legacy = match hex.as_str() {
+        "4c8dff" => Some("#2b5590"), // blue
+        "e0524d" => Some("#a3392f"), // red
+        "e5a13a" => Some("#9a5a20"), // orange
+        "3fa66b" => Some("#2f6b34"), // green
+        "8b6cf0" => Some("#5b3f92"), // purple
+        "d95fa3" => Some("#a3392f"), // pink → red
+        "2aa9b8" => Some("#1d6560"), // cyan → teal
+        "8a94a6" => Some("#5c6169"), // grey
+        _ => None,
+    };
+    if let Some(mapped) = legacy {
+        return mapped.to_owned();
+    }
     if hex.len() == 6 && hex.chars().all(|character| character.is_ascii_hexdigit()) {
-        return format!("#{}", hex.to_ascii_lowercase());
+        return format!("#{hex}");
     }
     PALETTE[position % PALETTE.len()].to_owned()
 }
@@ -1531,8 +1550,13 @@ mod tests {
     fn colours_are_normalised_or_replaced_from_the_palette() {
         assert_eq!(normalise_color("#A1B2C3", 0), "#a1b2c3");
         assert_eq!(normalise_color("a1b2c3", 0), "#a1b2c3");
-        assert_eq!(normalise_color("red", 1), "#e0524d");
-        assert_eq!(normalise_color("", 8), "#4c8dff");
+        assert_eq!(normalise_color("red", 1), "#9a5a20");
+        assert_eq!(normalise_color("", 8), "#a3392f");
+        // The pre-Graphite defaults keep their meaning instead of being
+        // rendered in the retired rainbow.
+        assert_eq!(normalise_color("#4c8dff", 0), "#2b5590");
+        assert_eq!(normalise_color("#e0524d", 0), "#a3392f");
+        assert_eq!(normalise_color("#2aa9b8", 0), "#1d6560");
     }
 
     #[test]

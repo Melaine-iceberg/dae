@@ -51,11 +51,11 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_blur_supported() -> bool;
 
-        /// Selects the platform's UI face for the whole application. Only the
-        /// Windows variant does anything; the other platforms already default
-        /// to their system font.
+        /// Loads the bundled UI faces and selects the application font: Inter
+        /// Variable for Latin, JetBrains Mono for fixed pitch, and the
+        /// platform's own CJK face behind them (proposal §6.2.1, §9.2).
         #[namespace = "dae_qt"]
-        fn dae_qt_apply_system_font();
+        fn dae_qt_apply_fonts();
 
         #[namespace = "dae_qt"]
         fn dae_qt_warm_font_database();
@@ -233,8 +233,8 @@ pub fn blur_supported() -> bool {
     qobject::dae_qt_blur_supported()
 }
 
-pub fn apply_system_font() {
-    qobject::dae_qt_apply_system_font();
+pub fn apply_fonts() {
+    qobject::dae_qt_apply_fonts();
 }
 
 /// Starts the process-relative clock used by `DAE_STARTUP_PERF=1`.

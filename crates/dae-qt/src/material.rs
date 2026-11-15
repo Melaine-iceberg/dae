@@ -4,9 +4,11 @@
 //! The Qt side writes the DWM attributes itself, so this module answers the
 //! question the settings surface asks: given the background-effects switch and
 //! the requested Windows material, what can this machine actually composite?
-//! On Windows the answer is Mica (the default), Acrylic, or `None` when the
-//! build, the OS transparency setting, or the user says no. On Wayland it is
-//! `Blur` when the compositor advertises `ext-background-effect-v1`, and on
+//! The shell starts opaque (decision 1 of `docs/ui-redesign/proposal.md`), so
+//! with the background effect off the answer is always `None`; once the user
+//! turns it on, Windows answers Mica or Acrylic and fails closed when the build,
+//! the OS transparency setting, or the material choice says no. On Wayland it
+//! is `Blur` when the compositor advertises `ext-background-effect-v1`, and on
 //! macOS it is `Blur` through `NSVisualEffectView`; other platforms answer
 //! `None`. The registry keys, the build thresholds and the "an unread build
 //! gets nothing" rule match the Tauri module, so the two shells cannot

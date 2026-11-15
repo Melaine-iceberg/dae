@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
 
@@ -14,7 +15,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     /// `[{ path, name }]` — the selection the menu was opened on.
     property var entries: []
@@ -40,7 +41,7 @@ FocusScope {
     property int errorCount: 0
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
@@ -214,14 +215,14 @@ FocusScope {
             } else {
                 const key = newName.toLocaleLowerCase()
                 if (seen[key] === true) {
-                    status = "error"
+                    status = "conflict"
                     errorKey = "duplicate"
                 } else {
                     seen[key] = true
                 }
             }
 
-            if (status === "error")
+            if (status === "error" || status === "conflict")
                 errorCount += 1
             else if (newName === entry.name)
                 status = "unchanged"
@@ -272,14 +273,21 @@ FocusScope {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: dialogPanel
+    }
+
     Rectangle {
+        id: dialogPanel
         anchors.centerIn: parent
         width: Math.min(620, root.width - 40)
         height: Math.min(600, root.height - 48)
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -359,7 +367,7 @@ FocusScope {
 
             Rectangle {
                 width: parent.width
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 
@@ -580,7 +588,9 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: planRow.modelData.name
                             color: root.mutedColor
+                            font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
+                            font.features: { "tnum": 1 }
                             elide: Text.ElideMiddle
                         }
 
@@ -600,14 +610,19 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: planRow.modelData.status === "unchanged"
                                 ? planRow.modelData.name + qsTr("（不变）")
-                                : (planRow.modelData.status === "error"
+                                : ((planRow.modelData.status === "error"
+                                    || planRow.modelData.status === "conflict")
                                     ? root.errorTextFor(planRow.modelData)
                                     : planRow.modelData.newName)
                             color: planRow.modelData.status === "error"
                                 ? root.dangerColor
-                                : (planRow.modelData.status === "unchanged"
-                                    ? root.mutedColor : root.textColor)
+                                : (planRow.modelData.status === "conflict"
+                                    ? Theme.warning
+                                    : (planRow.modelData.status === "unchanged"
+                                        ? root.mutedColor : root.textColor))
+                            font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
+                            font.features: { "tnum": 1 }
                             elide: Text.ElideMiddle
                         }
                     }
@@ -632,14 +647,14 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("取消")
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -658,13 +673,13 @@ FocusScope {
                     height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
-                    color: !root.canApply ? Theme.canvasAlt
-                        : (applyMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
+                    color: !root.canApply ? Theme.inset
+                        : (applyMouse.containsMouse ? Theme.accentHover : Theme.accent)
 
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("重命名")
-                        color: root.canApply ? Theme.onInteractive : root.mutedColor
+                        color: root.canApply ? Theme.onAccent : root.mutedColor
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -700,9 +715,9 @@ FocusScope {
         height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
-        border.width: 1
+        border.width: fieldInput.activeFocus ? 1.5 : 1
         border.color: fieldInput.activeFocus
-            ? Theme.focusRing
+            ? Theme.accent
             : root.hairline
 
         function focusInput() {
@@ -717,7 +732,7 @@ FocusScope {
             verticalAlignment: TextInput.AlignVCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: Theme.onInteractive
+            selectedTextColor: Theme.onAccent
             font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
@@ -762,9 +777,9 @@ FocusScope {
             height: Theme.controlSm
             radius: Theme.radiusSm
             color: root.fieldColor
-            border.width: 1
+            border.width: numberInput.activeFocus ? 1.5 : 1
             border.color: numberInput.activeFocus
-                ? Theme.focusRing
+                ? Theme.accent
                 : root.hairline
 
             TextInput {
@@ -775,7 +790,7 @@ FocusScope {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onInteractive
+                selectedTextColor: Theme.onAccent
                 font.pixelSize: Theme.typeCaption
                 selectByMouse: true
                 clip: true
@@ -824,7 +839,7 @@ FocusScope {
                 anchors.centerIn: parent
                 visible: toggle.checked
                 text: "\u2713"
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeMicro
             }
         }

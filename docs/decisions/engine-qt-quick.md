@@ -268,11 +268,15 @@ Mica 后 read-back 为 **2**。无边框窗口、原生 move/size loop、`HTMAXB
 与 `CPS_CANCEL` 守卫都直接复用 §5.3 / §5.2 的实现。
 
 **2026-10-29 更新**：材质不再由机器能力单独决定，而是用户设置
-（`blur` + `windowMaterial`，默认 `true` / `mica`）。机器判定只决定所选材质能否
+（`blur` + `windowMaterial`）。机器判定只决定所选材质能否
 合成：Acrylic 在 22000–22522 回退 Mica，低于 22000 或系统关闭透明效果时回退实色。
 Linux Wayland 新增 `ext-background-effect-v1` 背景模糊；合成器未提供该协议时保持
 实色。macOS 在 Qt 视图后方插入 `NSVisualEffectView`（behind-window 混合），深浅色
 跟随窗口主题。`DAE_WINDOW_MATERIAL` 仍是 A/B 覆写入口。
+
+**2026-11-15 更新**：Graphite 决策 1（`docs/ui-redesign/proposal.md` §14）把默认改为
+`blur = false` / `windowMaterial = "none"`，即默认不透明；材质仍是设置项，打开后按
+上面的回退规则生效。
 
 **独立 exe 的构建与部署**（Windows-first）：
 

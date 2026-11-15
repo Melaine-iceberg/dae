@@ -1047,3 +1047,56 @@ macOS ACL 编辑器（Windows/Linux 已于 2026-11-12 落地，见 §11.4）；�
   `node scripts/a11y-audit.mjs` 零缺口。`cargo build -p dae-app` 与 `bun run lint:qml`
   在本轮机器上没跑（没有 Qt/qmake），这是接手后要补的第一件事。
 
+
+## 14. 文本预览按内容判定（2026-11-13）
+
+- **问题**：`fs::preview::is_text_preview_path()` 是一张扩展名白名单。名单之外的
+  源码（`.zig`、`.sol`、`.kt`、没有后缀的 `Justfile`/`Caddyfile`）一律没有文本
+  预览，而名单本身只增不减，得靠人记得去加。`docs/decisions/engine-qt-quick.md`
+  写的是「普通文本是可选择的 `PlainText`」，QML 里实际是 `Text`（不可选）。
+- **规则**：`may_have_text_preview()` 只做快速拒绝——图片、音视频、压缩包、可执行
+  文件、Office、字体、数据库这些**已知容器**不读；其余一律按字节判定。
+  `read_text_preview()` 返回 `Result<Option<TextPreview>>`，`None` 表示内容不是文本。
+- **判定顺序**（`decode_text`，全部在 64 KiB 的有界读之上）：BOM 命名编码（UTF-8 /
+  UTF-16LE / UTF-16BE）→ 无 BOM 的 UTF-16 按「一条 lane 几乎全是 0」识别（Windows
+  工具常这么写）→ 有 NUL 或控制字节超过 5% 判为容器 → 合法 UTF-8 直接显示 →
+  其余交给 `chardetng` 猜 GBK/Shift-JIS/CP1252，猜错也只是乱码，不会拒绝预览。
+  被读取上限切断的多字节字符按前缀截断处理，不再变成替换字符。
+- **代价**：未知后缀的文件会多读一次 64 KiB（本来选中项也要读）；已知容器仍然
+  `stat` 之后直接跳过。
+- **验证**：`cargo test -p dae-core --lib fs::preview` 6 passed（含无后缀文本、
+  ELF 容器、UTF-16LE、GBK 与切断的多字节用例）；`cargo check -p dae-qt` 通过。
+- **还没做**：纯文本卡仍是 `Text`，不可选中；代码卡的 64 KiB 截断提示只覆盖读取
+  上限，不覆盖渲染量。见 §15。
+
+## 15. 代码高亮：语法集与主题（2026-11-13）
+
+- **问题**：`syntect` 的 `default-fancy` 只有 53 个 Sublime 旧语法，`language_token`
+  映射的约 60 个 token 里有 18 个落到 `find_syntax_plain_text()`——`Cargo.toml`
+  自己都没高亮。主题是 `base16-ocean.dark` / `InspiredGitHub`，注释对比度
+  2.71:1 / 2.91:1（AA 正文 4.5:1），且代码块自带蓝灰底，与 instrument 调色板冲突。
+- **语法集**：换 `two-face`（bat 0.26 的语法包，`extra_newlines()`，纯 Rust
+  `regex-fancy`）。TS/TSX、Kotlin、Swift、Dart、TOML、INI、Dockerfile、Git
+  ignore、GraphQL、Protocol Buffers、Nix 都有语法了；PowerShell 不在包里，
+  `ps1` 仍是纯文本。回归测试 `every_mapped_language_resolves_to_a_grammar()`
+  按 token 表断言，新增映射没有语法会直接失败。
+- **主题**：`crates/dae-qt/assets/preview-{dark,light}.tmTheme`，按 `Theme.qml` 的
+  纸张调色板写 scope（keyword 朱红、string 绿、number 赭、type 蓝、comment 灰斜），
+  深色注释 4.89:1、浅色 4.94:1，其余 ≥5.2:1。主题文件用 `include_str!` 嵌入，
+  `theme()` 由 `LazyLock` 各加载一次；`the_preview_themes_keep_text_readable()`
+  逐条校验对比度，改色掉到 4.5 以下会失败。
+- **排版**：`<pre>` 从 11px/150%/`pre-wrap` 改成 12px/`line-height:18px`/
+  `white-space:pre`；`\t` 在 tokenize 前按 4 列展开（`QTextDocument` 的 tab stop
+  是 80 device units，与等宽网格无关）。`padding:8px` 删掉——Qt 富文本只对表格
+  单元格应用 padding，它从未生效。
+- **横向滚动**：`PreviewPanel.qml` 的文本卡与代码卡都改成双向 Flickable，
+  `contentWidth` 取内容宽度；纯文本行不再 `elide`，代码行不再折行。纯文本卡
+  现在多显示一行提示「仅显示前 500 行」，此前 500 行截断是静默的。代码卡里的
+  拖动被 `TextEdit` 拿去选中文字，所以鼠标靠 Shift+滚轮或触摸板横向滑动平移。
+- **验证**：`cargo test -p dae-qt preview_markup` 13 passed；`qmllint
+  qml/PreviewPanel.qml` 无新增警告；用 `qml.exe` 离屏渲染同一份 HTML（340×500
+  双卡）确认颜色、斜体注释、tab 缩进与不折行，`contentWidth 421.875 >
+  viewport 318` 时无绑定循环。临时 harness 与 dump 测试已删除。
+- **还没做**：代码卡没有行号——行号需要与 `QTextDocument` 的行高逐行对齐，
+  而 `TextEdit` 不暴露 `lineHeight`/`documentMargin`，硬拼会在字号或缩放变化时
+  漂移；这一步留给「预览当阅读器」时的 `QSyntaxHighlighter` 方案。

@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QString, QStringList, QUrl};
+use cxx_qt_lib::{QColor, QString, QStringList, QUrl};
 use dae_core::error::FileSystemError;
 use dae_core::fs::actions;
 use dae_core::fs::archive::{self, ArchiveFormat};
@@ -60,10 +60,16 @@ pub mod qobject {
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
 
+        include!("cxx-qt-lib/qcolor.h");
+        type QColor = cxx_qt_lib::QColor;
+
         include!("drag.h");
         #[namespace = "dae_qt"]
         #[rust_name = "start_file_drag"]
-        fn dae_qt_start_file_drag(paths: &QStringList, actions: i32) -> bool;
+        fn dae_qt_start_file_drag(paths: &QStringList, actions: i32,
+                                  signal: &QColor, count: i32,
+                                  verdict: &QString, ink: &QColor,
+                                  canvas: &QColor) -> bool;
 
         include!("clipboard.h");
         #[namespace = "dae_qt"]
@@ -175,6 +181,10 @@ pub mod qobject {
         /// The directory the log page opens. Shared with the Tauri shell's
         /// `appLogDir` convention so a user has one place to look.
         #[qproperty(QString, log_directory, cxx_name = "logDirectory")]
+        /// Whether the platform's filename index answered on this machine.
+        /// "所有位置" is a full walk without it, which the search bar says
+        /// out loud rather than letting the wait look like a hang.
+        #[qproperty(bool, search_index_available, cxx_name = "searchIndexAvailable")]
         /// True where the in-app picker is the only way to choose an
         /// application (macOS and Linux). Windows keeps the native
         /// `SHOpenWithDialog`, which the `openWith` command invokes.
@@ -448,10 +458,16 @@ pub mod qobject {
 
         /// Starts a native drag carrying `paths` out of the window. `mode` is
         /// `"copy"`, `"move"`, `"link"` or `"any"`; `"any"` lets the drop
-        /// target choose. Blocks until the user drops or cancels.
+        /// target choose. `signal` draws the dashed frame around the preview;
+        /// `count` and `verdict` are the badge and the predicted action line
+        /// the ghost carries (§10.3), and `ink`/`canvas` are the two colours
+        /// those two marks are painted with. Blocks until the user drops or
+        /// cancels.
         #[qinvokable]
         #[cxx_name = "startDragOut"]
-        fn start_drag_out(self: Pin<&mut Workspace>, paths: &QStringList, mode: &QString);
+        fn start_drag_out(self: Pin<&mut Workspace>, paths: &QStringList,
+                          mode: &QString, signal: &QColor, count: i32,
+                          verdict: &QString, ink: &QColor, canvas: &QColor);
 
         /// Creates a shortcut in `destination` for every path in `paths`.
         /// This is the Alt-drop side of an Explorer drag.
@@ -593,6 +609,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "selectionSizeText"]
         fn selection_size_text(&self, paths: &QStringList) -> QString;
+
+        /// The visible subdirectories of `directory`, sorted by name, for the
+        /// breadcrumb's sibling menu and the address field's completion.
+        /// Local only: one round trip per remote segment would turn a menu
+        /// into a network stall, so a remote path answers empty.
+        #[qinvokable]
+        #[cxx_name = "subdirectories"]
+        fn subdirectories(&self, directory: &QString) -> QStringList;
 
         #[qinvokable]
         #[cxx_name = "recordRecent"]
@@ -879,6 +903,7 @@ pub struct WorkspaceRust {
     terminal_font_family: QString,
     shortcuts_json: QString,
     log_directory: QString,
+    search_index_available: bool,
     open_with_picker_supported: bool,
     default_manager_supported: bool,
     default_manager_is_default: bool,
@@ -962,6 +987,7 @@ impl Default for WorkspaceRust {
                     .to_string_lossy()
                     .as_ref(),
             ),
+            search_index_available: dae_core::fs::search_index::backend().is_some(),
             open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
             default_manager_supported: cfg!(any(target_os = "macos", target_os = "linux", windows)),
             default_manager_is_default: false,
@@ -2541,7 +2567,9 @@ impl qobject::Workspace {
         }
     }
 
-    fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString) {
+    fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString,
+                      signal: &QColor, count: i32, verdict: &QString,
+                      ink: &QColor, canvas: &QColor) {
         if paths.is_empty() {
             return;
         }
@@ -2553,7 +2581,7 @@ impl qobject::Workspace {
             "link" => 4,
             _ => 1 | 2 | 4,
         };
-        if !qobject::start_file_drag(paths, actions) {
+        if !qobject::start_file_drag(paths, actions, signal, count.max(1), verdict, ink, canvas) {
             log::warn!(target: "dae::workspace", "could not start the file drag");
         }
     }
@@ -3064,6 +3092,38 @@ impl qobject::Workspace {
         } else {
             QString::default()
         }
+    }
+
+    fn subdirectories(&self, directory: &QString) -> QStringList {
+        let directory = directory.to_string();
+        let mut names: Vec<String> = Vec::new();
+        if !directory.is_empty() && dae_core::fs::vfs::is_local_path(&directory) {
+            if let Ok(entries) = std::fs::read_dir(&directory) {
+                for entry in entries.flatten() {
+                    // `file_type` avoids a second stat per entry on a network
+                    // drive, which is the whole cost of this call.
+                    let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+                    if !is_dir {
+                        continue;
+                    }
+                    if let Ok(name) = entry.file_name().into_string() {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+        // The menu and the completion list both read in name order, so the
+        // order is decided once on the way out.
+        names.sort_by(|left, right| {
+            left.to_lowercase()
+                .cmp(&right.to_lowercase())
+                .then(left.cmp(right))
+        });
+        let mut out = QStringList::default();
+        for name in names {
+            out.append(QString::from(name.as_str()));
+        }
+        out
     }
 
     fn reveal(mut self: Pin<&mut Self>, path: &QString) {
@@ -4352,6 +4412,6 @@ mod tests {
                 "missing {id} in {json}"
             );
         }
-        assert!(json.contains("\"app.pathJump\":\"Mod+P\""));
+        assert!(json.contains("\"app.pathJump\":\"Mod+L\""));
     }
 }

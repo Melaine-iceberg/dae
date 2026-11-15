@@ -1,23 +1,21 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Layouts
 import dae 1.0
 
-// The landing page: favorites, recent items, spaces, and the work trees behind
-// the recent folders.
+// The landing page (§11.1): a quiet, grouped list, not a board.
 //
-// The model flattens all four into one sectioned list so this view stays a
-// single scroll. Rows differ by `kind`, but they share the same anatomy (glyph,
-// name, one line of context, one trailing fact) and the delegate reads the
-// roles it needs instead of switching to a nested component per section.
+// Titles and instructions are gone. The page opens on 快速访问, then the
+// groups the model publishes — 项目, 最近, 空间, 磁盘, 标签 — each on the same
+// 40 dp row the file list and the trash mount. A section heading is 11 px
+// tertiary type, not a card; a destination is never a sticky note.
 Item {
     id: root
 
     property var model: null
-    property bool dark: true
-    property color accent: Theme.interactive
-    property color headerColor: Theme.chrome
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
     property string commandShortcut: "Ctrl+K"
 
@@ -25,16 +23,95 @@ Item {
     signal commandPaletteRequested()
 
     readonly property color contentColor: Theme.content
-    readonly property color hoverColor: Theme.hover
 
-    function takeFocus() {
-        list.forceActiveFocus()
+    readonly property int sideMargin: 24
+    /// The list keeps the file list's readable measure: home is a column of
+    /// names, and a name column stretched past 880 stops being scannable.
+    readonly property int contentMax: 880
+    readonly property int contentWidth: Math.max(320,
+        Math.min(width - sideMargin * 2, contentMax))
+    readonly property int sectionGap: 26
+
+    /// `[{ name, label, notes: [{ row, kind, name, path, … }] }]`
+    property var sections: []
+    property var quickAccess: []
+    property var focusables: []
+
+    function rebuild() {
+        if (root.model === null) {
+            root.sections = [];
+            root.quickAccess = [];
+            return;
+        }
+        const order = ["Projects", "Recent", "Spaces", "Drives", "Tags", "Favorites"]
+        const buckets = ({})
+        const total = root.model.count
+        for (let row = 0; row < total; ++row) {
+            const section = root.model.sectionAt(row)
+            if (buckets[section] === undefined)
+                buckets[section] = []
+            buckets[section].push(row)
+        }
+
+        const names = []
+        for (let index = 0; index < order.length; ++index) {
+            if (buckets[order[index]] !== undefined)
+                names.push(order[index])
+        }
+        for (const name in buckets) {
+            if (order.indexOf(name) < 0)
+                names.push(name)
+        }
+
+        let quick = []
+        const sections = []
+        for (let index = 0; index < names.length; ++index) {
+            const name = names[index]
+            const rows = buckets[name]
+            if (rows === undefined || rows.length === 0)
+                continue
+            const notes = []
+            for (let at = 0; at < rows.length; ++at) {
+                const row = rows[at]
+                notes.push({
+                    row: row,
+                    kind: root.model.kindAt(row),
+                    name: root.model.nameAt(row),
+                    path: root.model.pathAt(row),
+                    detail: root.model.detailAt(row),
+                    icon: root.model.iconAt(row),
+                    isDir: root.model.isDirAt(row),
+                    branch: root.model.branchAt(row),
+                    changeText: root.model.changeTextAt(row),
+                    timeText: root.model.timeTextAt(row)
+                })
+            }
+            if (name === "Favorites")
+                quick = notes.slice(0, 6)
+            else
+                sections.push({ name: name, label: root.sectionLabel(name), notes: notes })
+        }
+
+        root.quickAccess = quick
+        root.sections = sections
     }
 
-    /// The overview model names destinations by the same keys the sidebar uses,
-    /// so the landing page draws its icons from `Glyph` too. The old text
-    /// glyphs were a second icon set: the project row's "⌥" was the macOS
-    /// Option key, not a branch, and it sat beside a real folder glyph.
+    function takeFocus() {
+        if (root.focusables.length > 0 && root.focusables[0] !== null)
+            root.focusables[0].forceActiveFocus()
+    }
+
+    function registerFocusable(item) {
+        if (root.focusables.indexOf(item) < 0)
+            root.focusables.push(item)
+    }
+
+    function unregisterFocusable(item) {
+        const at = root.focusables.indexOf(item)
+        if (at >= 0)
+            root.focusables.splice(at, 1)
+    }
+
     function glyphKind(icon) {
         switch (icon) {
         case "home": return "home"
@@ -55,37 +132,25 @@ Item {
         }
     }
 
-    /// The one place a landing row turns into a destination, so the pointer,
-    /// a screen reader's press and the keyboard cursor cannot disagree.
-    function openRow(kind, path, isDir) {
-        if (kind === "space")
-            root.openRequested("space", path)
-        else if (kind === "tag")
-            root.openRequested("tag", path)
-        else if (kind === "recent" && !isDir)
-            root.openRequested("file", path)
+    function openNote(note) {
+        if (note.kind === "space")
+            root.openRequested("space", note.path)
+        else if (note.kind === "tag")
+            root.openRequested("tag", note.path)
+        else if (note.kind === "recent" && !note.isDir)
+            root.openRequested("file", note.path)
         else
-            root.openRequested("navigate", path)
-    }
-
-    function activateCurrent() {
-        const index = list.currentIndex
-        if (index < 0 || root.model === null)
-            return
-        // The model exposes the same three facts the delegate binds, so the
-        // keyboard does not have to reach into a live delegate.
-        root.openRow(root.model.kindAt(index), root.model.pathAt(index),
-                     root.model.isDirAt(index))
+            root.openRequested("navigate", note.path)
     }
 
     function sectionLabel(value) {
         switch (value) {
         case "Projects": return qsTr("项目")
-        case "Favorites": return qsTr("收藏")
+        case "Favorites": return qsTr("快速访问")
         case "Recent": return qsTr("最近")
         case "Spaces": return qsTr("空间")
         case "Tags": return qsTr("标签")
-        case "Drives": return qsTr("驱动器")
+        case "Drives": return qsTr("磁盘")
         default: return value
         }
     }
@@ -105,7 +170,7 @@ Item {
 
     function detailLabel(value) {
         if (value === "Empty space")
-            return qsTr("空空间")
+            return qsTr("空")
         const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
@@ -134,355 +199,340 @@ Item {
         return value
     }
 
+    /// §11.1 reads a recent row as name · relative path · time. The row shows
+    /// the item's own path with the home prefix dropped (`code\dae`); anything
+    /// outside home stays absolute (`K:\backup`). Recents spell separators as
+    /// `/` even on Windows, so the comparison normalizes them.
+    function relativePath(value) {
+        const home = String(Workspace.homeDirectory)
+        if (home === "" || value.length <= home.length)
+            return value
+        const slashed = function(text) { return text.replace(/\\/g, "/") }
+        const separator = value.charAt(home.length)
+        if (separator !== "/" && separator !== "\\")
+            return value
+        const head = slashed(value.slice(0, home.length))
+        if (Qt.platform.os === "windows"
+                ? head.toLowerCase() !== slashed(home).toLowerCase()
+                : head !== slashed(home))
+            return value
+        return value.slice(home.length + 1)
+    }
+
+    /// `NTFS · 265 GB / 476 GB` → the filled part of the capacity bar.
+    function driveParts(note) {
+        const chunks = note.detail.split(" · ")
+        const filesystem = chunks.length > 0 ? chunks[0] : ""
+        const capacity = chunks.length > 1 ? chunks[1] : ""
+        const sizes = capacity.split(" / ")
+        return {
+            filesystem: filesystem,
+            free: sizes.length > 0 ? sizes[0] : "",
+            total: sizes.length > 1 ? sizes[1] : ""
+        }
+    }
+
+    function sizeBytes(text) {
+        // Sidebar models spell binary units as `GiB`, so the optional `i`
+        // before the `B` is what makes these figures parse at all.
+        const match = /^([\d.]+)\s*([KMGTP]?)i?B$/i.exec(text.trim())
+        if (match === null)
+            return 0
+        const exponent = ["", "K", "M", "G", "T", "P"].indexOf(match[2].toUpperCase())
+        return Number(match[1]) * Math.pow(1024, exponent)
+    }
+
+    function driveRatio(note) {
+        const parts = root.driveParts(note)
+        const free = root.sizeBytes(parts.free)
+        const total = root.sizeBytes(parts.total)
+        if (total <= 0)
+            return 0
+        return Math.max(0, Math.min(1, 1 - free / total))
+    }
+
+    onModelChanged: root.rebuild()
+    Component.onCompleted: root.rebuild()
+
+    Connections {
+        target: root.model
+        function onModelReset() { root.rebuild() }
+        function onCountChanged() { root.rebuild() }
+        function onLoadedChanged() { root.rebuild() }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.contentColor
     }
 
-    ListView {
-        id: list
+    Flickable {
+        id: board
 
         anchors.fill: parent
         clip: true
-        focus: true
-        activeFocusOnTab: true
         boundsBehavior: Flickable.StopAtBounds
-        model: root.model
-        cacheBuffer: 400
-        currentIndex: -1
-        section.property: "section"
-        section.criteria: ViewSection.FullString
+        flickableDirection: Flickable.VerticalFlick
+        contentWidth: width
+        contentHeight: stack.height + 48
 
-        /// Startup split: the model marks its publish point in Rust (a QML
-        /// handler runs after the view's own model connection, so it would
-        /// report layout as data); this is the layout half, and the Rust side
-        /// keeps only the first report of each stage. See
-        /// `crates/dae-qt/src/startup.rs`.
-        onContentHeightChanged: if (root.visible && count > 0 && contentHeight > 0)
-            Startup.mark("qml-first-list")
+        Column {
+            id: stack
 
-        /// The list is a keyboard surface too: the arrow keys move the cursor,
-        /// Enter and Space open the row under it. Without this the landing
-        /// page was only reachable with a pointer or a screen reader.
-        Accessible.role: Accessible.List
-        Accessible.name: qsTr("概览")
-        Keys.onReturnPressed: root.activateCurrent()
-        Keys.onSpacePressed: root.activateCurrent()
+            x: Math.round((board.width - root.contentWidth) / 2)
+            y: 24
+            width: root.contentWidth
+            spacing: root.sectionGap
 
-        /// The reference caps the launcher column at a readable measure and
-        /// leaves the rest of a wide window empty, rather than stretching a
-        /// row's name and its trailing fact to opposite edges.
-        readonly property int maxContent: 832
-        readonly property int sideMargin: Math.max(24, Math.round((width - maxContent) / 2))
-        anchors.leftMargin: sideMargin
-        anchors.rightMargin: sideMargin
-
-        section.delegate: Item {
-            id: sectionRow
-
-            required property string section
-            width: list.width
-            height: Theme.controlSm
-
-            Text {
-                x: 20
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 5
-                text: root.sectionLabel(sectionRow.section)
-                color: Theme.inkFaint
-                font.pixelSize: Theme.typeMicro
-                font.weight: Font.Medium
-                font.letterSpacing: 0.88
-            }
-        }
-
-        header: Item {
-            width: list.width
-            height: 132
-
+            /// ── 快速访问 ─────────────────────────────────────────────────
             Column {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                anchors.topMargin: 20
-                spacing: 4
+                width: parent.width
+                spacing: 8
+                visible: root.quickAccess.length > 0
 
                 Text {
-                    text: qsTr("概览")
-                    color: root.textColor
-                    font.pixelSize: Theme.typeTitle
+                    text: qsTr("快速访问")
+                    color: Theme.inkTertiary
+                    font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
                 }
 
-                Text {
+                Flow {
                     width: parent.width
-                    text: qsTr("从收藏、最近访问与空间继续。")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeCaption
-                    elide: Text.ElideRight
+                    spacing: 8
+
+                    Repeater {
+                        model: root.quickAccess
+
+                        delegate: Rectangle {
+                            id: chip
+
+                            required property var modelData
+                            readonly property bool hovered: chipHover.containsMouse
+
+                            implicitWidth: chipRow.implicitWidth + 24
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: chipHover.containsMouse ? Theme.hover : Theme.inset
+                            border.width: 1
+                            border.color: chip.activeFocus ? Theme.accent : Theme.line
+
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.Button
+                            Accessible.name: root.placeLabel(chip.modelData.icon) !== ""
+                                ? root.placeLabel(chip.modelData.icon) : chip.modelData.name
+                            Accessible.onPressAction: root.openNote(chip.modelData)
+                            Keys.onReturnPressed: root.openNote(chip.modelData)
+                            Keys.onEnterPressed: root.openNote(chip.modelData)
+                            Keys.onSpacePressed: root.openNote(chip.modelData)
+
+                            Component.onCompleted: root.registerFocusable(chip)
+                            Component.onDestruction: root.unregisterFocusable(chip)
+
+                            RowLayout {
+                                id: chipRow
+                                anchors.centerIn: parent
+                                spacing: 8
+
+                                Glyph {
+                                    width: 16
+                                    height: 16
+                                    kind: root.glyphKind(chip.modelData.icon)
+                                    tint: Theme.inkSecondary
+                                }
+
+                                Text {
+                                    text: root.placeLabel(chip.modelData.icon) !== ""
+                                        ? root.placeLabel(chip.modelData.icon)
+                                        : chip.modelData.name
+                                    color: Theme.ink
+                                    font.pixelSize: Theme.typeBody
+                                    textFormat: Text.PlainText
+                                }
+                            }
+
+                            MouseArea {
+                                id: chipHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openNote(chip.modelData)
+                            }
+                        }
+                    }
                 }
             }
 
-            Rectangle {
-                id: launcher
+            /// ── 项目 / 最近 / 空间 / 磁盘 / 标签 ─────────────────────────
+            Repeater {
+                model: root.sections
 
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.topMargin: 66
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                height: Theme.rowSpacious
-                radius: Theme.radiusMd
-                color: Theme.canvasAlt
-                border.width: 1
-                border.color: launcherMouse.containsMouse ? root.accent : root.hairline
+                delegate: Column {
+                    id: section
 
-                Glyph {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 14
-                    height: 14
-                    kind: "search"
-                    tint: root.mutedColor
-                }
+                    required property var modelData
+                    required property int index
 
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 34
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("搜索文件、空间或命令")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeBody
-                }
-
-                Rectangle {
-                    id: shortcutChip
-
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: shortcutText.width + 12
-                    height: Theme.controlXs
-                    radius: Theme.radiusXs
-                    color: Theme.hover
+                    width: stack.width
+                    spacing: 6
 
                     Text {
-                        id: shortcutText
-                        anchors.centerIn: parent
-                        text: root.commandShortcut
-                        color: root.mutedColor
+                        text: section.modelData.label
+                        color: Theme.inkTertiary
                         font.pixelSize: Theme.typeMicro
+                        font.weight: Font.Medium
                     }
-                }
 
-                MouseArea {
-                    id: launcherMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.commandPaletteRequested()
-                }
-            }
+                    Repeater {
+                        model: section.modelData.notes
 
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 10
-                anchors.top: launcher.bottom
-                anchors.topMargin: 6
-                visible: root.model !== null && root.model.projectBusy
-                text: qsTr("正在查找最近的项目…")
-                color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
-            }
-        }
+                        delegate: ListRow {
+                            id: entry
 
-        delegate: Item {
-            id: row
+                            required property var modelData
+                            required property int index
 
-            required property int index
-            required property string kind
-            required property string name
-            required property string path
-            required property string detail
-            required property string icon
-            required property bool isDir
-            required property string branch
-            required property string changeText
-            required property string timeText
+                            width: section.width
+                            rowHeight: Theme.rowSpacious
+                            contentInset: 8
+                            focusable: true
+                            keyboardCursor: entry.activeFocus
 
-            width: list.width
-            height: Theme.rowDefault
+                            title: entry.modelData.name
+                            subtitle: entry.modelData.kind === "drive"
+                                ? root.driveParts(entry.modelData).filesystem
+                                : (entry.modelData.kind === "recent"
+                                    ? root.relativePath(entry.modelData.path) : "")
+                            subtitleInline: entry.modelData.kind === "recent"
+                            titleMonospace: entry.modelData.kind === "recent"
+                            iconCategory: entry.modelData.isDir ? "folder" : "file"
+                            showIcon: entry.modelData.kind === "project"
+                                || entry.modelData.kind === "recent"
+                                || entry.modelData.kind === "favorite"
+                            showLeading: entry.modelData.kind === "space"
+                                || entry.modelData.kind === "tag"
+                                || entry.modelData.kind === "drive"
+                            iconEdge: 18
+                            meta: entry.modelData.kind === "recent"
+                                ? root.timeLabel(entry.modelData.timeText)
+                                : (entry.modelData.kind === "space"
+                                    || entry.modelData.kind === "tag"
+                                    ? root.detailLabel(entry.modelData.detail) : "")
+                            metaWidth: entry.modelData.kind === "recent" ? 84 : 120
+                            accessibleName: entry.title
+                            accessibleDescription: entry.modelData.kind === "recent"
+                                ? entry.modelData.detail : entry.meta
 
-            readonly property bool project: row.kind === "project"
-            /// Places and favorites carry a path, recents their parent folder,
-            /// spaces a count: one trailing fact instead of a second line.
-            readonly property bool hasDetail: !row.project && row.detail !== ""
-            /// The keyboard cursor, drawn only while the list owns focus. A
-            /// pointer click opens the row immediately, so there is no clicked
-            /// selection state to confuse it with.
-            readonly property bool cursor: list.activeFocus
-                && list.currentIndex === row.index
+                            leading: Item {
+                                width: 18
+                                height: 18
+                                visible: entry.modelData.kind === "space"
+                                    || entry.modelData.kind === "tag"
+                                    || entry.modelData.kind === "drive"
 
-            /// System places arrive from the model with an English key even
-            /// though they sit in the favorites section, so the icon — not
-            /// `kind` — decides whether a row gets the translated label.
-            readonly property string displayName: {
-                const place = root.placeLabel(row.icon)
-                return place !== "" ? place : row.name
-            }
+                                Glyph {
+                                    anchors.centerIn: parent
+                                    width: 18
+                                    height: 18
+                                    kind: root.glyphKind(entry.modelData.icon)
+                                    tint: Theme.inkSecondary
+                                }
+                            }
 
-            /// A landing-page row opens something. The kind decides what, so it
-            /// goes in the description: "space" and "folder" look the same in a
-            /// row but lead to different places.
-            Accessible.role: Accessible.ListItem
-            /// The reader hears what the row shows, which for a system place
-            /// is its translated label, not the model's English key.
-            Accessible.name: row.displayName
-            Accessible.description: row.hasDetail
-                ? root.detailLabel(row.detail) : ""
-            Accessible.selectable: true
-            Accessible.selected: row.cursor
-            Accessible.onPressAction: root.openRow(row.kind, row.path, row.isDir)
+                            /// A project row reads name · branch · changes. The
+                            /// branch and the diff count are one sentence, not
+                            /// two chips: the row is a destination, not a card.
+                            /// Drives end in their free/total figures.
+                            trailing: Item {
+                                width: entry.modelData.kind === "project"
+                                    ? projectFacts.implicitWidth
+                                    : (entry.modelData.kind === "drive" ? 150 : 0)
+                                height: 18
 
-            Rectangle {
-                id: plate
+                                Text {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: entry.modelData.kind === "drive"
+                                    text: {
+                                        const parts = root.driveParts(entry.modelData)
+                                        return parts.total === ""
+                                            ? "" : parts.free + " / " + parts.total
+                                    }
+                                    color: Theme.inkTertiary
+                                    font.family: Theme.monoFamily
+                                    font.pixelSize: Theme.typeCaption
+                                    horizontalAlignment: Text.AlignRight
+                                }
 
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                radius: Theme.radiusSm
-                color: row.cursor ? Theme.signalSoft
-                    : (rowMouse.containsMouse ? root.hoverColor : "transparent")
-                border.width: row.cursor ? 1 : 0
-                border.color: Theme.signal
-            }
+                                Row {
+                                    id: projectFacts
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 12
 
-            Glyph {
-                anchors.left: parent.left
-                anchors.leftMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-                width: 16
-                height: 16
-                kind: root.glyphKind(row.icon)
-                tint: root.mutedColor
-            }
+                                    Text {
+                                        text: entry.modelData.branch
+                                        visible: entry.modelData.branch !== ""
+                                        color: Theme.inkSecondary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.typeCaption
+                                        elide: Text.ElideRight
+                                    }
 
-            Text {
-                id: nameText
+                                    Text {
+                                        text: root.changeLabel(entry.modelData.changeText)
+                                        visible: entry.modelData.changeText !== ""
+                                        color: Theme.inkTertiary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.typeCaption
+                                    }
+                                }
+                            }
 
-                anchors.left: parent.left
-                anchors.leftMargin: 44
-                anchors.right: detailText.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: row.displayName
-                color: root.textColor
-                font.pixelSize: Theme.typeBody
-                elide: Text.ElideRight
-            }
+                            /// Drives carry a 160 × 3 capacity bar between the
+                            /// name and the figures (§11.1).
+                            Item {
+                                width: entry.modelData.kind === "drive" ? 160 : 0
+                                height: 22
+                                visible: entry.modelData.kind === "drive"
+                                Layout.alignment: Qt.AlignVCenter
 
-            TextMetrics {
-                id: detailMetrics
-                font: detailText.font
-                text: detailText.text
-            }
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 160
+                                    height: 3
+                                    color: Theme.line
+                                    Accessible.ignored: true
 
-            Text {
-                id: detailText
+                                    Rectangle {
+                                        width: Math.round(parent.width
+                                            * root.driveRatio(entry.modelData))
+                                        height: parent.height
+                                        color: Theme.accent
+                                        Accessible.ignored: true
+                                    }
+                                }
+                            }
 
-                anchors.right: trailing.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                visible: row.hasDetail
-                width: visible
-                    ? Math.min(detailMetrics.advanceWidth, row.width * 0.45) : 0
-                horizontalAlignment: Text.AlignRight
-                text: root.detailLabel(row.detail)
-                color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
-                font.features: { "tnum": 1 }
-                elide: Text.ElideMiddle
-            }
+                            onClicked: root.openNote(entry.modelData)
+                            onDoubleClicked: root.openNote(entry.modelData)
+                            onActivated: root.openNote(entry.modelData)
 
-            Row {
-                id: trailing
-
-                anchors.right: parent.right
-                anchors.rightMargin: 16
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
-
-                Rectangle {
-                    visible: row.project && row.branch !== ""
-                    height: Theme.controlXs
-                    radius: Theme.radiusXs
-                    color: Theme.canvasAlt
-                    width: branchRow.implicitWidth + 12
-
-                    Row {
-                        id: branchRow
-
-                        anchors.centerIn: parent
-                        spacing: 4
-
-                        Glyph {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 10
-                            height: 10
-                            kind: "branch"
-                            tint: root.mutedColor
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: row.branch
-                            color: root.mutedColor
-                            font.pixelSize: Theme.typeMicro
-                            font.family: Theme.monoFamily
+                            Component.onCompleted: root.registerFocusable(entry)
+                            Component.onDestruction: root.unregisterFocusable(entry)
                         }
                     }
                 }
-
-                Text {
-                    visible: row.project && row.changeText !== ""
-                    text: root.changeLabel(row.changeText)
-                    color: row.changeText === "Clean" ? root.mutedColor
-                        : (row.changeText === "Untracked" ? Theme.link : Theme.warn)
-                    font.pixelSize: Theme.typeMicro
-                }
-
-                Text {
-                    visible: row.timeText !== ""
-                    text: root.timeLabel(row.timeText)
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    font.features: { "tnum": 1 }
-                }
-            }
-
-            MouseArea {
-                id: rowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.openRow(row.kind, row.path, row.isDir)
             }
         }
     }
 
-    /// With every system place hidden and nothing favourited yet, the list is
-    /// only a header over empty canvas. This is the landing page's own empty
-    /// state, using the shared grammar rather than a second mute sentence.
-    EmptyState {
-        anchors.fill: parent
-        visible: root.model !== null && root.model.loaded
-            && root.model.count === 0
-        glyph: "folder"
-        title: qsTr("还没有可显示的位置")
-        hint: qsTr("在地址栏打开一个文件夹，它会出现在「最近」里。")
+    /// The board is the page's only scroller; one bar covers it.
+    ScrollBar {
+        target: board
+        anchors.right: parent.right
+        anchors.rightMargin: 4
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
     }
 }

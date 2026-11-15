@@ -148,6 +148,8 @@ fn main() {
             "cpp/platform_watch.cpp",
             "cpp/platform_watch.h",
             "cpp/qml_debug.cpp",
+            "cpp/solar_marks.cpp",
+            "cpp/solar_marks.h",
             "cpp/terminal_item.cpp",
             "cpp/terminal_item.h",
             "cpp/translator.cpp",

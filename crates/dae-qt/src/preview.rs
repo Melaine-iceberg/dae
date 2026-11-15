@@ -426,10 +426,11 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         // Cloud paths end in opaque provider ids, so extension checks belong
         // on the resolved name rather than on the path text.
         let name = properties.name.as_str();
-        let text = if preview::is_text_preview_path(name) {
+        let text = if preview::may_have_text_preview(name) {
             preview::read_text_preview(path.to_owned(), PREVIEW_READ_BYTES)
                 .await
                 .ok()
+                .flatten()
         } else {
             None
         };

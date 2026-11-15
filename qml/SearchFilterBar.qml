@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 // The search field's filter row: which mode is searching, how strictly, and
 // which kinds of file may answer.
@@ -28,10 +29,15 @@ Item {
     property bool regex: false
     /// One of `typeOptions`' ids.
     property string typeId: "all"
-    /// Where the name search looks: `current`, `favorites`, `recent` or
-    /// `volumes`. Tag clicks use `volumes`, because a tag is a fact about
-    /// files across the disk rather than about this folder.
-    property string scope: "current"
+    /// Where the name search looks: `here` (this folder only), `subfolders`
+    /// (this folder and everything below it) or `all` (every volume). The
+    /// first two are one root with a depth bound; the third is the platform
+    /// index plus a walk. `current`/`volumes` are the pre-redesign spellings,
+    /// still accepted because a saved search may carry them.
+    property string scope: "subfolders"
+    /// Whether the platform search index answered on this machine. False makes
+    /// "所有位置" a full walk, which the bar says out loud.
+    property bool indexAvailable: true
     property bool busy: false
     property bool hasHistory: false
     /// Rows (name mode) or files (content mode) the running query matched.
@@ -101,7 +107,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 1
+        height: Theme.ruleWidth(Screen.devicePixelRatio)
         color: Theme.hairline
     }
 
@@ -122,9 +128,9 @@ Item {
         height: Theme.controlSm
         width: chip.square ? 28 : Math.ceil(chipLabel.implicitWidth) + 14
         radius: Theme.radiusXs
-        color: chip.active ? Theme.fill : "transparent"
+        color: chip.active ? Theme.hover : "transparent"
         border.width: 1
-        border.color: chip.active ? Theme.hairlineStrong : Theme.hairline
+        border.color: chip.active ? Theme.line : Theme.hairline
         opacity: chip.available ? 1 : 0.45
 
         Accessible.role: Accessible.Button
@@ -134,7 +140,7 @@ Item {
             id: chipLabel
             anchors.centerIn: parent
             text: chip.label
-            color: chip.active ? Theme.ink : Theme.inkMuted
+            color: chip.active ? Theme.ink : Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -171,27 +177,28 @@ Item {
             onClicked: root.modeRequested("content")
         }
 
-        /// Scope chips only exist for the name search: content search walks
-        /// one root by construction.
+        /// Scope chips: the three places a name search can look (§10.7).
+        /// 此文件夹 is the depth-one walk, 子文件夹 the recursive one under the
+        /// same root, 所有位置 every mounted volume.
         Chip {
-            label: qsTr("当前")
-            active: root.scope === "current"
+            label: qsTr("此文件夹")
+            active: root.scope === "here"
             visible: root.mode === "name"
-            onClicked: root.scopeRequested("current")
+            onClicked: root.scopeRequested("here")
         }
 
         Chip {
-            label: qsTr("收藏")
-            active: root.scope === "favorites"
+            label: qsTr("子文件夹")
+            active: root.scope === "subfolders" || root.scope === "current"
             visible: root.mode === "name"
-            onClicked: root.scopeRequested("favorites")
+            onClicked: root.scopeRequested("subfolders")
         }
 
         Chip {
-            label: qsTr("最近")
-            active: root.scope === "recent"
+            label: qsTr("所有位置")
+            active: root.scope === "all" || root.scope === "volumes"
             visible: root.mode === "name"
-            onClicked: root.scopeRequested("recent")
+            onClicked: root.scopeRequested("all")
         }
 
         Chip {
@@ -226,13 +233,6 @@ Item {
             label: qsTr("保存")
             visible: root.query.length > 0
             onClicked: root.saveRequested()
-        }
-
-        Chip {
-            label: qsTr("所有卷")
-            active: root.scope === "volumes"
-            visible: root.mode === "name"
-            onClicked: root.scopeRequested("volumes")
         }
 
         Chip {
@@ -276,7 +276,7 @@ Item {
                     width: 14
                     height: 14
                     kind: "file"
-                    tint: Theme.inkMuted
+                    tint: Theme.inkSecondary
                 }
 
                 Text {
@@ -294,7 +294,7 @@ Item {
                 height: 10
                 kind: "chevron"
                 rotation: 90
-                tint: Theme.inkFaint
+                tint: Theme.inkTertiary
             }
 
             MouseArea {
@@ -310,23 +310,47 @@ Item {
         }
     }
 
-    Text {
-        id: countText
+    /// §10.7: "所有位置" without a platform index is a recursive walk of every
+    /// mounted volume. Saying so before the wait is the difference between a
+    /// slow search and an apparently broken one.
+    readonly property bool slowScope: root.mode === "name"
+        && (root.scope === "all" || root.scope === "volumes")
+        && !root.indexAvailable
 
+    Row {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        text: {
-            if (root.busy)
-                return qsTr("搜索中…")
-            if (root.query.length === 0 && root.typeId === "all")
-                return root.contentMode ? qsTr("输入以搜索文件内容")
-                                       : qsTr("输入以筛选名称")
-            return qsTr("%1 项匹配").arg(root.matchCount)
+        spacing: 12
+
+        Text {
+            id: slowHint
+
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.slowScope
+            text: qsTr("索引不可用 · 逐个遍历，可能较慢")
+            color: Theme.warning
+            font.pixelSize: Theme.typeMicro
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
         }
-        color: Theme.inkFaint
-        font.pixelSize: Theme.typeMicro
-        Accessible.role: Accessible.StaticText
-        Accessible.name: text
+
+        Text {
+            id: countText
+
+            anchors.verticalCenter: parent.verticalCenter
+            text: {
+                if (root.busy)
+                    return qsTr("搜索中…")
+                if (root.query.length === 0 && root.typeId === "all")
+                    return root.contentMode ? qsTr("输入以搜索文件内容")
+                                           : qsTr("输入以筛选名称")
+                return qsTr("%1 项匹配").arg(root.matchCount)
+            }
+            color: Theme.inkTertiary
+            font.pixelSize: Theme.typeMicro
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+        }
     }
 }

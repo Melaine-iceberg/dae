@@ -29,14 +29,15 @@ Rectangle {
         if (root.tone === "danger")
             return buttonMouse.containsMouse ? Theme.dangerSolidHover : Theme.dangerSolid
         if (root.tone === "primary")
-            return buttonMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
+            return buttonMouse.containsMouse ? Theme.accentHover : Theme.accent
         return buttonMouse.containsMouse ? Theme.hover : Theme.canvas
     }
     border.width: 1
     border.color: {
         if (root.focused || root.activeFocus)
-            return root.tone === "quiet" ? Theme.signal : Theme.onInteractive
-        return root.tone === "quiet" ? Theme.hairlineStrong : "transparent"
+            return root.tone === "quiet" ? Theme.accent
+                : (root.tone === "danger" ? Theme.onDanger : Theme.onAccent)
+        return root.tone === "quiet" ? Theme.line : "transparent"
     }
 
     Accessible.role: Accessible.Button
@@ -47,8 +48,9 @@ Rectangle {
         id: labelText
         anchors.centerIn: parent
         text: root.label
-        color: root.tone === "quiet" ? Theme.ink : Theme.onInteractive
-        font.pixelSize: Theme.typeSmall
+        color: root.tone === "quiet" ? Theme.ink
+            : (root.tone === "danger" ? Theme.onDanger : Theme.onAccent)
+        font.pixelSize: Theme.typeCaption
     }
 
     MouseArea {

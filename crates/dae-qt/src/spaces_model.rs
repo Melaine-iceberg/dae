@@ -130,6 +130,12 @@ pub mod qobject {
         #[cxx_name = "itemNames"]
         fn item_names(&self, id: &QString) -> QStringList;
 
+        /// Whether a pinned entry is a directory. The row needs the right
+        /// glyph and the file list's glyph vocabulary has no "unknown" glyph.
+        #[qinvokable]
+        #[cxx_name = "itemIsDir"]
+        fn item_is_dir(&self, id: &QString, path: &QString) -> bool;
+
         /// Emitted after a successful mutation. Renames and item edits do not
         /// change the row count, so a reset alone is not enough for the views.
         #[qsignal]
@@ -376,6 +382,16 @@ impl qobject::Spaces {
             }
         }
         names
+    }
+
+    fn item_is_dir(&self, id: &QString, path: &QString) -> bool {
+        let Some(row) = self.rows.iter().find(|row| row.id == id.to_string()) else {
+            return false;
+        };
+        if !row.items.iter().any(|(item, _)| item == &path.to_string()) {
+            return false;
+        }
+        std::path::Path::new(&path.to_string()).is_dir()
     }
 
     fn reload(mut self: Pin<&mut Self>) {

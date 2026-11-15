@@ -11,8 +11,9 @@
 //!   `recent-items.json`, then the user's home. A stale recent path is skipped
 //!   instead of opening an error.
 //! * **How to jump to the path bar.** `settings.toml` carries the same
-//!   `app.pathJump` binding the React shell uses (`Mod+P` by default). `Mod`
-//!   is translated to Qt's `Ctrl` spelling; Qt maps `Ctrl` to Command on macOS.
+//!   `app.pathJump` binding the React shell uses (`Mod+L` by default, the
+//!   address-bar chord from `docs/ui-ux-2026.md`). `Mod` is translated to Qt's
+//!   `Ctrl` spelling; Qt maps `Ctrl` to Command on macOS.
 //! * **How to open the command palette.** The same table's `app.commandBar`
 //!   (`Mod+K` by default), behind the same `Mod` translation.
 //!
@@ -29,7 +30,7 @@ use dae_core::types::EntryKind;
 /// The shortcut ids the Tauri shell and the React settings panel use.
 const PATH_JUMP_ID: &str = "app.pathJump";
 const COMMAND_BAR_ID: &str = "app.commandBar";
-const DEFAULT_PATH_JUMP: &str = "Mod+P";
+const DEFAULT_PATH_JUMP: &str = "Mod+L";
 const DEFAULT_COMMAND_BAR: &str = "Mod+K";
 const SETTINGS_FILE_NAME: &str = "settings.toml";
 
@@ -368,7 +369,7 @@ mod tests {
     fn a_missing_settings_file_reports_the_default() {
         let missing = std::env::temp_dir().join("dae-qt-settings-does-not-exist.toml");
         let _ = std::fs::remove_file(&missing);
-        assert_eq!(read_path_jump(&missing), (false, "Ctrl+P".to_owned()));
+        assert_eq!(read_path_jump(&missing), (false, "Ctrl+L".to_owned()));
     }
 
     #[test]

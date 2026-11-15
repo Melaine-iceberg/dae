@@ -55,11 +55,57 @@ public:
     QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
 };
 
+// The built-in file glyph provider (proposal §12.3).
+//
+// QML asks for `image://fileglyph/<family>?size=<px>&ink=RRGGBB&fc=RRGGBB`.
+// The 20-grid geometry lives here, and each (family, pixel edge, ink, family
+// colour) pair is rasterised once and cached, so a listing row paints a plain
+// `Image` instead of owning a `Canvas`. Theme changes land on a new URL and
+// therefore a new cache entry; the old one ages out.
+class FileGlyphImageProvider : public QQuickImageProvider
+{
+public:
+    FileGlyphImageProvider();
+
+    QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
+
+private:
+    QMutex m_mutex;
+    QCache<QString, QImage> m_cache;
+};
+
+// The interface glyph provider (proposal §12.3).
+//
+// QML asks for `image://glyph/<kind>?size=<px>&dp=<dp>&ink=AARRGGBB&wash=0.3`.
+// The Solar path data lives in `qml/solar-marks.json` and `solar_marks.cpp`
+// turns one entry into a raster; each (kind, pixel edge, dp, ink, wash) is
+// painted once and cached, so a sidebar row, a menu item and a toolbar button
+// share the same texture and no delegate owns a `Canvas`. Tint changes (hover,
+// selection) land on a new URL and a new entry; theme-coloured tints are a
+// small, fixed set, so the cache does not grow with the listing.
+class GlyphImageProvider : public QQuickImageProvider
+{
+public:
+    GlyphImageProvider();
+
+    QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
+
+private:
+    QMutex m_mutex;
+    QCache<QString, QImage> m_cache;
+};
+
 /// Takes ownership of the provider, as QQmlEngine::addImageProvider does.
 void dae_qt_register_thumbnail_provider(QQmlApplicationEngine* engine);
 
 /// Takes ownership, as above.
 void dae_qt_register_file_icon_provider(QQmlApplicationEngine* engine);
+
+/// Takes ownership, as above.
+void dae_qt_register_file_glyph_provider(QQmlApplicationEngine* engine);
+
+/// Takes ownership, as above.
+void dae_qt_register_glyph_provider(QQmlApplicationEngine* engine);
 
 } // namespace dae_qt
 

@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import dae.terminal 1.0
 
@@ -22,6 +23,20 @@ Item {
     property string material: "none"
     property bool active: false
     property int panelHeight: 240
+
+    /// §11.6's 跟随当前目录 switch. When it is on, a navigation in the tab's
+    /// listing sends the shell a `cd`, so the terminal is always standing in
+    /// the folder the user is looking at. Off is the default: a shell the user
+    /// has cd'd elsewhere must not be pulled back by a click in the listing.
+    property bool followDirectory: false
+    /// The directory this panel last put the shell in, as far as the shell can
+    /// know it. Empty before the first start; the header then names the tab's
+    /// path, which is where the shell will start.
+    property string shellDirectory: ""
+
+    readonly property string workingDirectory: root.shellDirectory !== ""
+        ? root.shellDirectory
+        : (root.tab !== null && root.tab.folder ? root.tab.listing.path : "")
 
     signal exited()
 
@@ -56,6 +71,46 @@ Item {
         }
         // qmllint disable missing-property
         tab.startTerminal(view.columns, view.rows)
+        root.shellDirectory = tab.listing.path
+    }
+
+    /// `cd` spelled for the shell that is running. The panel names the shell
+    /// by its file name, so the same three branches cover Windows and POSIX.
+    function changeDirectoryCommand(path) {
+        const shell = root.shellName.toLowerCase()
+        if (shell.indexOf("powershell") >= 0 || shell === "pwsh")
+            return "Set-Location -LiteralPath '" + String(path).replace(/'/g, "''") + "'"
+        if (shell === "cmd")
+            return "cd /d \"" + path + "\""
+        return "cd '" + String(path).replace(/'/g, "'\\''") + "'"
+    }
+
+    /// Moves the live shell into `path`, if the panel is following the tab.
+    function syncDirectory() {
+        if (!root.followDirectory || !root.running || root.session === null)
+            return
+        const path = root.tab !== null && root.tab.folder ? root.tab.listing.path : ""
+        if (path === "" || path === root.shellDirectory)
+            return
+        root.shellDirectory = path
+        root.session.write(root.changeDirectoryCommand(path) + "\r")
+    }
+
+    function toggleFollowDirectory() {
+        root.followDirectory = !root.followDirectory
+        if (root.followDirectory)
+            root.syncDirectory()
+    }
+
+    /// §11.6's 清屏: the shell's own clear command, so the scrollback that
+    /// goes away is the one the shell owns.
+    function clearScreen() {
+        if (!root.running || root.session === null)
+            return
+        const shell = root.shellName.toLowerCase()
+        const command = (shell.indexOf("powershell") >= 0 || shell === "pwsh")
+            ? "Clear-Host" : (shell === "cmd" ? "cls" : "clear")
+        root.session.write(command + "\r")
     }
 
     function focusTerminal() {
@@ -77,6 +132,10 @@ Item {
     // first time it becomes visible, and an already running one is only
     // re-bound.
     onTabChanged: {
+        // The shell belongs to the tab, so the directory the panel names is
+        // the new tab's. It is set again when the shell starts.
+        root.shellDirectory = root.tab !== null && root.tab.folder
+            ? root.tab.listing.path : ""
         if (active)
             start()
     }
@@ -98,13 +157,15 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
         Row {
             anchors.left: parent.left
             anchors.leftMargin: 12
+            anchors.right: clearButton.left
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             spacing: 6
 
@@ -133,7 +194,116 @@ Item {
                 font.pixelSize: Theme.typeMicro
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
-                width: Math.min(implicitWidth, header.width - 120)
+                width: Math.min(implicitWidth, header.width * 0.4)
+            }
+
+            /// §11.6's 工作目录: where this shell started, in the tab's own
+            /// path. The dim mono run says it without competing with the
+            /// session name; the full path is in the tooltip.
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, parent.width - x - 24)
+                text: root.workingDirectory
+                color: Theme.terminalInk
+                opacity: 0.65
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.typeMicro
+                elide: Text.ElideMiddle
+                textFormat: Text.PlainText
+
+                ToolTip { text: root.workingDirectory }
+            }
+        }
+
+        /// 清屏: one command, spelled for the shell that is running. It is a
+        /// shell command rather than a grid wipe, because the scrollback the
+        /// user can scroll back into is the shell's, not this panel's.
+        Rectangle {
+            id: clearButton
+            anchors.right: followButton.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 44
+            height: Theme.controlXs
+            radius: Theme.radiusXs
+            visible: root.running
+            color: clearMouse.containsMouse ? Theme.hover : "transparent"
+
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("清屏")
+                color: clearMouse.containsMouse
+                    ? Theme.terminalInkStrong : Theme.terminalInk
+                font.pixelSize: Theme.typeMicro
+                textFormat: Text.PlainText
+            }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("清屏")
+            Accessible.onPressAction: root.clearScreen()
+
+            MouseArea {
+                id: clearMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.clearScreen()
+            }
+        }
+
+        /// §11.6's 跟随当前目录 switch. On, a navigation in this tab's listing
+        /// sends the shell a `cd`; off, the shell keeps its own directory.
+        Rectangle {
+            id: followButton
+            anchors.right: restartButton.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: followRow.implicitWidth + 12
+            height: Theme.controlXs
+            radius: Theme.radiusXs
+            color: followMouse.containsMouse ? Theme.hover : "transparent"
+            border.width: 1
+            border.color: root.followDirectory
+                ? Theme.accent : Theme.terminalInk
+
+            Row {
+                id: followRow
+                anchors.centerIn: parent
+                spacing: 4
+
+                Rectangle {
+                    width: 6
+                    height: 6
+                    radius: 3
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: root.followDirectory ? Theme.accent : "transparent"
+                    border.width: 1
+                    border.color: Theme.terminalInk
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("跟随目录")
+                    color: root.followDirectory
+                        ? Theme.terminalInkStrong : Theme.terminalInk
+                    font.pixelSize: Theme.typeMicro
+                    textFormat: Text.PlainText
+                }
+            }
+
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: qsTr("跟随当前目录")
+            Accessible.checked: root.followDirectory
+            Accessible.onPressAction: root.toggleFollowDirectory()
+
+            ToolTip {
+                text: qsTr("导航后让终端切换到当前目录")
+            }
+
+            MouseArea {
+                id: followMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.toggleFollowDirectory()
             }
         }
 
@@ -233,6 +403,15 @@ Item {
             // window moves focus back to the listing so the next keystroke is
             // not swallowed by a dead shell.
             root.exited()
+        }
+    }
+
+    Connections {
+        target: root.tab !== null && root.tab.folder ? root.tab.listing : null
+
+        /// The tab navigated; with 跟随目录 on, the shell follows it.
+        function onPathChanged() {
+            root.syncDirectory()
         }
     }
 }

@@ -55,6 +55,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QLocale>
 #include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
@@ -312,14 +313,14 @@ inline void dae_qt_dress_placeholder(QWindow* window)
     set_transitions(hwnd, TRUE);
 }
 
-// The QML chrome bar is 44 dp tall and each window button 46 dp wide. These are
+// The QML chrome bar is 38 dp tall and each window button 46 dp wide. These are
 // physical pixels on this side because WM_NCHITTEST speaks client pixels,
 // which Qt does not scale for us in a native filter.
 //
-// 44 is not cosmetic: the tab strip lives inside the bar now, so the bar has to
-// be tall enough to hold a 34 dp tab with 5 dp above and below it. The height
-// and `TitleBar.implicitHeight` are the same number and both are load-bearing.
-constexpr double kTitleBarDp = 44.0;
+// 38 is not cosmetic: the tabs live inside the bar, so the bar holds a 30 dp
+// tab with 4 dp above and below it. The height and
+// `TopBar.implicitHeight` are the same number and both are load-bearing.
+constexpr double kTitleBarDp = 38.0;
 constexpr double kButtonDp = 46.0;
 
 /// Everything the native half needs to know about one window.
@@ -770,9 +771,14 @@ inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
     return apply_backdrop_to(hwnd, material, dark);
 }
 
-/// Records which horizontal slice of the 44 dp bar must hit-test as client, in
-/// dp from the client's left edge. Called by the tab strip whenever the number
+/// Records which horizontal slice of the 38 dp bar must hit-test as client, in
+/// dp from the client's left edge. Called by the top bar whenever the number
 /// or the width of the tabs changes.
+///
+/// QML owns the numbers, but they are geometry and can be stale for a frame
+/// while tabs are rebuilt or the window is resized. Clamping here keeps a stale
+/// band from swallowing the drag strip or the window buttons: the band may not
+/// start before the client edge or reach into the three button columns.
 inline bool dae_qt_set_caption_client(const QString& token, double left, double right)
 {
     QQuickWindow* window = find_window_by_token(token);
@@ -781,8 +787,16 @@ inline bool dae_qt_set_caption_client(const QString& token, double left, double 
     WindowState* state = state_for(reinterpret_cast<HWND>(window->winId()));
     if (!state)
         return false;
-    state->client_left_dp = left;
-    state->client_right_dp = right;
+    if (window->width() > 0.0)
+        right = qMin(right, window->width() - 3.0 * kButtonDp);
+    left = qMax(0.0, left);
+    if (right > left) {
+        state->client_left_dp = left;
+        state->client_right_dp = right;
+    } else {
+        state->client_left_dp = 0.0;
+        state->client_right_dp = 0.0;
+    }
     return true;
 }
 
@@ -1114,39 +1128,80 @@ inline double dae_qt_native_handle(const QString&)
 inline void dae_qt_enable_alpha()
 {
     QQuickWindow::setDefaultAlphaBuffer(true);
+    // Native glyph rasterisation (proposal §9.2, §12.4): DirectWrite on
+    // Windows, FreeType on Linux, CoreText on macOS, instead of Qt's
+    // distance-field renderer, which is soft at 11–13 px on a 100 % display.
+    // Static and global, and it has to be chosen before the first window
+    // exists; the matching `PreferVerticalHinting` is set on the application
+    // font in `dae_qt_apply_fonts`. The shell's motion rules only animate
+    // opacity, so nothing here relies on scaling live text.
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
 }
 
-/// The shell's UI face.
+/// Loads the bundled faces and selects the application font.
 ///
-/// Qt asks the platform theme for an application font. On Windows that answer
-/// is still the legacy "Segoe UI" whatever the display language, while the OS
-/// paints its own UI with the face it chose for that language: Microsoft YaHei
-/// UI on Simplified Chinese Windows, JhengHei UI on Traditional Chinese, Yu
-/// Gothic UI on Japanese, Malgun Gothic on Korean. A QFont family list is a
-/// per-glyph fallback list, so the language face has to come first: with Segoe
-/// first, one label that mixes Latin and Chinese would paint the Latin from
-/// Segoe and the Chinese from YaHei, which is the mixed face this is meant to
-/// avoid.
+/// Inter Variable is the UI face and JetBrains Mono the fixed-pitch one
+/// (proposal §6.2.1, §9.2). Decision 2 keeps Chinese on the system face, so
+/// the family list places the platform's own CJK UI face after Inter: Qt walks
+/// a family list per glyph, and a label that mixes Latin and Chinese then keeps
+/// one baseline, one weight and one line height across the two scripts.
 ///
-/// The non-client message font is not enough on its own: Windows 11 reports
-/// plain "Segoe UI" there even on a Chinese system, so the UI language id is
-/// the authoritative source. A message font the user has actually changed is
-/// still honoured first. A Latin display language keeps the Windows 11
-/// Variable Text cut (/ Segoe UI on Windows 10).
+/// `addApplicationFont` is what makes the families visible to QML's
+/// `Qt.fontFamilies()` and to `Theme.uiFamily`; both fonts are mounted under
+/// `:/fonts` by `apps/dae/build.rs`. The hinting preference is set here as
+/// well: it only does anything under `NativeRendering`, which
+/// `dae_qt_enable_alpha` selects before the first window exists, and the
+/// application font is what a `Text` inherits when it names only a size.
 ///
-/// macOS and Linux already default to their platform UI face (SF Pro, the
-/// fontconfig default), so this is a no-op there rather than a second opinion
-/// about which family is "the system font".
-inline void dae_qt_apply_system_font()
+/// Deliberately no `QFontDatabase::families()` here: the first font-database
+/// query builds the whole Windows database (200–300 ms on this machine), and
+/// `dae_qt_warm_font_database` pays that on a worker while the engine loads.
+/// `addApplicationFont` returns the families it registered, which is enough to
+/// build the list below; a name Qt cannot resolve falls through the list.
+inline void dae_qt_apply_fonts()
 {
-#if defined(Q_OS_WIN)
-    QFont font = QGuiApplication::font();
+    static const struct {
+        const char* path;
+    } faces[] = {
+        { ":/fonts/InterVariable.ttf" },
+        { ":/fonts/JetBrainsMono-Regular.ttf" },
+        { ":/fonts/JetBrainsMono-Medium.ttf" },
+    };
 
-    // The face Windows' own UI uses for the current display language. The
-    // Traditional Chinese variants share the language id but not the face. The
-    // non-UI names follow as a safety net for installs that ship only the
-    // older family name.
+    QStringList uiFamilies;
+    for (const auto& face : faces) {
+        const QString path = QString::fromLatin1(face.path);
+        const int id = QFontDatabase::addApplicationFont(path);
+        if (id < 0) {
+            qWarning("dae: bundled font not loaded: %s", qUtf8Printable(path));
+            continue;
+        }
+        const QStringList families = QFontDatabase::applicationFontFamilies(id);
+        if (path.contains(QLatin1String("Inter"))) {
+            for (const QString& family : families) {
+                if (!uiFamilies.contains(family))
+                    uiFamilies << family;
+            }
+        }
+    }
+    // A missing resource is a packaging defect, not a reason to paint in the
+    // platform face: the old family names fall through to the system font.
+    if (uiFamilies.isEmpty()) {
+        uiFamilies << QStringLiteral("Inter Variable") << QStringLiteral("Inter");
+    }
+    // The variable font answers to its canonical name and to the split names
+    // GDI derives for it. Put the canonical one first so a Text that names
+    // `Theme.uiFamily` and a Text that inherits `Qt.application.font` resolve
+    // to the same face.
+    if (uiFamilies.removeAll(QStringLiteral("Inter Variable")) > 0)
+        uiFamilies.prepend(QStringLiteral("Inter Variable"));
+
+    // The face this display language's own UI uses. macOS and Linux name their
+    // CJK families directly; Windows resolves through the UI language id, which
+    // is more authoritative than the locale because Windows 11 reports plain
+    // "Segoe UI" as its non-client font even on a Chinese system.
     QStringList preferred;
+#if defined(Q_OS_WIN)
     const LANGID language = GetUserDefaultUILanguage();
     switch (PRIMARYLANGID(language)) {
     case LANG_CHINESE:
@@ -1172,42 +1227,46 @@ inline void dae_qt_apply_system_font()
     default:
         break;
     }
-
-    // The message face is what the user's own desktop uses. On Windows 11 it
-    // is still "Segoe UI" even on a Chinese system, so only a customised or
-    // non-Latin face is worth putting ahead of the language face; plain
-    // "Segoe UI" is just the legacy Latin default.
-    QString messageFace;
-    NONCLIENTMETRICSW metrics{};
-    metrics.cbSize = sizeof(metrics);
-    if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics),
-                              &metrics, 0)) {
-        messageFace = QString::fromWCharArray(metrics.lfMessageFont.lfFaceName);
+    preferred << QStringLiteral("Segoe UI Variable Text")
+              << QStringLiteral("Segoe UI");
+#elif defined(Q_OS_MACOS)
+    if (QLocale::system().script() == QLocale::TraditionalHanScript) {
+        preferred << QStringLiteral("PingFang TC")
+                  << QStringLiteral("Heiti TC");
+    } else {
+        preferred << QStringLiteral("PingFang SC")
+                  << QStringLiteral("Hiragino Sans GB");
     }
-    const bool customMessageFace = !messageFace.isEmpty()
-        && messageFace.compare(QStringLiteral("Segoe UI"),
-                               Qt::CaseInsensitive) != 0;
+    preferred << QStringLiteral("Helvetica Neue");
+#else
+    if (QLocale::system().script() == QLocale::TraditionalHanScript) {
+        preferred << QStringLiteral("Noto Sans CJK TC")
+                  << QStringLiteral("Noto Sans TC");
+    } else {
+        preferred << QStringLiteral("Noto Sans CJK SC")
+                  << QStringLiteral("Noto Sans SC");
+    }
+    preferred << QStringLiteral("Noto Sans")
+              << QStringLiteral("DejaVu Sans");
+#endif
 
-    // Deliberately no `QFontDatabase::families()` here: the first font-database
-    // query builds the whole Windows database (200–300 ms on this machine), and
-    // every query API pays the same. QFont treats `families` as a fallback
-    // list, so a name that is not installed is resolved by font matching
-    // instead. `dae_qt_warm_font_database` populates the database on a worker
-    // while the engine loads; the first text that needs it waits there.
-    QStringList families;
-    if (customMessageFace)
-        families << messageFace;
+    QStringList families = uiFamilies;
     for (const QString& face : preferred) {
         if (!families.contains(face))
             families << face;
     }
-    families << QStringLiteral("Segoe UI Variable Text")
-             << QStringLiteral("Segoe UI");
 
+    QFont font = QGuiApplication::font();
     font.setFamilies(families);
+    // Proposal §12.4: native glyph rasterisation and vertical hinting. The
+    // preference is a no-op under Qt's distance-field renderer, which
+    // `dae_qt_enable_alpha` has already replaced.
+    font.setHintingPreference(QFont::PreferVerticalHinting);
     QGuiApplication::setFont(font);
-    dae_qt_startup_mark("system-font");
-#endif
+    // The family list is in the startup line on purpose: a Qt upgrade that
+    // renames the variable font's family would otherwise show up only as text
+    // that quietly fell back to Segoe UI.
+    dae_qt_startup_mark(QStringLiteral("fonts [%1]").arg(uiFamilies.join(QLatin1Char('|'))));
 }
 
 /// Populates the font database on a worker thread. Qt documents every

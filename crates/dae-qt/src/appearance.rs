@@ -203,7 +203,14 @@ fn import_legacy(
         changed = true;
     }
     if existing.get("accent").is_none() {
-        settings.accent = legacy.accent.clone();
+        // The legacy shell defaulted to the OS accent. Decision 1 makes the
+        // brand teal the out-of-the-box choice, and a user who never picked
+        // "system" should not be migrated into it.
+        settings.accent = if legacy.accent == "system" {
+            "brand".to_owned()
+        } else {
+            legacy.accent.clone()
+        };
         changed = true;
     }
     if existing.get("language").is_none() {
@@ -346,5 +353,18 @@ mod tests {
         assert_eq!(settings.accent, "brand");
         assert_eq!(settings.language, "en");
         assert_eq!(settings.terminal.font_size, 16);
+    }
+
+    #[test]
+    fn the_legacy_system_accent_migrates_to_brand() {
+        // The old shell defaulted to the OS accent. Decision 1 makes the brand
+        // teal the default, so a user who never picked "system" must not be
+        // carried into it by the migration.
+        let legacy = StoredAppearance::from_document("theme=system\naccent=system\n");
+        let existing = toml::from_str("").expect("valid TOML");
+        let mut settings = dae_core::settings::AppSettings::default();
+
+        assert!(import_legacy(&mut settings, &legacy, &existing));
+        assert_eq!(settings.accent, "brand");
     }
 }

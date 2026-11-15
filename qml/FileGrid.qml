@@ -34,16 +34,20 @@ Item {
 
     readonly property int padding: 16
     readonly property int gapX: 12
-    readonly property int gapY: 14
-    /// One icon-size preference drives the tile, the thumbnail well and the
-    /// minimum cell width, so the slider cannot make a 96 px glyph overflow a
-    /// tile sized for 24.
-    readonly property int glyphSize: ExplorerPrefs.iconSize
-    /// The thumbnail well follows the tile width at 4:3, which keeps the
-    /// column rhythm the same as the prototype whatever the icon slider says.
-    readonly property int thumbHeight: Math.max(56, Math.round((tileWidth - 8) * 0.75))
-    readonly property int tileHeight: thumbHeight + 56
-    readonly property int minCellWidth: Math.max(100, ExplorerPrefs.iconSize + 40)
+    readonly property int gapY: 12
+    /// §11.2: a tile never gets narrower than 104 dp, and the thumbnail is
+    /// either 3:4 or 1:1 depending on the grid setting.
+    readonly property int minCellWidth: 104
+    readonly property int thumbWidth: Math.max(72, Math.round(tileWidth - 4))
+    readonly property bool portraitThumbs: ExplorerPrefs.gridThumb !== "square"
+    readonly property int thumbHeight: portraitThumbs
+        ? Math.round(thumbWidth * 4 / 3) : thumbWidth
+    /// 8 dp above the thumbnail, the thumbnail, 8 dp, two name lines and one
+    /// figure line. The cell owns all of it so a two-line name cannot paint
+    /// into the row below.
+    readonly property int tileHeight: thumbHeight + 8 + 8
+        + Math.ceil(Theme.typeBody * Theme.leadingTight * 2)
+        + Math.ceil(Theme.typeCaption * Theme.leadingBody) + 2
 
     readonly property int columns: {
         const available = Math.max(0, width - padding * 2)
@@ -290,11 +294,10 @@ Item {
             required property string filePath
             required property bool isDir
             required property bool hidden
-            required property string iconSource
             required property string category
             required property string extension
             required property string thumbnailSource
-            required property string tagColors
+            required property string sizeText
 
             width: grid.cellWidth - root.gapX
             height: grid.cellHeight - root.gapY
@@ -319,102 +322,161 @@ Item {
             Accessible.selected: cell.selected
             Accessible.onPressAction: root.activate(cell.index)
 
+            /// §11.2: the pointer lifts the thumbnail 2 dp; selection is a
+            /// ring plus a check dot, never a tinted cell.
+            readonly property bool lifted: hover.containsMouse && !cell.selected
+            readonly property int glyphEdge: Math.max(24,
+                Math.min(44, Math.round(thumb.width * 0.42)))
+
+            /// A drop target is the only thing that gets a wash; the frame is
+            /// a solid accent edge — a dashed line means "placeholder" in a
+            /// file manager and nothing else (§6.7).
             Rectangle {
                 anchors.fill: parent
                 radius: Theme.radiusSm
-                color: cell.selected
-                    ? (hover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
-                    : cell.dropTarget ? Theme.signalSoft
-                    : (hover.containsMouse ? Theme.hover : "transparent")
-                border.width: cell.selected || cell.dropTarget || cell.focusedCursor ? 1 : 0
-                border.color: Theme.signal
+                color: cell.dropTarget ? Theme.accentSoft : "transparent"
+                border.width: cell.dropTarget ? 1.5 : 0
+                border.color: Theme.accent
+                Accessible.ignored: true
             }
 
             Item {
                 id: thumb
 
-                anchors.top: parent.top
-                anchors.topMargin: 8
+                /// §11.2: the pointer lifts the thumbnail 2 dp. The lift rides
+                /// `y` rather than `anchors.topMargin` so a `YAnimator` can run
+                /// it on the render thread; `topMargin` has no animator type.
+                y: 8 - (cell.lifted ? 2 : 0)
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.min(parent.width - 8, root.tileWidth - 8)
+                width: root.thumbWidth
                 height: root.thumbHeight
+
+                Behavior on y {
+                    enabled: Theme.motion
+                    YAnimator { duration: Theme.motionFast; easing.type: Easing.OutCubic }
+                }
 
                 Rectangle {
                     anchors.fill: parent
-                    visible: cell.hasThumbnail
-                    radius: Theme.radiusXs
-                    color: Theme.contentAlt
-                    border.width: 1
-                    border.color: Theme.hairline
+                    color: Theme.inset
+                    border.width: Theme.edgeWidth
+                    border.color: Theme.line
+                    Accessible.ignored: true
                 }
 
                 Image {
                     id: thumbImage
                     anchors.fill: parent
-                    anchors.margins: 8
                     visible: cell.showImage
                     source: cell.hasThumbnail ? cell.thumbnailSource : ""
-                    sourceSize.width: Math.round(128 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(128 * Screen.devicePixelRatio)
-                    fillMode: Image.PreserveAspectFit
+                    sourceSize.width: Math.round(root.thumbWidth * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(root.thumbHeight * Screen.devicePixelRatio)
+                    fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     smooth: true
                     cache: true
                     Accessible.ignored: true
                 }
 
-                ThemedIcon {
+                /// The family mark sits on the inset like a stamp on paper.
+                /// Folders keep the outline glyph rather than a yellow plate.
+                FileIcon {
                     anchors.centerIn: parent
                     visible: !cell.showImage
-                    category: cell.category
-                    extension: cell.extension
-                    isDir: cell.isDir
-                    size: root.glyphSize
-                    tint: cell.selected || hover.containsMouse
-                        ? Theme.ink : Theme.inkMuted
+                    category: cell.isDir ? "folder" : cell.category
+                    path: cell.filePath
+                    edge: cell.glyphEdge
+                }
+
+                /// §11.2: a 16 dp accent dot with a white check marks the
+                /// chosen tile; the ring says it again without moving the name.
+                Rectangle {
+                    width: 16
+                    height: 16
+                    radius: 8
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 6
+                    color: Theme.accent
+                    border.width: 1
+                    border.color: Theme.content
+                    visible: cell.selected
+                    Accessible.ignored: true
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 9
+                        height: 9
+                        kind: "check"
+                        tint: Theme.onAccent
+                    }
                 }
             }
 
-            Text {
+            /// Selection is an sm-radius ring around the cell, not a fill.
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusSm
+                color: "transparent"
+                visible: cell.selected
+                border.width: 1.5
+                border.color: Theme.accent
+                Accessible.ignored: true
+            }
+
+            /// The keyboard cursor on an unselected cell (§7.1.8).
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusSm
+                color: "transparent"
+                visible: cell.focusedCursor && !cell.selected && !cell.dropTarget
+                border.width: 1.5
+                border.color: Theme.accent
+                Accessible.ignored: true
+            }
+
+            /// Two lines of name, then the figure. The label is centred and
+            /// never inverts: the ring carries the selection.
+            Column {
+                id: label
+                anchors.top: thumb.bottom
+                anchors.topMargin: 8
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: 4
-                anchors.rightMargin: 4
-                anchors.top: thumb.bottom
-                anchors.topMargin: 7
-                text: {
-                    if (ExplorerPrefs.showExtensions || cell.extension === "")
-                        return cell.fileName
-                    const suffix = "." + cell.extension
-                    return cell.fileName.endsWith(suffix)
-                        ? cell.fileName.slice(0, -suffix.length) : cell.fileName
-                }
-                color: cell.hidden ? Theme.inkFaint : Theme.ink
-                font.pixelSize: Theme.typeBody
-                lineHeight: Theme.leadingTight
-                horizontalAlignment: Text.AlignHCenter
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
-                elide: Text.ElideRight
-            }
+                anchors.leftMargin: 2
+                anchors.rightMargin: 2
+                spacing: 2
 
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: thumb.bottom
-                anchors.topMargin: 44
-                spacing: 3
-
-                Repeater {
-                    model: cell.tagColors.length > 0 ? cell.tagColors.split(",") : []
-
-                    Rectangle {
-                        required property string modelData
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: modelData
+                Text {
+                    id: nameText
+                    width: parent.width
+                    text: {
+                        if (ExplorerPrefs.showExtensions || cell.extension === "")
+                            return cell.fileName
+                        const suffix = "." + cell.extension
+                        return cell.fileName.endsWith(suffix)
+                            ? cell.fileName.slice(0, -suffix.length) : cell.fileName
                     }
+                    color: cell.hidden ? Theme.inkTertiary : Theme.ink
+                    font.pixelSize: Theme.typeBody
+                    lineHeight: Theme.leadingTight
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    visible: text !== ""
+                    width: parent.width
+                    text: cell.isDir ? "" : cell.sizeText
+                    color: Theme.inkTertiary
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeCaption
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
                 }
             }
 
@@ -594,10 +656,20 @@ Item {
             y: Math.min(root.marqueeStartY, root.marqueeY) - grid.contentY + root.padding
             width: Math.abs(root.marqueeX - root.marqueeStartX)
             height: Math.abs(root.marqueeY - root.marqueeStartY)
-            color: Theme.signalSoft
+            color: Theme.accentSoft
             border.width: 1
-            border.color: Theme.signal
+            border.color: Theme.accent
             radius: Theme.radiusXs
         }
+    }
+
+    /// The grid's bar. It is declared after the marquee so a press on the bar
+    /// is a scroll, not the start of a rubber band.
+    ScrollBar {
+        target: grid
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
     }
 }

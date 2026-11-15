@@ -144,6 +144,31 @@ impl Selection {
         self.write(rows, next)
     }
 
+    /// Selects exactly `indices`; sorted and deduplicated here so a caller can
+    /// hand over a filtered walk without sorting it twice.
+    pub(crate) fn select_indices<T: SelectableRow>(
+        &mut self,
+        rows: &mut [T],
+        mut indices: Vec<usize>,
+    ) -> Vec<Run> {
+        self.clear_pending();
+        indices.retain(|index| *index < rows.len());
+        indices.sort_unstable();
+        indices.dedup();
+        self.write(rows, indices)
+    }
+
+    /// Flips every row: the palette's 反选. What was selected becomes what is
+    /// not, so a directory of 58 rows ends with 55 selected after 3 were.
+    pub(crate) fn invert<T: SelectableRow>(&mut self, rows: &mut [T]) -> Vec<Run> {
+        self.clear_pending();
+        let previous = self.take_indices(rows);
+        let next: Vec<usize> = (0..rows.len())
+            .filter(|index| !rows[*index].is_selected())
+            .collect();
+        self.write_with(rows, previous, next)
+    }
+
     pub(crate) fn clear<T: SelectableRow>(&mut self, rows: &mut [T]) -> Vec<Run> {
         self.clear_pending();
         self.marquee = None;
@@ -490,6 +515,30 @@ mod tests {
         assert_eq!(selection.count(), 0);
         assert!(selection.select_range(&mut rows, -1, 2).is_empty());
         assert!(selection.select_range(&mut rows, 2, 1).is_empty());
+    }
+
+    /// §10.1's 反选 runs over the row flags, so what was selected becomes what
+    /// is not, and the reported spans cover only the rows that moved.
+    #[test]
+    fn invert_flips_every_row_and_reports_the_spans() {
+        let mut selection = Selection::default();
+        let mut rows = rows(&["a", "b", "c", "d"]);
+        selection.select_only(&mut rows, 1);
+        // Every row moved, so the four form one contiguous span.
+        assert_eq!(selection.invert(&mut rows), vec![(0, 3)]);
+        assert_eq!(selected(&rows), vec!["a", "c", "d"]);
+        assert_eq!(selection.count(), 3);
+
+        // Inverting again returns to the original single row.
+        selection.invert(&mut rows);
+        assert_eq!(selected(&rows), vec!["b"]);
+        assert_eq!(selection.count(), 1);
+
+        // An explicit index list is clipped and sorted before it is written;
+        // the deselect of row 1 merges with the select of row 0.
+        assert_eq!(selection.select_indices(&mut rows, vec![3, 0, 3, 9]),
+                   vec![(0, 1), (3, 3)]);
+        assert_eq!(selected(&rows), vec!["a", "d"]);
     }
 
     #[test]

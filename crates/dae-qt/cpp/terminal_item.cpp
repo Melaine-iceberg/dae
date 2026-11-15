@@ -53,25 +53,26 @@ bool wordCharacter(quint32 codepoint)
 
 /// The paint-side companions to the Rust palette. The grid's cells carry their
 /// own colours; these are the surface behind it, the placeholder, and the
-/// cursor/selection accent, which has to stay legible on paper as well as ink.
+/// cursor/selection accent. All six values mirror `Theme.qml`: canvas, the
+/// three ink steps, and the accent for both themes.
 QColor terminalBackground(bool dark)
 {
-    return dark ? QColor(0x14, 0x16, 0x1a) : QColor(0xfb, 0xfb, 0xf9);
+    return dark ? QColor(0x10, 0x12, 0x16) : QColor(0xfd, 0xfd, 0xfd);
 }
 
 QColor terminalPlaceholder(bool dark)
 {
-    return dark ? QColor(0x65, 0x70, 0x80) : QColor(0x64, 0x69, 0x70);
+    return dark ? QColor(0x96, 0x98, 0x9d) : QColor(0x6b, 0x6d, 0x72);
 }
 
 QColor terminalInk(bool dark)
 {
-    return dark ? QColor(0xd8, 0xde, 0xe9) : QColor(0x10, 0x12, 0x16);
+    return dark ? QColor(0xf7, 0xf7, 0xf9) : QColor(0x1c, 0x1e, 0x23);
 }
 
 QColor terminalAccent(bool dark)
 {
-    return dark ? QColor(0x6e, 0xa8, 0xfe) : QColor(0x1f, 0x63, 0xcc);
+    return dark ? QColor(0x6b, 0xca, 0xc9) : QColor(0x00, 0x7a, 0x7b);
 }
 
 } // namespace
@@ -85,11 +86,17 @@ TerminalItem::TerminalItem(QQuickItem* parent)
     setFocus(true);
     setActiveFocusOnTab(true);
 
-    m_font.setFamilies({ QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
+    m_font.setFamilies({ QStringLiteral("JetBrains Mono"),
+                         QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
                          QStringLiteral("Courier New") });
     m_font.setStyleHint(QFont::Monospace);
     m_font.setFixedPitch(true);
     m_font.setPixelSize(13);
+    // The terminal paints through QPainter, not the scene graph's text path,
+    // so it needs the same hinting preference the application font carries
+    // (proposal §9.2, §12.4). Vertical hinting keeps 13 px cells on the pixel
+    // grid at 100 % and 125 % without changing the cell advance.
+    m_font.setHintingPreference(QFont::PreferVerticalHinting);
     measureCells();
 
     m_blink.setInterval(530);
@@ -175,7 +182,8 @@ void TerminalItem::setFontFamily(const QString& family)
         return;
     m_fontFamily = trimmed;
     if (trimmed.isEmpty()) {
-        m_font.setFamilies({ QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
+        m_font.setFamilies({ QStringLiteral("JetBrains Mono"),
+                             QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
                              QStringLiteral("Courier New") });
     } else {
         m_font.setFamilies({ trimmed });
@@ -429,9 +437,12 @@ void TerminalItem::paint(QPainter* painter)
 
     if (scrollbarVisible()) {
         painter->setPen(Qt::NoPen);
-        painter->setBrush(QColor(0x8d, 0x94, 0xa2, 45));
+        QColor scrollbar = terminalPlaceholder(m_dark);
+        scrollbar.setAlpha(45);
+        painter->setBrush(scrollbar);
         painter->drawRoundedRect(scrollbarTrack(), ScrollbarWidth / 2.0, ScrollbarWidth / 2.0);
-        painter->setBrush(QColor(0x8d, 0x94, 0xa2, m_scrollbarDrag ? 200 : 130));
+        scrollbar.setAlpha(m_scrollbarDrag ? 200 : 130);
+        painter->setBrush(scrollbar);
         painter->drawRoundedRect(scrollbarThumb(), ScrollbarWidth / 2.0, ScrollbarWidth / 2.0);
     }
 }

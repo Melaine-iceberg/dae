@@ -34,8 +34,8 @@ namespace dae_qt {
 struct TerminalCell
 {
     uint ch = ' ';
-    QRgb fg = 0xffd8dee9;
-    QRgb bg = 0xff14161a;
+    QRgb fg = 0xfff7f7f9;
+    QRgb bg = 0xff101216;
     quint8 flags = 0;
 };
 

@@ -14,7 +14,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     /// The paths being moved.
     property var paths: []
@@ -30,7 +30,7 @@ FocusScope {
     property string extractSource: ""
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
 
@@ -135,14 +135,21 @@ FocusScope {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: dialogPanel
+    }
+
     Rectangle {
+        id: dialogPanel
         anchors.centerIn: parent
         width: Math.min(520, root.width - 40)
         height: Math.min(480, root.height - 48)
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -175,7 +182,7 @@ FocusScope {
                     height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: upMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
@@ -202,9 +209,9 @@ FocusScope {
                     height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: root.fieldColor
-                    border.width: 1
+                    border.width: pathInput.activeFocus ? 1.5 : 1
                     border.color: pathInput.activeFocus
-                        ? Theme.focusRing
+                        ? Theme.accent
                         : root.hairline
 
                     TextInput {
@@ -215,7 +222,7 @@ FocusScope {
                         verticalAlignment: TextInput.AlignVCenter
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
+                        selectedTextColor: Theme.onAccent
                         font.pixelSize: Theme.typeCaption
                         selectByMouse: true
                         clip: true
@@ -343,14 +350,14 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("取消")
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -369,12 +376,12 @@ FocusScope {
                     height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
-                    color: moveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
+                    color: moveMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("移动")
-                        color: Theme.onInteractive
+                        color: Theme.onAccent
                         font.pixelSize: Theme.typeCaption
                     }
 

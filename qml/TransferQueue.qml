@@ -22,7 +22,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     visible: false
     /// Arrives rather than appears. Hiding stays instant: a menu that fades
@@ -30,16 +30,16 @@ Item {
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1002
 
     readonly property color panelColor: Theme.raised
-    readonly property color borderColor: Theme.hairlineStrong
+    readonly property color borderColor: Theme.line
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
-    readonly property color faintColor: Theme.inkFaint
+    readonly property color mutedColor: Theme.inkSecondary
+    readonly property color faintColor: Theme.inkTertiary
     // qmllint disable missing-property
     readonly property int queuedCount: Workspace.queuedTransfers.length
     readonly property int runningCount: Workspace.busy ? 1 : 0
@@ -92,6 +92,12 @@ Item {
         onWheel: root.close()
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
 
@@ -116,7 +122,6 @@ Item {
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
-                font.letterSpacing: 0.55
             }
 
             Row {
@@ -139,7 +144,7 @@ Item {
                         anchors.centerIn: parent
                         text: root.speedLimitLabel
                         color: root.speedMenuOpen
-                            ? Theme.interactive
+                            ? Theme.accent
                             : (speedMouse.containsMouse ? root.textColor : root.faintColor)
                         font.pixelSize: Theme.typeMicro
                         font.features: { "tnum": 1 }
@@ -252,9 +257,9 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: preset.modelData.label
                             color: preset.active
-                                ? Theme.interactive
+                                ? Theme.accent
                                 : (presetMouse.containsMouse ? root.textColor : root.mutedColor)
-                            font.pixelSize: Theme.typeSmall
+                            font.pixelSize: Theme.typeCaption
                             textFormat: Text.PlainText
                         }
 
@@ -266,7 +271,7 @@ Item {
                             height: 12
                             visible: preset.active
                             kind: "check"
-                            tint: Theme.interactive
+                            tint: Theme.accent
                         }
 
                         Accessible.role: Accessible.Button
@@ -515,12 +520,12 @@ Item {
             Rectangle {
                 width: parent.width
                 height: 2
-                color: Theme.hairlineStrong
+                color: Theme.line
 
                 Rectangle {
                     width: parent.width * Math.max(0, Math.min(1, row.progress))
                     height: parent.height
-                    color: Theme.signal
+                    color: Theme.accent
                 }
             }
         }

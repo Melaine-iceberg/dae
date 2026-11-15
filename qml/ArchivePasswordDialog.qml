@@ -91,14 +91,21 @@ FocusScope {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: dialogPanel
+    }
+
     Rectangle {
+        id: dialogPanel
         anchors.centerIn: parent
         width: Math.min(420, root.width - 48)
         height: Math.max(236, contentColumn.implicitHeight + 78)
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -125,7 +132,7 @@ FocusScope {
             Text {
                 width: contentColumn.width
                 text: root.description
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeCaption
                 lineHeight: Theme.leadingTight
                 wrapMode: Text.Wrap
@@ -134,7 +141,7 @@ FocusScope {
             Text {
                 width: contentColumn.width
                 text: qsTr("密码")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -143,9 +150,9 @@ FocusScope {
                 height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.field
-                border.width: 1
+                border.width: passwordInput.activeFocus ? 1.5 : 1
                 border.color: passwordInput.activeFocus
-                    ? Theme.focusRing
+                    ? Theme.accent
                     : Theme.hairline
 
                 TextInput {
@@ -155,8 +162,8 @@ FocusScope {
                     anchors.rightMargin: 9
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.ink
-                    selectionColor: Theme.interactive
-                    selectedTextColor: Theme.onInteractive
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeBody
                     echoMode: TextInput.Password
                     selectByMouse: true
@@ -180,7 +187,7 @@ FocusScope {
                 visible: root.compressMode
                 width: contentColumn.width
                 text: qsTr("确认密码")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -190,9 +197,9 @@ FocusScope {
                 height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.field
-                border.width: 1
+                border.width: confirmInput.activeFocus ? 1.5 : 1
                 border.color: confirmInput.activeFocus
-                    ? Theme.focusRing
+                    ? Theme.accent
                     : Theme.hairline
 
                 TextInput {
@@ -202,8 +209,8 @@ FocusScope {
                     anchors.rightMargin: 9
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.ink
-                    selectionColor: Theme.interactive
-                    selectedTextColor: Theme.onInteractive
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.onAccent
                     font.pixelSize: Theme.typeBody
                     echoMode: TextInput.Password
                     selectByMouse: true
@@ -238,7 +245,7 @@ FocusScope {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: cancelMouse.containsMouse
-                ? Theme.fill : "transparent"
+                ? Theme.hover : "transparent"
             border.width: 1
             border.color: Theme.hairline
 
@@ -252,7 +259,7 @@ FocusScope {
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -276,7 +283,7 @@ FocusScope {
             width: 78
             height: Theme.controlMd
             radius: Theme.radiusSm
-            color: submitMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
+            color: submitMouse.containsMouse ? Theme.accentHover : Theme.accent
 
             Accessible.role: Accessible.Button
             Accessible.name: submitLabel.text
@@ -286,7 +293,7 @@ FocusScope {
                 id: submitLabel
                 anchors.centerIn: parent
                 text: root.compressMode ? qsTr("压缩") : qsTr("解压")
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeCaption
             }
 

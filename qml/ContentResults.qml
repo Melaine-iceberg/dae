@@ -15,7 +15,7 @@ Item {
 
     readonly property color contentColor: Theme.content
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
 
     signal previewRequested(string path)
@@ -49,10 +49,9 @@ Item {
             x: 16
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("内容匹配")
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
-            font.letterSpacing: 0.55
         }
 
         Text {
@@ -66,12 +65,16 @@ Item {
     }
 
     Text {
-        anchors.centerIn: parent
+        x: 24
+        y: 24
+        width: Math.min(parent.width - 48, 420)
         visible: root.model !== null && root.model.finished && root.model.loaded === 0
         text: root.model !== null && root.model.status !== ""
             ? Localize.message(root.model.status) : qsTr("没有匹配内容")
-        color: root.mutedColor
+        color: Theme.inkSecondary
         font.pixelSize: Theme.typeBody
+        wrapMode: Text.Wrap
+        lineHeight: Theme.leadingBody
     }
 
     ListView {
@@ -136,9 +139,9 @@ Item {
                 // Group headers keep a quiet plate; result rows use only hover
                 // and selection, never zebra stripes.
                 color: !row.isHeader && row.index === list.currentIndex
-                    ? Theme.signalSoft
+                    ? Theme.accentSoft
                     : (rowMouse.containsMouse ? Theme.hover
-                        : (row.isHeader ? Theme.canvasAlt : "transparent"))
+                        : (row.isHeader ? Theme.inset : "transparent"))
             }
 
             Rectangle {
@@ -146,7 +149,7 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: 3
-                color: Theme.signal
+                color: Theme.accent
                 visible: !row.isHeader && row.index === list.currentIndex
             }
 
@@ -248,5 +251,14 @@ Item {
         }
 
         onCurrentIndexChanged: root.currentIndex = currentIndex
+    }
+
+    /// The result list is the only scroller under the fixed column header.
+    ScrollBar {
+        target: list
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        anchors.top: columnHeader.bottom
+        anchors.bottom: parent.bottom
     }
 }

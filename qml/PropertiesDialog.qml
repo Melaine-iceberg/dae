@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
 import "Localize.js" as Localize
@@ -15,10 +16,13 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     /// `general`, `permissions` (unix), `attributes` (windows) or `checksum`.
     property string tab: "general"
+    /// The entry being inspected. The controller owns the metadata; this copy
+    /// is for the glyph, which needs the path to recognise a known folder.
+    property string path: ""
 
     // The editable draft. Integers and booleans rather than the controller's
     // properties, because a binding would write back the moment the user
@@ -62,7 +66,7 @@ FocusScope {
     readonly property bool expectedMatches: root.expectedMatch !== ""
 
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkSecondary
     readonly property color fieldColor: Theme.field
     readonly property color hairline: Theme.hairline
     readonly property color dangerColor: Theme.danger
@@ -83,6 +87,7 @@ FocusScope {
     Accessible.name: qsTr("属性")
 
     function open(path) {
+        root.path = path
         root.tab = "general"
         root.recursive = false
         root.copiedAlgorithm = ""
@@ -287,14 +292,21 @@ FocusScope {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: dialogPanel
+    }
+
     Rectangle {
+        id: dialogPanel
         anchors.centerIn: parent
         width: Math.min(600, root.width - 40)
         height: Math.min(620, root.height - 48)
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -369,7 +381,7 @@ FocusScope {
                             // The current tab is a position, not a control: it
                             // keeps the same signal track as the window's tabs
                             // instead of following the system accent.
-                            color: Theme.signal
+                            color: Theme.accent
                             visible: root.tab === tabItem.modelData.key
                         }
 
@@ -392,7 +404,7 @@ FocusScope {
 
             Rectangle {
                 width: parent.width
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 
@@ -407,76 +419,124 @@ FocusScope {
                 clip: true
 
                 // ---- General -------------------------------------------------
-                Column {
+                // §7.5: the sheet reads as two columns — identity on the left
+                // (glyph, name, kind), the metadata table on the right. Name
+                // and kind stay out of the table so the same fact is not
+                // printed twice.
+                Row {
+                    id: generalRow
                     width: parent.width
+                    height: parent.height
+                    spacing: 24
                     visible: root.tab === "general"
-                    spacing: 0
 
-                    InfoRow { label: qsTr("名称"); value: controller.name }
-                    InfoRow { label: qsTr("类型"); value: Localize.message(controller.kindText) }
-                    InfoRow { label: qsTr("位置"); value: controller.location }
-                    InfoRow {
-                        label: qsTr("大小")
-                        value: controller.isDirectory
-                            ? (controller.sizeScanText === "" ? "—" : controller.sizeScanText)
-                            : controller.sizeText
-                    }
+                    Column {
+                        id: identityColumn
+                        width: 180
+                        spacing: 0
 
-                    // A folder's size is a scan, not a number `stat` can give,
-                    // so it is asked for explicitly and streamed while it runs.
-                    Row {
-                        width: parent.width
-                        height: controller.isDirectory && !controller.remote ? 30 : 0
-                        visible: height > 0
-                        spacing: 8
-
-                        Rectangle {
-                            width: 96
-                            height: Theme.controlSm
-                            radius: Theme.radiusSm
-                            color: scanMouse.containsMouse
-                                ? Theme.fill : "transparent"
-                            border.width: 1
-                            border.color: root.hairline
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
-                                color: root.textColor
-                                font.pixelSize: Theme.typeMicro
-                            }
-
-                            MouseArea {
-                                id: scanMouse
-                                Accessible.role: Accessible.Button
-                                Accessible.name: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: controller.sizeScanning
-                                    ? controller.cancelSizeScan()
-                                    : controller.startSizeScan()
-                            }
+                        FileIcon {
+                            edge: 64
+                            category: controller.category
+                            path: root.path
+                            outline: Theme.inkSecondary
                         }
+
+                        Item { width: 1; height: 12 }
 
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: controller.sizeScanning
-                                ? qsTr("计算中… ") + controller.sizeScanText
-                                : (controller.sizeScanDone ? qsTr("已统计 ") + controller.sizeScanText : "")
+                            width: parent.width
+                            text: controller.name
+                            color: root.textColor
+                            font.pixelSize: Theme.typeBody
+                            font.weight: Font.Medium
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                        }
+
+                        Item { width: 1; height: 4 }
+
+                        Text {
+                            width: parent.width
+                            text: Localize.message(controller.kindText)
                             color: root.mutedColor
                             font.pixelSize: Theme.typeMicro
+                            elide: Text.ElideRight
                         }
                     }
 
-                    Item { width: 1; height: controller.isDirectory && !controller.remote ? 4 : 0 }
+                    Column {
+                        id: metadataColumn
+                        width: parent.width - identityColumn.width - generalRow.spacing
+                        spacing: 0
 
-                    InfoRow { label: qsTr("创建时间"); value: controller.createdText }
-                    InfoRow { label: qsTr("修改时间"); value: controller.modifiedText }
-                    InfoRow { label: qsTr("访问时间"); value: controller.accessedText }
-                    InfoRow {
-                        label: qsTr("链接目标")
-                        value: controller.targetText
-                        visible: controller.isSymlink && controller.targetText !== ""
+                        InfoRow { label: qsTr("位置"); value: controller.location }
+                        InfoRow {
+                            label: qsTr("大小")
+                            numeric: true
+                            value: controller.isDirectory
+                                ? (controller.sizeScanText === "" ? "—" : controller.sizeScanText)
+                                : controller.sizeText
+                        }
+
+                        // A folder's size is a scan, not a number `stat` can
+                        // give, so it is asked for explicitly and streamed
+                        // while it runs.
+                        Row {
+                            width: parent.width
+                            height: controller.isDirectory && !controller.remote ? 30 : 0
+                            visible: height > 0
+                            spacing: 8
+
+                            Rectangle {
+                                width: 96
+                                height: Theme.controlSm
+                                radius: Theme.radiusSm
+                                color: scanMouse.containsMouse
+                                    ? Theme.hover : "transparent"
+                                border.width: 1
+                                border.color: root.hairline
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
+                                    color: root.textColor
+                                    font.pixelSize: Theme.typeMicro
+                                }
+
+                                MouseArea {
+                                    id: scanMouse
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: controller.sizeScanning
+                                        ? controller.cancelSizeScan()
+                                        : controller.startSizeScan()
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: controller.sizeScanning
+                                    ? qsTr("计算中… ") + controller.sizeScanText
+                                    : (controller.sizeScanDone ? qsTr("已统计 ") + controller.sizeScanText : "")
+                                color: root.mutedColor
+                                font.pixelSize: Theme.typeMicro
+                            }
+                        }
+
+                        Item { width: 1; height: controller.isDirectory && !controller.remote ? 4 : 0 }
+
+                        InfoRow { label: qsTr("创建时间"); value: controller.createdText; numeric: true }
+                        InfoRow { label: qsTr("修改时间"); value: controller.modifiedText; numeric: true }
+                        InfoRow { label: qsTr("访问时间"); value: controller.accessedText; numeric: true }
+                        InfoRow {
+                            label: qsTr("链接目标")
+                            value: controller.targetText
+                            visible: controller.isSymlink && controller.targetText !== ""
+                        }
                     }
                 }
 
@@ -631,7 +691,7 @@ FocusScope {
 
                         Rectangle {
                             width: parent.width
-                            height: 1
+                            height: Theme.ruleWidth(Screen.devicePixelRatio)
                             color: root.hairline
                         }
 
@@ -651,7 +711,7 @@ FocusScope {
 
                         Rectangle {
                             width: parent.width
-                            height: 1
+                            height: Theme.ruleWidth(Screen.devicePixelRatio)
                             color: root.hairline
                         }
 
@@ -668,13 +728,13 @@ FocusScope {
                                 width: 56
                                 height: Theme.controlMd
                                 radius: Theme.radiusSm
-                                color: !aclAddMouse.enabled ? Theme.canvasAlt
-                                    : (aclAddMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
+                                color: !aclAddMouse.enabled ? Theme.inset
+                                    : (aclAddMouse.containsMouse ? Theme.accentHover : Theme.accent)
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: qsTr("添加")
-                                    color: aclAddMouse.enabled ? Theme.onInteractive : root.mutedColor
+                                    color: aclAddMouse.enabled ? Theme.onAccent : root.mutedColor
                                     font.pixelSize: Theme.typeCaption
                                 }
 
@@ -854,7 +914,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onInteractive
+                            selectedTextColor: Theme.onAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -929,12 +989,12 @@ FocusScope {
                             width: 96
                             height: Theme.controlMd
                             radius: Theme.radiusSm
-                            color: hashMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
+                            color: hashMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                             Text {
                                 anchors.centerIn: parent
                                 text: controller.hashing ? qsTr("取消") : qsTr("开始校验")
-                                color: Theme.onInteractive
+                                color: Theme.onAccent
                                 font.pixelSize: Theme.typeCaption
                             }
 
@@ -991,7 +1051,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                        ? Theme.hover : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
@@ -1000,7 +1060,7 @@ FocusScope {
                         // A read-only entry has nothing to write, so the button
                         // that is always available is a plain close.
                         text: controller.editable ? qsTr("取消") : qsTr("关闭")
-                        color: Theme.inkMuted
+                        color: Theme.inkSecondary
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -1021,13 +1081,13 @@ FocusScope {
                     visible: controller.editable
                              || (root.tab === "security" && controller.aclEditable)
                     radius: Theme.radiusSm
-                    color: !root.canSave ? Theme.canvasAlt
-                        : (saveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
+                    color: !root.canSave ? Theme.inset
+                        : (saveMouse.containsMouse ? Theme.accentHover : Theme.accent)
 
                     Text {
                         anchors.centerIn: parent
                         text: controller.saving ? qsTr("保存中…") : qsTr("确定")
-                        color: root.canSave ? Theme.onInteractive : root.mutedColor
+                        color: root.canSave ? Theme.onAccent : root.mutedColor
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -1063,12 +1123,15 @@ FocusScope {
 
     // ---- Inline components ------------------------------------------------
 
-    /// `标签   值`, the whole general tab's row.
+    /// `标签   值`, one row of the metadata table.
     component InfoRow: Item {
         id: row
 
         property string label: ""
         property string value: ""
+        /// Sizes and timestamps: tabular figures, so the column does not
+        /// reflow between two entries (§6.2.3).
+        property bool numeric: false
 
         width: parent ? parent.width : 0
         height: row.visible ? 26 : 0
@@ -1078,10 +1141,10 @@ FocusScope {
             width: 70
             anchors.verticalCenter: parent.verticalCenter
             text: row.label
-            // Labels carry the field name only, so they sit back at `inkFaint`
+            // Labels carry the field name only, so they sit back at `inkTertiary`
             // while the value keeps full `ink`: the pair reads as one line,
             // scanned left to right, instead of as two competing columns.
-            color: Theme.inkFaint
+            color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
         }
 
@@ -1093,6 +1156,7 @@ FocusScope {
             text: row.value
             color: root.textColor
             font.pixelSize: Theme.typeBody
+            font.features: row.numeric ? ({ "tnum": 1 }) : ({})
             elide: Text.ElideMiddle
         }
     }
@@ -1171,7 +1235,7 @@ FocusScope {
                 anchors.centerIn: parent
                 visible: toggle.checked
                 text: "\u2713"
-                color: Theme.onInteractive
+                color: Theme.onAccent
                 font.pixelSize: Theme.typeMicro
             }
         }
@@ -1214,9 +1278,9 @@ FocusScope {
         height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
-        border.width: 1
+        border.width: fieldInput.activeFocus ? 1.5 : 1
         border.color: fieldInput.activeFocus
-            ? Theme.focusRing
+            ? Theme.accent
             : root.hairline
 
         TextInput {
@@ -1227,7 +1291,7 @@ FocusScope {
             verticalAlignment: TextInput.AlignVCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: Theme.onInteractive
+            selectedTextColor: Theme.onAccent
             font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
@@ -1269,7 +1333,7 @@ FocusScope {
             ? (aclChip.danger
                 ? Qt.rgba(root.dangerColor.r, root.dangerColor.g, root.dangerColor.b, 0.15)
                 : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
-            : (aclChipMouse.containsMouse ? Theme.fill : "transparent")
+            : (aclChipMouse.containsMouse ? Theme.hover : "transparent")
         border.width: 1
         border.color: aclChip.selected
             ? (aclChip.danger ? root.dangerColor : root.accent) : root.hairline
@@ -1404,7 +1468,7 @@ FocusScope {
             height: Theme.controlSm
             visible: aclRow.canEdit
             radius: Theme.radiusSm
-            color: aclRemoveMouse.containsMouse ? Theme.fill : "transparent"
+            color: aclRemoveMouse.containsMouse ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
 
@@ -1478,7 +1542,7 @@ FocusScope {
             height: Theme.controlMd
             radius: Theme.radiusSm
             color: copyMouse.containsMouse
-                ? Theme.fill : "transparent"
+                ? Theme.hover : "transparent"
             border.width: 1
             border.color: root.hairline
             visible: checksum.value !== ""

@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 
 // A space surface: the folders and files the user pinned, in insertion order.
@@ -13,10 +14,10 @@ Item {
 
     property string spaceId: ""
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color headerColor: Theme.chrome
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
 
     readonly property color contentColor: Theme.content
@@ -47,7 +48,11 @@ Item {
         const names = Spaces.itemNames(root.spaceId)
         // qmllint disable missing-property
         for (let index = 0; index < paths.length; index += 1)
-            items.append({ path: paths[index], name: names[index] })
+            items.append({
+                path: paths[index],
+                name: names[index],
+                isDir: Spaces.itemIsDir(root.spaceId, paths[index])
+            })
     }
 
     function remove(path) {
@@ -98,7 +103,7 @@ Item {
             Text {
                 text: root.spaceName !== "" ? root.spaceName : qsTr("空间")
                 color: root.textColor
-                font.pixelSize: Theme.typeDisplay
+                font.pixelSize: Theme.typeHeading
                 font.weight: Font.Medium
             }
 
@@ -136,7 +141,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: root.hairline
         }
     }
@@ -155,100 +160,47 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         cacheBuffer: 300
 
-        delegate: Item {
+        delegate: ListRow {
             id: row
 
             required property int index
             required property string path
             required property string name
+            required property bool isDir
 
             width: list.width
-            height: 48
+            rowHeight: Theme.rowSpacious
+            focusable: true
+            keyboardCursor: row.activeFocus
+            isCurrent: list.currentIndex === row.index
 
-            /// A file inside the space. The remove cross is a separate button,
-            /// so pressing the row opens rather than deletes.
-            Accessible.role: Accessible.ListItem
-            Accessible.name: row.name
-            Accessible.description: row.path
-            Accessible.selectable: true
-            Accessible.selected: list.currentIndex === row.index
-            Accessible.onPressAction: root.openRequested(row.path)
+            title: row.name
+            subtitle: row.path
+            iconCategory: row.isDir ? "folder" : "file"
+            iconEdge: 18
+            accessibleName: row.name
+            accessibleDescription: row.path
 
-            Rectangle {
-                anchors.fill: parent
-                anchors.leftMargin: 14
-                anchors.rightMargin: 14
-                radius: Theme.radiusSm
-                color: rowMouse.containsMouse ? root.hoverColor : "transparent"
-            }
-
-            Rectangle {
-                x: 22
-                anchors.verticalCenter: parent.verticalCenter
-                width: 26
-                height: Theme.controlMd
-                radius: Theme.radiusSm
-                color: Theme.canvasAlt
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "\u25b1"
-                    color: root.accent
-                    font.pixelSize: Theme.typeCaption
-                }
-            }
-
-            Column {
-                anchors.left: parent.left
-                anchors.leftMargin: 58
-                anchors.right: removeButton.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
-                Text {
-                    width: parent.width
-                    text: row.name
-                    color: root.textColor
-                    font.pixelSize: Theme.typeBody
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    width: parent.width
-                    text: row.path
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeMicro
-                    elide: Text.ElideMiddle
-                }
-            }
-
-            ActionButton {
-                id: removeButton
-
-                anchors.right: parent.right
-                anchors.rightMargin: 18
-                anchors.verticalCenter: parent.verticalCenter
+            /// A file inside the space. The remove button is a separate
+            /// target, so pressing the row opens rather than deletes.
+            trailing: ActionButton {
                 label: qsTr("移除")
                 onClicked: root.remove(row.path)
             }
 
-            MouseArea {
-                id: rowMouse
-                anchors.fill: parent
-                anchors.rightMargin: 74
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.openRequested(row.path)
-            }
+            onClicked: root.openRequested(row.path)
+            onDoubleClicked: root.openRequested(row.path)
+            onActivated: root.openRequested(row.path)
         }
     }
 
     EmptyState {
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: headerBar.bottom
+        anchors.bottom: parent.bottom
         visible: items.count === 0
         opacity: root.spaceId === "" ? 0 : 1
-        glyph: "diamond"
         title: qsTr("这个空间是空的")
         hint: qsTr("在文件上右键，选择“添加到空间”，把常用位置固定到这里。")
     }
@@ -271,7 +223,7 @@ Item {
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? Theme.canvasAlt : "transparent")
+                ? Theme.inset : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
 
@@ -289,7 +241,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? Theme.onSolid
+            color: button.danger ? Theme.onDanger
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: Theme.typeMicro
         }

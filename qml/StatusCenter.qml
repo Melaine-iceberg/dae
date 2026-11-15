@@ -17,22 +17,22 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
 
     visible: false
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1003
 
     readonly property color panelColor: Theme.raised
-    readonly property color borderColor: Theme.hairlineStrong
+    readonly property color borderColor: Theme.line
     readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
-    readonly property color faintColor: Theme.inkFaint
+    readonly property color mutedColor: Theme.inkSecondary
+    readonly property color faintColor: Theme.inkTertiary
 
     readonly property var records: {
         let parsed = []
@@ -78,6 +78,12 @@ Item {
         onWheel: root.close()
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
 
@@ -101,7 +107,6 @@ Item {
                 text: qsTr("状态中心")
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
-                font.letterSpacing: 0.55
             }
 
             Row {
@@ -202,7 +207,7 @@ Item {
                     // and its row offers "continue" rather than a diagnosis.
                     color: recordRow.modelData.status === "failed"
                         ? Theme.danger
-                        : (recordRow.modelData.status === "cancelled" ? Theme.warn : Theme.success)
+                        : (recordRow.modelData.status === "cancelled" ? Theme.warning : Theme.success)
                 }
 
                 Column {
@@ -215,7 +220,7 @@ Item {
                         width: parent.width
                         text: recordRow.modelData.label
                         color: root.textColor
-                        font.pixelSize: Theme.typeSmall
+                        font.pixelSize: Theme.typeCaption
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
                     }
@@ -261,7 +266,7 @@ Item {
                         Text {
                             anchors.centerIn: parent
                             text: qsTr("提权重试")
-                            color: elevateMouse.containsMouse ? Theme.interactive : root.mutedColor
+                            color: elevateMouse.containsMouse ? Theme.accent : root.mutedColor
                             font.pixelSize: Theme.typeMicro
                             textFormat: Text.PlainText
                         }
@@ -292,7 +297,7 @@ Item {
                         Text {
                             anchors.centerIn: parent
                             text: recordRow.modelData.status === "cancelled" ? qsTr("继续") : qsTr("重试")
-                            color: retryMouse.containsMouse ? Theme.interactive : root.mutedColor
+                            color: retryMouse.containsMouse ? Theme.accent : root.mutedColor
                             font.pixelSize: Theme.typeMicro
                             textFormat: Text.PlainText
                         }

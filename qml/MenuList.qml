@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 
 // The rows of a menu.
 //
@@ -32,7 +33,10 @@ FocusScope {
     /// Escape with no submenu open, or with one: the host knows which.
     signal escapeRequested()
 
-    readonly property int rowHeight: Theme.controlLg
+    /// §7.5: a menu row is 28 dp. The list used to run at 32, which made a
+    /// ten-row menu 40 dp taller than the design and pushed the bottom rows
+    /// off a small window.
+    readonly property int rowHeight: Theme.controlMd
 
     /// Whether these rows draw in the gutter at all — an icon, a mark, or a
     /// tick. The whole list shares the answer: labelling each row from its own
@@ -355,7 +359,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         x: 8
                         width: Math.max(0, parent.width - 16)
-                        height: 1
+                        height: Theme.ruleWidth(Screen.devicePixelRatio)
                         color: Theme.hairline
                     }
 
@@ -385,10 +389,9 @@ FocusScope {
                             width: parent.width - x - 8
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.modelData.label || ""
-                            color: Theme.inkFaint
+                            color: Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                             font.weight: Font.Medium
-                            font.letterSpacing: 0.5
                             elide: Text.ElideRight
                         }
                     }
@@ -400,7 +403,7 @@ FocusScope {
                         anchors.rightMargin: 4
                         radius: Theme.radiusSm
                         color: entry.current || root.hoverIndex === entry.index
-                            ? Theme.fill : "transparent"
+                            ? Theme.hover : "transparent"
                     }
 
                     Image {
@@ -423,7 +426,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         kind: entry.modelData.glyph || ""
                         tint: entry.modelData.danger === true ? Theme.danger
-                            : (entry.barred ? Theme.inkFaint : Theme.inkMuted)
+                            : (entry.barred ? Theme.inkTertiary : Theme.inkSecondary)
                     }
 
                     Glyph {
@@ -446,7 +449,7 @@ FocusScope {
                         text: entry.modelData.label || ""
                         color: {
                             if (entry.barred)
-                                return Theme.inkFaint
+                                return Theme.inkTertiary
                             if (entry.modelData.danger === true)
                                 return Theme.danger
                             return Theme.ink
@@ -465,7 +468,7 @@ FocusScope {
                         anchors.rightMargin: submenuMark.visible ? 6 : 12
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.shortcut || ""
-                        color: Theme.inkFaint
+                        color: Theme.inkTertiary
                         font.family: Theme.monoFamily
                         font.pixelSize: Theme.typeMicro
                     }
@@ -482,7 +485,7 @@ FocusScope {
                         width: 12
                         height: 12
                         kind: "chevron"
-                        tint: Theme.inkMuted
+                        tint: Theme.inkSecondary
                     }
 
                     MouseArea {

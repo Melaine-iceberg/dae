@@ -34,9 +34,11 @@ that shell; `git log` and the decision document are where it lives now.
   read, so a huge workbook truncates instead of stalling the window.
 - **Searches worth keeping.** Name a query and the text, mode, scope and
   filters travel with it; the sidebar brings it back, the search bar saves it.
-- **System-native chrome.** The OS accent colour retints the shell, and window
-  material (Mica / Acrylic, macOS vibrancy) shows through where the desktop
-  has one.
+- **System-native chrome, kept optional.** Window material (Mica / Acrylic,
+  macOS vibrancy) and the OS accent colour are settings that turn on by
+  request; the default shell is opaque and uses dae's own accent, so the
+  interface looks the same on every platform. See
+  [docs/ui-redesign/proposal.md](docs/ui-redesign/proposal.md) §14.
 - **Yours to configure.** A human-editable `settings.toml`, rebindable
   shortcuts, `dae://` deep links, and registering dae as the default file
   manager. Interface in English, Simplified and Traditional Chinese.
@@ -189,14 +191,19 @@ when a profile or a tool is missing is [`docs/pgo-bolt.md`](docs/pgo-bolt.md).
 
 ## Appearance
 
-The shell's accent is the OS accent — the colour the user already picked in
-Windows or their Linux desktop — because that is what makes one cross-platform
-app read as native without imitating any of them.
-`crates/dae-qt/src/platform.rs` reads it (`HKCU\…\DWM!AccentColor` on Windows,
-`org.freedesktop.appearance accent-color` on Linux), `cpp/platform_watch.cpp`
-watches for changes, and the workspace hands the result to QML, where the accent
-roles derive from `Theme.accent`. Category colours (`Theme.folder`, the tone set)
-deliberately do not follow it: a symlink stays the colour `ls --color` paints it.
+The shell's default accent is dae's own, and the default chrome is opaque,
+because that is what makes one cross-platform app look the same everywhere
+instead of imitating whichever desktop it happens to run on.
+
+Following the OS accent is a setting: `crates/dae-qt/src/platform.rs` reads it
+(`HKCU\…\DWM!AccentColor` on Windows, `org.freedesktop.appearance accent-color`
+on Linux), `cpp/platform_watch.cpp` watches for changes, and the workspace hands
+the result to QML when `Appearance.accent` asks for it. Window material (Mica /
+Acrylic / vibrancy) is likewise opt-in. Category colours do not follow either,
+so a symlink stays the colour `ls --color` paints it.
+
+`docs/ui-redesign/proposal.md` is the redesign these defaults belong to: the
+reasoning and the measured tokens are there (§5.2, §6.1, §14).
 
 ## Decisions
 

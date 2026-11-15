@@ -88,6 +88,12 @@ pub mod qobject {
         #[qinvokable]
         fn refresh(self: Pin<&mut SidebarModel>);
 
+        /// The section `row` belongs to, so the column can skip the rows of a
+        /// folded group without creating their delegates (§7.3.2).
+        #[qinvokable]
+        #[cxx_name = "sectionAt"]
+        fn section_at(&self, row: i32) -> QString;
+
         #[inherit]
         #[rust_name = "begin_reset_model"]
         unsafe fn beginResetModel(self: Pin<&mut SidebarModel>);
@@ -168,6 +174,13 @@ impl qobject::SidebarModel {
         roles.insert(ROLE_FILL, QByteArray::from("fill"));
         roles.insert(ROLE_REMOVABLE, QByteArray::from("removable"));
         roles
+    }
+
+    fn section_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.section.as_str()))
+            .unwrap_or_default()
     }
 
     fn refresh(mut self: Pin<&mut Self>) {
@@ -266,27 +279,27 @@ impl qobject::SidebarModel {
             // Empty everywhere but Windows, which also makes the rows
             // disappear on the other platforms.
             let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
+
             let mut rows = base;
             for volume in volumes {
                 let name = volume_name(&volume.name, &volume.mount_point);
+                // The row answers "how much can I still write here" (§7.3.2);
+                // the 2 dp bar beside it is the same fill the old used/total
+                // pair was drawn from, but the text no longer competes with
+                // the name for the line.
+                let used_bytes = volume.total_bytes.saturating_sub(volume.available_bytes);
                 rows.push(SidebarRow {
                     section: SECTION_VOLUMES.to_owned(),
                     name,
                     path: volume.mount_point,
                     kind: "volume".to_owned(),
-                    detail: format!(
-                        "{} / {}",
-                        format::size(volume.available_bytes),
-                        format::size(volume.total_bytes)
-                    ),
+                    detail: format::size(volume.available_bytes),
                     icon: "disk".to_owned(),
                     is_dir: true,
                     fill: if volume.total_bytes == 0 {
                         0.0
                     } else {
-                        ((volume.total_bytes - volume.available_bytes) as f64
-                            / volume.total_bytes as f64)
-                            .clamp(0.0, 1.0)
+                        (used_bytes as f64 / volume.total_bytes as f64).clamp(0.0, 1.0)
                     },
                     file_system: volume.file_system,
                     removable: volume.is_removable,
@@ -297,7 +310,9 @@ impl qobject::SidebarModel {
             }
             rows.extend(network);
             rows.extend(cloud);
-            let _ = thread.queue(move |mut model| model.as_mut().replace_rows(rows));
+            let _ = thread.queue(move |mut model| {
+                model.as_mut().replace_rows(rows);
+            });
         });
     }
 

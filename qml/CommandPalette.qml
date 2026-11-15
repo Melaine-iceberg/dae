@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "Shortcut.js" as ShortcutJS
 
@@ -26,9 +27,9 @@ Item {
     property bool remoteLocation: false
     property string scopePath: ""
     property bool dark: true
-    property color accent: Theme.interactive
+    property color accent: Theme.accent
     property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
+    property color mutedColor: Theme.inkSecondary
     property color hairline: Theme.hairline
     /// The bindings from `settings.toml`, so a hint in the list is the key the
     /// user actually has to press. Commands without an entry keep their
@@ -50,7 +51,7 @@ Item {
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1200
@@ -248,6 +249,8 @@ Item {
             root.command("select-all", qsTr("全选"),
                          root.shortcutHint("explorer.selectAll", "Ctrl+A"),
                          "check", qsTr("文件")),
+            root.command("invert-selection", qsTr("反选"), "", "check", qsTr("文件")),
+            root.command("select-by-type", qsTr("按类型选择…"), "", "file", qsTr("文件")),
             root.command("refresh", qsTr("刷新"),
                          root.shortcutHint("explorer.refresh", "F5"),
                          "", qsTr("文件")),
@@ -263,8 +266,8 @@ Item {
                          "terminal", qsTr("文件")),
             root.command("toggle-favorite", qsTr("加入收藏"), "", "star", qsTr("文件")),
             root.command("toggle-split", qsTr("切换分栏"), "", "column", qsTr("文件")),
-            root.command("toggle-preview", qsTr("切换预览"),
-                         root.shortcutHint("explorer.preview", "Space"),
+            root.command("toggle-inspector", qsTr("切换检查器"),
+                         root.shortcutHint("app.toggleInspector", "Ctrl+I"),
                          "panel", qsTr("文件")),
             root.command("toggle-sidebar", qsTr("切换侧栏"), root.chord("Mod+B"), "panel", qsTr("文件"))
         ]
@@ -279,9 +282,15 @@ Item {
 
     function viewCommands() {
         return [
-            root.command("view-list", qsTr("列表视图"), "", "list", qsTr("视图")),
-            root.command("view-grid", qsTr("网格视图"), "", "grid", qsTr("视图")),
-            root.command("view-column", qsTr("分栏视图"), "", "column", qsTr("视图")),
+            root.command("view-list", qsTr("列表视图"),
+                         root.shortcutHint("explorer.viewList", "Ctrl+1"),
+                         "list", qsTr("视图")),
+            root.command("view-grid", qsTr("网格视图"),
+                         root.shortcutHint("explorer.viewGrid", "Ctrl+2"),
+                         "grid", qsTr("视图")),
+            root.command("view-column", qsTr("分栏视图"),
+                         root.shortcutHint("explorer.viewColumn", "Ctrl+3"),
+                         "column", qsTr("视图")),
             root.command("sort-name", qsTr("按名称排序"), "", "", qsTr("视图")),
             root.command("sort-modified", qsTr("按修改时间排序"), "", "", qsTr("视图")),
             root.command("sort-type", qsTr("按类型排序"), "", "", qsTr("视图")),
@@ -436,6 +445,28 @@ Item {
         }
     }
 
+    /// §7.5 gives the palette exactly three sections: 文件 / 命令 / 位置.
+    /// The candidate vocabulary is finer than that (spaces, favorites,
+    /// recents, projects, jump, search), so the sections are derived from
+    /// what a row *is* rather than from the group it was registered under.
+    function displayGroup(item) {
+        if (item.kind === "command")
+            return qsTr("命令")
+        // The filename search is the only source that registers under 文件
+        // without being a command.
+        if (item.group === qsTr("文件"))
+            return qsTr("文件")
+        return qsTr("位置")
+    }
+
+    function groupRank(label) {
+        if (label === qsTr("文件"))
+            return 0
+        if (label === qsTr("命令"))
+            return 1
+        return 2
+    }
+
     /// Replaces the flat row list. Headers come from `groupLabel` and the
     /// ListView's section support, so the keyboard index space stays one row
     /// per result.
@@ -458,11 +489,24 @@ Item {
 
         let ordered = []
         const q = root.trimmedQuery
+        // Ranked or not, the rows are bucketed by section and the sections
+        // keep the fixed order §7.5 asks for. Inside a bucket the registration
+        // (or score) order is untouched.
+        const buckets = []
+        const byGroup = ({})
         if (q.length === 0) {
-            // Registration order, which keeps each source's own ordering and
-            // puts the four landing-page sections after the fixed commands.
-            for (let index = 0; index < candidates.length; index += 1)
-                ordered.push({ item: candidates[index], indices: [] })
+            // Registration order, which keeps each source's own ordering.
+            for (let index = 0; index < candidates.length; index += 1) {
+                const item = candidates[index]
+                const label = root.displayGroup(item)
+                let bucket = byGroup[label]
+                if (bucket === undefined) {
+                    bucket = { group: label, entries: [] }
+                    byGroup[label] = bucket
+                    buckets.push(bucket)
+                }
+                bucket.entries.push({ item: item, indices: [] })
+            }
         } else {
             const ranked = []
             for (let index = 0; index < candidates.length; index += 1) {
@@ -480,26 +524,27 @@ Item {
                 return left.order - right.order
             })
 
-            // Bucket by section, with the buckets themselves ordered by their
-            // best match. Inside a bucket the global score order is kept.
-            const buckets = []
-            const byGroup = ({})
+            // Bucket by section; the score order survives inside each one.
             for (let index = 0; index < ranked.length; index += 1) {
                 const entry = ranked[index]
-                let bucket = byGroup[entry.item.group]
+                const label = root.displayGroup(entry.item)
+                let bucket = byGroup[label]
                 if (bucket === undefined) {
-                    bucket = { group: entry.item.group, entries: [] }
-                    byGroup[entry.item.group] = bucket
+                    bucket = { group: label, entries: [] }
+                    byGroup[label] = bucket
                     buckets.push(bucket)
                 }
                 bucket.entries.push(entry)
             }
-            for (let index = 0; index < buckets.length; index += 1) {
-                const bucket = buckets[index]
-                for (let row = 0; row < bucket.entries.length; row += 1)
-                    ordered.push({ item: bucket.entries[row].item,
-                                   indices: bucket.entries[row].indices })
-            }
+        }
+        buckets.sort(function (left, right) {
+            return root.groupRank(left.group) - root.groupRank(right.group)
+        })
+        for (let index = 0; index < buckets.length; index += 1) {
+            const bucket = buckets[index]
+            for (let row = 0; row < bucket.entries.length; row += 1)
+                ordered.push({ item: bucket.entries[row].item,
+                               indices: bucket.entries[row].indices })
         }
 
         results.clear()
@@ -507,7 +552,7 @@ Item {
             const item = ordered[index].item
             const indices = ordered[index].indices || []
             results.append({
-                groupLabel: item.group,
+                groupLabel: root.displayGroup(item),
                 label: item.label,
                 styledLabel: root.styledLabel(item.label, indices),
                 hint: item.hint,
@@ -634,17 +679,26 @@ Item {
         }
     }
 
+    /// The plate's hard shadow, declared before the plate so it paints
+    /// behind it (see `Shadow.qml`).
+    Shadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
 
         anchors.horizontalCenter: parent.horizontalCenter
-        y: 64
+        // §7.5: 15 % down from the top of the window. A fixed 64 was tied to
+        // the old 800-high design; the palette belongs at the same optical
+        // height on any window.
+        y: Math.round(root.height * 0.15)
         width: Math.min(560, root.width - 32)
         height: Math.min(430, root.height - y - 96)
         radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
-        border.color: Theme.hairlineStrong
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -669,7 +723,7 @@ Item {
                 height: 14
                 anchors.verticalCenter: parent.verticalCenter
                 kind: "search"
-                tint: Theme.inkMuted
+                tint: Theme.inkSecondary
             }
 
             TextInput {
@@ -683,8 +737,8 @@ Item {
                 height: Theme.controlSm
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onInteractive
-                font.pixelSize: Theme.typeEmphasis
+                selectedTextColor: Theme.onAccent
+                font.pixelSize: Theme.typeInput
                 verticalAlignment: TextInput.AlignVCenter
                 focus: true
                 clip: true
@@ -747,8 +801,8 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: input.text.length === 0
                 text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
-                color: Theme.inkFaint
-                font.pixelSize: Theme.typeEmphasis
+                color: Theme.inkTertiary
+                font.pixelSize: Theme.typeInput
             }
 
             // 20 × 18, the one keycap in the surface: there is no button to
@@ -769,7 +823,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "Esc"
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                 }
@@ -782,7 +836,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: field.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: root.hairline
         }
 
@@ -825,10 +879,9 @@ Item {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 3
                     text: sectionRow.section
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
-                    font.letterSpacing: 0.6
                 }
             }
 
@@ -867,7 +920,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.radiusSm
-                    color: row.current ? Theme.signalSoft
+                    color: row.current ? Theme.accentSoft
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
 
                     Rectangle {
@@ -879,7 +932,7 @@ Item {
                         anchors.bottomMargin: 6
                         width: 3
                         radius: Theme.radiusXs
-                        color: Theme.signal
+                        color: Theme.accent
                     }
                 }
 
@@ -889,7 +942,7 @@ Item {
                     height: 14
                     anchors.verticalCenter: parent.verticalCenter
                     kind: row.glyph
-                    tint: row.current ? Theme.inkMuted : Theme.inkFaint
+                    tint: row.current ? Theme.inkSecondary : Theme.inkTertiary
                 }
 
                 Text {
@@ -913,7 +966,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(220, implicitWidth)
                     text: row.hint
-                    color: Theme.inkFaint
+                    color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.family: Theme.monoFamily
                     elide: Text.ElideMiddle
@@ -956,7 +1009,7 @@ Item {
                     : (root.trimmedQuery.length === 0
                         ? qsTr("没有可用的入口")
                         : qsTr("没有匹配 “") + root.trimmedQuery + "”")
-                color: Theme.inkMuted
+                color: Theme.inkSecondary
                 font.pixelSize: Theme.typeBody
                 wrapMode: Text.Wrap
             }
@@ -967,10 +1020,18 @@ Item {
                 text: root.trimmedQuery.length === 0
                     ? qsTr("试试命令名、文件路径，或一个空间的名字。")
                     : qsTr("试试其他关键词，或输入一个路径直接跳转。")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeCaption
                 wrapMode: Text.Wrap
             }
+        }
+
+        ScrollBar {
+            target: list
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            anchors.top: fieldRule.bottom
+            anchors.bottom: footerBar.top
         }
 
         Rectangle {
@@ -986,7 +1047,7 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 
@@ -994,7 +1055,7 @@ Item {
                 x: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("↑↓ 选择") + " · " + qsTr("↵ 执行") + " · " + qsTr("Esc 关闭")
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
 
@@ -1004,7 +1065,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.searchingFiles ? qsTr("搜索文件…")
                     : qsTr("%1 个结果").arg(root.resultCount)
-                color: Theme.inkFaint
+                color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
             }
         }
