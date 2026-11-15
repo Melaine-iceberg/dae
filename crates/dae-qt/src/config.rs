@@ -23,7 +23,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cxx_qt_lib::QString;
+use qtbridge::{QmlElement, qobject};
 
 use dae_core::types::EntryKind;
 
@@ -37,29 +37,10 @@ const SETTINGS_FILE_NAME: &str = "settings.toml";
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
         include!("window.h");
         #[namespace = "dae_qt"]
         #[rust_name = "system_dark"]
         fn dae_qt_system_dark() -> bool;
-    }
-
-    unsafe extern "RustQt" {
-        /// The profile snapshot, exposed to QML as one read-only object.
-        ///
-        /// Properties are deliberately plain values rather than paths or
-        /// enums: QML only displays them, and the shell owns the rules.
-        #[qobject]
-        #[qml_element]
-        #[qproperty(QString, config_dir, cxx_name = "configDir")]
-        #[qproperty(QString, startup_path, cxx_name = "startupPath")]
-        #[qproperty(QString, startup_source, cxx_name = "startupSource")]
-        #[qproperty(QString, path_jump, cxx_name = "pathJump")]
-        #[qproperty(QString, command_bar, cxx_name = "commandBar")]
-        #[qproperty(bool, settings_found, cxx_name = "settingsFound")]
-        type AppConfig = super::AppConfigRust;
     }
 }
 
@@ -234,13 +215,36 @@ fn qt_sequence(binding: &str) -> String {
         .join("+")
 }
 
-pub struct AppConfigRust {
-    config_dir: QString,
-    startup_path: QString,
-    startup_source: QString,
-    path_jump: QString,
-    command_bar: QString,
+/// The profile snapshot, exposed to QML as one read-only object.
+///
+/// Properties are deliberately plain values rather than paths or enums: QML
+/// only displays them, and the shell owns the rules. They are constant because
+/// the snapshot is taken once, before the first window.
+pub struct AppConfig {
+    config_dir: String,
+    startup_path: String,
+    startup_source: String,
+    path_jump: String,
+    command_bar: String,
     settings_found: bool,
+}
+
+#[qobject(NoQmlElement)]
+impl AppConfig {
+    qproperty!("configDir", Member = config_dir, Constant);
+    qproperty!("startupPath", Member = startup_path, Constant);
+    qproperty!("startupSource", Member = startup_source, Constant);
+    qproperty!("pathJump", Member = path_jump, Constant);
+    qproperty!("commandBar", Member = command_bar, Constant);
+    qproperty!("settingsFound", Member = settings_found, Constant);
+}
+
+impl QmlElement for AppConfig {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "AppConfig";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 /// The OS light/dark preference as Qt reports it. Exposed to the rest of the
@@ -250,7 +254,7 @@ pub fn system_dark() -> bool {
     qobject::system_dark()
 }
 
-impl Default for AppConfigRust {
+impl Default for AppConfig {
     fn default() -> Self {
         let snapshot = snapshot();
 
@@ -288,11 +292,11 @@ impl Default for AppConfigRust {
         log::info!(target: "dae::config", "command-bar {}", snapshot.command_bar);
 
         Self {
-            config_dir: QString::from(config_dir.as_str()),
-            startup_path: QString::from(start_path.as_str()),
-            startup_source: QString::from(snapshot.source.as_str()),
-            path_jump: QString::from(snapshot.path_jump.as_str()),
-            command_bar: QString::from(snapshot.command_bar.as_str()),
+            config_dir,
+            startup_path: start_path,
+            startup_source: snapshot.source.as_str().to_owned(),
+            path_jump: snapshot.path_jump,
+            command_bar: snapshot.command_bar,
             settings_found: snapshot.settings_found,
         }
     }

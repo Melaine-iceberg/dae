@@ -96,6 +96,7 @@ pub fn init() {
     startup::Startup::register();
     session::Session::register();
     tags::TagStore::register();
+    config::AppConfig::register();
     // First, so the settings/profile lines below and every `dae-core` warning
     // reach the file. Idempotent: the binary calls it before claiming the
     // instance lock, and this call is then a no-op.

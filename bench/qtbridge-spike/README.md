@@ -71,6 +71,7 @@ real launch of `target/debug/dae.exe` with no QML warnings:
 | `startup.rs` | singleton, one slot, no state |
 | `session.rs` | singleton, 2 properties, 5 slots |
 | `tags.rs` | singleton, 2 properties, 2 signals, 10 slots, `Vec<String>` |
+| `config.rs` | element, 6 constant properties, C++ call kept in its cxx bridge |
 
 No `.qml` file changed. Per module the pattern is:
 
@@ -86,7 +87,7 @@ No `.qml` file changed. Per module the pattern is:
    its `#[cxx_qt::bridge]` `extern "C++"` block; only the `RustQt` half moves.
 
 Remaining, roughly in dependency order: leaf singletons (`appearance`,
-`config`, `network_discovery`, `preferences`), the command/overlay models
+`network_discovery`, `preferences`), the command/overlay models
 (`shell_command_model`, `open_with_model`), the listing models
 (`sidebar_model`, `sidebar_tree_model`, `spaces_model`, `trash_model`,
 `overview_model`, `search_model`, `model`), then `workspace` (45 properties),
