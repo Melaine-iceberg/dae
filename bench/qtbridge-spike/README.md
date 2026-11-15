@@ -1,5 +1,8 @@
 # qtbridge_spike — what the Qt Bridge migration has to keep
 
+> The execution handoff — branch state, per-module recipe, remaining work and
+> known gaps — is [`docs/decisions/qtbridge-migration.md`](../../docs/decisions/qtbridge-migration.md).
+
 Feasibility gate for moving `crates/dae-qt` from CXX-Qt 0.10 to
 [Qt Bridge for Rust](https://doc.qt.io/qtbridge-rust/) 0.4.1 (beta, MSRV 1.88,
 Qt ≥ 6.10; this machine runs Qt 6.12.0 / MSVC 2022).
