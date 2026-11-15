@@ -58,6 +58,10 @@ pub struct SearchFilters {
     pub size_min: Option<u64>,
     /// Exclusive upper bound on file size, in bytes.
     pub size_max: Option<u64>,
+    /// How many levels below each root to look. `None` walks the whole tree;
+    /// `Some(1)` is the "this folder" scope and only reads the directory the
+    /// user is standing in.
+    pub max_depth: Option<usize>,
 }
 
 impl SearchFilters {
@@ -223,6 +227,17 @@ fn search_local(
     })
 }
 
+/// Whether `relative` is at most `depth` levels below its root. The walk is
+/// bounded by the same number; this is what holds the platform index's
+/// contributions to the scope the user picked.
+fn depth_within(relative: &str, depth: usize) -> bool {
+    let separators = relative
+        .chars()
+        .filter(|ch| *ch == '/' || *ch == '\\')
+        .count();
+    separators < depth
+}
+
 /// The results ceiling the shell shows. `local::search` ranks against the same
 /// number internally; the merged set is cut here again so several roots cannot
 /// multiply it.
@@ -276,7 +291,10 @@ fn index_entry(path: &str, root: &str, text: &str, filters: &SearchFilters) -> O
         hidden: false,
         read_only: false,
     };
-    filters.keeps(&entry).then_some(entry)
+    let in_scope = filters
+        .max_depth
+        .is_none_or(|depth| depth_within(&entry.relative_path, depth));
+    (in_scope && filters.keeps(&entry)).then_some(entry)
 }
 
 fn path_is_under(path: &str, root: &str) -> bool {

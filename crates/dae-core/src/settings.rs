@@ -174,8 +174,12 @@ impl Default for AppSettings {
             theme: "system".to_string(),
             accent: "brand".to_string(),
             language: "system".to_string(),
-            blur: true,
-            window_material: "mica".to_string(),
+            // Decision 1 of the Graphite proposal: the shell starts opaque.
+            // Window material is a capability the user turns on, not the
+            // default, so a fresh document asks for neither a backdrop nor
+            // the blur that would expose it.
+            blur: false,
+            window_material: "none".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
             actions: default_actions(),
             warm_tab_pool: true,
@@ -219,7 +223,7 @@ pub fn default_shortcuts() -> HashMap<String, String> {
     } else {
         ("Alt+Left", "Alt+Right")
     };
-    let entries: [(&str, &str); 49] = [
+    let entries: [(&str, &str); 52] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
         ("app.pathJump", "Mod+L"),
@@ -262,9 +266,15 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("explorer.newFolder", "Mod+Shift+N"),
         ("explorer.properties", "Alt+Return"),
         ("explorer.refresh", "F5"),
-        ("explorer.toggleSplit", "Mod+Alt+S"),
+        ("explorer.toggleSplit", "Mod+\\"),
         ("explorer.displayOptions", "Mod+Alt+V"),
         ("explorer.filters", "Mod+Alt+F"),
+        // The three view modes are a rebindable trio now: the shell used to
+        // test Ctrl+1/2/3 itself, which kept them out of settings and left the
+        // command palette with an empty hint.
+        ("explorer.viewList", "Mod+1"),
+        ("explorer.viewGrid", "Mod+2"),
+        ("explorer.viewColumn", "Mod+3"),
         // Rows that used to be menu-only. Only "copy path" gets a chord of its
         // own (the one Windows Explorer trained people to use); the rest are
         // bindable from settings, and an empty string means "unbound".
@@ -273,7 +283,7 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("explorer.openWith", ""),
         ("explorer.compressZip", ""),
         ("explorer.extractHere", ""),
-        ("explorer.measureSize", ""),
+        ("explorer.measureSize", "Mod+Shift+S"),
         ("explorer.compareHashes", ""),
         ("explorer.duplicate", ""),
         ("explorer.createShortcut", ""),
@@ -388,7 +398,7 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
         settings.language = "system".to_string();
     }
     if !["mica", "acrylic", "none"].contains(&settings.window_material.as_str()) {
-        settings.window_material = "mica".to_string();
+        settings.window_material = "none".to_string();
     }
     settings
 }
@@ -548,6 +558,9 @@ mod tests {
             "explorer.toggleSplit",
             "explorer.displayOptions",
             "explorer.filters",
+            "explorer.viewList",
+            "explorer.viewGrid",
+            "explorer.viewColumn",
             "explorer.copyPath",
             "explorer.copyName",
             "explorer.openWith",
@@ -631,8 +644,8 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.accent, "brand");
         assert_eq!(loaded.language, "system");
-        assert!(loaded.blur);
-        assert_eq!(loaded.window_material, "mica");
+        assert!(!loaded.blur);
+        assert_eq!(loaded.window_material, "none");
         // Absent means the shell-first window is on: the setting was added on by
         // default, so an older document must not silently turn it off.
         assert!(loaded.shell_first);
@@ -655,7 +668,7 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.accent, "brand");
         assert_eq!(loaded.language, "system");
-        assert_eq!(loaded.window_material, "mica");
+        assert_eq!(loaded.window_material, "none");
 
         fs::remove_dir_all(&dir).ok();
     }

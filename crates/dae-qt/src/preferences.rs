@@ -121,6 +121,10 @@ pub mod qobject {
         /// Landing-page sections to hide, comma-separated. A free-text value:
         /// the model drops names it does not know.
         #[qproperty(QString, hidden_home_sections, cxx_name = "hiddenHomeSections")]
+        /// Sidebar groups the user folded, comma-separated (§7.3.2). Same
+        /// free-text rule as the landing page's hidden sections: a name the
+        /// model no longer emits is ignored rather than cleaned up here.
+        #[qproperty(QString, folded_sidebar_sections, cxx_name = "foldedSidebarSections")]
         #[qproperty(bool, split_enabled, cxx_name = "splitEnabled")]
         /// Off by default: the shell animates, and this is the single switch the
         /// spec calls for. Qt 6 has no system-wide reduced-motion query, so the
@@ -269,6 +273,7 @@ struct StoredPrefs {
     grid_thumb: String,
     restore_session: bool,
     hidden_home_sections: String,
+    folded_sidebar_sections: String,
     split_enabled: bool,
     reduce_motion: bool,
     sync_layout: bool,
@@ -314,12 +319,13 @@ impl Default for StoredPrefs {
             grid_thumb: "portrait".to_owned(),
             restore_session: true,
             hidden_home_sections: String::new(),
+            folded_sidebar_sections: String::new(),
             split_enabled: false,
             reduce_motion: false,
             sync_layout: true,
             adaptive_layout: false,
             preview_width: 300,
-            sidebar_width: 216,
+            sidebar_width: 240,
             terminal_shell: String::new(),
             toolbar_leading: "back,forward,up".to_owned(),
             toolbar_trailing: "search,trash,view,more".to_owned(),
@@ -410,6 +416,9 @@ impl StoredPrefs {
         if let Some(value) = fields.get("hiddenHomeSections") {
             self.hidden_home_sections = (*value).to_owned();
         }
+        if let Some(value) = fields.get("foldedSidebarSections") {
+            self.folded_sidebar_sections = (*value).to_owned();
+        }
         boolean("splitEnabled", &mut self.split_enabled);
         boolean("reduceMotion", &mut self.reduce_motion);
         boolean("syncLayout", &mut self.sync_layout);
@@ -486,6 +495,11 @@ impl StoredPrefs {
         write(&mut out, "gridThumb", &self.grid_thumb);
         write(&mut out, "restoreSession", bool_text(self.restore_session));
         write(&mut out, "hiddenHomeSections", &self.hidden_home_sections);
+        write(
+            &mut out,
+            "foldedSidebarSections",
+            &self.folded_sidebar_sections,
+        );
         write(&mut out, "splitEnabled", bool_text(self.split_enabled));
         write(&mut out, "reduceMotion", bool_text(self.reduce_motion));
         write(&mut out, "syncLayout", bool_text(self.sync_layout));
@@ -746,6 +760,7 @@ pub struct ExplorerPrefsRust {
     grid_thumb: QString,
     restore_session: bool,
     hidden_home_sections: QString,
+    folded_sidebar_sections: QString,
     split_enabled: bool,
     reduce_motion: bool,
     sync_layout: bool,
@@ -795,6 +810,9 @@ impl ExplorerPrefsRust {
             grid_thumb: QString::from(prefs.grid_thumb.as_str()),
             restore_session: prefs.restore_session,
             hidden_home_sections: QString::from(prefs.hidden_home_sections.as_str()),
+            folded_sidebar_sections: QString::from(
+                prefs.folded_sidebar_sections.as_str(),
+            ),
             split_enabled: prefs.split_enabled,
             reduce_motion: prefs.reduce_motion,
             sync_layout: prefs.sync_layout,
@@ -843,6 +861,7 @@ impl ExplorerPrefsRust {
             grid_thumb: self.grid_thumb.to_string(),
             restore_session: self.restore_session,
             hidden_home_sections: self.hidden_home_sections.to_string(),
+            folded_sidebar_sections: self.folded_sidebar_sections.to_string(),
             split_enabled: self.split_enabled,
             reduce_motion: self.reduce_motion,
             sync_layout: self.sync_layout,
@@ -1022,6 +1041,15 @@ impl qobject::ExplorerPrefs {
             let next = QString::from(value.trim());
             if self.hidden_home_sections != next {
                 self.as_mut().set_hidden_home_sections(next);
+                save(&self.stored());
+            }
+            return;
+        }
+
+        if key == "foldedSidebarSections" {
+            let next = QString::from(value.trim());
+            if self.folded_sidebar_sections != next {
+                self.as_mut().set_folded_sidebar_sections(next);
                 save(&self.stored());
             }
             return;
@@ -1246,7 +1274,7 @@ impl qobject::ExplorerPrefs {
                 true
             }
             "sidebarWidth" => {
-                let next = value.clamp(180, 280);
+                let next = value.clamp(180, 300);
                 if self.sidebar_width == next {
                     return;
                 }

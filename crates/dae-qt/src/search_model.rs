@@ -71,6 +71,9 @@ const SEARCH_SELECTED_NEXT: i32 = 0x0217;
 /// Search rows carry no creation stamp; the role exists so the shared
 /// delegate's required property can be created.
 const SEARCH_CREATED_AT: i32 = 0x0218;
+/// The listing delegate reads this role too. A search result is a name match,
+/// not a fresh symlink read, so it answers false rather than guessing.
+const SEARCH_BROKEN_LINK: i32 = 0x0219;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -114,12 +117,19 @@ pub mod qobject {
         /// Results currently selected. The shared delegate reads the
         /// `selected` role; this is what the status bar counts.
         #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
+        /// The selected results' total size, in the same formatted shape the
+        /// size column prints. Folders contribute nothing, as in the listing.
+        #[qproperty(QString, selected_size_text, cxx_name = "selectedSizeText")]
         #[qproperty(bool, busy)]
         #[qproperty(bool, finished)]
         #[qproperty(bool, truncated)]
         #[qproperty(QString, status)]
         #[qproperty(QString, query)]
         #[qproperty(QString, path)]
+        /// §10.7: results are grouped by their relative directory. This is
+        /// the section count list the shared list delegate paints, in the same
+        /// shape the listing model publishes.
+        #[qproperty(QString, group_counts, cxx_name = "groupCounts")]
         type SearchModel = super::SearchModelRust;
 
         #[cxx_override]
@@ -168,6 +178,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "relativePathAt"]
         fn relative_path_at(&self, row: i32) -> QString;
+
+        /// The section label of `row`, for the pinned header the shared list
+        /// delegate draws (§7.4).
+        #[qinvokable]
+        #[cxx_name = "groupLabelAt"]
+        fn group_label_at(&self, row: i32) -> QString;
 
         #[qinvokable]
         #[cxx_name = "isDirectoryAt"]
@@ -336,6 +352,35 @@ impl SearchRow {
     }
 }
 
+/// The relative directory a result sits in, which is its section heading
+/// (§10.7). A hit directly in the search root answers empty.
+fn group_of(relative_path: &str) -> String {
+    let trimmed = relative_path.trim_end_matches(['/', '\\']);
+    match trimmed.rsplit_once(['/', '\\']) {
+        Some((directory, _)) => directory.to_owned(),
+        None => String::new(),
+    }
+}
+
+/// The section counts the shared list delegate paints, in the shape the
+/// listing model publishes: `[{"label":"src","count":3}, …]`, sorted by label.
+fn group_counts_json(rows: &[SearchRow]) -> String {
+    let mut counts: std::collections::BTreeMap<String, i32> = std::collections::BTreeMap::new();
+    for row in rows {
+        *counts.entry(group_of(&row.relative_path)).or_insert(0) += 1;
+    }
+    let mut out = String::from("[");
+    for (index, (label, count)) in counts.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        let label = serde_json::to_string(label).unwrap_or_else(|_| "\"\"".to_owned());
+        out.push_str(&format!("{{\"label\":{label},\"count\":{count}}}"));
+    }
+    out.push(']');
+    out
+}
+
 /// One name-search request, kept so `reload()` re-runs exactly what was shown.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct SearchArgs {
@@ -351,12 +396,14 @@ struct SearchArgs {
 pub struct SearchModelRust {
     loaded: i32,
     selected_count: i32,
+    selected_size_text: QString,
     busy: bool,
     finished: bool,
     truncated: bool,
     status: QString,
     query: QString,
     path: QString,
+    group_counts: QString,
     rows: Vec<SearchRow>,
     selection: Selection,
     generation: u64,
@@ -438,8 +485,14 @@ impl qobject::SearchModel {
             }
             SEARCH_CREATED => QVariant::from(&QString::default()),
             SEARCH_CREATED_FALLBACK => QVariant::from(&false),
-            SEARCH_TAGS | SEARCH_TAG_IDS | SEARCH_TAG_COLORS | SEARCH_GROUP => {
+            SEARCH_TAGS | SEARCH_TAG_IDS | SEARCH_TAG_COLORS => {
                 QVariant::from(&QString::default())
+            }
+            // §10.7: the section a result belongs to is the relative
+            // directory it was found in; a hit directly in the search root is
+            // its own section, spelled empty and labelled by the view.
+            SEARCH_GROUP => {
+                QVariant::from(&QString::from(group_of(&row.relative_path).as_str()))
             }
             SEARCH_TYPE_NAME => {
                 QVariant::from(&QString::from(type_label(row.kind, &row.name)))
@@ -461,6 +514,7 @@ impl qobject::SearchModel {
                     .is_some_and(|row| row.selected);
                 QVariant::from(&next)
             }
+            SEARCH_BROKEN_LINK => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -492,6 +546,7 @@ impl qobject::SearchModel {
             (SEARCH_SELECTED_PREV, "previousSelected"),
             (SEARCH_SELECTED_NEXT, "nextSelected"),
             (SEARCH_CREATED_AT, "createdAt"),
+            (SEARCH_BROKEN_LINK, "brokenLink"),
         ])
     }
 
@@ -613,6 +668,13 @@ impl qobject::SearchModel {
             .unwrap_or_default()
     }
 
+    fn group_label_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(group_of(&entry.relative_path).as_str()))
+            .unwrap_or_default()
+    }
+
     fn is_directory_at(&self, row: i32) -> bool {
         self.rows
             .get(row as usize)
@@ -648,8 +710,29 @@ impl qobject::SearchModel {
 
     fn publish_selection_count(mut self: Pin<&mut Self>) {
         let count = self.selection.count();
+        let mut total: u64 = 0;
+        let mut counted = false;
+        if count > 0 {
+            for row in &self.rows {
+                if !row.selected || row.kind != EntryKind::File {
+                    continue;
+                }
+                if let Some(size) = row.size {
+                    total = total.saturating_add(size);
+                    counted = true;
+                }
+            }
+        }
+        let text = if counted {
+            QString::from(crate::format::size(total).as_str())
+        } else {
+            QString::default()
+        };
         if self.selected_count != count {
             self.as_mut().set_selected_count(count);
+        }
+        if self.selected_size_text != text {
+            self.as_mut().set_selected_size_text(text);
         }
     }
 
@@ -735,6 +818,7 @@ impl qobject::SearchModel {
             self.as_mut().end_reset_model();
         }
         self.as_mut().publish_selection_count();
+        self.as_mut().set_group_counts(QString::from("[]"));
     }
 
     fn apply_search(
@@ -749,12 +833,20 @@ impl qobject::SearchModel {
         self.as_mut().set_busy(false);
         match result {
             Ok(response) => {
-                let rows: Vec<SearchRow> = response
+                let mut rows: Vec<SearchRow> = response
                     .entries
                     .into_iter()
                     .map(SearchRow::from_entry)
                     .collect();
+                // §10.7 groups results by directory, and a QML ListView only
+                // paints one header per contiguous run. The rank order is kept
+                // inside each directory: `sort_by_key` is stable, so the best
+                // match in a folder stays its first row.
+                rows.sort_by(|left, right| {
+                    group_of(&left.relative_path).cmp(&group_of(&right.relative_path))
+                });
                 let count = rows.len() as i32;
+                let groups = group_counts_json(&rows);
                 unsafe {
                     self.as_mut().begin_reset_model();
                     {
@@ -770,6 +862,8 @@ impl qobject::SearchModel {
                     }
                     self.as_mut().end_reset_model();
                 }
+                self.as_mut()
+                    .set_group_counts(QString::from(groups.as_str()));
                 self.as_mut().publish_selection_count();
                 self.as_mut().set_loaded(count);
                 self.as_mut().set_truncated(response.truncated);
@@ -798,6 +892,12 @@ impl qobject::SearchModel {
 /// Scopes name where to look; a scope that resolves to nothing is reported
 /// instead of quietly searching the current directory.
 fn build_request(args: &SearchArgs) -> Result<search::SearchRequest, String> {
+    // The three scopes the bar offers (§10.7): 此文件夹 is a depth-one walk of
+    // the directory on screen, 子文件夹 is the same root walked recursively,
+    // 所有位置 searches every mounted volume. `current` is what saved searches
+    // from before the redesign spell, and it meant the recursive walk the
+    // 子文件夹 chip now names.
+    let mut max_depth = None;
     let mut roots: Vec<String> = match args.scope.as_str() {
         "favorites" => dae_core::fs::sidebar::load_favorites()
             .unwrap_or_default()
@@ -818,9 +918,14 @@ fn build_request(args: &SearchArgs) -> Result<search::SearchRequest, String> {
                 }
             })
             .collect(),
-        "volumes" => dae_core::fs::sidebar::volume_roots(),
-        // `current` and anything a stale document spells fall back to the
-        // directory on screen.
+        "all" | "volumes" => dae_core::fs::sidebar::volume_roots(),
+        // 此文件夹: the directory on screen, nothing below it.
+        "here" => {
+            max_depth = Some(1);
+            vec![args.path.clone()]
+        }
+        // `subfolders`, `current` and anything a stale document spells fall
+        // back to the directory on screen, walked.
         _ => vec![args.path.clone()],
     };
 
@@ -847,6 +952,7 @@ fn build_request(args: &SearchArgs) -> Result<search::SearchRequest, String> {
             modified_after: modified_cutoff(&args.modified),
             size_min,
             size_max,
+            max_depth,
         },
     })
 }

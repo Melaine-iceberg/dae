@@ -101,6 +101,10 @@ const ROLE_SELECTED_NEXT: i32 = 0x0117;
 /// `created_at` as milliseconds since the epoch, for the relative label the
 /// created column prints in the same format as the modified column.
 const ROLE_CREATED_AT: i32 = 0x0118;
+/// A symbolic link whose target no longer resolves (§7.1.7). The ↗ mark turns
+/// `danger` and the row carries a warning suffix; the backend decided it once
+/// while building the row rather than in the delegate.
+const ROLE_BROKEN_LINK: i32 = 0x0119;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -148,10 +152,19 @@ pub mod qobject {
         /// same single pass that counts folders and files fills it — a
         /// 120k-row directory is not walked twice for a line of text.
         #[qproperty(QString, family_counts, cxx_name = "familyCounts")]
+        /// Row counts per active section label, as JSON:
+        /// `[{"label":"A","count":3}, …]`. Filled by the same pass as the
+        /// family counts, so a section header prints its own size without
+        /// walking the model from QML.
+        #[qproperty(QString, group_counts, cxx_name = "groupCounts")]
         #[qproperty(QString, newest_modified, cxx_name = "newestModifiedText")]
         /// Rows currently selected. Maintained as the selection changes, so the
         /// status bar reads a number instead of walking the selection.
         #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
+        /// The selected files' total size, formatted by the same helpers the
+        /// size column uses. Folders are not walked and therefore contribute
+        /// nothing, which is what the action bar's `N 项 · 56.6 KB` means.
+        #[qproperty(QString, selected_size_text, cxx_name = "selectedSizeText")]
         #[qproperty(bool, finished)]
         #[qproperty(QString, status)]
         #[qproperty(QString, path)]
@@ -209,6 +222,13 @@ pub mod qobject {
 
         #[qinvokable]
         fn reload(self: Pin<&mut DirectoryListModel>);
+
+        /// Re-reads the current directory through one elevated child. This is
+        /// the permission-denied empty state's "retry as administrator": only
+        /// this snapshot is elevated, the window stays at the user's token.
+        #[qinvokable]
+        #[cxx_name = "loadElevated"]
+        fn load_elevated(self: Pin<&mut DirectoryListModel>);
 
         /// Sets the display order. Re-sorts the rows already loaded and
         /// returns immediately; large listings sort on a worker and emit
@@ -298,6 +318,14 @@ pub mod qobject {
         #[cxx_name = "pathAt"]
         fn path_at(&self, row: i32) -> QString;
 
+        /// The group label of `row`, or an empty string when grouping is off.
+        /// The view's pinned section header reads the row under its own top
+        /// edge through this, so it can follow the scroll without a copy of
+        /// the grouping rules.
+        #[qinvokable]
+        #[cxx_name = "groupLabelAt"]
+        fn group_label_at(&self, row: i32) -> QString;
+
         /// Selects `row` and nothing else. An out-of-range row clears the
         /// selection, which is what a click on a row that vanished under the
         /// pointer has to mean.
@@ -320,6 +348,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "selectAll"]
         fn select_all_rows(self: Pin<&mut DirectoryListModel>);
+
+        /// Flips the selection: the command palette's 反选.
+        #[qinvokable]
+        #[cxx_name = "invertSelection"]
+        fn invert_selection(self: Pin<&mut DirectoryListModel>) -> i32;
+
+        /// Replaces the selection with the rows of one family (`image`,
+        /// `code`, `folder`, …), the palette's 按类型选择. Returns how many
+        /// rows that left selected, so the shell can say "没有这类文件".
+        #[qinvokable]
+        #[cxx_name = "selectFamily"]
+        fn select_family(self: Pin<&mut DirectoryListModel>, family: &QString) -> i32;
 
         #[qinvokable]
         #[cxx_name = "clearSelection"]
@@ -514,6 +554,10 @@ struct StoredRow {
     created_fallback: bool,
     hidden: bool,
     read_only: bool,
+    /// A symbolic link whose target no longer resolves. Read once when the row
+    /// is built — symlinks are rare, and the listing pipeline must not stat
+    /// every ordinary row again.
+    broken_link: bool,
     selected: bool,
     /// The group this row falls into under the current grouping, computed once
     /// per grouping change so the comparator and the section header agree.
@@ -539,6 +583,8 @@ struct RowSummary {
     /// File rows per family id. Filled by the same pass as the counts above,
     /// so the inspector can print a distribution without a second walk.
     families: BTreeMap<&'static str, i32>,
+    /// Rows per active section label. Empty when grouping is off.
+    groups: BTreeMap<String, i32>,
     /// Milliseconds since the epoch; zero when no row carried a stamp.
     newest: u64,
 }
@@ -558,7 +604,18 @@ fn summarize(rows: &[StoredRow]) -> RowSummary {
             }
             _ => {}
         }
+        if !row.group_label.is_empty() {
+            *summary.groups.entry(row.group_label.clone()).or_insert(0) += 1;
+        } else {
+            // Tag grouping leaves untagged rows with no label; the header
+            // prints them as "无标签" and still needs a count. When grouping is
+            // off every row lands here and the lone empty key is dropped below.
+            *summary.groups.entry(String::new()).or_insert(0) += 1;
+        }
         summary.newest = summary.newest.max(row.modified_at.unwrap_or(0));
+    }
+    if summary.groups.len() == 1 && summary.groups.contains_key("") {
+        summary.groups.clear();
     }
     summary
 }
@@ -579,6 +636,22 @@ fn families_json(families: &BTreeMap<&'static str, i32>) -> String {
     out
 }
 
+/// The section counts a header prints. Sorted by label, which is also the
+/// order `BTreeMap` has already put them in, so two listings of the same
+/// directory agree.
+fn groups_json(groups: &BTreeMap<String, i32>) -> String {
+    let mut out = String::from("[");
+    for (index, (label, count)) in groups.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        let label = serde_json::to_string(label).unwrap_or_else(|_| "\"\"".to_owned());
+        out.push_str(&format!("{{\"label\":{label},\"count\":{count}}}"));
+    }
+    out.push(']');
+    out
+}
+
 impl PartialEq for StoredRow {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -590,6 +663,7 @@ impl PartialEq for StoredRow {
             && self.created_fallback == other.created_fallback
             && self.hidden == other.hidden
             && self.read_only == other.read_only
+            && self.broken_link == other.broken_link
     }
 }
 
@@ -629,6 +703,7 @@ impl StoredRow {
             created_fallback: entry.created_fallback,
             hidden: entry.hidden,
             read_only: entry.read_only,
+            broken_link: link_is_broken(entry.kind, &entry.path),
             selected: false,
             group_label: String::new(),
             group_rank: 0,
@@ -637,7 +712,13 @@ impl StoredRow {
         }
     }
 
-    fn from_listing(row: ListingRow) -> Self {
+    fn from_listing(row: ListingRow, base: &str) -> Self {
+        let broken_link = matches!(row.kind, EntryKind::Symlink)
+            && row
+                .path
+                .as_deref()
+                .map(|path| link_is_broken(row.kind, path))
+                .unwrap_or_else(|| link_is_broken(row.kind, &format!("{base}{}", row.name)));
         Self {
             name: row.name,
             path: row.path,
@@ -648,6 +729,7 @@ impl StoredRow {
             created_fallback: row.created_fallback,
             hidden: row.hidden,
             read_only: row.read_only,
+            broken_link,
             selected: false,
             group_label: String::new(),
             group_rank: 0,
@@ -661,6 +743,37 @@ impl StoredRow {
             Some(path) => path.clone(),
             None => format!("{base}{}", self.name),
         }
+    }
+}
+
+/// Whether a symbolic link's target still resolves. Only symlinks pay for the
+/// second stat: the listing reader already knows every other row's kind, and
+/// re-statting ordinary files here would undo the pipeline's one-pass cost.
+fn link_is_broken(kind: EntryKind, path: &str) -> bool {
+    kind == EntryKind::Symlink
+        && vfs::is_local_path(path)
+        && std::fs::metadata(path).is_err()
+}
+
+/// The selected files' byte total, as the action bar prints it. Directories
+/// are skipped on purpose: their size is the on-demand measurement, and a
+/// selection summary must not start a directory walk.
+fn selected_size_text(rows: &[StoredRow]) -> QString {
+    let mut total: u64 = 0;
+    let mut counted = false;
+    for row in rows {
+        if !row.selected || row.kind != EntryKind::File {
+            continue;
+        }
+        if let Some(size) = row.size {
+            total = total.saturating_add(size);
+            counted = true;
+        }
+    }
+    if counted {
+        QString::from(crate::format::size(total).as_str())
+    } else {
+        QString::default()
     }
 }
 
@@ -1829,10 +1942,14 @@ pub struct DirectoryListModelRust {
     /// Per-family file counts of the finished listing, as JSON. See the
     /// property declaration above for the shape.
     family_counts: QString,
+    /// Per-section row counts of the finished listing, as JSON.
+    group_counts: QString,
     newest_modified: QString,
     /// Rows currently selected, published as the `selectedCount` property so
     /// the status bar never recounts the selection.
     selected_count: i32,
+    /// Byte total of the selected files, already formatted.
+    selected_size_text: QString,
     finished: bool,
     status: QString,
     path: QString,
@@ -1930,8 +2047,10 @@ impl Default for DirectoryListModelRust {
             files: 0,
             folders: 0,
             family_counts: QString::default(),
+            group_counts: QString::default(),
             newest_modified: QString::default(),
             selected_count: 0,
+            selected_size_text: QString::default(),
             finished: false,
             status: QString::default(),
             path: QString::default(),
@@ -2077,6 +2196,7 @@ impl qobject::DirectoryListModel {
             ROLE_TYPE_NAME => QVariant::from(&QString::from(type_label(row.kind, &row.name))),
             ROLE_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
             ROLE_CREATED_AT => QVariant::from(&(row.created_at.unwrap_or(0) as f64)),
+            ROLE_BROKEN_LINK => QVariant::from(&row.broken_link),
             ROLE_SELECTED_PREV => {
                 let previous = index.row() > 0
                     && self
@@ -2123,6 +2243,7 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_SELECTED_PREV, QByteArray::from("previousSelected"));
         roles.insert(ROLE_SELECTED_NEXT, QByteArray::from("nextSelected"));
         roles.insert(ROLE_CREATED_AT, QByteArray::from("createdAt"));
+        roles.insert(ROLE_BROKEN_LINK, QByteArray::from("brokenLink"));
         roles
     }
 
@@ -2205,6 +2326,18 @@ impl qobject::DirectoryListModel {
             self.as_mut().publish_selection_count();
             self.as_mut().set_path(QString::from(requested.as_str()));
             self.as_mut().set_status(QString::from("Loading…"));
+
+            // A navigation that fails — permission denied, a path that no
+            // longer exists — never delivers a view, and without this the bar
+            // would keep naming the directory the user just left while the tab
+            // and the empty state name the new one. Local crumbs are cheap to
+            // derive, so the bar moves before the read starts; a remote
+            // backend reports its own crumbs with the first batch.
+            if vfs::is_local_path(&requested) {
+                let crumbs =
+                    dae_core::fs::local::build_breadcrumbs(std::path::Path::new(&requested));
+                self.as_mut().adopt_breadcrumbs(crumbs);
+            }
         }
 
         // Navigation asks for branches too, because the status bar's
@@ -2294,6 +2427,67 @@ impl qobject::DirectoryListModel {
         if !path.as_slice().is_empty() {
             self.as_mut().load(&path);
         }
+    }
+
+    fn load_elevated(mut self: Pin<&mut Self>) {
+        let requested = self.path.to_string();
+        if requested.trim().is_empty() {
+            self.as_mut().set_status(QString::from("No path"));
+            return;
+        }
+        if self.remote {
+            self.as_mut().set_status(QString::from(
+                "Opening as administrator is only available for local folders",
+            ));
+            return;
+        }
+
+        if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
+            listing::cancel_directory_listing(stream_id);
+        }
+        let generation = self.generation.wrapping_add(1);
+        unsafe {
+            self.as_mut().begin_reset_model();
+            {
+                let mut rust = self.as_mut().rust_mut();
+                rust.generation = generation;
+                rust.sorting = false;
+                rust.sort_request = rust.sort_request.wrapping_add(1);
+                rust.tag_generation = rust.tag_generation.wrapping_add(1);
+                rust.tags_complete = false;
+                rust.tag_definitions = dae_core::fs::tags::definitions();
+                rust.tags_cache.clear();
+                rust.rows.clear();
+                rust.base.clear();
+                rust.folder_sizes.clear();
+                rust.selection.reset();
+                rust.refresh = None;
+                rust.reload_pending = false;
+                rust.closed = false;
+                rust.load_failed = false;
+            }
+            self.as_mut().end_reset_model();
+        }
+        self.as_mut().set_loaded(0);
+        self.as_mut().publish_selection_count();
+        self.as_mut().set_finished(false);
+        self.as_mut().set_status(QString::from("Opening as administrator…"));
+
+        let thread = self.as_mut().qt_thread();
+        let target = Arc::new(QtBatchTarget::new(thread, generation));
+        let path = PathBuf::from(requested);
+        std::thread::spawn(move || match dae_core::fs::elevated::run_list(&path) {
+            Ok(view) => {
+                let base = entry_codec::base_of(&view.path);
+                let rows = view
+                    .entries
+                    .iter()
+                    .map(|entry| StoredRow::from_entry(entry, &base))
+                    .collect();
+                target.deliver_head(base, view.path, view.breadcrumbs, rows, true);
+            }
+            Err(error) => target.fail(crate::errors::friendly_error(&error.to_string())),
+        });
     }
 
     /// Starts the Git read that belongs to the load above. Navigation clears
@@ -2641,6 +2835,11 @@ impl qobject::DirectoryListModel {
             let mut rust = self.as_mut().rust_mut();
             rust.order = next;
             assign_groups(&mut rust.rows, next.grouping);
+        }
+        if regrouped {
+            // The section headers print their own size; the labels just
+            // changed, so the counts have to follow before the view paints.
+            self.as_mut().publish_counts();
         }
         if needs_tags && !self.tags_complete {
             self.as_mut().start_full_tag_load();
@@ -2999,6 +3198,10 @@ impl qobject::DirectoryListModel {
         if self.family_counts != families {
             self.as_mut().set_family_counts(families);
         }
+        let groups = QString::from(groups_json(&summary.groups).as_str());
+        if self.group_counts != groups {
+            self.as_mut().set_group_counts(groups);
+        }
         let newest = QString::from(crate::format::timestamp(summary.newest).as_str());
         if self.newest_modified != newest {
             self.as_mut().set_newest_modified(newest);
@@ -3016,6 +3219,13 @@ impl qobject::DirectoryListModel {
         self.rows
             .get(row as usize)
             .map(|entry| QString::from(entry.full_path(&self.base).as_str()))
+            .unwrap_or_default()
+    }
+
+    fn group_label_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.group_label.as_str()))
             .unwrap_or_default()
     }
 
@@ -3072,8 +3282,18 @@ impl qobject::DirectoryListModel {
 
     fn publish_selection_count(mut self: Pin<&mut Self>) {
         let count = self.selection.count();
+        // No selection is the common case while a directory streams in, so it
+        // must not walk the rows just to publish an empty string.
+        let size = if count > 0 {
+            selected_size_text(&self.rows)
+        } else {
+            QString::default()
+        };
         if self.selected_count != count {
             self.as_mut().set_selected_count(count);
+        }
+        if self.selected_size_text != size {
+            self.as_mut().set_selected_size_text(size);
         }
     }
 
@@ -3132,6 +3352,35 @@ impl qobject::DirectoryListModel {
             selection.clear(rows)
         };
         self.as_mut().publish_selection(runs);
+    }
+
+    fn invert_selection(mut self: Pin<&mut Self>) -> i32 {
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            selection.invert(rows)
+        };
+        self.as_mut().publish_selection(runs);
+        self.selection.count()
+    }
+
+    fn select_family(mut self: Pin<&mut Self>, family: &QString) -> i32 {
+        let family = family.to_string();
+        let runs = {
+            let DirectoryListModelRust {
+                rows, selection, ..
+            } = &mut *self.as_mut().rust_mut();
+            let next = rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| category_of(row.kind, &row.name) == family.as_str())
+                .map(|(index, _)| index)
+                .collect();
+            selection.select_indices(rows, next)
+        };
+        self.as_mut().publish_selection(runs);
+        self.selection.count()
     }
 
     fn set_selected_paths(mut self: Pin<&mut Self>, paths: &QStringList) {
@@ -3275,6 +3524,7 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_files(0);
         self.as_mut().set_folders(0);
         self.as_mut().set_family_counts(QString::from("[]"));
+        self.as_mut().set_group_counts(QString::from("[]"));
         self.as_mut().set_newest_modified(QString::from(""));
         self.as_mut().set_git_busy(false);
         self.as_mut().clear_git_state();
@@ -4111,10 +4361,11 @@ impl QtBatchTarget {
 
     fn queue_batch(&self, batch: Batch) -> bool {
         let done = batch.done;
+        let base = entry_codec::base_of(&batch.path);
         let rows = batch
             .rows
             .into_iter()
-            .map(StoredRow::from_listing)
+            .map(|row| StoredRow::from_listing(row, &base))
             .collect();
         self.queue_rows(rows, done)
     }
@@ -4434,10 +4685,21 @@ mod tests {
         link.kind = EntryKind::Symlink;
         link.modified_at = Some(9_000);
 
+        folder.group_label = "A".to_owned();
+        image.group_label = "A".to_owned();
+        document.group_label = "B".to_owned();
+        link.group_label = "B".to_owned();
+
         let summary = summarize(&[folder, image, document, link]);
         assert_eq!(summary.folders, 1);
         assert_eq!(summary.files, 2);
         assert_eq!(summary.images, 1);
+        assert_eq!(summary.groups.get("A"), Some(&2));
+        assert_eq!(summary.groups.get("B"), Some(&2));
+        assert_eq!(
+            groups_json(&summary.groups),
+            "[{\"label\":\"A\",\"count\":2},{\"label\":\"B\",\"count\":2}]"
+        );
         // A symlink is neither kind, but its stamp is still a change in this
         // directory, so the heading's "updated" date follows it.
         assert_eq!(summary.newest, 9_000);
@@ -4525,6 +4787,7 @@ mod tests {
             created_fallback: false,
             hidden,
             read_only: false,
+            broken_link: false,
             selected: false,
             group_label: String::new(),
             group_rank: 0,
@@ -4535,6 +4798,24 @@ mod tests {
 
     fn names(rows: &[StoredRow]) -> Vec<&str> {
         rows.iter().map(|row| row.name.as_str()).collect()
+    }
+
+    #[test]
+    fn a_selection_summary_counts_files_and_skips_folders() {
+        let mut rows = vec![
+            stored("a.bin", EntryKind::File, 100, 1, false),
+            stored("b.bin", EntryKind::File, 250, 2, false),
+            stored("folder", EntryKind::Directory, 0, 3, false),
+        ];
+        for row in &mut rows {
+            row.selected = true;
+        }
+        assert_eq!(
+            selected_size_text(&rows),
+            QString::from(crate::format::size(350).as_str())
+        );
+        rows.iter_mut().for_each(|row| row.selected = false);
+        assert_eq!(selected_size_text(&rows), QString::default());
     }
 
     #[test]
@@ -5391,7 +5672,7 @@ mod tests {
                 let mut batch = 512usize;
                 loop {
                     let (chunk, done) = cursor.take_rows(batch);
-                    rows.extend(chunk.into_iter().map(StoredRow::from_listing));
+                    rows.extend(chunk.into_iter().map(|entry| StoredRow::from_listing(entry, &base)));
                     if done {
                         break;
                     }

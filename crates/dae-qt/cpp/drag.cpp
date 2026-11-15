@@ -50,20 +50,30 @@ QPixmap drag_preview(const QStringList& paths, int edge)
 }
 
 /// The icon dressed for the drag: the shell icon with a dashed signal-coloured
-/// rule around it, the way the shell marks a drop target. The frame is part of
-/// the pixmap rather than a second window so the OS moves one bitmap and the
-/// hot spot stays the icon's centre. `padding` is in logical pixels; the
-/// pixmap is tagged with `ratio` so the rule stays one device pixel wide on a
-/// scaled display.
+/// rule around it, the way the shell marks a drop target, a count badge when
+/// several entries are carried and one line of verdict under the frame. The
+/// frame is part of the pixmap rather than a second window so the OS moves one
+/// bitmap and the hot spot stays the icon's centre. `padding` is in logical
+/// pixels; the pixmap is tagged with `ratio` so the rule stays one device pixel
+/// wide on a scaled display.
 QPixmap framed_preview(const QPixmap& icon, int padding, qreal ratio,
-                       const QColor& signal)
+                       const QColor& signal, int count,
+                       const QString& verdict, const QColor& ink,
+                       const QColor& canvas)
 {
     if (icon.isNull())
         return icon;
 
+    constexpr qreal kVerdictBand = 22.0;
+    const bool hasVerdict = !verdict.isEmpty();
     const QSizeF inner = icon.deviceIndependentSize();
-    const qreal width = inner.width() + padding * 2.0;
-    const qreal height = inner.height() + padding * 2.0;
+    const qreal width = qMax(inner.width() + padding * 2.0,
+                             hasVerdict ? 96.0 : 0.0);
+    const qreal height = inner.height() + padding * 2.0
+                         + (hasVerdict ? kVerdictBand : 0.0);
+    // The icon sits at the left of a wider tile when the verdict line is the
+    // widest part, so the pixmap reads as one carried card.
+    const qreal iconX = (width - inner.width()) / 2.0;
 
     QPixmap pixmap(qRound(width * ratio), qRound(height * ratio));
     pixmap.setDevicePixelRatio(ratio);
@@ -71,7 +81,8 @@ QPixmap framed_preview(const QPixmap& icon, int padding, qreal ratio,
 
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.drawPixmap(QPointF(padding, padding), icon);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    painter.drawPixmap(QPointF(iconX, padding), icon);
 
     QPen pen(signal, 1.0, Qt::DashLine);
     pen.setCapStyle(Qt::FlatCap);
@@ -79,7 +90,39 @@ QPixmap framed_preview(const QPixmap& icon, int padding, qreal ratio,
     painter.setBrush(Qt::NoBrush);
     // Half-pixel inset keeps the 1 px rule on the device grid, as the tab
     // chip's border does.
-    painter.drawRect(QRectF(0.5, 0.5, width - 1.0, height - 1.0));
+    painter.drawRect(QRectF(0.5, 0.5, width - 1.0,
+                            inner.height() + padding * 2.0 - 1.0));
+
+    // §10.3: a badge says how many entries travel under the one icon the
+    // platform lets a drag carry. One entry needs no number.
+    if (count > 1) {
+        const QString text = QString::number(count);
+        QFont badgeFont = QGuiApplication::font();
+        badgeFont.setPixelSize(10);
+        badgeFont.setBold(true);
+        painter.setFont(badgeFont);
+        const QFontMetrics badgeMetrics(badgeFont);
+        const qreal badgeWidth = qMax<qreal>(14.0,
+                                             badgeMetrics.horizontalAdvance(text) + 8.0);
+        const QRectF badge(width - badgeWidth - 2.0, 2.0, badgeWidth, 14.0);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(ink);
+        painter.drawRoundedRect(badge, 7.0, 7.0);
+        painter.setPen(canvas);
+        painter.drawText(badge, Qt::AlignCenter, text);
+    }
+
+    if (hasVerdict) {
+        QFont font = QGuiApplication::font();
+        font.setPixelSize(11);
+        painter.setFont(font);
+        const QFontMetrics metrics(font);
+        const QRectF band(0.0, inner.height() + padding * 2.0, width, kVerdictBand);
+        painter.setPen(ink);
+        painter.drawText(band, Qt::AlignHCenter | Qt::AlignVCenter,
+                         metrics.elidedText(verdict, Qt::ElideRight,
+                                            qRound(width - 8.0)));
+    }
     return pixmap;
 }
 
@@ -136,7 +179,9 @@ QPixmap tab_preview(const QString& title, int width, int height,
 } // namespace
 
 bool dae_qt_start_file_drag(const QStringList& paths, int actions,
-                            const QColor& signal)
+                            const QColor& signal, int count,
+                            const QString& verdict, const QColor& ink,
+                            const QColor& canvas)
 {
     if (paths.isEmpty() || s_drag_in_progress)
         return false;
@@ -172,13 +217,16 @@ bool dae_qt_start_file_drag(const QStringList& paths, int actions,
     QPixmap icon = drag_preview(paths, edge);
     if (!icon.isNull()) {
         icon.setDevicePixelRatio(ratio);
-        const QPixmap preview = framed_preview(icon, kFramePadding, ratio, signal);
+        const QPixmap preview = framed_preview(icon, kFramePadding, ratio, signal,
+                                               count, verdict, ink, canvas);
         drag->setPixmap(preview);
         // QDrag's hot spot is in device-independent pixels; Qt scales it for
         // the platform's drag image (OLE multiplies by the screen factor).
+        // The icon stays the anchor: the verdict line hangs below it.
         const QSizeF logical = preview.deviceIndependentSize();
+        const QSizeF iconEdge = icon.deviceIndependentSize();
         drag->setHotSpot(QPoint(qRound(logical.width() / 2.0),
-                                qRound(logical.height() / 2.0)));
+                                qRound((kFramePadding + iconEdge.height() / 2.0))));
     }
 
     s_drag_in_progress = true;

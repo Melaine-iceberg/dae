@@ -30,6 +30,7 @@ use super::transfer::{self, TransferSource};
 use super::types::{TransferItem, TransferPair};
 use super::vfs;
 use crate::error::FileSystemError;
+use crate::types::DirectoryView;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,10 +42,10 @@ pub const JOB_FLAG: &str = "--elevated-job";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ElevatedJob {
-    /// `"copy"`, `"move"` or `"delete"`.
+    /// `"copy"`, `"move"`, `"delete"` or `"list"`.
     pub kind: String,
     pub sources: Vec<TransferItem>,
-    /// The target directory for a copy or a move; `None` for a delete.
+    /// The target directory for a copy or a move; `None` for a delete or list.
     pub destination: Option<String>,
 }
 
@@ -54,14 +55,56 @@ struct JobResult {
     ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// The one-shot directory snapshot a `"list"` job answers with. A transfer
+    /// job leaves it `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    view: Option<DirectoryView>,
 }
 
-/// Runs the job, launches the elevated child, and waits for it.
+enum JobOutcome {
+    Done,
+    Directory(DirectoryView),
+}
+
+/// Runs the transfer, launches the elevated child, and waits for it.
 ///
 /// Blocking: the caller runs it on a worker thread and shows an indeterminate
 /// progress row, because an elevated process cannot report progress back into
 /// this one's event loop.
 pub fn run(job: ElevatedJob) -> Result<(), FileSystemError> {
+    match run_job(job)? {
+        JobOutcome::Done => Ok(()),
+        JobOutcome::Directory(_) => Err(FileSystemError::InvalidInput(
+            "The elevated listing returned a directory view to a transfer".to_owned(),
+        )),
+    }
+}
+
+/// Reads one local directory with the elevated child's token.
+///
+/// This is the read-only counterpart of [`run`]: the window and every other
+/// listing stay at the user's own token, and only this snapshot is produced by
+/// the elevated process. It exists for the permission-denied empty state, where
+/// "retry as administrator" is the only action that can answer.
+pub fn run_list(path: &Path) -> Result<DirectoryView, FileSystemError> {
+    let job = ElevatedJob {
+        kind: "list".to_owned(),
+        sources: vec![TransferItem {
+            path: path.to_string_lossy().into_owned(),
+            on_conflict: Default::default(),
+        }],
+        destination: None,
+    };
+
+    match run_job(job)? {
+        JobOutcome::Directory(view) => Ok(view),
+        JobOutcome::Done => Err(FileSystemError::Internal(
+            "The elevated listing did not report a view".to_owned(),
+        )),
+    }
+}
+
+fn run_job(job: ElevatedJob) -> Result<JobOutcome, FileSystemError> {
     let directory = job_directory()?;
     fs::create_dir_all(&directory)?;
 
@@ -121,13 +164,20 @@ pub fn run_from_args() -> Option<i32> {
     let outcome = execute_job_file(&job_path);
 
     let payload = match &outcome {
-        Ok(()) => JobResult {
+        Ok(JobOutcome::Done) => JobResult {
             ok: true,
             error: None,
+            view: None,
+        },
+        Ok(JobOutcome::Directory(view)) => JobResult {
+            ok: true,
+            error: None,
+            view: Some(view.clone()),
         },
         Err(error) => JobResult {
             ok: false,
             error: Some(error.to_string()),
+            view: None,
         },
     };
 
@@ -136,12 +186,12 @@ pub fn run_from_args() -> Option<i32> {
     }
 
     Some(match outcome {
-        Ok(()) => 0,
+        Ok(_) => 0,
         Err(_) => 1,
     })
 }
 
-fn execute_job_file(path: &Path) -> Result<(), FileSystemError> {
+fn execute_job_file(path: &Path) -> Result<JobOutcome, FileSystemError> {
     // An elevated process must not be talked into running an arbitrary job
     // file: only the directory this user's own shell writes to is accepted.
     if !is_own_job(path) {
@@ -155,7 +205,16 @@ fn execute_job_file(path: &Path) -> Result<(), FileSystemError> {
     let job: ElevatedJob = serde_json::from_slice(&contents)
         .map_err(|error| FileSystemError::InvalidInput(error.to_string()))?;
 
-    execute(&job)
+    if job.kind == "list" {
+        let source = job.sources.first().ok_or_else(|| {
+            FileSystemError::InvalidInput("The elevated listing has no path".to_owned())
+        })?;
+        let view = super::local::read_directory_sync(PathBuf::from(&source.path))?;
+        return Ok(JobOutcome::Directory(view));
+    }
+
+    execute(&job)?;
+    Ok(JobOutcome::Done)
 }
 
 /// True when `path` sits directly inside [`job_directory`].
@@ -227,7 +286,7 @@ impl super::progress::FileOperationProgressReporterTrait for SilentProgress {
     fn finish(&self) {}
 }
 
-fn read_result(path: &Path) -> Result<(), FileSystemError> {
+fn read_result(path: &Path) -> Result<JobOutcome, FileSystemError> {
     let contents = fs::read(path).map_err(|error| {
         // The child exited without writing a result: either the user dismissed
         // the elevation prompt or the child died before it could report.
@@ -237,10 +296,11 @@ fn read_result(path: &Path) -> Result<(), FileSystemError> {
     let result: JobResult = serde_json::from_slice(&contents)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
 
-    match (result.ok, result.error) {
-        (true, _) => Ok(()),
-        (false, Some(error)) => Err(FileSystemError::Internal(error)),
-        (false, None) => Err(FileSystemError::Internal(
+    match (result.ok, result.error, result.view) {
+        (true, _, Some(view)) => Ok(JobOutcome::Directory(view)),
+        (true, _, None) => Ok(JobOutcome::Done),
+        (false, Some(error), _) => Err(FileSystemError::Internal(error)),
+        (false, None, _) => Err(FileSystemError::Internal(
             "The elevated operation failed".to_owned(),
         )),
     }
