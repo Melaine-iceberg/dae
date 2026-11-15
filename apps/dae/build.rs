@@ -39,6 +39,8 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/TerminalPanel.qml", "qml/TerminalPanel.qml"),
     ("../../qml/ResizeHandles.qml", "qml/ResizeHandles.qml"),
     ("../../qml/FileList.qml", "qml/FileList.qml"),
+    ("../../qml/ListRow.qml", "qml/ListRow.qml"),
+    ("../../qml/ScrollBar.qml", "qml/ScrollBar.qml"),
     ("../../qml/FileIcon.qml", "qml/FileIcon.qml"),
     ("../../qml/FileGrid.qml", "qml/FileGrid.qml"),
     ("../../qml/ColumnView.qml", "qml/ColumnView.qml"),
@@ -61,9 +63,11 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/OverviewView.qml", "qml/OverviewView.qml"),
     ("../../qml/SpaceView.qml", "qml/SpaceView.qml"),
     ("../../qml/CommandPalette.qml", "qml/CommandPalette.qml"),
-    ("../../qml/ContextMenu.qml", "qml/ContextMenu.qml"),
+    ("../../qml/Menu.qml", "qml/Menu.qml"),
     ("../../qml/MenuList.qml", "qml/MenuList.qml"),
+    ("../../qml/ToolTip.qml", "qml/ToolTip.qml"),
     ("../../qml/NamePrompt.qml", "qml/NamePrompt.qml"),
+    ("../../qml/Dialog.qml", "qml/Dialog.qml"),
     ("../../qml/DialogButton.qml", "qml/DialogButton.qml"),
     ("../../qml/DialogHeader.qml", "qml/DialogHeader.qml"),
     ("../../qml/PropertiesDialog.qml", "qml/PropertiesDialog.qml"),
@@ -342,6 +346,25 @@ fn main() {
         QResourceFile::new("../../qml/i18n/dae_zh_TW.ts").alias("dae_zh_TW.ts".to_owned()),
     ]);
 
+    // The UI faces (proposal §6.2.1, §9.2). Inter Variable covers the Latin
+    // and the digits across every weight the type scale uses; JetBrains Mono
+    // covers hashes, paths, the terminal and code preview. Both are OFL 1.1,
+    // which requires the licence to travel with the fonts, so it is mounted
+    // beside them. `dae_qt_apply_fonts` loads these paths before the first QML
+    // document exists.
+    let fonts = QResource::new().prefix("/fonts").files([
+        QResourceFile::new("../../Assets/fonts/InterVariable.ttf")
+            .alias("InterVariable.ttf".to_owned()),
+        QResourceFile::new("../../Assets/fonts/JetBrainsMono-Regular.ttf")
+            .alias("JetBrainsMono-Regular.ttf".to_owned()),
+        QResourceFile::new("../../Assets/fonts/JetBrainsMono-Medium.ttf")
+            .alias("JetBrainsMono-Medium.ttf".to_owned()),
+        QResourceFile::new("../../Assets/fonts/LICENSE-Inter.txt")
+            .alias("LICENSE-Inter.txt".to_owned()),
+        QResourceFile::new("../../Assets/fonts/LICENSE-JetBrainsMono.txt")
+            .alias("LICENSE-JetBrainsMono.txt".to_owned()),
+    ]);
+
     // The C++ type descriptions for the two modules registered by hand at run
     // time (`dae.terminal`, `dae.activation`). They are not documents, so they
     // are not in `QML_FILES`, but both QML compilers read them through `-I qml`;
@@ -357,7 +380,12 @@ fn main() {
 
     let mut builder = CxxQtBuilder::new()
         .qt_module("Quick")
-        .qrc_resources(QResources::new().resource(qml).resource(translations))
+        .qrc_resources(
+            QResources::new()
+                .resource(qml)
+                .resource(translations)
+                .resource(fonts),
+        )
         // Always compiled: it is the reference that keeps the generated units
         // out of the archive's dead objects. See the file itself.
         .cpp_file("cpp/qml_cache_init.cpp");

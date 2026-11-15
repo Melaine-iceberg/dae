@@ -7,12 +7,11 @@ import dae 1.0
 //
 // It reads and writes `ExplorerPrefs` directly, so the menu has no second copy
 // of the state and a second window's menu is already showing the same ticks.
-// The rows themselves come from `MenuList`, which is also what the context
-// menu draws: one row height, one group label, one tick mark in the shell.
-Item {
+// The panel itself is `Menu`, shared with the context and filter menus; this
+// file owns the rows and the icon-size band pinned under them.
+Menu {
     id: root
 
-    property bool dark: true
     property color accent: Theme.accent
     /// The shell's pane visibility. These are window state, not preferences,
     /// so the menu asks the window to flip them instead of writing prefs.
@@ -21,23 +20,9 @@ Item {
     /// opens it keeps the full width for the listing.
     property bool inspectorVisible: false
     property bool terminalVisible: false
-    property real openX: 0
-    property real openY: 0
-    property bool above: true
 
     signal toggleRequested(string property)
     signal actionRequested(string id)
-
-    visible: false
-    /// Arrives rather than appears. Hiding stays instant: a menu that fades
-    /// out is a menu that ignores the next click.
-    opacity: visible ? 1 : 0
-    Behavior on opacity {
-        enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
-    }
-    focus: visible
-    z: 1002
 
     readonly property var items: [
         { kind: "label", label: qsTr("视图") },
@@ -117,13 +102,13 @@ Item {
         { kind: "size", value: 96, label: "96" }
     ]
 
+    rows: root.normalized()
+
     function openAbove(x, y) {
         root.openX = x
         root.openY = y
         root.above = true
-        list.resetScroll()
-        root.visible = true
-        Qt.callLater(list.takeFocus)
+        root.show()
     }
 
     function close() {
@@ -198,132 +183,87 @@ Item {
         return mapped
     }
 
-    MouseArea {
-        Accessible.ignored: true
-        anchors.fill: parent
-        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        onClicked: root.close()
-        onWheel: root.close()
-    }
+    onRowTriggered: function (index) { root.choose(root.items[index]) }
 
-    Shadow {
-        target: panel
-    }
+    /// The icon size is a continuous value, so it is a slider rather than
+    /// five radio rows at the foot of the panel: the rows above already carry
+    /// enough discrete ticks, and the band stays put while they scroll.
+    footer: Component {
+        Item {
+            implicitHeight: 30
 
-    Rectangle {
-        id: panel
-        width: list.naturalWidth
-        // Twenty-two rows do not fit a window; the list scrolls in what is
-        // left of it.
-        height: Math.min(list.contentHeight + 42, root.height - 16)
-        x: Math.max(8, Math.min(root.openX, root.width - width - 8))
-        y: root.above
-            ? Math.max(8, root.openY - height - 6)
-            : Math.min(root.openY, root.height - height - 8)
-        radius: Theme.radiusLg
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.line
-
-        // The panel itself is not an input item, so a press on its padding or
-        // on a non-selectable row (a separator, a group label) would otherwise
-        // reach the window-wide scrim behind it and read as a click outside:
-        // the menu closed on release, and a drag that started there closed it
-        // too. Swallow presses and wheel here; the rows above still get theirs.
-        MouseArea {
-            anchors.fill: parent
-            onWheel: {}
-        }
-
-        /// The icon size is a continuous value, so it is a slider rather than
-        /// five radio rows: the menu already lists enough discrete ticks.
-        Row {
-            id: iconSliderRow
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            height: 30
-            spacing: 10
-
-            Text {
+            Row {
+                anchors.left: parent.left
+                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("图标大小")
-                color: Theme.inkTertiary
-                font.pixelSize: Theme.typeMicro
-            }
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                height: parent.height
+                spacing: 10
 
-            Item {
-                id: iconSlider
-                width: Math.max(80, iconSliderRow.width - 120)
-                height: 20
-                anchors.verticalCenter: parent.verticalCenter
-
-                readonly property real ratio: (ExplorerPrefs.iconSize - 24) / 72
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
+                Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    height: 2
-                    radius: 1
-                    color: Theme.line
+                    text: qsTr("图标大小")
+                    color: Theme.inkTertiary
+                    font.pixelSize: Theme.typeMicro
                 }
 
-                Rectangle {
-                    x: Math.max(0, Math.min(iconSlider.width - 10,
-                                            iconSlider.ratio * iconSlider.width - 5))
+                Item {
+                    id: iconSlider
+                    width: Math.max(80, parent.width - 120)
+                    height: 20
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 10
-                    height: 10
-                    radius: 5
-                    color: Theme.accent
-                }
 
-                MouseArea {
-                    /// A drag dot for the pointer. Its value is set from the menu around
-                    /// it, so the dot would only add a nameless target to the tree.
-                    Accessible.ignored: true
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onPositionChanged: function (mouse) {
-                        if (!pressed)
-                            return
-                        const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
-                        ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
+                    readonly property real ratio: (ExplorerPrefs.iconSize - 24) / 72
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 2
+                        radius: 1
+                        color: Theme.line
                     }
-                    onPressed: function (mouse) {
-                        const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
-                        ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
+
+                    Rectangle {
+                        x: Math.max(0, Math.min(iconSlider.width - 10,
+                                                iconSlider.ratio * iconSlider.width - 5))
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 10
+                        height: 10
+                        radius: 5
+                        color: Theme.accent
+                    }
+
+                    MouseArea {
+                        /// A drag dot for the pointer. Its value is set from the menu around
+                        /// it, so the dot would only add a nameless target to the tree.
+                        Accessible.ignored: true
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onPositionChanged: function (mouse) {
+                            if (!pressed)
+                                return
+                            const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
+                            ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
+                        }
+                        onPressed: function (mouse) {
+                            const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
+                            ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
+                        }
                     }
                 }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: ExplorerPrefs.iconSize
+                    color: Theme.inkSecondary
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                    width: 24
+                    horizontalAlignment: Text.AlignRight
+                }
             }
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: ExplorerPrefs.iconSize
-                color: Theme.inkSecondary
-                font.pixelSize: Theme.typeMicro
-                font.features: { "tnum": 1 }
-                width: 24
-                horizontalAlignment: Text.AlignRight
-            }
-        }
-
-        MenuList {
-            id: list
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.topMargin: 4
-            anchors.bottom: iconSliderRow.top
-            anchors.bottomMargin: 4
-            maxHeight: height
-            items: root.normalized()
-
-            onTriggered: function (index) { root.choose(root.items[index]) }
-            onEscapeRequested: root.close()
         }
     }
 }

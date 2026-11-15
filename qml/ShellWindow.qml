@@ -196,6 +196,11 @@ Window {
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
     readonly property bool splitActive: ExplorerPrefs.splitEnabled
         && folderActive && !searchActive
+    /// §11.4: F5/F6 only mean "send to the other pane" while both panes show a
+    /// folder and no editor or dialog owns the keyboard. While they do, the
+    /// configured refresh key stands down if it is one of those two keys.
+    readonly property bool splitTransferActive: splitActive && !modalOpen
+        && !pathEditing
     /// The listing the footer's action bar acts on: the focused pane when
     /// split view is on, the primary one otherwise — the same rule a
     /// window-level shortcut follows.
@@ -400,6 +405,10 @@ Window {
         || updateDialog.shown || transferConflict.visible || transferQueue.visible
         || statusCenter.visible || quickPreview.open
         || propertiesDialog.shown || bulkRenameDialog.shown || moveToDialog.shown
+        // The toolbar and search-bar menus are overlays too: while one is
+        // open, a click elsewhere dismisses it and no shortcut behind it runs.
+        || displayMenu.visible || filterMenu.visible || moreMenu.visible
+        || searchHistoryMenu.visible || searchTypeMenu.visible
 
     Timer {
         id: searchTimer
@@ -1118,6 +1127,28 @@ Window {
             root.navigate(path)
         else
             root.navigateSplit(path)
+    }
+
+    /// §11.4: F5 copies the active pane's selection to the other pane's
+    /// directory and F6 moves it. The in-app clipboard is the transfer
+    /// mechanism the rest of the shell already uses, so a remote destination
+    /// behaves exactly like Paste.
+    function transferToOtherPane(mode) {
+        if (!root.splitActive || root.splitTab === null)
+            return
+        const source = root.splitFocused ? splitList : fileList
+        const destinationTab = root.splitFocused ? root.activeTab : root.splitTab
+        const destination = destinationTab !== null ? destinationTab.listing.path : ""
+        const paths = source.selectedPathList()
+        if (destination === "" || paths.length === 0)
+            return
+        if (source.tab !== null && source.tab.listing.path === destination)
+            return
+        Workspace.setClipboard(mode, paths)
+        Workspace.pasteInto(destination)
+        toast.show(mode === "cut"
+            ? qsTr("正在移动到 %1").arg(destination)
+            : qsTr("正在复制到 %1").arg(destination))
     }
 
     Connections {
@@ -2420,10 +2451,10 @@ Window {
             : root.remoteLocation
     }
 
-    /// The row menu's first page: the actions a right-click is actually for.
-    /// Everything rarer sits on the second page behind "更多…", because twenty
-    /// rows in one panel made the two actions people use most the two hardest
-    /// to find.
+    /// The row menu's first page, in the group order §7.5 fixes:
+    /// 打开/打开方式 → 剪切/复制/粘贴 → 重命名/移动到 → 删除 →
+    /// 标签/压缩 → 属性/平台扩展. Everything rarer sits on the second page
+    /// behind "更多…", which stays last so it never moves.
     function rowMenuItems() {
         const path = root.contextPath
         const isDir = root.contextIsDir
@@ -2432,7 +2463,8 @@ Window {
         const hasPath = path !== ""
         const hasClipboard = Workspace.clipboardMode !== ""
         const remote = root.rowMenuRemote()
-        return [
+        const shellCommands = root.shellCommandSubmenu()
+        const items = [
             { id: "open", glyph: isDir ? "folder" : "external",
               label: isDir ? qsTr("打开") : qsTr("用默认应用打开"),
               enabled: hasPath && (!remote || isDir), shortcut: root.chord("Enter") },
@@ -2440,11 +2472,13 @@ Window {
               enabled: hasPath && isDir },
             { id: "openWindow", glyph: "window", label: qsTr("在新窗口打开"),
               enabled: hasPath && isDir },
+            { id: "openWith", glyph: "exe", label: qsTr("选择打开方式…"),
+              enabled: hasPath && !remote },
             { separator: true },
-            { id: "copy", glyph: "copy", label: qsTr("复制"),
-              shortcut: root.shortcutDisplay("explorer.copy"), enabled: hasPath },
             { id: "cut", glyph: "cut", label: qsTr("剪切"),
               shortcut: root.shortcutDisplay("explorer.cut"), enabled: hasPath },
+            { id: "copy", glyph: "copy", label: qsTr("复制"),
+              shortcut: root.shortcutDisplay("explorer.copy"), enabled: hasPath },
             { id: "paste", glyph: "paste", label: qsTr("粘贴到此处"),
               shortcut: root.shortcutDisplay("explorer.paste"),
               enabled: hasClipboard && isDir },
@@ -2454,17 +2488,34 @@ Window {
               label: many ? qsTr("批量重命名…") : qsTr("重命名"),
               enabled: hasPath,
               shortcut: many ? "" : root.shortcutDisplay("explorer.rename") },
+            { id: "moveTo", glyph: "arrowRight", label: qsTr("移动到…"),
+              enabled: hasPath },
+            { separator: true },
             { id: "trash", glyph: "trash", label: qsTr("移到回收站"),
               shortcut: root.shortcutDisplay("explorer.trash"),
               enabled: hasPath && !remote, danger: true },
             { separator: true },
-            { id: "properties", glyph: "info", label: qsTr("属性"),
-              shortcut: root.shortcutDisplay("explorer.properties"),
-              enabled: hasPath && !many },
             { id: "tags", glyph: "star", label: qsTr("标签"),
               enabled: hasPath, submenu: root.tagSubmenu() },
-            { id: "moreMenu", glyph: "more", label: qsTr("更多…") }
+            { id: "compress", glyph: "archive", label: qsTr("压缩为…"),
+              enabled: hasPath && !remote, submenu: [
+                { id: "compressZip", label: qsTr("ZIP 压缩包") },
+                { id: "compressZipEncrypted", label: qsTr("ZIP 压缩包（加密）") },
+                { id: "compressTar", label: qsTr("TAR 归档") },
+                { id: "compressTarGz", label: qsTr("TAR.GZ 压缩包") },
+                { id: "compress7z", label: qsTr("7Z 压缩包") },
+                { id: "compress7zEncrypted", label: qsTr("7Z 压缩包（加密）") }
+            ] },
+            { separator: true },
+            { id: "properties", glyph: "info", label: qsTr("属性"),
+              shortcut: root.shortcutDisplay("explorer.properties"),
+              enabled: hasPath && !many }
         ]
+        if (shellCommands.length > 0)
+            items.push({ id: "shellCommands", glyph: "external",
+                         label: qsTr("应用扩展"), submenu: shellCommands })
+        items.push({ id: "moreMenu", glyph: "more", label: qsTr("更多…") })
+        return items
     }
 
     /// The tag rows, rebuilt from the singleton every time the menu opens so a
@@ -2522,8 +2573,6 @@ Window {
             { separator: true },
             { id: "reveal", glyph: "folder", label: qsTr("在资源管理器中显示"),
               enabled: hasPath && !remote },
-            { id: "openWith", glyph: "exe", label: qsTr("选择打开方式…"),
-              enabled: hasPath && !remote },
             { id: "terminal", glyph: "terminal", label: qsTr("在终端中打开"),
               enabled: hasPath && isDir && !remote },
             { id: "preview", glyph: "eye",
@@ -2538,13 +2587,9 @@ Window {
               enabled: root.currentSelection().length === 2 && !remote }
         ]
 
-        const extensions = root.shellCommandSubmenu()
-        if (extensions.length > 0) {
-            items.push({ separator: true })
-            items.push({ id: "shellCommands", glyph: "external",
-                         label: qsTr("应用扩展"), submenu: extensions })
-        }
-
+        // 打开方式、压缩、移动到 and the applications' verbs are on the first
+        // page now (the §7.5 group order); what remains here is what a
+        // right-click should not carry.
         const custom = root.customActionSubmenu()
         if (custom.length > 0) {
             items.push({ id: "customActions", glyph: "exe",
@@ -2557,21 +2602,10 @@ Window {
         items.push({ id: "duplicate", glyph: "copy", label: qsTr("创建副本"), enabled: hasPath })
         items.push({ id: "createShortcut", glyph: "link", label: qsTr("创建快捷方式"),
                      enabled: hasPath && !remote })
-        items.push({ id: "compress", glyph: "archive", label: qsTr("压缩为…"),
-                     enabled: hasPath && !remote, submenu: [
-            { id: "compressZip", label: qsTr("ZIP 压缩包") },
-            { id: "compressZipEncrypted", label: qsTr("ZIP 压缩包（加密）") },
-            { id: "compressTar", label: qsTr("TAR 归档") },
-            { id: "compressTarGz", label: qsTr("TAR.GZ 压缩包") },
-            { id: "compress7z", label: qsTr("7Z 压缩包") },
-            { id: "compress7zEncrypted", label: qsTr("7Z 压缩包（加密）") }
-        ] })
         items.push({ id: "extractHere", glyph: "extract", label: qsTr("解压到此处"),
                      enabled: canExtract })
         items.push({ id: "extractTo", glyph: "folder", label: qsTr("解压到新文件夹…"),
                      enabled: canExtract })
-        items.push({ id: "moveTo", glyph: "arrowRight", label: qsTr("移动到…"),
-                     enabled: hasPath })
         items.push({ separator: true })
         items.push({ id: "favorite", glyph: "star", label: qsTr("加入收藏"),
                      enabled: hasPath && isDir })
@@ -3618,7 +3652,7 @@ Window {
                 anchors.left: leadingToolbar.right
                 anchors.leftMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                width: 1
+                width: Theme.ruleWidth(Screen.devicePixelRatio)
                 height: 16
                 color: Theme.hairline
             }
@@ -3801,6 +3835,8 @@ Window {
                         enabled: parent.canGo
                         onClicked: root.goBack()
                     }
+
+                    ToolTip { text: qsTr("后退") }
                 }
             }
 
@@ -3849,6 +3885,8 @@ Window {
                         enabled: parent.canGo
                         onClicked: root.goForward()
                     }
+
+                    ToolTip { text: qsTr("前进") }
                 }
             }
 
@@ -3895,6 +3933,8 @@ Window {
                         enabled: root.folderActive
                         onClicked: root.goUp()
                     }
+
+                    ToolTip { text: qsTr("上一级") }
                 }
             }
 
@@ -3949,6 +3989,8 @@ Window {
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.openSearch()
                         }
+
+                        ToolTip { text: qsTr("搜索") }
                     }
                 }
             }
@@ -4045,6 +4087,8 @@ Window {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: viewSlot.openMenu()
                     }
+
+                    ToolTip { text: qsTr("视图") }
                 }
             }
 
@@ -4097,6 +4141,8 @@ Window {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: moreSlot.openMenu()
                     }
+
+                    ToolTip { text: qsTr("更多") }
                 }
             }
         }
@@ -4168,7 +4214,7 @@ Window {
 
                 Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: 1
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
                     height: parent.height
                     color: sidebarHandleMouse.containsMouse ? root.accent : Theme.hairline
                 }
@@ -4239,6 +4285,7 @@ Window {
             }
 
             Column {
+                id: contentColumn
                 width: parent.width - sidebar.width - sidebarHandle.width
                     - inspector.width - inspectorHandle.width
                 height: parent.height
@@ -4294,6 +4341,14 @@ Window {
                         }
                         onPreviewRequested: function (path) {
                             root.togglePreview(path)
+                        }
+
+                        // Focus follows the pointer; the pane itself carries the
+                        // accessible name.
+                        // a11y:decorative
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton
+                            onTapped: root.splitFocused = false
                         }
                     }
 
@@ -4402,7 +4457,7 @@ Window {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
-                                height: 1
+                                height: Theme.ruleWidth(Screen.devicePixelRatio)
                                 color: root.hairline
                             }
                         }
@@ -4444,6 +4499,14 @@ Window {
                             onOpenTerminalRequested: function (path) {
                                 root.openSystemTerminal(path)
                             }
+
+                            // Focus follows the pointer; the pane itself carries
+                            // the accessible name.
+                            // a11y:decorative
+                            TapHandler {
+                                acceptedButtons: Qt.LeftButton
+                                onTapped: root.splitFocused = true
+                            }
                         }
                     }
 
@@ -4457,7 +4520,7 @@ Window {
 
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: 1
+                            width: Theme.ruleWidth(Screen.devicePixelRatio)
                             height: parent.height
                             color: root.hairline
                         }
@@ -4482,10 +4545,57 @@ Window {
                                 const space = splitDivider.parent.width
                                 if (space <= 0)
                                     return
-                                root.splitRatio = Math.max(0.25, Math.min(0.75,
+                                const minimum = Math.max(0.05, 200 / space)
+                                const maximum = Math.max(minimum,
+                                    Math.min(0.95, 1 - 200 / space, 800 / space))
+                                root.splitRatio = Math.max(minimum, Math.min(maximum,
                                     startRatio + (now - startPointerX) / space))
                             }
+                            onDoubleClicked: root.splitRatio = 0.5
                         }
+                    }
+
+                    /// §11.4: the active pane is an accent outline; the other
+                    /// pane is the hairline the window already uses. The outline
+                    /// sits above the list and below menus, and never eats a
+                    /// click.
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: root.splitActive ? splitDivider.x : 0
+                        visible: root.splitActive && !root.contentSearchActive
+                        color: "transparent"
+                        border.width: root.splitFocused ? 1 : 0
+                        border.color: root.hairline
+                        z: 40
+                        Accessible.ignored: true
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: root.splitActive && !root.splitFocused ? splitDivider.x : 0
+                        visible: width > 0 && !root.contentSearchActive
+                        color: "transparent"
+                        border.width: 1.5
+                        border.color: Theme.accent
+                        z: 41
+                        Accessible.ignored: true
+                    }
+
+                    Rectangle {
+                        anchors.left: splitDivider.right
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        visible: root.splitActive && !root.contentSearchActive
+                        color: "transparent"
+                        border.width: root.splitFocused ? 1.5 : 0
+                        border.color: root.splitFocused ? Theme.accent : root.hairline
+                        z: 40
+                        Accessible.ignored: true
                     }
 
                     ContentResults {
@@ -4636,7 +4746,7 @@ Window {
 
                 Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: 1
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
                     height: parent.height
                     color: handleMouse.containsMouse ? Theme.accent : Theme.hairline
                 }
@@ -4723,7 +4833,7 @@ Window {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: Theme.hairline
             }
 
@@ -4989,7 +5099,7 @@ Window {
                 }
 
                 Rectangle {
-                    width: 1
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
                     height: 12
                     anchors.verticalCenter: parent.verticalCenter
                     color: Theme.hairline
@@ -5235,7 +5345,7 @@ Window {
         hiddenShortcut: root.shortcutDisplay("explorer.toggleHidden")
     }
 
-    ContextMenu {
+    Menu {
         id: moreMenu
         anchors.fill: parent
         dark: root.dark
@@ -5249,7 +5359,7 @@ Window {
     /// of chips because the catalogue is six entries long and the bar has to
     /// stay one row; the entries are the categories the backend already
     /// filters by, not a second taxonomy.
-    ContextMenu {
+    Menu {
         id: searchHistoryMenu
         anchors.fill: parent
         dark: root.dark
@@ -5259,7 +5369,7 @@ Window {
         }
     }
 
-    ContextMenu {
+    Menu {
         id: searchTypeMenu
         anchors.fill: parent
         dark: root.dark
@@ -5301,8 +5411,15 @@ Window {
     }
 
     Shortcut {
-        sequence: root.shortcutSequence("explorer.switchPane")
-        enabled: root.splitActive && sequence !== ""
+        /// §11.4 gives F6 to "move to the other pane" whenever both panes
+        /// show a folder, so this binding yields: a stored F6 is read as
+        /// Shift+F6 here (with two panes the reverse cycle is the same
+        /// toggle), while any other user binding is left alone.
+        sequence: {
+            const stored = root.shortcutSequence("explorer.switchPane")
+            return (root.splitTransferActive && stored === "F6") ? "Shift+F6" : stored
+        }
+        enabled: root.splitTransferActive && sequence !== ""
         onActivated: {
             root.splitFocused = !root.splitFocused
             if (root.splitFocused)
@@ -5333,6 +5450,18 @@ Window {
         sequence: root.shortcutSequence("explorer.toggleSplit")
         enabled: sequence !== ""
         onActivated: ExplorerPrefs.setBool("splitEnabled", !ExplorerPrefs.splitEnabled)
+    }
+
+    Shortcut {
+        sequence: "F5"
+        enabled: root.splitTransferActive
+        onActivated: root.transferToOtherPane("copy")
+    }
+
+    Shortcut {
+        sequence: "F6"
+        enabled: root.splitTransferActive
+        onActivated: root.transferToOtherPane("cut")
     }
 
     Shortcut {
@@ -5368,7 +5497,7 @@ Window {
         }
     }
 
-    ContextMenu {
+    Menu {
         id: menu
         anchors.fill: parent
         dark: root.dark
@@ -5838,9 +5967,12 @@ Window {
 
     Toast {
         id: toast
-        anchors.horizontalCenter: parent.horizontalCenter
+        // §7.5: centred on the content area — not the window — so a wide
+        // sidebar or the inspector does not pull the bubble off the listing.
+        x: contentColumn.mapToItem(parent, 0, 0).x
+            + Math.round((contentColumn.width - width) / 2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 38
+        anchors.bottomMargin: root.footerHeight + 8
         dark: root.dark
 
         onUndoRequested: Workspace.undo()
@@ -5937,7 +6069,12 @@ Window {
 
     Shortcut {
         sequence: root.shortcutSequence("explorer.refresh")
+        /// In split view F5 and F6 belong to the pane transfer (§11.4), so a
+        /// refresh binding on either key yields to it instead of leaving Qt
+        /// with an ambiguous shortcut that fires neither.
         enabled: !root.modalOpen && sequence !== ""
+                 && !(root.splitTransferActive
+                      && (sequence === "F5" || sequence === "F6"))
         onActivated: {
             if (root.activeTab !== null)
                 root.activeTab.listing.reload()
@@ -6056,20 +6193,31 @@ Window {
         sequence: "Escape"
         enabled: root.modalOpen && !settingsPanel.capturing
         onActivated: {
+            // Dialogs first: a question that needs an answer owns Escape while
+            // it is up. Menus come last, because they are the least modal
+            // surface and the one most likely to be open on top of another.
             if (quickPreview.open)
                 quickPreview.close()
-            else if (menu.visible)
-                menu.close()
             else if (commandPalette.shown)
                 commandPalette.closePalette()
             else if (updateDialog.shown)
                 updateDialog.dismiss()
+            else if (propertiesDialog.shown)
+                propertiesDialog.close()
+            else if (bulkRenameDialog.shown)
+                bulkRenameDialog.close()
+            else if (moveToDialog.shown)
+                moveToDialog.close()
+            else if (openWithDialog.shown)
+                openWithDialog.dismiss()
             else if (namePrompt.shown)
                 namePrompt.close()
             else if (passwordDialog.shown) {
                 passwordDialog.close()
                 root.resetArchiveState()
-            } else if (cloudDialog.shown)
+            } else if (transferConflict.visible)
+                Workspace.cancelConflict()
+            else if (cloudDialog.shown)
                 cloudDialog.dismiss()
             else if (connectDialog.shown)
                 connectDialog.dismiss()
@@ -6079,7 +6227,22 @@ Window {
                 confirmDialog.close()
                 root.confirmMode = ""
                 root.confirmTrashIds = []
-            }
+            } else if (statusCenter.visible)
+                statusCenter.close()
+            else if (transferQueue.visible)
+                transferQueue.close()
+            else if (menu.visible)
+                menu.close()
+            else if (displayMenu.visible)
+                displayMenu.close()
+            else if (filterMenu.visible)
+                filterMenu.close()
+            else if (moreMenu.visible)
+                moreMenu.close()
+            else if (searchHistoryMenu.visible)
+                searchHistoryMenu.close()
+            else if (searchTypeMenu.visible)
+                searchTypeMenu.close()
         }
     }
 

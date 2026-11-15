@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 
 // The status strip's second state (proposal §7.3.3): as soon as the listing has
 // a selection the 28 dp status bar becomes a 36 dp row of named actions **in
@@ -62,7 +63,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 1
+        height: Theme.ruleWidth(Screen.devicePixelRatio)
         color: Theme.hairline
     }
 

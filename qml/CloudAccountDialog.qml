@@ -165,7 +165,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.line
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent

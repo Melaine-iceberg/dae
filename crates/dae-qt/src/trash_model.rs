@@ -16,6 +16,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::error::FileSystemError;
 use dae_core::fs::trash_view::{self, TrashEntry};
+use dae_core::types::EntryKind;
 
 use crate::format;
 use crate::runtime;
@@ -26,6 +27,7 @@ const ROLE_ORIGINAL_PARENT: i32 = 0x0302;
 const ROLE_DELETED_TEXT: i32 = 0x0303;
 const ROLE_SIZE_TEXT: i32 = 0x0304;
 const ROLE_IS_DIR: i32 = 0x0305;
+const ROLE_CATEGORY: i32 = 0x0306;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -121,10 +123,16 @@ struct TrashRow {
     deleted_text: String,
     size_text: String,
     is_directory: bool,
+    category: String,
 }
 
 impl TrashRow {
     fn from_entry(entry: &TrashEntry) -> Self {
+        let kind = if entry.is_directory {
+            EntryKind::Directory
+        } else {
+            EntryKind::File
+        };
         Self {
             entry_id: entry.id.clone(),
             name: entry.name.clone(),
@@ -135,6 +143,7 @@ impl TrashRow {
                 .map(format::size)
                 .unwrap_or_else(|| "—".to_owned()),
             is_directory: entry.is_directory,
+            category: crate::model::category_of(kind, &entry.name).to_owned(),
         }
     }
 }
@@ -182,6 +191,7 @@ impl qobject::TrashModel {
             ROLE_DELETED_TEXT => QVariant::from(&QString::from(row.deleted_text.as_str())),
             ROLE_SIZE_TEXT => QVariant::from(&QString::from(row.size_text.as_str())),
             ROLE_IS_DIR => QVariant::from(&row.is_directory),
+            ROLE_CATEGORY => QVariant::from(&QString::from(row.category.as_str())),
             _ => QVariant::default(),
         }
     }
@@ -194,6 +204,7 @@ impl qobject::TrashModel {
         roles.insert(ROLE_DELETED_TEXT, QByteArray::from("deletedText"));
         roles.insert(ROLE_SIZE_TEXT, QByteArray::from("sizeText"));
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
+        roles.insert(ROLE_CATEGORY, QByteArray::from("category"));
         roles
     }
 

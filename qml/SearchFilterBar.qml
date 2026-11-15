@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 // The search field's filter row: which mode is searching, how strictly, and
 // which kinds of file may answer.
@@ -101,7 +102,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 1
+        height: Theme.ruleWidth(Screen.devicePixelRatio)
         color: Theme.hairline
     }
 

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 /// The 44px title strip that every dialog starts with.
 ///
@@ -108,7 +109,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: root.divider ? 1 : 0
+        height: root.divider ? Theme.ruleWidth(Screen.devicePixelRatio) : 0
         visible: root.divider
         color: Theme.hairline
     }

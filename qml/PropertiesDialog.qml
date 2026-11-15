@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
 import "Localize.js" as Localize
@@ -301,7 +302,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.line
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -399,7 +400,7 @@ FocusScope {
 
             Rectangle {
                 width: parent.width
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 
@@ -414,76 +415,123 @@ FocusScope {
                 clip: true
 
                 // ---- General -------------------------------------------------
-                Column {
+                // §7.5: the sheet reads as two columns — identity on the left
+                // (glyph, name, kind), the metadata table on the right. Name
+                // and kind stay out of the table so the same fact is not
+                // printed twice.
+                Row {
+                    id: generalRow
                     width: parent.width
+                    height: parent.height
+                    spacing: 24
                     visible: root.tab === "general"
-                    spacing: 0
 
-                    InfoRow { label: qsTr("名称"); value: controller.name }
-                    InfoRow { label: qsTr("类型"); value: Localize.message(controller.kindText) }
-                    InfoRow { label: qsTr("位置"); value: controller.location }
-                    InfoRow {
-                        label: qsTr("大小")
-                        value: controller.isDirectory
-                            ? (controller.sizeScanText === "" ? "—" : controller.sizeScanText)
-                            : controller.sizeText
-                    }
+                    Column {
+                        id: identityColumn
+                        width: 180
+                        spacing: 0
 
-                    // A folder's size is a scan, not a number `stat` can give,
-                    // so it is asked for explicitly and streamed while it runs.
-                    Row {
-                        width: parent.width
-                        height: controller.isDirectory && !controller.remote ? 30 : 0
-                        visible: height > 0
-                        spacing: 8
-
-                        Rectangle {
-                            width: 96
-                            height: Theme.controlSm
-                            radius: Theme.radiusSm
-                            color: scanMouse.containsMouse
-                                ? Theme.hover : "transparent"
-                            border.width: 1
-                            border.color: root.hairline
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
-                                color: root.textColor
-                                font.pixelSize: Theme.typeMicro
-                            }
-
-                            MouseArea {
-                                id: scanMouse
-                                Accessible.role: Accessible.Button
-                                Accessible.name: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: controller.sizeScanning
-                                    ? controller.cancelSizeScan()
-                                    : controller.startSizeScan()
-                            }
+                        FileIcon {
+                            edge: 64
+                            category: controller.category
+                            outline: Theme.inkSecondary
                         }
+
+                        Item { width: 1; height: 12 }
 
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: controller.sizeScanning
-                                ? qsTr("计算中… ") + controller.sizeScanText
-                                : (controller.sizeScanDone ? qsTr("已统计 ") + controller.sizeScanText : "")
+                            width: parent.width
+                            text: controller.name
+                            color: root.textColor
+                            font.pixelSize: Theme.typeBody
+                            font.weight: Font.Medium
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                        }
+
+                        Item { width: 1; height: 4 }
+
+                        Text {
+                            width: parent.width
+                            text: Localize.message(controller.kindText)
                             color: root.mutedColor
                             font.pixelSize: Theme.typeMicro
+                            elide: Text.ElideRight
                         }
                     }
 
-                    Item { width: 1; height: controller.isDirectory && !controller.remote ? 4 : 0 }
+                    Column {
+                        id: metadataColumn
+                        width: parent.width - identityColumn.width - generalRow.spacing
+                        spacing: 0
 
-                    InfoRow { label: qsTr("创建时间"); value: controller.createdText }
-                    InfoRow { label: qsTr("修改时间"); value: controller.modifiedText }
-                    InfoRow { label: qsTr("访问时间"); value: controller.accessedText }
-                    InfoRow {
-                        label: qsTr("链接目标")
-                        value: controller.targetText
-                        visible: controller.isSymlink && controller.targetText !== ""
+                        InfoRow { label: qsTr("位置"); value: controller.location }
+                        InfoRow {
+                            label: qsTr("大小")
+                            numeric: true
+                            value: controller.isDirectory
+                                ? (controller.sizeScanText === "" ? "—" : controller.sizeScanText)
+                                : controller.sizeText
+                        }
+
+                        // A folder's size is a scan, not a number `stat` can
+                        // give, so it is asked for explicitly and streamed
+                        // while it runs.
+                        Row {
+                            width: parent.width
+                            height: controller.isDirectory && !controller.remote ? 30 : 0
+                            visible: height > 0
+                            spacing: 8
+
+                            Rectangle {
+                                width: 96
+                                height: Theme.controlSm
+                                radius: Theme.radiusSm
+                                color: scanMouse.containsMouse
+                                    ? Theme.hover : "transparent"
+                                border.width: 1
+                                border.color: root.hairline
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
+                                    color: root.textColor
+                                    font.pixelSize: Theme.typeMicro
+                                }
+
+                                MouseArea {
+                                    id: scanMouse
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: controller.sizeScanning
+                                        ? controller.cancelSizeScan()
+                                        : controller.startSizeScan()
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: controller.sizeScanning
+                                    ? qsTr("计算中… ") + controller.sizeScanText
+                                    : (controller.sizeScanDone ? qsTr("已统计 ") + controller.sizeScanText : "")
+                                color: root.mutedColor
+                                font.pixelSize: Theme.typeMicro
+                            }
+                        }
+
+                        Item { width: 1; height: controller.isDirectory && !controller.remote ? 4 : 0 }
+
+                        InfoRow { label: qsTr("创建时间"); value: controller.createdText; numeric: true }
+                        InfoRow { label: qsTr("修改时间"); value: controller.modifiedText; numeric: true }
+                        InfoRow { label: qsTr("访问时间"); value: controller.accessedText; numeric: true }
+                        InfoRow {
+                            label: qsTr("链接目标")
+                            value: controller.targetText
+                            visible: controller.isSymlink && controller.targetText !== ""
+                        }
                     }
                 }
 
@@ -638,7 +686,7 @@ FocusScope {
 
                         Rectangle {
                             width: parent.width
-                            height: 1
+                            height: Theme.ruleWidth(Screen.devicePixelRatio)
                             color: root.hairline
                         }
 
@@ -658,7 +706,7 @@ FocusScope {
 
                         Rectangle {
                             width: parent.width
-                            height: 1
+                            height: Theme.ruleWidth(Screen.devicePixelRatio)
                             color: root.hairline
                         }
 
@@ -1070,12 +1118,15 @@ FocusScope {
 
     // ---- Inline components ------------------------------------------------
 
-    /// `标签   值`, the whole general tab's row.
+    /// `标签   值`, one row of the metadata table.
     component InfoRow: Item {
         id: row
 
         property string label: ""
         property string value: ""
+        /// Sizes and timestamps: tabular figures, so the column does not
+        /// reflow between two entries (§6.2.3).
+        property bool numeric: false
 
         width: parent ? parent.width : 0
         height: row.visible ? 26 : 0
@@ -1085,7 +1136,7 @@ FocusScope {
             width: 70
             anchors.verticalCenter: parent.verticalCenter
             text: row.label
-            // Labels carry the field name only, so they sit back at `inkFaint`
+            // Labels carry the field name only, so they sit back at `inkTertiary`
             // while the value keeps full `ink`: the pair reads as one line,
             // scanned left to right, instead of as two competing columns.
             color: Theme.inkTertiary
@@ -1100,6 +1151,7 @@ FocusScope {
             text: row.value
             color: root.textColor
             font.pixelSize: Theme.typeBody
+            font.features: row.numeric ? ({ "tnum": 1 }) : ({})
             elide: Text.ElideMiddle
         }
     }

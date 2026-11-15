@@ -123,6 +123,12 @@ QtObject {
     /// `raised` are the same value (§6.5).
     readonly property color lineStrong: dark ? "#3a3d43" : "#bcbec2"
 
+    /// The 1 px edge of a floating surface (§6.5). In the dark theme `line`
+    /// and `raised` are the same value, so a menu or a dialog drawn with
+    /// `line` has no edge at all; the floating edge is `lineStrong` there and
+    /// `line` in light. This is one rule in two palettes, not two rules.
+    readonly property color overlayLine: dark ? lineStrong : line
+
     // ── State ───────────────────────────────────────────────────────────────
     /// Pointer is over a row or a quiet control: ink at 4 %, which stays below
     /// the threshold where it could be confused with selection.
@@ -247,6 +253,10 @@ QtObject {
     readonly property int typeCaption: 12
     readonly property int typeBody: 13
     readonly property int typeHeading: 15
+    /// The command palette's query line (§7.5). One rung above `heading`,
+    /// used by exactly one surface: the field is the palette's subject, and
+    /// at 15 px it read as a label rather than as the text being typed.
+    readonly property int typeInput: 17
 
     /// Retired rung names, kept as aliases so an un-migrated call site cannot
     /// reintroduce a size outside the four. They map by role, not by old value:
@@ -258,19 +268,40 @@ QtObject {
     readonly property int typeTitle: typeHeading
     readonly property int typeDisplay: typeHeading
 
-    /// The UI face. Decision 2 (§14) keeps Chinese on the system face, so this
-    /// names the platform's own sans rather than shipping Inter yet; P6 swaps
-    /// this for the bundled `Inter` once the font is in qrc.
-    readonly property string uiFamily: Qt.platform.os === "osx" ? "Helvetica Neue"
-        : Qt.platform.os === "windows" ? "Segoe UI"
-        : "Noto Sans"
+    /// The families Qt actually has. `Qt.fontFamilies()` is the only way to
+    /// ask from a singleton (there is no `Screen` and no window here), and the
+    /// native side has already added the bundled faces before the first
+    /// document is created, so this sees them.
+    readonly property var installedFamilies: Qt.fontFamilies()
 
-    /// Fixed-pitch for terminals, diffs, sizes and rates. Chosen per platform
-    /// because QML cannot express a fallback list on `font.family`. P6 ships
-    /// JetBrains Mono and this becomes one name on all three platforms.
-    readonly property string monoFamily: Qt.platform.os === "osx" ? "SF Mono"
-        : Qt.platform.os === "windows" ? "Consolas"
-        : "DejaVu Sans Mono"
+    /// The UI face (proposal §6.2.1): bundled Inter Variable, one file for
+    /// every weight the type scale uses. Decision 2 (§14) keeps Chinese on the
+    /// system face; a family without CJK glyphs is filled in per glyph by Qt,
+    /// so `font.family` here still names only the Latin face. The old platform
+    /// names remain as the fallback for a build whose font resource failed to
+    /// mount.
+    readonly property string uiFamily: {
+        const names = ["Inter Variable", "Inter"]
+        for (let index = 0; index < names.length; index += 1) {
+            if (theme.installedFamilies.indexOf(names[index]) >= 0)
+                return names[index]
+        }
+        return Qt.platform.os === "osx" ? "Helvetica Neue"
+            : Qt.platform.os === "windows" ? "Segoe UI"
+            : "Noto Sans"
+    }
+
+    /// Fixed-pitch for terminals, diffs, sizes and rates: bundled JetBrains
+    /// Mono, the same family on all three platforms. QML cannot express a
+    /// fallback list on `font.family`, so the platform face is chosen only when
+    /// the bundled one is missing.
+    readonly property string monoFamily: {
+        if (theme.installedFamilies.indexOf("JetBrains Mono") >= 0)
+            return "JetBrains Mono"
+        return Qt.platform.os === "osx" ? "SF Mono"
+            : Qt.platform.os === "windows" ? "Consolas"
+            : "DejaVu Sans Mono"
+    }
 
     // ── Leading ─────────────────────────────────────────────────────────────
     /// Line height as a multiple of the type size, not as a pixel value: Qt's
@@ -291,10 +322,19 @@ QtObject {
     readonly property int radiusMd: 8
     readonly property int radiusLg: 12
 
-    /// The width of a structural rule. §6.4.3 wants one *device* pixel, which
-    /// at 125 % is `1 / 1.25` dp; `Screen` is not reachable from a singleton,
-    /// so the P6 pixel audit converts the four call sites. Until then this is
-    /// one dp, which Qt draws with `pixelAligned` borders.
+    /// The width of a structural rule. §6.4.3 asks for one *device* pixel,
+    /// which at 125 % is `1 / 1.25` dp; a 1 dp filled rectangle is 1.25 device
+    /// pixels and reads as a grey edge rather than a line. `Screen` is not
+    /// reachable from a singleton and the ratio follows the window, so every
+    /// rule passes its own `Screen.devicePixelRatio` here. The value is a
+    /// length in dp; the four-dp grid keeps its position on whole pixels.
+    function ruleWidth(dpr) {
+        return 1 / Math.max(1, dpr)
+    }
+
+    /// A control's border: one dp. A border sits on an edge Qt already aligns
+    /// (`pixelAligned`), so it is the filled structural rules above — not
+    /// these — that have to be converted to a device pixel.
     readonly property int edgeWidth: 1
 
     /// Row heights; the header is always the paired value.

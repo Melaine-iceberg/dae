@@ -85,11 +85,17 @@ TerminalItem::TerminalItem(QQuickItem* parent)
     setFocus(true);
     setActiveFocusOnTab(true);
 
-    m_font.setFamilies({ QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
+    m_font.setFamilies({ QStringLiteral("JetBrains Mono"),
+                         QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
                          QStringLiteral("Courier New") });
     m_font.setStyleHint(QFont::Monospace);
     m_font.setFixedPitch(true);
     m_font.setPixelSize(13);
+    // The terminal paints through QPainter, not the scene graph's text path,
+    // so it needs the same hinting preference the application font carries
+    // (proposal §9.2, §12.4). Vertical hinting keeps 13 px cells on the pixel
+    // grid at 100 % and 125 % without changing the cell advance.
+    m_font.setHintingPreference(QFont::PreferVerticalHinting);
     measureCells();
 
     m_blink.setInterval(530);
@@ -175,7 +181,8 @@ void TerminalItem::setFontFamily(const QString& family)
         return;
     m_fontFamily = trimmed;
     if (trimmed.isEmpty()) {
-        m_font.setFamilies({ QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
+        m_font.setFamilies({ QStringLiteral("JetBrains Mono"),
+                             QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
                              QStringLiteral("Courier New") });
     } else {
         m_font.setFamilies({ trimmed });

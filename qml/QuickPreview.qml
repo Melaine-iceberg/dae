@@ -76,7 +76,7 @@ Item {
         radius: Theme.radiusMd
         color: Theme.canvas
         border.width: 1
-        border.color: Theme.line
+        border.color: Theme.overlayLine
         focus: true
 
         // A click inside the plate must not close it; the scrim is behind.

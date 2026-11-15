@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "Shortcut.js" as ShortcutJS
 
@@ -436,6 +437,28 @@ Item {
         }
     }
 
+    /// §7.5 gives the palette exactly three sections: 文件 / 命令 / 位置.
+    /// The candidate vocabulary is finer than that (spaces, favorites,
+    /// recents, projects, jump, search), so the sections are derived from
+    /// what a row *is* rather than from the group it was registered under.
+    function displayGroup(item) {
+        if (item.kind === "command")
+            return qsTr("命令")
+        // The filename search is the only source that registers under 文件
+        // without being a command.
+        if (item.group === qsTr("文件"))
+            return qsTr("文件")
+        return qsTr("位置")
+    }
+
+    function groupRank(label) {
+        if (label === qsTr("文件"))
+            return 0
+        if (label === qsTr("命令"))
+            return 1
+        return 2
+    }
+
     /// Replaces the flat row list. Headers come from `groupLabel` and the
     /// ListView's section support, so the keyboard index space stays one row
     /// per result.
@@ -458,11 +481,24 @@ Item {
 
         let ordered = []
         const q = root.trimmedQuery
+        // Ranked or not, the rows are bucketed by section and the sections
+        // keep the fixed order §7.5 asks for. Inside a bucket the registration
+        // (or score) order is untouched.
+        const buckets = []
+        const byGroup = ({})
         if (q.length === 0) {
-            // Registration order, which keeps each source's own ordering and
-            // puts the four landing-page sections after the fixed commands.
-            for (let index = 0; index < candidates.length; index += 1)
-                ordered.push({ item: candidates[index], indices: [] })
+            // Registration order, which keeps each source's own ordering.
+            for (let index = 0; index < candidates.length; index += 1) {
+                const item = candidates[index]
+                const label = root.displayGroup(item)
+                let bucket = byGroup[label]
+                if (bucket === undefined) {
+                    bucket = { group: label, entries: [] }
+                    byGroup[label] = bucket
+                    buckets.push(bucket)
+                }
+                bucket.entries.push({ item: item, indices: [] })
+            }
         } else {
             const ranked = []
             for (let index = 0; index < candidates.length; index += 1) {
@@ -480,26 +516,27 @@ Item {
                 return left.order - right.order
             })
 
-            // Bucket by section, with the buckets themselves ordered by their
-            // best match. Inside a bucket the global score order is kept.
-            const buckets = []
-            const byGroup = ({})
+            // Bucket by section; the score order survives inside each one.
             for (let index = 0; index < ranked.length; index += 1) {
                 const entry = ranked[index]
-                let bucket = byGroup[entry.item.group]
+                const label = root.displayGroup(entry.item)
+                let bucket = byGroup[label]
                 if (bucket === undefined) {
-                    bucket = { group: entry.item.group, entries: [] }
-                    byGroup[entry.item.group] = bucket
+                    bucket = { group: label, entries: [] }
+                    byGroup[label] = bucket
                     buckets.push(bucket)
                 }
                 bucket.entries.push(entry)
             }
-            for (let index = 0; index < buckets.length; index += 1) {
-                const bucket = buckets[index]
-                for (let row = 0; row < bucket.entries.length; row += 1)
-                    ordered.push({ item: bucket.entries[row].item,
-                                   indices: bucket.entries[row].indices })
-            }
+        }
+        buckets.sort(function (left, right) {
+            return root.groupRank(left.group) - root.groupRank(right.group)
+        })
+        for (let index = 0; index < buckets.length; index += 1) {
+            const bucket = buckets[index]
+            for (let row = 0; row < bucket.entries.length; row += 1)
+                ordered.push({ item: bucket.entries[row].item,
+                               indices: bucket.entries[row].indices })
         }
 
         results.clear()
@@ -507,7 +544,7 @@ Item {
             const item = ordered[index].item
             const indices = ordered[index].indices || []
             results.append({
-                groupLabel: item.group,
+                groupLabel: root.displayGroup(item),
                 label: item.label,
                 styledLabel: root.styledLabel(item.label, indices),
                 hint: item.hint,
@@ -644,13 +681,16 @@ Item {
         id: panel
 
         anchors.horizontalCenter: parent.horizontalCenter
-        y: 64
+        // §7.5: 15 % down from the top of the window. A fixed 64 was tied to
+        // the old 800-high design; the palette belongs at the same optical
+        // height on any window.
+        y: Math.round(root.height * 0.15)
         width: Math.min(560, root.width - 32)
         height: Math.min(430, root.height - y - 96)
         radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
-        border.color: Theme.line
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -690,7 +730,7 @@ Item {
                 color: root.textColor
                 selectionColor: root.accent
                 selectedTextColor: Theme.onAccent
-                font.pixelSize: Theme.typeHeading
+                font.pixelSize: Theme.typeInput
                 verticalAlignment: TextInput.AlignVCenter
                 focus: true
                 clip: true
@@ -754,7 +794,7 @@ Item {
                 visible: input.text.length === 0
                 text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
                 color: Theme.inkTertiary
-                font.pixelSize: Theme.typeHeading
+                font.pixelSize: Theme.typeInput
             }
 
             // 20 × 18, the one keycap in the surface: there is no button to
@@ -788,7 +828,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: field.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: root.hairline
         }
 
@@ -979,6 +1019,14 @@ Item {
             }
         }
 
+        ScrollBar {
+            target: list
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            anchors.top: fieldRule.bottom
+            anchors.bottom: footerBar.top
+        }
+
         Rectangle {
             id: footerBar
 
@@ -992,7 +1040,7 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 

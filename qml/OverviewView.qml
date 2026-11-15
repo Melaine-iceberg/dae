@@ -1,30 +1,14 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Layouts
 import dae 1.0
 
-// The landing page: a pinboard, not a list.
+// The landing page (§11.1): a quiet, grouped list, not a board.
 //
-// The page used to be one sectioned `ListView`. A row is the denser shape when
-// the job is scanning a column of names, but nothing here is a column: the
-// model publishes at most 34 destinations across six groups, and every row
-// spent one 32 dp band on one name plus one fact. A band of the same height on
-// this board holds a whole row of destinations, which is what "information
-// density" means on a page whose items are places you can continue from.
-//
-// Each destination is a note of sticky paper with a pin through its head. The
-// material is drawn rather than photographed: a flat plate in one of six paper
-// stocks, a 1 px ink edge, the shell's hard offset shadow (`Shadow`, which
-// is also what makes it read as a sheet laid on the page instead of a card
-// hovering over it), and a metal pin with a cast shadow. A note is tilted by a
-// hash of its row, so a given row always lands on the same tilt and the same
-// stock while the board never looks ruled.
-//
-// The grid is a `Column` of `Flow`s, not a `GridView`: a section has to keep
-// its own heading and its own last row, and a Flow does that without a
-// delegate that pretends to be a header. The model is a `QAbstractListModel`
-// with roles, but a `Repeater` has no roles to bind, so the board asks the
-// model for its rows through the `*At` accessors (the same ones the command
-// palette uses) and keeps the flattened notes in `sections`.
+// Titles and instructions are gone. The page opens on 快速访问, then the
+// groups the model publishes — 项目, 最近, 空间, 磁盘, 标签 — each on the same
+// 40 dp row the file list and the trash mount. A section heading is 11 px
+// tertiary type, not a card; a destination is never a sticky note.
 Item {
     id: root
 
@@ -40,198 +24,59 @@ Item {
 
     readonly property color contentColor: Theme.content
 
-    // ── Board geometry ──────────────────────────────────────────────────────
-    /// The readable measure. Wider than the list's 832 because a board is read
-    /// across, not down: at 1180 the same window holds five notes a row.
-    readonly property int contentMax: 1180
     readonly property int sideMargin: 24
+    /// The list keeps the file list's readable measure: home is a column of
+    /// names, and a name column stretched past 880 stops being scannable.
+    readonly property int contentMax: 880
     readonly property int contentWidth: Math.max(320,
         Math.min(width - sideMargin * 2, contentMax))
-    readonly property int noteGap: 14
-    readonly property int noteHeight: 132
-    /// Narrowest a note may get before the board drops a column. Two lines of
-    /// a 14 px name plus one meta line need ~190: below that names elide to
-    /// indistinguishable stamps and the note stops paying for its paper.
-    readonly property int noteMin: 190
-    readonly property int columnMax: 6
-    readonly property int columns: {
-        const fit = Math.floor((root.contentWidth + root.noteGap)
-                               / (root.noteMin + root.noteGap));
-        return Math.max(2, Math.min(root.columnMax, fit));
-    }
-    readonly property real noteWidth:
-        Math.floor((root.contentWidth - root.noteGap * (root.columns - 1))
-                   / root.columns)
+    readonly property int sectionGap: 26
 
-    /// Sticky stock. Six tints, warm and low-chroma enough to sit on drift's
-    /// paper canvas without turning the page into a swatch chart; the dark set
-    /// is paper in a dark room — same hue, lower value — because a full-bright
-    /// note beside a #131210 canvas is a lamp, not a note.
-    readonly property var palette: Theme.dark
-        ? ["#4a4023", "#4a2f2c", "#2f4030", "#2b3a47", "#3b3347", "#463a26"]
-        : ["#f7e58a", "#f6cfc4", "#cfe3c2", "#c8dcec", "#ded1e6", "#f2ddb8"]
-
-    // ── Board contents ──────────────────────────────────────────────────────
-    /// `[{ name, label, notes: [{ row, index, section, tint, tilt, kind, … }] }]`
-    /// rebuilt from the model whenever it republishes. Notes are plain objects
-    /// on purpose: a delegate can then bind `modelData.name` once instead of
-    /// calling a model accessor per property per frame.
+    /// `[{ name, label, notes: [{ row, kind, name, path, … }] }]`
     property var sections: []
-    property int cursorRow: -1
-    readonly property int firstRow: root.sections.length > 0
-        && root.sections[0].notes.length > 0 ? root.sections[0].notes[0].row : -1
-
-    /// Live delegates by model row, for the keyboard: the cursor moves focus
-    /// between notes, and only the delegate knows how to take it.
-    property var noteItems: ({})
-
-    function takeFocus() {
-        if (root.firstRow < 0) {
-            board.forceActiveFocus();
-            return;
-        }
-        root.focusRow(root.cursorRow >= 0 ? root.cursorRow : root.firstRow);
-    }
-
-    function focusRow(row) {
-        root.cursorRow = row;
-        const item = root.noteItems[row];
-        if (item !== undefined)
-            item.forceActiveFocus();
-    }
-
-    function registerNote(row, item) {
-        root.noteItems[row] = item;
-    }
-
-    function unregisterNote(row) {
-        delete root.noteItems[row];
-    }
-
-    /// A focus move must bring the note on screen; the board scrolls with the
-    /// pointer otherwise, which leaves a keyboard user driving blind.
-    ///
-    /// Only the keyboard calls this. Doing it from `activeFocusChanged` also
-    /// caught focus restored by the window, which lands mid-resize when the
-    /// viewport is a few dozen dp tall: the board then scrolled past the first
-    /// row and stayed there.
-    function reveal(item) {
-        if (board.height <= 0 || item.height <= 0)
-            return;
-        const point = item.mapToItem(stack, 0, 0);
-        const top = stack.y + point.y - 10;
-        const bottom = top + item.height + 26;
-        if (top < board.contentY)
-            board.contentY = Math.max(0, top);
-        else if (bottom > board.contentY + board.height)
-            board.contentY = Math.min(bottom - board.height,
-                                      Math.max(0, board.contentHeight - board.height));
-    }
-
-    function focusAndReveal(row) {
-        root.focusRow(row);
-        const item = root.noteItems[row];
-        if (item !== undefined)
-            root.reveal(item);
-    }
-
-    /// One arrow press, from the note that has focus. Left/right cross into the
-    /// neighbouring section at a row's edge because the board is one surface;
-    /// up/down stay inside the section, where the rows actually are.
-    function moveCursor(entry, dx, dy) {
-        const section = root.sections[entry.section];
-        if (section === undefined)
-            return;
-        const count = section.notes.length;
-        const step = entry.index + dx;
-        let target = step;
-
-        if (dy !== 0) {
-            const rows = Math.ceil(count / root.columns);
-            const atRow = Math.floor(entry.index / root.columns);
-            const atColumn = entry.index % root.columns;
-            const nextRow = atRow + dy;
-            if (nextRow < 0 || nextRow >= rows)
-                return;
-            target = nextRow * root.columns + atColumn;
-            if (target >= count)
-                return;
-        }
-
-        if (target < 0) {
-            for (let index = entry.section - 1; index >= 0; --index) {
-                const before = root.sections[index].notes;
-                if (before.length > 0) {
-                    root.focusAndReveal(before[before.length - 1].row);
-                    return;
-                }
-            }
-            return;
-        }
-        if (target >= count) {
-            for (let index = entry.section + 1; index < root.sections.length; ++index) {
-                const after = root.sections[index].notes;
-                if (after.length > 0) {
-                    root.focusAndReveal(after[0].row);
-                    return;
-                }
-            }
-            return;
-        }
-        root.focusAndReveal(section.notes[target].row);
-    }
+    property var quickAccess: []
+    property var focusables: []
 
     function rebuild() {
         if (root.model === null) {
             root.sections = [];
+            root.quickAccess = [];
             return;
         }
-        const order = ["Projects", "Favorites", "Recent", "Spaces", "Tags", "Drives"];
-        const buckets = ({});
-        const total = root.model.count;
+        const order = ["Projects", "Recent", "Spaces", "Drives", "Tags", "Favorites"]
+        const buckets = ({})
+        const total = root.model.count
         for (let row = 0; row < total; ++row) {
-            const section = root.model.sectionAt(row);
+            const section = root.model.sectionAt(row)
             if (buckets[section] === undefined)
-                buckets[section] = [];
-            buckets[section].push(row);
+                buckets[section] = []
+            buckets[section].push(row)
         }
 
-        const sections = [];
-        const names = [];
+        const names = []
         for (let index = 0; index < order.length; ++index) {
             if (buckets[order[index]] !== undefined)
-                names.push(order[index]);
+                names.push(order[index])
         }
-        // A model that grows a seventh section still renders: unknown names
-        // keep their first-seen order after the known ones instead of
-        // vanishing, which is what a stale `order` may not know about.
         for (const name in buckets) {
             if (order.indexOf(name) < 0)
-                names.push(name);
+                names.push(name)
         }
 
-        let placement = 0;
+        let quick = []
+        const sections = []
         for (let index = 0; index < names.length; ++index) {
-            const name = names[index];
-            const rows = buckets[name];
+            const name = names[index]
+            const rows = buckets[name]
             if (rows === undefined || rows.length === 0)
-                continue;
-            const notes = [];
+                continue
+            const notes = []
             for (let at = 0; at < rows.length; ++at) {
-                const row = rows[at];
-                const title = root.model.nameAt(row);
+                const row = rows[at]
                 notes.push({
                     row: row,
-                    index: at,
-                    section: sections.length,
-                    // Stock follows the note's place on the board, so a row
-                    // never repeats a colour while the board is at full width;
-                    // tilt comes from the hash, so a destination keeps its
-                    // angle when a refresh reorders the sections.
-                    tint: placement % root.palette.length,
-                    tilt: root.tiltFor(row, title),
                     kind: root.model.kindAt(row),
-                    name: title,
+                    name: root.model.nameAt(row),
                     path: root.model.pathAt(row),
                     detail: root.model.detailAt(row),
                     icon: root.model.iconAt(row),
@@ -239,44 +84,34 @@ Item {
                     branch: root.model.branchAt(row),
                     changeText: root.model.changeTextAt(row),
                     timeText: root.model.timeTextAt(row)
-                });
-                placement += 1;
+                })
             }
-            sections.push({ name: name, label: root.sectionLabel(name), notes: notes });
+            if (name === "Favorites")
+                quick = notes.slice(0, 6)
+            else
+                sections.push({ name: name, label: root.sectionLabel(name), notes: notes })
         }
 
-        root.sections = sections;
-        if (root.cursorRow >= 0 && root.noteForRow(root.cursorRow) === null)
-            root.cursorRow = -1;
+        root.quickAccess = quick
+        root.sections = sections
     }
 
-    function noteForRow(row) {
-        for (let index = 0; index < root.sections.length; ++index) {
-            const notes = root.sections[index].notes;
-            for (let at = 0; at < notes.length; ++at) {
-                if (notes[at].row === row)
-                    return notes[at];
-            }
-        }
-        return null;
+    function takeFocus() {
+        if (root.focusables.length > 0 && root.focusables[0] !== null)
+            root.focusables[0].forceActiveFocus()
     }
 
-    /// −1.5°…1.5° in half-degree steps, from a hash of the row and its name.
-    /// FNV-1a because it is four lines and its only job is to be stable.
-    function tiltFor(row, name) {
-        const text = row + ":" + name;
-        let hash = 2166136261;
-        for (let index = 0; index < text.length; ++index) {
-            hash ^= text.charCodeAt(index);
-            hash = Math.imul(hash, 16777619);
-        }
-        return (((hash >>> 0) % 7) - 3) * 0.5;
+    function registerFocusable(item) {
+        if (root.focusables.indexOf(item) < 0)
+            root.focusables.push(item)
     }
 
-    /// The overview model names destinations by the same keys the sidebar uses,
-    /// so the landing page draws its icons from `Glyph` too. The old text
-    /// glyphs were a second icon set: the project row's "⌥" was the macOS
-    /// Option key, not a branch, and it sat beside a real folder glyph.
+    function unregisterFocusable(item) {
+        const at = root.focusables.indexOf(item)
+        if (at >= 0)
+            root.focusables.splice(at, 1)
+    }
+
     function glyphKind(icon) {
         switch (icon) {
         case "home": return "home"
@@ -297,31 +132,25 @@ Item {
         }
     }
 
-    /// The one place a note turns into a destination, so the pointer, a screen
-    /// reader's press and the keyboard cursor cannot disagree.
-    function openRow(kind, path, isDir) {
-        if (kind === "space")
-            root.openRequested("space", path);
-        else if (kind === "tag")
-            root.openRequested("tag", path);
-        else if (kind === "recent" && !isDir)
-            root.openRequested("file", path);
+    function openNote(note) {
+        if (note.kind === "space")
+            root.openRequested("space", note.path)
+        else if (note.kind === "tag")
+            root.openRequested("tag", note.path)
+        else if (note.kind === "recent" && !note.isDir)
+            root.openRequested("file", note.path)
         else
-            root.openRequested("navigate", path);
-    }
-
-    function openNote(entry) {
-        root.openRow(entry.kind, entry.path, entry.isDir);
+            root.openRequested("navigate", note.path)
     }
 
     function sectionLabel(value) {
         switch (value) {
         case "Projects": return qsTr("项目")
-        case "Favorites": return qsTr("收藏")
+        case "Favorites": return qsTr("快速访问")
         case "Recent": return qsTr("最近")
         case "Spaces": return qsTr("空间")
         case "Tags": return qsTr("标签")
-        case "Drives": return qsTr("驱动器")
+        case "Drives": return qsTr("磁盘")
         default: return value
         }
     }
@@ -341,7 +170,7 @@ Item {
 
     function detailLabel(value) {
         if (value === "Empty space")
-            return qsTr("空空间")
+            return qsTr("空")
         const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
@@ -370,6 +199,58 @@ Item {
         return value
     }
 
+    /// §11.1 reads a recent row as name · relative path · time. The row shows
+    /// the item's own path with the home prefix dropped (`code\dae`); anything
+    /// outside home stays absolute (`K:\backup`). Recents spell separators as
+    /// `/` even on Windows, so the comparison normalizes them.
+    function relativePath(value) {
+        const home = String(Workspace.homeDirectory)
+        if (home === "" || value.length <= home.length)
+            return value
+        const slashed = function(text) { return text.replace(/\\/g, "/") }
+        const separator = value.charAt(home.length)
+        if (separator !== "/" && separator !== "\\")
+            return value
+        const head = slashed(value.slice(0, home.length))
+        if (Qt.platform.os === "windows"
+                ? head.toLowerCase() !== slashed(home).toLowerCase()
+                : head !== slashed(home))
+            return value
+        return value.slice(home.length + 1)
+    }
+
+    /// `NTFS · 265 GB / 476 GB` → the filled part of the capacity bar.
+    function driveParts(note) {
+        const chunks = note.detail.split(" · ")
+        const filesystem = chunks.length > 0 ? chunks[0] : ""
+        const capacity = chunks.length > 1 ? chunks[1] : ""
+        const sizes = capacity.split(" / ")
+        return {
+            filesystem: filesystem,
+            free: sizes.length > 0 ? sizes[0] : "",
+            total: sizes.length > 1 ? sizes[1] : ""
+        }
+    }
+
+    function sizeBytes(text) {
+        // Sidebar models spell binary units as `GiB`, so the optional `i`
+        // before the `B` is what makes these figures parse at all.
+        const match = /^([\d.]+)\s*([KMGTP]?)i?B$/i.exec(text.trim())
+        if (match === null)
+            return 0
+        const exponent = ["", "K", "M", "G", "T", "P"].indexOf(match[2].toUpperCase())
+        return Number(match[1]) * Math.pow(1024, exponent)
+    }
+
+    function driveRatio(note) {
+        const parts = root.driveParts(note)
+        const free = root.sizeBytes(parts.free)
+        const total = root.sizeBytes(parts.total)
+        if (total <= 0)
+            return 0
+        return Math.max(0, Math.min(1, 1 - free / total))
+    }
+
     onModelChanged: root.rebuild()
     Component.onCompleted: root.rebuild()
 
@@ -385,506 +266,262 @@ Item {
         color: root.contentColor
     }
 
-    // ── Title band ──────────────────────────────────────────────────────────
-    // Fixed, not part of the scroll: the search entry is the page's one
-    // always-reachable control, and a board that scrolls its own affordance
-    // away is a board you have to hunt for.
-    Item {
-        id: header
-
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: 110
-
-        Item {
-            id: headerInner
-
-            x: Math.round((header.width - root.contentWidth) / 2)
-            width: root.contentWidth
-            height: header.height
-
-            Text {
-                id: titleText
-
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.topMargin: 16
-                text: qsTr("概览")
-                color: root.textColor
-                font.pixelSize: Theme.typeHeading
-                font.weight: Font.Medium
-            }
-
-            Text {
-                id: subtitleText
-
-                anchors.left: parent.left
-                anchors.right: busyText.left
-                anchors.rightMargin: 12
-                anchors.top: titleText.bottom
-                anchors.topMargin: 2
-                text: qsTr("从收藏、最近访问与空间继续。")
-                color: root.mutedColor
-                font.pixelSize: Theme.typeCaption
-                elide: Text.ElideRight
-            }
-
-            Text {
-                id: busyText
-
-                anchors.right: parent.right
-                anchors.top: titleText.bottom
-                anchors.topMargin: 2
-                visible: root.model !== null && root.model.projectBusy
-                text: qsTr("正在查找最近的项目…")
-                color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
-            }
-
-            Rectangle {
-                id: launcher
-
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: subtitleText.bottom
-                anchors.topMargin: 10
-                height: Theme.rowSpacious
-                radius: Theme.radiusMd
-                color: Theme.inset
-                border.width: 1
-                border.color: launcherMouse.containsMouse ? root.accent : root.hairline
-
-                Glyph {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 14
-                    height: 14
-                    kind: "search"
-                    tint: root.mutedColor
-                }
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 34
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("搜索文件、空间或命令")
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeBody
-                }
-
-                Rectangle {
-                    id: shortcutChip
-
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: shortcutText.width + 12
-                    height: Theme.controlXs
-                    radius: Theme.radiusXs
-                    color: Theme.hover
-
-                    Text {
-                        id: shortcutText
-                        anchors.centerIn: parent
-                        text: root.commandShortcut
-                        color: root.mutedColor
-                        font.pixelSize: Theme.typeMicro
-                    }
-                }
-
-                MouseArea {
-                    id: launcherMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    Accessible.role: Accessible.Button
-                    Accessible.name: qsTr("搜索文件、空间或命令")
-                    Accessible.description: root.commandShortcut
-                    onClicked: root.commandPaletteRequested()
-                }
-            }
-        }
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 1
-            color: root.hairline
-        }
-    }
-
-    // ── The board ───────────────────────────────────────────────────────────
     Flickable {
         id: board
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: header.bottom
-        anchors.bottom: parent.bottom
+        anchors.fill: parent
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
         contentWidth: width
-        contentHeight: stack.y + stack.height + 24
-
-        /// Startup split: the model marks its publish point in Rust (a QML
-        /// handler runs after the view's own model connection, so it would
-        /// report layout as data); this is the layout half, and the Rust side
-        /// keeps only the first report of each stage. See
-        /// `crates/dae-qt/src/startup.rs`.
-        onContentHeightChanged: if (root.visible && root.sections.length > 0
-                                    && contentHeight > 0)
-            Startup.mark("qml-first-list")
+        contentHeight: stack.height + 48
 
         Column {
             id: stack
 
             x: Math.round((board.width - root.contentWidth) / 2)
-            y: 16
+            y: 24
             width: root.contentWidth
-            spacing: 22
+            spacing: root.sectionGap
 
-            Repeater {
-                model: root.sections
+            /// ── 快速访问 ─────────────────────────────────────────────────
+            Column {
+                width: parent.width
+                spacing: 8
+                visible: root.quickAccess.length > 0
 
-                delegate: Column {
-                    id: sectionBlock
+                Text {
+                    text: qsTr("快速访问")
+                    color: Theme.inkTertiary
+                    font.pixelSize: Theme.typeMicro
+                    font.weight: Font.Medium
+                    font.letterSpacing: 0.4
+                }
 
-                    required property var modelData
+                Flow {
+                    width: parent.width
+                    spacing: 8
 
-                    width: stack.width
-                    spacing: 12
+                    Repeater {
+                        model: root.quickAccess
 
-                    Item {
-                        id: sectionHead
+                        delegate: Rectangle {
+                            id: chip
 
-                        width: sectionBlock.width
-                        height: 18
+                            required property var modelData
+                            readonly property bool hovered: chipHover.containsMouse
 
-                        Text {
-                            id: sectionText
+                            implicitWidth: chipRow.implicitWidth + 24
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: chipHover.containsMouse ? Theme.hover : Theme.inset
+                            border.width: 1
+                            border.color: chip.activeFocus ? Theme.accent : Theme.line
 
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: sectionBlock.modelData.label
-                            color: Theme.inkTertiary
-                            font.pixelSize: Theme.typeMicro
-                            font.weight: Font.Medium
-                            font.letterSpacing: 0.88
-                        }
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.Button
+                            Accessible.name: root.placeLabel(chip.modelData.icon) !== ""
+                                ? root.placeLabel(chip.modelData.icon) : chip.modelData.name
+                            Accessible.onPressAction: root.openNote(chip.modelData)
+                            Keys.onReturnPressed: root.openNote(chip.modelData)
+                            Keys.onEnterPressed: root.openNote(chip.modelData)
+                            Keys.onSpacePressed: root.openNote(chip.modelData)
 
-                        Rectangle {
-                            anchors.left: sectionText.right
-                            anchors.leftMargin: 10
-                            anchors.right: sectionCount.left
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            height: 1
-                            color: Theme.hairline
-                        }
+                            Component.onCompleted: root.registerFocusable(chip)
+                            Component.onDestruction: root.unregisterFocusable(chip)
 
-                        Text {
-                            id: sectionCount
+                            RowLayout {
+                                id: chipRow
+                                anchors.centerIn: parent
+                                spacing: 8
 
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("%1 项").arg(sectionBlock.modelData.notes.length)
-                            color: Theme.inkTertiary
-                            font.pixelSize: Theme.typeMicro
-                            font.features: { "tnum": 1 }
-                        }
-                    }
-
-                    Flow {
-                        width: sectionBlock.width
-                        spacing: root.noteGap
-
-                        Repeater {
-                            model: sectionBlock.modelData.notes
-
-                            delegate: Item {
-                                id: note
-
-                                required property var modelData
-
-                                /// The note's own fact set, published by
-                                /// `rebuild()`. Not called `data`: `Item.data`
-                                /// is the read-only default-property alias for
-                                /// children, and a property with that name
-                                /// fails to assign at load time.
-                                readonly property var entry: note.modelData
-                                readonly property string displayName: {
-                                    const place = root.placeLabel(note.entry.icon);
-                                    return place !== "" ? place : note.entry.name;
-                                }
-                                readonly property color paper:
-                                    root.palette[note.entry.tint % root.palette.length]
-                                readonly property bool current: note.activeFocus
-
-                                width: root.noteWidth
-                                height: root.noteHeight
-                                rotation: note.lifted ? note.entry.tilt * 0.4 : note.entry.tilt
-                                scale: note.lifted ? 1.02 : 1.0
-                                // A lifted note paints over its neighbours the
-                                // way a real one would when you pull it up.
-                                z: note.current ? 2 : (noteMouse.containsMouse ? 1 : 0)
-
-                                /// Pointing at a note, or reaching it with the
-                                /// keyboard, picks it up: it straightens and
-                                /// grows a little instead of changing colour,
-                                /// which would read as a state rather than a
-                                /// lift.
-                                readonly property bool lifted: noteMouse.containsMouse
-                                    || note.current
-
-                                Behavior on rotation {
-                                    enabled: Theme.motion
-                                    NumberAnimation { duration: Theme.motionFast }
-                                }
-                                Behavior on scale {
-                                    enabled: Theme.motion
-                                    NumberAnimation { duration: Theme.motionFast }
-                                }
-
-                                Accessible.role: Accessible.Button
-                                Accessible.name: note.displayName
-                                Accessible.description: note.entry.kind === "project"
-                                    ? note.entry.branch + " · "
-                                      + root.changeLabel(note.entry.changeText)
-                                    : root.detailLabel(note.entry.detail)
-                                Accessible.onPressAction: root.openNote(note.entry)
-
-                                activeFocusOnTab: note.entry.row === root.firstRow
-                                Keys.onLeftPressed: root.moveCursor(note.entry, -1, 0)
-                                Keys.onRightPressed: root.moveCursor(note.entry, 1, 0)
-                                Keys.onUpPressed: root.moveCursor(note.entry, 0, -1)
-                                Keys.onDownPressed: root.moveCursor(note.entry, 0, 1)
-                                Keys.onReturnPressed: root.openNote(note.entry)
-                                Keys.onSpacePressed: root.openNote(note.entry)
-                                Component.onCompleted: root.registerNote(note.entry.row, note)
-                                Component.onDestruction: root.unregisterNote(note.entry.row)
-
-                                Shadow {
-                                    target: paperPlate
-                                    offset: note.current || noteMouse.containsMouse ? 4 : 2
-                                }
-
-                                Rectangle {
-                                    id: paperPlate
-
-                                    anchors.fill: parent
-                                    y: noteMouse.pressed ? 1 : 0
-                                    color: note.paper
-                                    border.width: 1
-                                    border.color: Theme.hairline
-                                }
-
-                                /// The keyboard cursor, drawn outside the paper
-                                /// so it never competes with the paper's own
-                                /// edge, and only while this note holds focus.
-                                Rectangle {
-                                    anchors.fill: paperPlate
-                                    anchors.margins: -3
-                                    visible: note.current
-                                    color: "transparent"
-                                    border.width: 2
-                                    border.color: Theme.accent
-                                }
-
-                                // ── Pin ─────────────────────────────────
-                                // A thumbtack, not a dot: a warm metal head
-                                // over a tight shadow, plus a specular chip at
-                                // the top left. The shadow follows the same
-                                // down-right direction as `Shadow`, which
-                                // is what makes the head look pushed through
-                                // the sheet rather than drawn on it.
-                                Item {
-                                    id: pin
-
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: -7
+                                Glyph {
                                     width: 16
                                     height: 16
-
-                                    Rectangle {
-                                        x: 4
-                                        y: 11
-                                        width: 11
-                                        height: 3
-                                        radius: height / 2
-                                        color: Qt.rgba(0, 0, 0, Theme.dark ? 0.55 : 0.30)
-                                    }
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: width / 2
-                                        border.width: 1
-                                        border.color: Theme.dark ? "#7a6c58" : "#5d4d38"
-                                        gradient: Gradient {
-                                            GradientStop {
-                                                position: 0.0
-                                                color: Theme.dark ? "#f6eedd" : "#fffdf7"
-                                            }
-                                            GradientStop {
-                                                position: 0.48
-                                                color: Theme.dark ? "#d3c2a6" : "#e6d9c2"
-                                            }
-                                            GradientStop {
-                                                position: 1.0
-                                                color: Theme.dark ? "#83735c" : "#9b8b72"
-                                            }
-                                        }
-                                    }
-
-                                    /// The dark bottom of the head, so the
-                                    /// gradient reads as a sphere and not as
-                                    /// a flat disc with a gradient on it.
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        anchors.margins: 2
-                                        radius: width / 2
-                                        color: "transparent"
-                                        border.width: 2
-                                        border.color: Qt.rgba(0, 0, 0,
-                                                              Theme.dark ? 0.18 : 0.10)
-                                    }
-
-                                    Rectangle {
-                                        x: 4
-                                        y: 3
-                                        width: 5
-                                        height: 3
-                                        radius: 1.5
-                                        color: "#ffffff"
-                                        opacity: 0.9
-                                    }
-                                }
-
-                                // ── Note face ───────────────────────────
-                                Glyph {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 14
-                                    anchors.top: parent.top
-                                    anchors.topMargin: 20
-                                    width: 14
-                                    height: 14
-                                    kind: root.glyphKind(note.entry.icon)
+                                    kind: root.glyphKind(chip.modelData.icon)
                                     tint: Theme.inkSecondary
                                 }
 
                                 Text {
-                                    id: noteName
-
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
-                                    anchors.top: parent.top
-                                    anchors.topMargin: 40
-                                    height: 38
-                                    text: note.displayName
+                                    text: root.placeLabel(chip.modelData.icon) !== ""
+                                        ? root.placeLabel(chip.modelData.icon)
+                                        : chip.modelData.name
                                     color: Theme.ink
                                     font.pixelSize: Theme.typeBody
-                                    font.weight: Font.Medium
-                                    wrapMode: Text.Wrap
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
                                     textFormat: Text.PlainText
-                                    lineHeight: Theme.leadingTight
                                 }
+                            }
 
-                                /// One reading line at the foot of the note —
-                                /// the fact you would otherwise have to open it
-                                /// to learn. A project leads with its branch,
-                                /// everything else with its count or parent.
-                                Item {
-                                    id: noteFoot
+                            MouseArea {
+                                id: chipHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openNote(chip.modelData)
+                            }
+                        }
+                    }
+                }
+            }
 
-                                    anchors.left: parent.left
+            /// ── 项目 / 最近 / 空间 / 磁盘 / 标签 ─────────────────────────
+            Repeater {
+                model: root.sections
+
+                delegate: Column {
+                    id: section
+
+                    required property var modelData
+                    required property int index
+
+                    width: stack.width
+                    spacing: 6
+
+                    Text {
+                        text: section.modelData.label
+                        color: Theme.inkTertiary
+                        font.pixelSize: Theme.typeMicro
+                        font.weight: Font.Medium
+                        font.letterSpacing: 0.4
+                    }
+
+                    Repeater {
+                        model: section.modelData.notes
+
+                        delegate: ListRow {
+                            id: entry
+
+                            required property var modelData
+                            required property int index
+
+                            width: section.width
+                            rowHeight: Theme.rowSpacious
+                            contentInset: 8
+                            focusable: true
+                            keyboardCursor: entry.activeFocus
+
+                            title: entry.modelData.name
+                            subtitle: entry.modelData.kind === "drive"
+                                ? root.driveParts(entry.modelData).filesystem
+                                : (entry.modelData.kind === "recent"
+                                    ? root.relativePath(entry.modelData.path) : "")
+                            subtitleInline: entry.modelData.kind === "recent"
+                            titleMonospace: entry.modelData.kind === "recent"
+                            iconCategory: entry.modelData.isDir ? "folder" : "file"
+                            showIcon: entry.modelData.kind === "project"
+                                || entry.modelData.kind === "recent"
+                                || entry.modelData.kind === "favorite"
+                            showLeading: entry.modelData.kind === "space"
+                                || entry.modelData.kind === "tag"
+                                || entry.modelData.kind === "drive"
+                            iconEdge: 18
+                            meta: entry.modelData.kind === "recent"
+                                ? root.timeLabel(entry.modelData.timeText)
+                                : (entry.modelData.kind === "space"
+                                    || entry.modelData.kind === "tag"
+                                    ? root.detailLabel(entry.modelData.detail) : "")
+                            metaWidth: entry.modelData.kind === "recent" ? 84 : 120
+                            accessibleName: entry.title
+                            accessibleDescription: entry.modelData.kind === "recent"
+                                ? entry.modelData.detail : entry.meta
+
+                            leading: Item {
+                                width: 18
+                                height: 18
+                                visible: entry.modelData.kind === "space"
+                                    || entry.modelData.kind === "tag"
+                                    || entry.modelData.kind === "drive"
+
+                                Glyph {
+                                    anchors.centerIn: parent
+                                    width: 18
+                                    height: 18
+                                    kind: root.glyphKind(entry.modelData.icon)
+                                    tint: Theme.inkSecondary
+                                }
+                            }
+
+                            /// A project row reads name · branch · changes. The
+                            /// branch and the diff count are one sentence, not
+                            /// two chips: the row is a destination, not a card.
+                            /// Drives end in their free/total figures.
+                            trailing: Item {
+                                width: entry.modelData.kind === "project"
+                                    ? projectFacts.implicitWidth
+                                    : (entry.modelData.kind === "drive" ? 150 : 0)
+                                height: 18
+
+                                Text {
                                     anchors.right: parent.right
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
-                                    anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 11
-                                    height: 16
-
-                                    Rectangle {
-                                        id: branchChip
-
-                                        anchors.left: parent.left
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        visible: note.entry.kind === "project" && note.entry.branch !== ""
-                                        height: 16
-                                        width: branchLabel.implicitWidth + 10
-                                        color: Qt.rgba(Theme.ink.r, Theme.ink.g,
-                                                       Theme.ink.b, 0.10)
-
-                                        Text {
-                                            id: branchLabel
-                                            anchors.centerIn: parent
-                                            text: note.entry.branch
-                                            color: Theme.ink
-                                            font.pixelSize: Theme.typeMicro
-                                            font.family: Theme.monoFamily
-                                        }
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: entry.modelData.kind === "drive"
+                                    text: {
+                                        const parts = root.driveParts(entry.modelData)
+                                        return parts.total === ""
+                                            ? "" : parts.free + " / " + parts.total
                                     }
-
-                                    Text {
-                                        id: footLeft
-
-                                        anchors.left: branchChip.visible
-                                            ? branchChip.right : parent.left
-                                        anchors.leftMargin: branchChip.visible ? 6 : 0
-                                        anchors.right: footRight.left
-                                        anchors.rightMargin: 8
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        visible: note.entry.kind === "project"
-                                            ? note.entry.changeText !== ""
-                                            : note.entry.detail !== ""
-                                        text: note.entry.kind === "project"
-                                            ? root.changeLabel(note.entry.changeText)
-                                            : root.detailLabel(note.entry.detail)
-                                        color: note.entry.kind === "project"
-                                            && note.entry.changeText !== "Clean"
-                                            && note.entry.changeText !== "Untracked"
-                                            ? Theme.warning
-                                            : (note.entry.changeText === "Untracked"
-                                               ? Theme.accent : Theme.inkSecondary)
-                                        font.pixelSize: Theme.typeCaption
-                                        elide: Text.ElideMiddle
-                                        textFormat: Text.PlainText
-                                    }
-
-                                    Text {
-                                        id: footRight
-
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        visible: note.entry.timeText !== ""
-                                        width: visible ? implicitWidth : 0
-                                        text: root.timeLabel(note.entry.timeText)
-                                        color: Theme.inkSecondary
-                                        font.pixelSize: Theme.typeCaption
-                                        font.features: { "tnum": 1 }
-                                    }
+                                    color: Theme.inkTertiary
+                                    font.family: Theme.monoFamily
+                                    font.pixelSize: Theme.typeCaption
+                                    horizontalAlignment: Text.AlignRight
                                 }
 
-                                MouseArea {
-                                    id: noteMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    Accessible.role: Accessible.Button
-                                    Accessible.name: note.displayName
-                                    onClicked: {
-                                        root.cursorRow = note.entry.row;
-                                        root.openNote(note.entry);
+                                Row {
+                                    id: projectFacts
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 12
+
+                                    Text {
+                                        text: entry.modelData.branch
+                                        visible: entry.modelData.branch !== ""
+                                        color: Theme.inkSecondary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.typeCaption
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        text: root.changeLabel(entry.modelData.changeText)
+                                        visible: entry.modelData.changeText !== ""
+                                        color: Theme.inkTertiary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.typeCaption
                                     }
                                 }
                             }
+
+                            /// Drives carry a 160 × 3 capacity bar between the
+                            /// name and the figures (§11.1).
+                            Item {
+                                width: entry.modelData.kind === "drive" ? 160 : 0
+                                height: 22
+                                visible: entry.modelData.kind === "drive"
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 160
+                                    height: 3
+                                    color: Theme.line
+                                    Accessible.ignored: true
+
+                                    Rectangle {
+                                        width: Math.round(parent.width
+                                            * root.driveRatio(entry.modelData))
+                                        height: parent.height
+                                        color: Theme.accent
+                                        Accessible.ignored: true
+                                    }
+                                }
+                            }
+
+                            onClicked: root.openNote(entry.modelData)
+                            onDoubleClicked: root.openNote(entry.modelData)
+                            onActivated: root.openNote(entry.modelData)
+
+                            Component.onCompleted: root.registerFocusable(entry)
+                            Component.onDestruction: root.unregisterFocusable(entry)
                         }
                     }
                 }
@@ -892,15 +529,12 @@ Item {
         }
     }
 
-    /// With every section hidden and nothing favourited yet, the board is an
-    /// empty page. This is the landing page's own empty state, using the shared
-    /// grammar rather than a second mute sentence.
-    EmptyState {
-        anchors.fill: board
-        visible: root.model !== null && root.model.loaded
-            && root.model.count === 0
-        glyph: "folder"
-        title: qsTr("还没有可显示的位置")
-        hint: qsTr("在地址栏打开一个文件夹，它会出现在「最近」里。")
+    /// The board is the page's only scroller; one bar covers it.
+    ScrollBar {
+        target: board
+        anchors.right: parent.right
+        anchors.rightMargin: 4
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
     }
 }

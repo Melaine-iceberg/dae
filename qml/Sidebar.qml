@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 
 // The navigation column: the five places people reach for, then extra places
@@ -270,7 +271,7 @@ Item {
 
         Rectangle {
             anchors.right: parent.right
-            width: 1
+            width: Theme.ruleWidth(Screen.devicePixelRatio)
             height: parent.height
             color: Theme.hairline
         }
@@ -892,7 +893,7 @@ Item {
             anchors.leftMargin: 8
             anchors.rightMargin: 8
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
@@ -1050,7 +1051,7 @@ Item {
             anchors.leftMargin: 8
             anchors.rightMargin: 8
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
@@ -1203,7 +1204,7 @@ Item {
             anchors.leftMargin: 8
             anchors.rightMargin: 8
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
@@ -1320,7 +1321,7 @@ Item {
             anchors.right: parent.right
             anchors.leftMargin: 8
             anchors.rightMargin: 8
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 

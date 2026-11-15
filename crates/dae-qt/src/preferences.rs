@@ -46,6 +46,8 @@ const MODIFIED_FILTERS: &[&str] = &["any", "today", "week", "month"];
 const SIZE_FILTERS: &[&str] = &["any", "small", "medium", "large"];
 /// `binary` prints KiB/MiB (the 1024 divisor); `decimal` prints KB/MB.
 const SIZE_UNITS: &[&str] = &["binary", "decimal"];
+/// Grid thumbnail box: 3:4 portrait (the default) or 1:1.
+const GRID_THUMBS: &[&str] = &["portrait", "square"];
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -112,6 +114,8 @@ pub mod qobject {
         /// `binary` (KiB/MiB) or `decimal` (KB/MB). Read by the formatter for
         /// every row, so it is a display preference rather than a layout key.
         #[qproperty(QString, size_units, cxx_name = "sizeUnits")]
+        /// Grid thumbnail proportions: `portrait` (3:4) or `square` (1:1).
+        #[qproperty(QString, grid_thumb, cxx_name = "gridThumb")]
         /// Reopen the previous session's windows and tabs on launch.
         #[qproperty(bool, restore_session, cxx_name = "restoreSession")]
         /// Landing-page sections to hide, comma-separated. A free-text value:
@@ -262,6 +266,7 @@ struct StoredPrefs {
     modified_filter: String,
     size_filter: String,
     size_units: String,
+    grid_thumb: String,
     restore_session: bool,
     hidden_home_sections: String,
     split_enabled: bool,
@@ -306,6 +311,7 @@ impl Default for StoredPrefs {
             modified_filter: "any".to_owned(),
             size_filter: "any".to_owned(),
             size_units: "binary".to_owned(),
+            grid_thumb: "portrait".to_owned(),
             restore_session: true,
             hidden_home_sections: String::new(),
             split_enabled: false,
@@ -399,6 +405,7 @@ impl StoredPrefs {
         );
         string("sizeFilter", SIZE_FILTERS, &mut self.size_filter);
         string("sizeUnits", SIZE_UNITS, &mut self.size_units);
+        string("gridThumb", GRID_THUMBS, &mut self.grid_thumb);
         boolean("restoreSession", &mut self.restore_session);
         if let Some(value) = fields.get("hiddenHomeSections") {
             self.hidden_home_sections = (*value).to_owned();
@@ -476,6 +483,7 @@ impl StoredPrefs {
         write(&mut out, "modifiedFilter", &self.modified_filter);
         write(&mut out, "sizeFilter", &self.size_filter);
         write(&mut out, "sizeUnits", &self.size_units);
+        write(&mut out, "gridThumb", &self.grid_thumb);
         write(&mut out, "restoreSession", bool_text(self.restore_session));
         write(&mut out, "hiddenHomeSections", &self.hidden_home_sections);
         write(&mut out, "splitEnabled", bool_text(self.split_enabled));
@@ -735,6 +743,7 @@ pub struct ExplorerPrefsRust {
     modified_filter: QString,
     size_filter: QString,
     size_units: QString,
+    grid_thumb: QString,
     restore_session: bool,
     hidden_home_sections: QString,
     split_enabled: bool,
@@ -783,6 +792,7 @@ impl ExplorerPrefsRust {
             modified_filter: QString::from(prefs.modified_filter.as_str()),
             size_filter: QString::from(prefs.size_filter.as_str()),
             size_units: QString::from(prefs.size_units.as_str()),
+            grid_thumb: QString::from(prefs.grid_thumb.as_str()),
             restore_session: prefs.restore_session,
             hidden_home_sections: QString::from(prefs.hidden_home_sections.as_str()),
             split_enabled: prefs.split_enabled,
@@ -830,6 +840,7 @@ impl ExplorerPrefsRust {
             modified_filter: self.modified_filter.to_string(),
             size_filter: self.size_filter.to_string(),
             size_units: self.size_units.to_string(),
+            grid_thumb: self.grid_thumb.to_string(),
             restore_session: self.restore_session,
             hidden_home_sections: self.hidden_home_sections.to_string(),
             split_enabled: self.split_enabled,
@@ -1063,6 +1074,18 @@ impl qobject::ExplorerPrefs {
             if self.column_widths != next {
                 self.as_mut().set_column_widths(next);
                 self.as_mut().persist_layout();
+            }
+            return;
+        }
+
+        if key == "gridThumb" {
+            if !GRID_THUMBS.contains(&value.as_str()) {
+                return;
+            }
+            let next = QString::from(value.as_str());
+            if self.grid_thumb != next {
+                self.as_mut().set_grid_thumb(next);
+                save(&self.stored());
             }
             return;
         }

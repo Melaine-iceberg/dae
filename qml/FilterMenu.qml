@@ -1,33 +1,21 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 
 // Entry filters: which rows exist, as opposed to how they are arranged.
 //
 // The menu carries the hidden-files switch alongside the three buckets because
 // all four narrow the same listing, and keeps a clear-all action at the bottom
-// so an accidental combination is one click away from undo. The rows come from
-// `MenuList`, shared with every other menu in the shell.
-Item {
+// so an accidental combination is one click away from undo. The panel is
+// `Menu`, shared with every other menu in the shell; the clear row is its
+// footer, pinned so it cannot scroll away.
+Menu {
     id: root
 
-    property bool dark: true
     property color accent: Theme.accent
     /// The binding from `settings.toml`; the view only prints it.
     property string hiddenShortcut: "Ctrl+H"
-    property real openX: 0
-    property real openY: 0
-
-    visible: false
-    /// Arrives rather than appears. Hiding stays instant: a menu that fades
-    /// out is a menu that ignores the next click.
-    opacity: visible ? 1 : 0
-    Behavior on opacity {
-        enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
-    }
-    focus: visible
-    z: 1002
 
     readonly property bool active: ExplorerPrefs.kindFilter !== "all"
         || ExplorerPrefs.modifiedFilter !== "any"
@@ -62,12 +50,13 @@ Item {
         { kind: "radio", group: "sizeFilter", value: "large", label: qsTr("大（> 100 MB）") }
     ]
 
+    rows: root.normalized()
+
     function openAbove(x, y) {
         root.openX = x
         root.openY = y
-        list.resetScroll()
-        root.visible = true
-        Qt.callLater(list.takeFocus)
+        root.above = true
+        root.show()
     }
 
     function close() {
@@ -110,70 +99,20 @@ Item {
         return mapped
     }
 
-    MouseArea {
-        Accessible.ignored: true
-        anchors.fill: parent
-        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        onClicked: root.close()
-        onWheel: root.close()
-    }
+    onRowTriggered: function (index) { root.choose(root.items[index]) }
 
-    Shadow {
-        target: panel
-    }
-
-    Rectangle {
-        id: panel
-        width: list.naturalWidth
-        height: Math.min(list.contentHeight + 8 + (root.active ? 29 : 0),
-                         root.height - 16)
-        x: Math.max(8, Math.min(root.openX, root.width - width - 8))
-        y: Math.max(8, root.openY - height - 6)
-        radius: Theme.radiusLg
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.line
-
-        // The panel itself is not an input item, so a press on its padding or
-        // on a non-selectable row (a separator, a group label) would otherwise
-        // reach the window-wide scrim behind it and read as a click outside:
-        // the menu closed on release, and a drag that started there closed it
-        // too. Swallow presses and wheel here; the rows above still get theirs.
-        MouseArea {
-            anchors.fill: parent
-            onWheel: {}
-        }
-
-        MenuList {
-            id: list
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.topMargin: 4
-            // The clear row keeps its place at the bottom; the rows scroll
-            // above it rather than sliding under it.
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 4 + (root.active ? 29 : 0)
-            maxHeight: height
-            items: root.normalized()
-
-            onTriggered: function (index) { root.choose(root.items[index]) }
-            onEscapeRequested: root.close()
-        }
-
-        Rectangle {
-            visible: root.active
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 29
-            color: "transparent"
+    /// The way back from a filter combination that found nothing. It is a
+    /// footer rather than the last row so a menu scrolled to the top of a
+    /// short window still offers it.
+    footer: Component {
+        Item {
+            implicitHeight: root.active ? 29 : 0
 
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: Theme.hairline
             }
 

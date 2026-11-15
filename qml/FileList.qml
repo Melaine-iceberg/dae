@@ -1081,7 +1081,7 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 1
+            width: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
@@ -1236,7 +1236,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: root.hairline
         }
     }
@@ -1907,6 +1907,17 @@ Item {
                     }
                 }
             }
+        }
+
+        /// The list's own bar; the grid and the column view each mount one on
+        /// the view that owns the scrolling. A bar at the shell would have to
+        /// know which of the three surfaces is current to find its target.
+        ScrollBar {
+            target: root.viewMode === "list" ? list : null
+            anchors.right: parent.right
+            anchors.rightMargin: 2
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
         }
 
         /// The grid and the column view are built the first time their mode is

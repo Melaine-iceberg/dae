@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import "Localize.js" as Localize
 
 // The branch switch and remote actions for the repository shown in the
@@ -287,7 +288,7 @@ Item {
 
             Rectangle {
                 width: parent.width
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.borderColor
             }
 

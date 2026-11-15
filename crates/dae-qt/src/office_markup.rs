@@ -47,8 +47,11 @@ pub fn render(preview: &OfficePreview, dark: bool) -> String {
                 OfficeLineKind::Table => {
                     // A sheet row is aligned by its ` | ` separators, so the
                     // mono face and preserved spaces are what make it readable.
+                    // JetBrains Mono is bundled (proposal §6.2.1); the older
+                    // faces stay as the fallback for a preview rendered by a
+                    // binary whose font resource failed to mount.
                     out.push_str(
-                        "<p style=\"font-family:'Cascadia Mono'; font-size:10px; color:",
+                        "<p style=\"font-family:'JetBrains Mono','Cascadia Mono',Consolas,monospace; font-size:10px; color:",
                     );
                     out.push_str(palette.muted);
                     out.push_str("; white-space:pre-wrap; margin:0 0 2px;\">");
@@ -97,7 +100,7 @@ mod tests {
         let html = render(&preview(), true);
         assert!(html.contains("font-size:13px"));
         assert!(html.contains("Quarterly report"));
-        assert!(html.contains("font-family:'Cascadia Mono'"));
+        assert!(html.contains("font-family:'JetBrains Mono'"));
         assert!(html.contains("Region | Units"));
     }
 

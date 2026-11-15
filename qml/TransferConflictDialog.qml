@@ -33,7 +33,7 @@ FocusScope {
     readonly property string verb: Workspace.conflictCut ? qsTr("移动") : qsTr("复制")
     readonly property int remaining: Workspace.conflictTotal - Workspace.conflictIndex
     readonly property color panelColor: Theme.raised
-    readonly property color panelBorder: Theme.line
+    readonly property color panelBorder: Theme.overlayLine
     readonly property color headingColor: Theme.ink
     readonly property color bodyColor: Theme.inkSecondary
     readonly property color mutedColor: Theme.inkSecondary

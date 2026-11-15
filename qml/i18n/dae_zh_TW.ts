@@ -4860,8 +4860,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="1913"/>
-        <source>留空使用 Cascadia Mono / Consolas</source>
-        <translation>留空使用 Cascadia Mono / Consolas</translation>
+        <source>留空使用 JetBrains Mono</source>
+        <translation>留空使用 JetBrains Mono</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="2254"/>

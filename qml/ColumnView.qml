@@ -34,8 +34,8 @@ Item {
     readonly property string density: ExplorerPrefs.density
     readonly property int rowHeight: density === "compact" ? Theme.rowCompact
         : density === "spacious" ? Theme.rowSpacious : Theme.rowDefault
-    readonly property int headerHeight: Theme.controlLg
-    readonly property int columnWidth: 248
+    readonly property int headerHeight: Theme.rowCompact
+    readonly property int columnWidth: 260
 
     Connections {
         target: root.tab !== null ? root.tab.listing : null
@@ -148,16 +148,14 @@ Item {
                     required property int index
 
                     height: columns.height
-                    /// The last column takes the space left over, so a single
-                    /// column does not leave a bare half-pane; earlier columns
-                    /// keep the 248 px step and scroll when the trail outgrows
-                    /// the pane.
-                    width: index === panes.count - 1
-                        ? Math.max(root.columnWidth, flick.width - root.columnWidth * index)
-                        : root.columnWidth
+                    /// §11.3: every column is 260 dp, including the last one;
+                    /// the trail scrolls horizontally rather than stretching a
+                    /// half-filled pane into one wide column.
+                    width: root.columnWidth
                     depth: index
                     path: index === 0 ? "" : root.chain[index - 1]
                     activeChildPath: index < root.chain.length ? root.chain[index] : ""
+                    dimmed: index < panes.count - 1
                     rowHeight: root.rowHeight
                     tab: root.tab
 
@@ -191,6 +189,7 @@ Item {
         required property int depth
         required property string path
         required property string activeChildPath
+        property bool dimmed: false
         property var tab: null
         property int rowHeight: Theme.controlLg
         property bool keyboardCursor: false
@@ -264,7 +263,7 @@ Item {
             target: ExplorerPrefs
             function onSortKeyChanged() { pane.applyPreferences() }
             function onSortOrderChanged() { pane.applyPreferences() }
-            function onFoldersFirstChanged() { pane.applyPreferences() }
+            function onFolderOrderChanged() { pane.applyPreferences() }
             function onShowHiddenFilesChanged() { pane.applyPreferences() }
             function onKindFilterChanged() { pane.applyPreferences() }
             function onModifiedFilterChanged() { pane.applyPreferences() }
@@ -344,7 +343,7 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 1
+            width: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
@@ -385,7 +384,7 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: Theme.hairline
             }
         }
@@ -436,7 +435,7 @@ Item {
                 }
             }
 
-            delegate: Item {
+            delegate: ListRow {
                 id: row
 
                 required property int index
@@ -444,13 +443,12 @@ Item {
                 required property string filePath
                 required property bool isDir
                 required property bool hidden
-                required property string iconSource
                 required property string category
                 required property string extension
                 required property string thumbnailSource
 
                 width: list.width
-                height: pane.rowHeight
+                rowHeight: pane.rowHeight
 
                 required property bool selected
                 readonly property bool expanded: pane.activeChildPath !== ""
@@ -461,58 +459,23 @@ Item {
                 readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
                     && row.thumbnailSource !== ""
 
-                /// One row per folder entry. `expanded` is the column view's
-                /// "this folder is open in the next column", which is the same
-                /// idea a tree states, so it is announced the same way.
-                Accessible.role: Accessible.ListItem
-                Accessible.name: row.fileName
-                Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
-                Accessible.selectable: true
-                Accessible.selected: row.selected
+                title: row.fileName
+                titleColor: row.hidden ? Theme.inkTertiary : Theme.ink
+                isSelected: row.selected
+                highlighted: row.expanded
+                keyboardCursor: row.focusedCursor
+                isCurrent: row.current
+                showFocusRail: false
+                iconCategory: row.isDir ? "folder" : row.category
+                iconEdge: 16
+                iconOpacity: pane.dimmed ? 0.7 : 1
+                showLeading: row.showThumbnail
+                accessibleName: row.fileName
+                accessibleDescription: row.isDir ? qsTr("文件夹") : qsTr("文件")
                 Accessible.expandable: row.isDir
                 Accessible.expanded: row.expanded
-                Accessible.onPressAction: pane.activateRequested(row.filePath, row.isDir)
 
-                /// The same inversion the detail view uses: a chosen row is an
-                /// ink band with the paper showing through it. The pane a
-                /// column belongs to marks itself with the signal wash on its
-                /// header, so the row does not need a second, different mark.
-                Rectangle {
-                    anchors.fill: parent
-                    color: row.selected ? Theme.ink
-                        : row.expanded ? Theme.hover
-                        : (hover.containsMouse ? Theme.hover : "transparent")
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    visible: row.focusedCursor
-                    color: "transparent"
-                    border.width: 1
-                    border.color: Theme.accent
-                }
-
-                Image {
-                    id: systemIcon
-                    x: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 16
-                    height: 16
-                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
-                        && status === Image.Ready
-                    source: row.showThumbnail || ExplorerPrefs.iconStyle !== "system"
-                        ? "" : row.iconSource
-                    sourceSize.width: Math.round(16 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(16 * Screen.devicePixelRatio)
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    asynchronous: true
-                    Accessible.ignored: true
-                }
-
-                Image {
-                    x: 8
-                    anchors.verticalCenter: parent.verticalCenter
+                leading: Image {
                     width: 20
                     height: Theme.controlXs
                     visible: row.showThumbnail
@@ -522,152 +485,115 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     smooth: true
+                    opacity: pane.dimmed ? 0.7 : 1
                     Accessible.ignored: true
                 }
 
-                /// The same paper silhouette the detail view uses. A column is
-                /// 18 dp wide of row: the sheet is drawn flat, and on a
-                /// selected row it is inverted like the name beside it.
-                DriftSheet {
-                    x: 10
-                    /// The same drawn sheet as the list and the grid, sized to
-                    /// the row so a compact column still holds it.
-                    width: Math.round((pane.rowHeight - 2) * 0.75)
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
-                        || systemIcon.status !== Image.Ready)
-                    name: row.fileName
-                    category: row.category
-                    extension: row.extension
-                    isDir: row.isDir
-                    detail: true
-                    inverted: row.selected
-                }
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 34
-                    anchors.right: chevron.visible ? chevron.left : parent.right
-                    anchors.rightMargin: chevron.visible ? 4 : 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: row.fileName
-                    color: row.selected ? Theme.canvas
-                        : row.hidden ? Theme.inkTertiary : Theme.ink
-                    font.pixelSize: Theme.typeBody
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                }
-
-                Glyph {
-                    id: chevron
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
+                trailing: Glyph {
                     width: 12
                     height: 12
                     visible: row.isDir
                     kind: "chevron"
-                    tint: row.selected ? Theme.canvas : Theme.inkTertiary
+                    tint: Theme.inkTertiary
+                    opacity: pane.dimmed ? 0.7 : 1
                 }
 
-                MouseArea {
-                    id: hover
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    cursorShape: Qt.PointingHandCursor
+                property bool dragArmed: false
+                property bool dragStarted: false
+                property real dragStartX: 0
+                property real dragStartY: 0
+                property var dragPaths: []
 
-                    property bool dragArmed: false
-                    property bool dragStarted: false
-                    property real dragStartX: 0
-                    property real dragStartY: 0
-                    property var dragPaths: []
-                    property bool suppressClick: false
+                function prepareDrag(mouse) {
+                    clickSuppressed = false
+                    dragArmed = false
+                    dragStarted = false
+                    dragPaths = []
+                    if (pane.tab === null || pane.listing.remote)
+                        return
+                    const wasSelected = row.selected
+                    if (!wasSelected && (mouse.modifiers
+                                         & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
+                        pane.handleClick(row.index, false, false)
+                    dragPaths = wasSelected ? pane.selectedPathList() : [row.filePath]
+                    dragStartX = mouse.x
+                    dragStartY = mouse.y
+                    dragArmed = true
+                }
 
-                    function prepareDrag(mouse) {
-                        suppressClick = false
+                function continueDrag(mouse) {
+                    if (!dragArmed || dragStarted)
+                        return
+                    if ((mouse.buttons & Qt.LeftButton) === 0) {
                         dragArmed = false
-                        dragStarted = false
-                        dragPaths = []
-                        if (pane.tab === null || pane.listing.remote)
-                            return
-                        const selected = row.selected
-                        if (!selected && (mouse.modifiers
-                                          & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
+                        return
+                    }
+                    const dx = mouse.x - dragStartX
+                    const dy = mouse.y - dragStartY
+                    if (Math.sqrt(dx * dx + dy * dy) < 6)
+                        return
+                    dragArmed = false
+                    dragStarted = true
+                    clickSuppressed = true
+                    const paths = dragPaths
+                    dragPaths = []
+                    if (paths.length > 0)
+                        pane.dragOutRequested(paths, modeFor(mouse.modifiers))
+                }
+
+                function modeFor(modifiers) {
+                    const ctrl = (modifiers & Qt.ControlModifier) !== 0
+                    const shift = (modifiers & Qt.ShiftModifier) !== 0
+                    if ((modifiers & Qt.AltModifier) !== 0 || (ctrl && shift))
+                        return "link"
+                    if (ctrl)
+                        return "copy"
+                    if (shift)
+                        return "move"
+                    return "any"
+                }
+
+                onPressed: function (mouse) {
+                    pane.keyboardCursor = false
+                    if (mouse.button === Qt.LeftButton)
+                        prepareDrag(mouse)
+                }
+                onMoved: function (mouse) {
+                    continueDrag(mouse)
+                }
+                onReleased: dragArmed = false
+                onCanceled: dragArmed = false
+                onClicked: function (mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                        if (!row.selected)
                             pane.handleClick(row.index, false, false)
-                        dragPaths = selected ? pane.selectedPathList() : [row.filePath]
-                        dragStartX = mouse.x
-                        dragStartY = mouse.y
-                        dragArmed = true
+                        const point = row.mapToItem(null, mouse.x, mouse.y)
+                        pane.contextRequested(row.filePath, row.isDir, point.x, point.y)
+                        return
                     }
-
-                    function continueDrag(mouse) {
-                        if (!dragArmed || dragStarted)
-                            return
-                        if ((mouse.buttons & Qt.LeftButton) === 0) {
-                            dragArmed = false
-                            return
-                        }
-                        const dx = mouse.x - dragStartX
-                        const dy = mouse.y - dragStartY
-                        if (Math.sqrt(dx * dx + dy * dy) < 6)
-                            return
-                        dragArmed = false
-                        dragStarted = true
-                        suppressClick = true
-                        const paths = dragPaths
-                        dragPaths = []
-                        if (paths.length > 0)
-                            pane.dragOutRequested(paths, modeFor(mouse.modifiers))
-                    }
-
-                    function modeFor(modifiers) {
-                        const ctrl = (modifiers & Qt.ControlModifier) !== 0
-                        const shift = (modifiers & Qt.ShiftModifier) !== 0
-                        if ((modifiers & Qt.AltModifier) !== 0 || (ctrl && shift))
-                            return "link"
-                        if (ctrl)
-                            return "copy"
-                        if (shift)
-                            return "move"
-                        return "any"
-                    }
-
-                    onPressed: function (mouse) {
-                        pane.keyboardCursor = false
-                        if (mouse.button === Qt.LeftButton)
-                            prepareDrag(mouse)
-                    }
-                    onPositionChanged: function (mouse) {
-                        continueDrag(mouse)
-                    }
-                    onReleased: dragArmed = false
-                    onCanceled: dragArmed = false
-                    onClicked: function (mouse) {
-                        if (mouse.button === Qt.LeftButton && suppressClick) {
-                            suppressClick = false
-                            return
-                        }
-                        if (mouse.button === Qt.RightButton) {
-                            if (!row.selected)
-                                pane.handleClick(row.index, false, false)
-                            const point = row.mapToItem(null, mouse.x, mouse.y)
-                            pane.contextRequested(row.filePath, row.isDir, point.x, point.y)
-                            return
-                        }
-                        pane.handleClick(row.index,
-                                         (mouse.modifiers & Qt.ControlModifier) !== 0,
-                                         (mouse.modifiers & Qt.ShiftModifier) !== 0)
-                        if (row.isDir && (mouse.modifiers
-                                          & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
-                            pane.drillRequested(row.filePath, pane.depth)
-                    }
-                    onDoubleClicked: function (mouse) {
-                        if (mouse.button === Qt.LeftButton)
-                            pane.activateRequested(row.filePath, row.isDir)
-                    }
+                    pane.handleClick(row.index,
+                                     (mouse.modifiers & Qt.ControlModifier) !== 0,
+                                     (mouse.modifiers & Qt.ShiftModifier) !== 0)
+                    if (row.isDir && (mouse.modifiers
+                                      & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
+                        pane.drillRequested(row.filePath, pane.depth)
                 }
+                onDoubleClicked: function (mouse) {
+                    if (mouse.button === Qt.LeftButton)
+                        pane.activateRequested(row.filePath, row.isDir)
+                }
+                onActivated: pane.activateRequested(row.filePath, row.isDir)
             }
+        }
+
+        /// Every column scrolls on its own, so every column carries its own
+        /// bar; the last column's is the one a reader usually reaches.
+        ScrollBar {
+            target: list
+            anchors.right: parent.right
+            anchors.rightMargin: 2
+            anchors.top: headerBar.bottom
+            anchors.bottom: parent.bottom
         }
 
         /// Only deeper columns show this: the first column's empty state is

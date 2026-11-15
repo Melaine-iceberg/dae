@@ -4,6 +4,7 @@
 
 #include <QFileInfo>
 #include <QColor>
+#include <QElapsedTimer>
 #include <QFont>
 #include <QImageReader>
 #include <QMutexLocker>
@@ -12,9 +13,12 @@
 #include <QPolygonF>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QtGlobal>
 #include <QtQml/QQmlApplicationEngine>
 
+#include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 namespace dae_qt {
@@ -353,6 +357,19 @@ FileGlyphImageProvider::FileGlyphImageProvider()
     m_cache.setMaxCost(64);
 }
 
+namespace {
+
+/// The raster counter from proposal §12.7: every (family, pixel edge, ink,
+/// tint) is rasterised once, and the first raster of a cold start stays under
+/// 8 ms. `DAE_GLYPH_PERF=1` prints one line per actual rasterisation — a cache
+/// hit prints nothing — so the claim is checkable without a profiler. The
+/// counter itself is always maintained and is what the sequence number in the
+/// line reports.
+const bool kFileGlyphPerf = qEnvironmentVariableIsSet("DAE_GLYPH_PERF");
+std::atomic<quint64> fileGlyphRasters{ 0 };
+
+} // namespace
+
 QImage FileGlyphImageProvider::requestImage(const QString& id, QSize* size,
                                             const QSize& requestedSize)
 {
@@ -388,7 +405,18 @@ QImage FileGlyphImageProvider::requestImage(const QString& id, QSize* size,
         }
     }
 
+    QElapsedTimer timer;
+    timer.start();
     const QImage image = renderFileGlyph(edge, family, ink, tint);
+    const qint64 micros = timer.nsecsElapsed() / 1000;
+    const quint64 raster = fileGlyphRasters.fetch_add(1) + 1;
+    if (kFileGlyphPerf) {
+        fprintf(stderr,
+                "[fileglyph] raster #%llu %s edge=%d ink=%s fc=%s %.2f ms\n",
+                static_cast<unsigned long long>(raster), qUtf8Printable(family),
+                edge, qUtf8Printable(ink.name()), qUtf8Printable(tint.name()),
+                double(micros) / 1000.0);
+    }
     {
         QMutexLocker locker(&m_mutex);
         m_cache.insert(key, new QImage(image));

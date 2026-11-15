@@ -211,7 +211,7 @@ Item {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.line
+        border.color: Theme.overlayLine
 
         // The dimmed backdrop must not scroll the list behind the dialog, and
         // clicks inside the card must never reach that backdrop.

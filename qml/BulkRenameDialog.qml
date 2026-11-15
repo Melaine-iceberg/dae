@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
 
@@ -286,7 +287,7 @@ FocusScope {
         radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
-        border.color: Theme.line
+        border.color: Theme.overlayLine
 
         MouseArea {
             anchors.fill: parent
@@ -366,7 +367,7 @@ FocusScope {
 
             Rectangle {
                 width: parent.width
-                height: 1
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
                 color: root.hairline
             }
 

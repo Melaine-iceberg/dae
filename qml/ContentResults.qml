@@ -249,4 +249,13 @@ Item {
 
         onCurrentIndexChanged: root.currentIndex = currentIndex
     }
+
+    /// The result list is the only scroller under the fixed column header.
+    ScrollBar {
+        target: list
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        anchors.top: columnHeader.bottom
+        anchors.bottom: parent.bottom
+    }
 }

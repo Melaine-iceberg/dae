@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 import "Localize.js" as Localize
 
@@ -320,7 +321,7 @@ Item {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 1
+            width: Theme.ruleWidth(Screen.devicePixelRatio)
             visible: !root.plate
             color: root.hairline
         }
@@ -338,7 +339,7 @@ Item {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.leftMargin: 14
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: root.hairline
         }
 
@@ -1279,7 +1280,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 1
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }
 
@@ -1421,6 +1422,16 @@ Item {
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: action.clicked()
         }
+    }
+
+    /// The inspector is one column of content under its header, so it takes
+    /// one bar over the same range as the scroller.
+    ScrollBar {
+        target: scroller
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        anchors.top: header.bottom
+        anchors.bottom: parent.bottom
     }
 
     Connections {

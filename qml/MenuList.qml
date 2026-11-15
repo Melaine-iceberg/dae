@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 
 // The rows of a menu.
 //
@@ -32,7 +33,10 @@ FocusScope {
     /// Escape with no submenu open, or with one: the host knows which.
     signal escapeRequested()
 
-    readonly property int rowHeight: Theme.controlLg
+    /// §7.5: a menu row is 28 dp. The list used to run at 32, which made a
+    /// ten-row menu 40 dp taller than the design and pushed the bottom rows
+    /// off a small window.
+    readonly property int rowHeight: Theme.controlMd
 
     /// Whether these rows draw in the gutter at all — an icon, a mark, or a
     /// tick. The whole list shares the answer: labelling each row from its own
@@ -355,7 +359,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         x: 8
                         width: Math.max(0, parent.width - 16)
-                        height: 1
+                        height: Theme.ruleWidth(Screen.devicePixelRatio)
                         color: Theme.hairline
                     }
 

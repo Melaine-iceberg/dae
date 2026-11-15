@@ -34,24 +34,20 @@ Item {
 
     readonly property int padding: 16
     readonly property int gapX: 12
-    readonly property int gapY: 14
-    /// One icon-size preference drives the tile, the thumbnail well and the
-    /// minimum cell width, so the slider cannot make a 96 px glyph overflow a
-    /// tile sized for 24.
-    readonly property int glyphSize: ExplorerPrefs.iconSize
-    /// The sheet width: twice the glyph preference, which puts drift's 76 dp
-    /// card on the 38 dp default and lets the icon slider resize the drawing
-    /// rather than swapping in a different one.
-    readonly property int sheetWidth: Math.max(44, Math.min(96, Math.round(glyphSize * 2)))
-    /// The sheet's box follows its own proportions (4:3 for a folder, 3:4 for
-    /// a card), so the column rhythm is the same at every icon size.
-    readonly property int thumbHeight: Math.round(sheetWidth * 4 / 3)
-    /// 10 dp of air above the sheet, the sheet, 6 dp, then the name plate
-    /// (two name lines plus the size line) and the tag row. The cell has to
-    /// cover all of it: a plate that overflows its cell paints the next row's
-    /// size line above that row's sheet.
-    readonly property int tileHeight: thumbHeight + 90
-    readonly property int minCellWidth: Math.max(100, ExplorerPrefs.iconSize + 40)
+    readonly property int gapY: 12
+    /// §11.2: a tile never gets narrower than 104 dp, and the thumbnail is
+    /// either 3:4 or 1:1 depending on the grid setting.
+    readonly property int minCellWidth: 104
+    readonly property int thumbWidth: Math.max(72, Math.round(tileWidth - 4))
+    readonly property bool portraitThumbs: ExplorerPrefs.gridThumb !== "square"
+    readonly property int thumbHeight: portraitThumbs
+        ? Math.round(thumbWidth * 4 / 3) : thumbWidth
+    /// 8 dp above the thumbnail, the thumbnail, 8 dp, two name lines and one
+    /// figure line. The cell owns all of it so a two-line name cannot paint
+    /// into the row below.
+    readonly property int tileHeight: thumbHeight + 8 + 8
+        + Math.ceil(Theme.typeBody * Theme.leadingTight * 2)
+        + Math.ceil(Theme.typeCaption * Theme.leadingBody) + 2
 
     readonly property int columns: {
         const available = Math.max(0, width - padding * 2)
@@ -298,11 +294,9 @@ Item {
             required property string filePath
             required property bool isDir
             required property bool hidden
-            required property string iconSource
             required property string category
             required property string extension
             required property string thumbnailSource
-            required property string tagColors
             required property string sizeText
 
             width: grid.cellWidth - root.gapX
@@ -328,39 +322,32 @@ Item {
             Accessible.selected: cell.selected
             Accessible.onPressAction: root.activate(cell.index)
 
-            /// A drop target is the only thing that gets a frame; selection is
-            /// carried by the ink plate under the name, not by tinting the
-            /// cell. The frame is a solid accent edge — a dashed line means
-            /// "placeholder" in a file manager and nothing else (§6.7).
-            Rectangle {
-                anchors.fill: parent
-                visible: cell.dropTarget
-                color: "transparent"
-                border.width: 1.5
-                border.color: Theme.accent
-            }
+            /// §11.2: the pointer lifts the thumbnail 2 dp; selection is a
+            /// ring plus a check dot, never a tinted cell.
+            readonly property bool lifted: hover.containsMouse && !cell.selected
+            readonly property int glyphEdge: Math.max(24,
+                Math.min(44, Math.round(thumb.width * 0.42)))
 
+            /// A drop target is the only thing that gets a wash; the frame is
+            /// a solid accent edge — a dashed line means "placeholder" in a
+            /// file manager and nothing else (§6.7).
             Rectangle {
                 anchors.fill: parent
-                visible: cell.focusedCursor && !cell.dropTarget
-                color: "transparent"
-                border.width: Theme.edgeWidth
+                radius: Theme.radiusSm
+                color: cell.dropTarget ? Theme.accentSoft : "transparent"
+                border.width: cell.dropTarget ? 1.5 : 0
                 border.color: Theme.accent
+                Accessible.ignored: true
             }
 
             Item {
                 id: thumb
 
-                /// The sheet rises a little under the pointer, the way a card
-                /// does when it is picked up. Selection leaves it down, because
-                /// the ink plate below already says which tile is chosen.
-                readonly property bool lifted: hover.containsMouse && !cell.selected
-
                 anchors.top: parent.top
-                anchors.topMargin: 10 - (lifted ? 3 : 0)
+                anchors.topMargin: 8 - (cell.lifted ? 2 : 0)
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: root.sheetWidth
-                height: Math.round(width * (cell.isDir ? 96 / 120 : 120 / 90))
+                width: root.thumbWidth
+                height: root.thumbHeight
 
                 Behavior on anchors.topMargin {
                     enabled: Theme.motion
@@ -369,10 +356,10 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    visible: cell.showImage
                     color: Theme.inset
                     border.width: Theme.edgeWidth
                     border.color: Theme.line
+                    Accessible.ignored: true
                 }
 
                 Image {
@@ -380,8 +367,8 @@ Item {
                     anchors.fill: parent
                     visible: cell.showImage
                     source: cell.hasThumbnail ? cell.thumbnailSource : ""
-                    sourceSize.width: Math.round(128 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(128 * Screen.devicePixelRatio)
+                    sourceSize.width: Math.round(root.thumbWidth * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(root.thumbHeight * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     smooth: true
@@ -389,51 +376,74 @@ Item {
                     Accessible.ignored: true
                 }
 
-                DriftSheet {
-                    anchors.fill: parent
+                /// The family mark sits on the inset like a stamp on paper.
+                /// Folders keep the outline glyph rather than a yellow plate.
+                FileIcon {
+                    anchors.centerIn: parent
                     visible: !cell.showImage
-                    category: cell.category
-                    extension: cell.extension
-                    isDir: cell.isDir
-                    name: cell.fileName
+                    category: cell.isDir ? "folder" : cell.category
+                    edge: cell.glyphEdge
+                }
+
+                /// §11.2: a 16 dp accent dot with a white check marks the
+                /// chosen tile; the ring says it again without moving the name.
+                Rectangle {
+                    width: 16
+                    height: 16
+                    radius: 8
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 6
+                    color: Theme.accent
+                    border.width: 1
+                    border.color: Theme.content
+                    visible: cell.selected
+                    Accessible.ignored: true
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 9
+                        height: 9
+                        kind: "check"
+                        tint: Theme.onAccent
+                    }
                 }
             }
 
-            /// The name plate. Selection is a solid ink block behind the label
-            /// with the paper showing through the type — drift's one way of
-            /// marking a chosen row, and the reason the tile needs no tinted
-            /// card behind the sheet.
+            /// Selection is an sm-radius ring around the cell, not a fill.
             Rectangle {
-                id: namePlate
+                anchors.fill: parent
+                radius: Theme.radiusSm
+                color: "transparent"
+                visible: cell.selected
+                border.width: 1.5
+                border.color: Theme.accent
+                Accessible.ignored: true
+            }
+
+            /// The keyboard cursor on an unselected cell (§7.1.8).
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusSm
+                color: "transparent"
+                visible: cell.focusedCursor && !cell.selected && !cell.dropTarget
+                border.width: 1.5
+                border.color: Theme.accent
+                Accessible.ignored: true
+            }
+
+            /// Two lines of name, then the figure. The label is centred and
+            /// never inverts: the ring carries the selection.
+            Column {
+                id: label
+                anchors.top: thumb.bottom
+                anchors.topMargin: 8
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.leftMargin: 2
                 anchors.rightMargin: 2
-                /// Anchored to the cell, not to the sheet above it: a folder
-                /// sheet is 4:3 and a card is 3:4, so anchoring to the sheet
-                /// would put the two names on different lines inside one row.
-                anchors.top: parent.top
-                anchors.topMargin: 10 + root.thumbHeight + 6
-                /// The plate covers the name only — the two lines it may
-                /// wrap to — and the size line below it stays on the paper.
-                /// A plate swallowed the size line it would read as a black
-                /// bar with a file name somewhere inside it.
-                height: Math.ceil(Theme.typeBody * Theme.leadingTight * 2) + 8
-                color: cell.selected ? Theme.ink : "transparent"
-            }
-
-            /// The label flows: name, then size directly under it. The plate
-            /// around it has a fixed height, so a one-line name and a two-line
-            /// name still leave every tile's sheet on the same row — the
-            /// difference lands in the empty space below the size line rather
-            /// than in the next row's position.
-            Column {
-                id: label
-                anchors.top: namePlate.top
-                anchors.topMargin: 4
-                anchors.left: namePlate.left
-                anchors.right: namePlate.right
-                spacing: 1
+                spacing: 2
 
                 Text {
                     id: nameText
@@ -445,8 +455,7 @@ Item {
                         return cell.fileName.endsWith(suffix)
                             ? cell.fileName.slice(0, -suffix.length) : cell.fileName
                     }
-                    color: cell.selected ? Theme.canvas
-                        : cell.hidden ? Theme.inkTertiary : Theme.ink
+                    color: cell.hidden ? Theme.inkTertiary : Theme.ink
                     font.pixelSize: Theme.typeBody
                     lineHeight: Theme.leadingTight
                     horizontalAlignment: Text.AlignHCenter
@@ -460,30 +469,11 @@ Item {
                     visible: text !== ""
                     width: parent.width
                     text: cell.isDir ? "" : cell.sizeText
-                    color: Theme.inkSecondary
-                    opacity: 0.8
+                    color: Theme.inkTertiary
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     horizontalAlignment: Text.AlignHCenter
-                }
-            }
-
-            Row {
-                id: tagRow
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: namePlate.bottom
-                anchors.topMargin: 3
-                spacing: 3
-
-                Repeater {
-                    model: cell.tagColors.length > 0 ? cell.tagColors.split(",") : []
-
-                    Rectangle {
-                        required property string modelData
-                        width: 6
-                        height: 6
-                        color: modelData
-                    }
+                    elide: Text.ElideRight
                 }
             }
 
@@ -668,5 +658,15 @@ Item {
             border.color: Theme.accent
             radius: Theme.radiusXs
         }
+    }
+
+    /// The grid's bar. It is declared after the marquee so a press on the bar
+    /// is a scroll, not the start of a rubber band.
+    ScrollBar {
+        target: grid
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
     }
 }
