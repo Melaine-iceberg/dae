@@ -195,10 +195,12 @@ Item {
     }
 
     EmptyState {
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: headerBar.bottom
+        anchors.bottom: parent.bottom
         visible: items.count === 0
         opacity: root.spaceId === "" ? 0 : 1
-        glyph: "diamond"
         title: qsTr("这个空间是空的")
         hint: qsTr("在文件上右键，选择“添加到空间”，把常用位置固定到这里。")
     }
@@ -239,7 +241,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? Theme.onSolid
+            color: button.danger ? Theme.onDanger
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: Theme.typeMicro
         }

@@ -30,7 +30,7 @@ Item {
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1002
@@ -122,7 +122,6 @@ Item {
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
-                font.letterSpacing: 0.55
             }
 
             Row {

@@ -49,12 +49,10 @@ Rectangle {
             height: 16
             spacing: 6
 
-            DriftSheet {
-                width: 16
+            FileIcon {
                 anchors.verticalCenter: parent.verticalCenter
+                edge: 16
                 category: root.category
-                isDir: root.category === "folder"
-                detail: false
                 Accessible.ignored: true
             }
 

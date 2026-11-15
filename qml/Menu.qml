@@ -52,7 +52,7 @@ Item {
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1000
@@ -207,15 +207,8 @@ Item {
 
     Shadow {
         target: panel
-        // The plate lifts 2 dp on the way in; the shadow has to make the same
-        // move, or the two separate for the length of the animation.
-        transform: Translate {
-            y: root.visible ? 0 : 2
-            Behavior on y {
-                enabled: Theme.motion
-                NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
-            }
-        }
+        // The shadow reads `target.y`, so the plate's own arrival lift below
+        // moves both together without a second animation.
     }
 
     Rectangle {
@@ -227,24 +220,27 @@ Item {
         height: Math.min(list.contentHeight + 8 + root.footerHeight,
                          root.height - 16)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
-        y: root.above
+        /// §6.6: the panel lifts the last 2 dp as it arrives, and hiding is
+        /// instant, so the offset is only visible on the way in. It rides the
+        /// panel's own `y` instead of a `Translate`: the shadow follows
+        /// `target.y` for free, and a `YAnimator` can run it on the render
+        /// thread. A `Translate` has no animator type.
+        y: (root.above
             ? Math.max(8, Math.min(root.openY - height - 6,
                                    root.height - height - 8))
-            : Math.max(8, Math.min(root.openY, root.height - height - 8))
+            : Math.max(8, Math.min(root.openY, root.height - height - 8)))
+            + (root.visible ? 0 : 2)
+        Behavior on y {
+            /// The anchor position is settled while the menu is still hidden,
+            /// so only the 2 dp arrival lift animates; a reopen elsewhere jumps
+            /// rather than flying in from the last spot.
+            enabled: Theme.motion && root.visible
+            YAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        }
         radius: Theme.radiusMd
         color: Theme.raised
         border.width: 1
         border.color: Theme.overlayLine
-
-        /// §6.6: the panel lifts the last 2 dp as it arrives. Hiding is
-        /// instant, so the transform is only visible on the way in.
-        transform: Translate {
-            y: root.visible ? 0 : 2
-            Behavior on y {
-                enabled: Theme.motion
-                NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
-            }
-        }
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise

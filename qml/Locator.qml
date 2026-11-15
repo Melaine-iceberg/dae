@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import dae 1.0
 
 // The navigation row's one input control: a breadcrumb trail, a path editor
 // and a search field sharing a single 32 dp frame (proposal §7.2).
@@ -28,6 +29,10 @@ Item {
     property bool interactive: true
     /// Draws the shared field well. The split pane keeps the bare trail.
     property bool framed: true
+    /// §11.4: this pane is the active one. In split view the active pane's
+    /// bar is outlined in the accent and the inactive one in `line`; with a
+    /// single pane the property stays false and the bar keeps the hairline.
+    property bool paneFocused: false
 
     /// The listed directory's ancestors, outermost first, exactly as the
     /// backend spelled them. The two are parallel lists, so the shorter wins.
@@ -54,6 +59,11 @@ Item {
     /// The ancestors hidden behind the `…`, with the position to open a menu
     /// at — in window coordinates, because the menu belongs to the window.
     signal ancestorsRequested(real x, real y, var names, var paths)
+    /// A segment's `⌄`: open the menu of directories beside `path`, anchored
+    /// below the chevron in window coordinates; `path` is the segment itself.
+    signal siblingsRequested(real x, real y, string path)
+    /// Files dropped on a segment: move them into that ancestor directory.
+    signal filesDropped(var paths, string path)
     /// A right-click on the bar itself: copy path, copy name, terminal, edit
     /// path. Window coordinates for the same reason as above.
     signal contextMenuRequested(real x, real y)
@@ -116,8 +126,11 @@ Item {
         visible: bar.framed
         radius: Theme.radiusSm
         color: Theme.field
-        border.width: bar.inputFocused ? 1 : 0
-        border.color: bar.accent
+        /// The bar is an input control in all three modes (§7.2), so it always
+        /// carries a 1 px edge; only its colour says whether this pane is the
+        /// active one and whether the field has the keyboard.
+        border.width: 1
+        border.color: bar.inputFocused || bar.paneFocused ? bar.accent : Theme.line
     }
 
     // ── Breadcrumb ──────────────────────────────────────────────────────────
@@ -127,6 +140,9 @@ Item {
     readonly property real fontSize: Theme.typeBody
     readonly property real crumbGap: 3
     readonly property real crumbPad: 5
+    /// The `⌄` between a segment's name and the next separator (§7.2). It is
+    /// part of the measured width, so the fold decision accounts for it.
+    readonly property real chevronWidth: 12
     readonly property real plateHeight: Theme.controlSm
     readonly property real ellipsisWidth: 22
     readonly property real maxAncestorWidth: 160
@@ -161,7 +177,7 @@ Item {
         const nameWidth = Math.min(nameMeasure.advanceWidth,
                                    current ? bar.maxCurrentWidth
                                            : bar.maxAncestorWidth)
-        return nameWidth + bar.crumbPad * 2
+        return nameWidth + bar.crumbPad * 2 + (bar.interactive ? bar.chevronWidth : 0)
     }
 
     /// Mirrors the Tauri shell's `computeHiddenRange`: the first crumb and the
@@ -329,6 +345,56 @@ Item {
                 Accessible.name: slot.modelData.ellipsis === true
                     ? qsTr("显示完整路径") : slot.modelData.name
 
+                /// §10.3: a dragged file dropped on a segment moves into that
+                /// ancestor. The ellipsis stands for several ancestors at
+                /// once, so it is not a target.
+                property bool dropActive: false
+
+                DropArea {
+                    anchors.fill: parent
+                    keys: ["text/uri-list"]
+                    enabled: slot.modelData.ellipsis !== true
+
+                    onEntered: function (drag) {
+                        slot.dropActive = true
+                        drag.accept(Qt.CopyAction)
+                    }
+                    onPositionChanged: function (drag) {
+                        slot.dropActive = true
+                        drag.accept(Qt.CopyAction)
+                    }
+                    onExited: slot.dropActive = false
+                    onDropped: function (drop) {
+                        slot.dropActive = false
+                        const urls = []
+                        for (let index = 0; index < drop.urls.length; index += 1)
+                            urls.push(String(drop.urls[index]))
+                        // qmllint disable missing-property
+                        const paths = Workspace.localDropPaths(urls)
+                        if (paths.length === 0) {
+                            drop.accepted = false
+                            return
+                        }
+                        // qmllint enable missing-property
+                        drop.accept(Qt.CopyAction)
+                        bar.filesDropped(paths, slot.modelData.path)
+                    }
+                }
+
+                /// Same feedback as a row: 12 % accent fill, 1.5 dp accent
+                /// frame (§10.3). It sits above the plate and below the mouse
+                /// areas, so a drop never turns into a click.
+                Rectangle {
+                    anchors.fill: parent
+                    visible: slot.dropActive
+                    radius: Theme.radiusXs
+                    color: Theme.accentSoft
+                    border.width: 1.5
+                    border.color: Theme.accent
+                    z: 5
+                    Accessible.ignored: true
+                }
+
                 // The separator belongs to the crumb on its right: that is the
                 // only crumb whose plate width the fit added a `unit` for.
                 Text {
@@ -349,22 +415,69 @@ Item {
                     // only state, and the current segment is distinguished by
                     // ink alone — no weight change, no icon.
                     color: slot.modelData.current !== true
-                        && plateMouse.containsMouse ? Theme.hover : "transparent"
+                        && (plateMouse.containsMouse || siblingMouse.containsMouse)
+                        ? Theme.hover : "transparent"
 
                     Text {
                         anchors.left: parent.left
                         anchors.leftMargin: bar.crumbPad
-                        anchors.right: parent.right
-                        anchors.rightMargin: bar.crumbPad
+                        anchors.right: siblingButton.left
+                        anchors.rightMargin: 0
                         anchors.verticalCenter: parent.verticalCenter
                         text: slot.modelData.ellipsis === true
                             ? "\u2026" : slot.modelData.name
                         color: slot.modelData.current === true
                             ? bar.textColor
-                            : (plateMouse.containsMouse
+                            : ((plateMouse.containsMouse || siblingMouse.containsMouse)
                                 ? bar.textColor : bar.mutedColor)
                         font.pixelSize: bar.fontSize
                         elide: Text.ElideMiddle
+                    }
+
+                    /// §7.2: the segment's own `⌄` opens that level's sibling
+                    /// directories. The segment body still navigates, so the
+                    /// two gestures never fight: the chevron owns only its
+                    /// 12 dp box.
+                    Item {
+                        id: siblingButton
+
+                        anchors.right: parent.right
+                        anchors.rightMargin: 1
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: bar.chevronWidth
+                        height: parent.height
+                        visible: bar.interactive && slot.modelData.ellipsis !== true
+
+                        Glyph {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 10
+                            kind: "chevronDown"
+                            tint: siblingMouse.containsMouse
+                                ? bar.textColor : Theme.inkTertiary
+                        }
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("打开同级目录")
+                        Accessible.onPressAction: {
+                            const anchor = siblingButton.mapToItem(null, 0,
+                                                                  siblingButton.height)
+                            bar.siblingsRequested(anchor.x, anchor.y,
+                                                  slot.modelData.path)
+                        }
+
+                        MouseArea {
+                            id: siblingMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                const anchor = siblingButton.mapToItem(null, 0,
+                                                                      siblingButton.height)
+                                bar.siblingsRequested(anchor.x, anchor.y,
+                                                      slot.modelData.path)
+                            }
+                        }
                     }
 
                     MouseArea {
@@ -425,9 +538,41 @@ Item {
         onActiveFocusChanged: {
             if (!activeFocus && bar.editing)
                 bar.addressCanceled()
+            if (!activeFocus)
+                bar.closeCompletions()
+        }
+
+        onTextEdited: bar.updateCompletions()
+
+        Keys.onEscapePressed: {
+            if (bar.completions.length > 0) {
+                bar.closeCompletions()
+                return
+            }
+            focus = false
+        }
+        Keys.onDownPressed: function (event) {
+            event.accepted = bar.completions.length > 0
+            if (event.accepted)
+                bar.moveCompletion(1)
+        }
+        Keys.onUpPressed: function (event) {
+            event.accepted = bar.completions.length > 0
+            if (event.accepted)
+                bar.moveCompletion(-1)
+        }
+        /// Tab takes the highlighted directory and keeps the field open; with
+        /// no list it stays an ordinary focus move, so the field can still be
+        /// left from the keyboard.
+        Keys.onTabPressed: function (event) {
+            event.accepted = bar.acceptCompletion(true)
         }
 
         onAccepted: {
+            // Enter takes the highlighted completion when there is one; the
+            // raw text is the fallback, which is what a fully typed path is.
+            if (bar.acceptCompletion(false))
+                return
             let target = text.trim()
             if (target.length >= 2
                     && target.charAt(0) === '"'
@@ -437,8 +582,168 @@ Item {
             if (target.length > 0)
                 bar.addressAccepted(target)
         }
+    }
 
-        Keys.onEscapePressed: focus = false
+    /// ── Address completion (§7.2) ──────────────────────────────────────────
+    /// The typed directory's subdirectories, filtered by the segment being
+    /// typed. The directory is read once per parent change, not once per
+    /// keystroke: a folder with 120,000 entries would otherwise pay a
+    /// `readdir` for every letter.
+    property var completions: []
+    property int completionIndex: -1
+    property string completionDir: ""
+    property var completionNames: []
+
+    function splitTypedPath(text) {
+        let cut = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"))
+        if (cut < 0)
+            return { "parent": "", "prefix": "" }
+        // A drive root keeps its separator (`C:\`), which is what makes the
+        // first typed segment complete at all.
+        return {
+            "parent": text.substring(0, cut + 1),
+            "prefix": text.substring(cut + 1)
+        }
+    }
+
+    function closeCompletions() {
+        bar.completions = []
+        bar.completionIndex = -1
+    }
+
+    function updateCompletions() {
+        if (!bar.editing || !bar.interactive) {
+            bar.closeCompletions()
+            return
+        }
+        const split = bar.splitTypedPath(addressInput.text)
+        if (split.parent === "") {
+            bar.closeCompletions()
+            return
+        }
+        if (split.parent !== bar.completionDir) {
+            bar.completionDir = split.parent
+            bar.completionNames = Workspace.subdirectories(split.parent)
+        }
+        const prefix = split.prefix.toLowerCase()
+        const matches = []
+        const names = bar.completionNames
+        for (let index = 0; index < names.length && matches.length < 8; index += 1) {
+            const name = String(names[index])
+            if (prefix === "" || name.toLowerCase().indexOf(prefix) === 0)
+                matches.push(split.parent + name)
+        }
+        bar.completions = matches
+        bar.completionIndex = matches.length > 0 ? 0 : -1
+    }
+
+    function moveCompletion(step) {
+        if (bar.completions.length === 0)
+            return
+        const count = bar.completions.length
+        bar.completionIndex = (bar.completionIndex + step + count) % count
+    }
+
+    /// `continueEditing` is the Tab case: it fills the field and stays in it,
+    /// because a completed directory is usually the first half of a path.
+    /// Enter and a click navigate.
+    function acceptCompletion(continueEditing) {
+        if (bar.completions.length === 0 || bar.completionIndex < 0)
+            return false
+        const target = bar.completions[bar.completionIndex]
+        bar.closeCompletions()
+        if (continueEditing) {
+            const separator = target.indexOf("\\") >= 0 ? "\\" : "/"
+            addressInput.text = /[\\/]$/.test(target) ? target : target + separator
+            addressInput.cursorPosition = addressInput.text.length
+            bar.updateCompletions()
+            return true
+        }
+        addressInput.focus = false
+        bar.addressAccepted(target)
+        return true
+    }
+
+    /// The list itself: 24 dp rows on a `raised` plate, drawn above the well
+    /// and outside the bar's box, so it reads as an attachment to the field
+    /// rather than a second control. The shadow is declared before the plate
+    /// and in the same coordinate space, as `Shadow` requires.
+    Shadow {
+        target: completionPopup
+        z: 59
+    }
+
+    Rectangle {
+        id: completionPopup
+
+        visible: bar.editing && bar.completions.length > 0
+        x: 0
+        y: bar.height + 4
+        width: bar.width
+        height: completionColumn.implicitHeight + 8
+        radius: Theme.radiusSm
+        color: Theme.raised
+        border.width: 1
+        border.color: Theme.line
+        z: 60
+        Accessible.role: Accessible.List
+
+        Column {
+            id: completionColumn
+
+            x: 4
+            y: 4
+            width: parent.width - 8
+
+            Repeater {
+                model: bar.completions
+
+                Rectangle {
+                    id: completionRow
+
+                    required property int index
+                    required property string modelData
+
+                    width: completionColumn.width
+                    height: 24
+                    radius: Theme.radiusXs
+                    color: bar.completionIndex === completionRow.index ? Theme.selection
+                        : (itemMouse.containsMouse ? Theme.hover : "transparent")
+
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: completionRow.modelData
+                    Accessible.selectable: true
+                    Accessible.selected: bar.completionIndex === completionRow.index
+                    Accessible.onPressAction: {
+                        bar.completionIndex = completionRow.index
+                        bar.acceptCompletion(false)
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: completionRow.modelData
+                        color: bar.textColor
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.typeCaption
+                        elide: Text.ElideMiddle
+                    }
+
+                    MouseArea {
+                        id: itemMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            bar.completionIndex = completionRow.index
+                            bar.acceptCompletion(false)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ── Search ──────────────────────────────────────────────────────────────

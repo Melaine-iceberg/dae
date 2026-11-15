@@ -392,7 +392,6 @@ FocusScope {
                             color: Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                             font.weight: Font.Medium
-                            font.letterSpacing: 0.5
                             elide: Text.ElideRight
                         }
                     }

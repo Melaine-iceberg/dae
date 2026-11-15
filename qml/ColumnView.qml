@@ -97,6 +97,15 @@ Item {
         return total
     }
 
+    /// The union selection's file total. Miller columns select at most one row
+    /// per column, so asking the workspace to sum the selected paths is
+    /// cheaper than teaching every pane model to publish a second total.
+    readonly property string selectionSizeText: {
+        selectionRevision
+        return root.selectionCount > 0
+            ? Workspace.selectionSizeText(root.selectedPathList()) : ""
+    }
+
     function clearSelection() {
         for (let index = 0; index < panes.count; index += 1) {
             const pane = panes.itemAt(index)

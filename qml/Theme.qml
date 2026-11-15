@@ -35,19 +35,40 @@ QtObject {
         || (Appearance.theme === "system" && Workspace.systemDark)
 
     // ── Interaction ─────────────────────────────────────────────────────────
-    /// The window's only saturated colour (proposal §6.1.4): OKLCH 195°, kept
-    /// 30° away from the nearest file family so a type mark can never be
-    /// mistaken for the selection.
-    readonly property color accent: dark ? "#6bcac9" : "#007a7b"
-    /// The accent under the pointer. A literal, not `Qt.lighter()`, so both
-    /// themes can be measured.
-    readonly property color accentHover: dark ? "#7dd4d3" : "#00696a"
-    /// Ink on top of `accent`.
-    readonly property color onAccent: dark ? "#101216" : "#ffffff"
+    /// The app's own accent (proposal §6.1.4): OKLCH 195°, kept 30° away from
+    /// the nearest file family so a type mark can never be mistaken for the
+    /// selection. Kept separate from `accent` because the settings panel shows
+    /// this swatch even when the preference is currently "system".
+    readonly property color brandAccent: dark ? "#6bcac9" : "#007a7b"
+    /// The window's only saturated colour. The preference decides its source:
+    /// "system" follows the desktop's accent reading, "brand" stays on the
+    /// app's own teal. Resolving it here rather than in one window is what makes
+    /// selection masks, focus rings and progress follow the same choice.
+    readonly property color accent: Appearance.accent === "system"
+        && Workspace.accent !== "" ? Workspace.accent : brandAccent
+    /// The accent under the pointer. The brand pair stays literal so both
+    /// themes can be measured; a system accent has no fixed value to measure,
+    /// so it is lifted or deepened from whatever the desktop reports.
+    readonly property color accentHover: Appearance.accent === "system"
+        && Workspace.accent !== ""
+        ? (dark ? Qt.lighter(accent, 1.12) : Qt.darker(accent, 1.12))
+        : (dark ? "#7dd4d3" : "#00696a")
+    /// Ink on top of `accent`. A system accent can be light or dark, so the
+    /// decision is made from the colour's luminance rather than from the theme.
+    readonly property color onAccent: accentLuminance > 0.45
+        ? (dark ? "#101216" : "#1c1e23") : "#ffffff"
     /// Ink on a fill that is saturated in both themes and belongs to someone
     /// else: a provider tile, the Windows close button, an error toast. Always
     /// white, because none of those surfaces follow the theme.
     readonly property color onSolid: "#ffffff"
+    /// WCAG relative luminance of the resolved accent, used only to pick the
+    /// ink that sits on top of it.
+    readonly property real accentLuminance: 0.2126 * linear(accent.r)
+        + 0.7152 * linear(accent.g) + 0.0722 * linear(accent.b)
+    function linear(channel) {
+        return channel <= 0.03928
+            ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
+    }
 
     // ── Surfaces (proposal §6.1.2) ──────────────────────────────────────────
     /// The window's bottom layer, visible only in the gutters around the
@@ -140,16 +161,18 @@ QtObject {
     // ── Accent-derived ──────────────────────────────────────────────────────
     /// The selected row is a pale mask, not a colour block: 10 % in light,
     /// 13 % in dark, with the text staying `ink`, so the weight stays on the
-    /// file name (§7.1.1).
-    readonly property color selection: dark ? "#216bcac9" : "#1a007a7b"
+    /// file name (§7.1.1). Derived from the resolved accent, because the mask
+    /// has to move with a desktop accent just as the ring and progress do.
+    readonly property color selection: Qt.rgba(accent.r, accent.g, accent.b,
+                                               dark ? 0.13 : 0.10)
+    /// The current destination in the sidebar: 8 % of the accent, with `ink`
+    /// text and an `accent` icon (§7.3.2). Lighter than `selection` because a
+    /// sidebar row carries its own icon weight.
+    readonly property color accentFaint: Qt.rgba(accent.r, accent.g, accent.b, 0.08)
     /// The wash behind an active chip or a drop target.
-    readonly property color accentSoft: dark ? "#1f6bcac9" : "#1f007a7b"
+    readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, 0.12)
     /// One step stronger: a drop edge or a focused search field.
-    readonly property color accentSoftStrong: dark ? "#3d6bcac9" : "#3d007a7b"
-    /// Transitional: the old half-transparent ring. §6.1.4 asks for a 1.5 dp
-    /// accent border instead, which the P2 list work adopts; until then this
-    /// keeps the seven call sites on the accent hue rather than a second one.
-    readonly property color focusRing: dark ? "#596bcac9" : "#59007a7b"
+    readonly property color accentSoftStrong: Qt.rgba(accent.r, accent.g, accent.b, 0.24)
 
     // ── Meaning (proposal §6.1.5) ───────────────────────────────────────────
     /// Destructive text and icons. Pairs with an explicit verb, never alone.
@@ -159,6 +182,10 @@ QtObject {
     /// theme steps it down so it does not glare.
     readonly property color dangerSolid: dark ? "#e06b64" : "#ba2b2e"
     readonly property color dangerSolidHover: dark ? "#ea857e" : "#a3272a"
+    /// Ink on a destructive fill (§6.1.5: "文字取 canvas"). It cannot be
+    /// `onAccent`: the accent may be a light system colour while the danger
+    /// fill stays dark red, and one ink cannot serve both.
+    readonly property color onDanger: canvas
     readonly property color success: dark ? "#7bc495" : "#227849"
     readonly property color warning: dark ? "#e6b55d" : "#8d5a00"
 
@@ -212,10 +239,57 @@ QtObject {
 
     /// The eight tag colours (§6.1.7): fixed options at one lightness, because
     /// a free picker cannot promise that any two tags stay legible on both
-    /// themes. Shared by the list's 6 dp dots and the inspector's pills.
-    readonly property var tagColors: dark
-        ? ["#e08585", "#e0a377", "#ddc274", "#8fc48c", "#7fc3bd", "#82a9dd", "#ab93dd", "#a8adb4"]
-        : ["#a3392f", "#9a5a20", "#7d6a12", "#2f6b34", "#1d6560", "#2b5590", "#5b3f92", "#5c6169"]
+    /// themes. `tagPaletteLight` is the stored spelling — a tag persists a
+    /// colour hex, not an index — and `tagColors` is the variant the current
+    /// theme paints. Shared by the list's 6 dp dots and the inspector's pills.
+    readonly property var tagPaletteLight: [
+        "#a3392f", "#9a5a20", "#7d6a12", "#2f6b34",
+        "#1d6560", "#2b5590", "#5b3f92", "#5c6169"
+    ]
+    readonly property var tagPaletteDark: [
+        "#e08585", "#e0a377", "#ddc274", "#8fc48c",
+        "#7fc3bd", "#82a9dd", "#ab93dd", "#a8adb4"
+    ]
+    readonly property var tagColors: dark ? tagPaletteDark : tagPaletteLight
+    /// The pre-Graphite rainbow, mapped to the fixed options it stood for.
+    /// Tags are user data, so an old value is translated rather than shown in
+    /// a palette the design retired. Blue → blue, red → red, orange → orange,
+    /// green → green, purple → purple, pink → red, cyan → teal, grey → grey.
+    readonly property var tagLegacyMap: ({
+            "#4c8dff": 5,
+            "#e0524d": 0,
+            "#e5a13a": 1,
+            "#3fa66b": 3,
+            "#8b6cf0": 6,
+            "#d95fa3": 0,
+            "#2aa9b8": 4,
+            "#8a94a6": 7
+        })
+
+    /// The option index a stored colour stands for, or -1 for a hand-edited
+    /// value outside the fixed eight.
+    function tagColorIndex(value) {
+        const key = String(value).toLowerCase()
+        let index = tagPaletteLight.indexOf(key)
+        if (index < 0)
+            index = tagPaletteDark.indexOf(key)
+        if (index < 0 && tagLegacyMap[key] !== undefined)
+            index = tagLegacyMap[key]
+        return index === undefined ? -1 : index
+    }
+
+    /// The current theme's paint for one of the eight options.
+    function tagColor(index) {
+        const clamped = Math.max(0, Math.min(tagColors.length - 1, index))
+        return tagColors[clamped]
+    }
+
+    /// The colour to paint for a stored tag value. An out-of-palette value is
+    /// kept verbatim so a hand-edited file is not silently recoloured.
+    function tagColorFor(value) {
+        const index = tagColorIndex(value)
+        return index < 0 ? String(value) : tagColors[index]
+    }
 
     // ── Terminal ────────────────────────────────────────────────────────────
     /// The terminal follows the shell's theme. Its grid palette is resolved by

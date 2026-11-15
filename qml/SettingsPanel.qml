@@ -49,6 +49,9 @@ FocusScope {
     property string terminalError: ""
     property string terminalStatus: ""
     property string tagError: ""
+    /// Which of the eight fixed tag colours the next tag gets. A picked option
+    /// is stored as its light hex, so a tag keeps its identity across themes.
+    property int draftTagIndex: 0
     /// Outcome of the last export/import/rebuild. `tagTaskFailed` only picks
     /// the colour; the text says what happened, including the skipped
     /// definitions an import refused.
@@ -174,7 +177,7 @@ FocusScope {
     ]
     readonly property var accentOptions: [
         { value: "system", label: qsTr("系统强调色") },
-        { value: "brand", label: qsTr("信号橙") }
+        { value: "brand", label: qsTr("青蓝") }
     ]
     readonly property var languageOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -183,6 +186,7 @@ FocusScope {
         { value: "en", label: "English" }
     ]
     readonly property var materialOptions: [
+        { value: "none", label: qsTr("不透明") },
         { value: "mica", label: qsTr("云母 (Mica)") },
         { value: "acrylic", label: qsTr("亚克力 (Acrylic)") }
     ]
@@ -268,6 +272,12 @@ FocusScope {
                   detail: qsTr("打开类型、时间与大小过滤") },
                 { id: "explorer.cycleView", label: qsTr("切换视图"),
                   detail: qsTr("在列表、网格与分栏之间循环") },
+                { id: "explorer.viewList", label: qsTr("列表视图"),
+                  detail: qsTr("直接切换到详细列表") },
+                { id: "explorer.viewGrid", label: qsTr("网格视图"),
+                  detail: qsTr("直接切换到图标网格") },
+                { id: "explorer.viewColumn", label: qsTr("分栏视图"),
+                  detail: qsTr("直接切换到 Miller 分栏") },
                 { id: "explorer.toggleSizeUnits", label: qsTr("切换大小单位"),
                   detail: qsTr("在 KB/MB 与 KiB/MiB 之间切换") }
             ]
@@ -742,7 +752,6 @@ FocusScope {
                         color: Theme.inkTertiary
                         font.pixelSize: Theme.typeMicro
                         font.weight: Font.Medium
-                        font.letterSpacing: 0.5
                     }
 
                     SettingsRow {
@@ -767,7 +776,7 @@ FocusScope {
 
                     SettingsRow {
                         label: qsTr("强调色")
-                        description: qsTr("“系统”读取桌面强调色，“信号橙”使用应用信号色。")
+                        description: qsTr("“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。")
                         onReset: Appearance.chooseAccent("system")
 
                         Row {
@@ -780,7 +789,7 @@ FocusScope {
                                     label: modelData.label
                                     selected: Appearance.accent === modelData.value
                                     swatch: modelData.value === "brand"
-                                        ? Theme.accent : Workspace.accent
+                                        ? Theme.brandAccent : Workspace.accent
                                     onClicked: Appearance.chooseAccent(modelData.value)
                                 }
                             }
@@ -817,7 +826,6 @@ FocusScope {
                         color: Theme.inkTertiary
                         font.pixelSize: Theme.typeMicro
                         font.weight: Font.Medium
-                        font.letterSpacing: 0.5
                     }
 
                     SettingsRow {
@@ -903,7 +911,6 @@ FocusScope {
                         color: Theme.inkTertiary
                         font.pixelSize: Theme.typeMicro
                         font.weight: Font.Medium
-                        font.letterSpacing: 0.5
                     }
 
                     SettingsRow {
@@ -932,9 +939,9 @@ FocusScope {
 
                     SettingsRow {
                         label: qsTr("窗口材质")
-                        description: qsTr("Mica 从壁纸取色，Acrylic 实时模糊身后的窗口。")
+                        description: qsTr("Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。")
                         visible: root.showMaterialChoices
-                        onReset: Appearance.chooseWindowMaterial("mica")
+                        onReset: Appearance.chooseWindowMaterial("none")
 
                         Row {
                             spacing: 8
@@ -945,7 +952,15 @@ FocusScope {
                                     required property var modelData
                                     label: modelData.label
                                     selected: Appearance.windowMaterial === modelData.value
-                                    onClicked: Appearance.chooseWindowMaterial(modelData.value)
+                                    onClicked: {
+                                        Appearance.chooseWindowMaterial(modelData.value)
+                                        // A material cannot composite while the
+                                        // background effect is off; picking one
+                                        // is the request to turn it on.
+                                        if (modelData.value !== "none"
+                                                && !Appearance.blurEnabled)
+                                            Appearance.chooseBlur(true)
+                                    }
                                 }
                             }
                         }
@@ -955,7 +970,7 @@ FocusScope {
                         label: qsTr("背景效果")
                         description: root.backgroundNote !== ""
                             ? root.backgroundNote : qsTr("关闭则使用实色，适合远程桌面环境。")
-                        onReset: Appearance.chooseBlur(true)
+                        onReset: Appearance.chooseBlur(false)
 
                         Row {
                             spacing: 8
@@ -1035,7 +1050,6 @@ FocusScope {
                         color: Theme.inkTertiary
                         font.pixelSize: Theme.typeMicro
                         font.weight: Font.Medium
-                        font.letterSpacing: 0.5
                     }
 
                     SettingsRow {
@@ -2048,38 +2062,32 @@ FocusScope {
                             selectByMouse: true
                             activeFocusOnTab: true
                             Accessible.name: qsTr("新标签名称")
-                            onAccepted: root.createTag(draftName.text, draftColor.text)
+                            onAccepted: root.createTag(draftName.text,
+                                Theme.tagPaletteLight[root.draftTagIndex])
                         }
                     }
 
-                    Rectangle {
-                        width: 92
+                    Row {
                         height: parent.height
-                        radius: Theme.radiusSm
-                        color: Theme.field
-                        border.width: 1
-                        border.color: draftColor.activeFocus ? Theme.accent : Theme.line
+                        spacing: 3
 
-                        TextInput {
-                            id: draftColor
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
-                            text: "#4c8dff"
-                            verticalAlignment: TextInput.AlignVCenter
-                            color: Theme.ink
-                            font.family: Theme.monoFamily
-                            font.pixelSize: Theme.typeCaption
-                            selectByMouse: true
-                            activeFocusOnTab: true
-                            Accessible.name: qsTr("颜色")
-                            onAccepted: root.createTag(draftName.text, draftColor.text)
+                        Repeater {
+                            model: [0, 1, 2, 3, 4, 5, 6, 7]
+
+                            TagSwatch {
+                                required property int modelData
+                                anchors.verticalCenter: parent.verticalCenter
+                                option: modelData
+                                selected: root.draftTagIndex === modelData
+                                onClicked: root.draftTagIndex = modelData
+                            }
                         }
                     }
 
                     PrimaryButton {
                         label: qsTr("添加")
-                        onClicked: root.createTag(draftName.text, draftColor.text)
+                        onClicked: root.createTag(draftName.text,
+                            Theme.tagPaletteLight[root.draftTagIndex])
                     }
                 }
 
@@ -2116,7 +2124,7 @@ FocusScope {
                             height: 8
                             radius: 4
                             anchors.verticalCenter: parent.verticalCenter
-                            color: tagRow.modelData.color
+                            color: Theme.tagColorFor(tagRow.modelData.color)
                         }
 
                         Rectangle {
@@ -2146,36 +2154,30 @@ FocusScope {
                             }
                         }
 
-                        Rectangle {
-                            id: colorField
+                        Row {
                             x: nameField.x + nameField.width + 8
-                            width: 92
-                            height: Theme.controlMd
+                            height: parent.height
                             anchors.verticalCenter: parent.verticalCenter
-                            radius: Theme.radiusXs
-                            color: Theme.field
-                            border.width: 1
-                            border.color: colorInput.activeFocus ? Theme.accent : Theme.hairline
+                            spacing: 3
 
-                            TextInput {
-                                id: colorInput
-                                Accessible.role: Accessible.EditableText
-                                Accessible.name: qsTr("标签颜色")
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                verticalAlignment: TextInput.AlignVCenter
-                                color: Theme.ink
-                                font.family: Theme.monoFamily
-                                font.pixelSize: Theme.typeCaption
-                                selectByMouse: true
-                                activeFocusOnTab: true
-                                Component.onCompleted: text = tagRow.modelData.color
+                            Repeater {
+                                model: [0, 1, 2, 3, 4, 5, 6, 7]
+
+                                TagSwatch {
+                                    required property int modelData
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    option: modelData
+                                    selected: Theme.tagColorIndex(tagRow.modelData.color)
+                                        === modelData
+                                    onClicked: root.updateTag(tagRow.modelData.id,
+                                        nameInput.text,
+                                        Theme.tagPaletteLight[modelData])
+                                }
                             }
                         }
 
                         Text {
-                            x: colorField.x + colorField.width + 12
+                            x: nameField.x + nameField.width + 8 + 8 * 14 + 7 * 3 + 12
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("%1 项").arg(tagRow.modelData.count)
                             color: Theme.inkTertiary
@@ -2190,7 +2192,8 @@ FocusScope {
                             SmallButton {
                                 label: qsTr("保存")
                                 onClicked: root.updateTag(tagRow.modelData.id,
-                                                          nameInput.text, colorInput.text)
+                                                          nameInput.text,
+                                                          tagRow.modelData.color)
                             }
 
                             SmallButton {
@@ -2749,6 +2752,34 @@ FocusScope {
             anchors.fill: parent
             hoverEnabled: true
             onClicked: button.clicked()
+        }
+    }
+
+    component TagSwatch: Rectangle {
+        id: swatch
+
+        property int option: 0
+        property bool selected: false
+
+        signal clicked()
+
+        width: 14
+        height: 14
+        radius: width / 2
+        color: Theme.tagColor(option)
+        border.width: selected ? 2 : 1
+        border.color: selected ? Theme.ink : Theme.hairline
+
+        Accessible.role: Accessible.RadioButton
+        Accessible.name: qsTr("标签颜色 %1").arg(swatch.option + 1)
+        Accessible.checkable: true
+        Accessible.checked: swatch.selected
+        Accessible.onPressAction: swatch.clicked()
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: swatch.clicked()
         }
     }
 

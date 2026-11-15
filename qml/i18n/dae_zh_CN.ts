@@ -1316,6 +1316,71 @@
         <translation>没有匹配项</translation>
     </message>
     <message>
+        <location filename="../FileList.qml" line="343"/>
+        <source>没有匹配“%1”的文件</source>
+        <translation>没有匹配“%1”的文件</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="356"/>
+        <source>在此文件夹中搜索内容</source>
+        <translation>在此文件夹中搜索内容</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="347"/>
+        <source>无法读取这个文件夹</source>
+        <translation>无法读取这个文件夹</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="344"/>
+        <source>这个位置已不存在</source>
+        <translation>这个位置已不存在</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="356"/>
+        <source>返回到上一级</source>
+        <translation>返回到上一级</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="355"/>
+        <source>重新连接</source>
+        <translation>重新连接</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="365"/>
+        <source>复制错误详情</source>
+        <translation>复制错误详情</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1580"/>
+        <source>链接已失效</source>
+        <translation>链接已失效</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1581"/>
+        <source>只读，无写入权限</source>
+        <translation>只读，无写入权限</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1665"/>
+        <source>正在传输</source>
+        <translation>正在传输</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="2433"/>
+        <source>错误详情已复制</source>
+        <translation>错误详情已复制</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js" line="119"/>
+        <source>以管理员身份打开…</source>
+        <translation>以管理员身份打开…</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js" line="121"/>
+        <source>只有本地文件夹可以以管理员身份重试</source>
+        <translation>只有本地文件夹可以以管理员身份重试</translation>
+    </message>
+    <message>
         <location filename="../FileList.qml" line="179"/>
         <source>文件夹</source>
         <translation>文件夹</translation>
@@ -4197,8 +4262,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="176"/>
-        <source>信号橙</source>
-        <translation>信号橙</translation>
+        <source>青蓝</source>
+        <translation>青蓝</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="180"/>
@@ -4748,8 +4813,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="714"/>
-        <source>“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。</source>
-        <translation>“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。</translation>
+        <source>“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。</source>
+        <translation>“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="740"/>
@@ -4770,6 +4835,11 @@
         <location filename="../SettingsPanel.qml" line="186"/>
         <source>亚克力 (Acrylic)</source>
         <translation>亚克力 (Acrylic)</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="186"/>
+        <source>不透明</source>
+        <translation>不透明</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="194"/>
@@ -4820,8 +4890,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="856"/>
-        <source>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</source>
-        <translation>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</translation>
+        <source>Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。</source>
+        <translation>Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="1243"/>

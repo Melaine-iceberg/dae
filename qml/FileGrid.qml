@@ -343,15 +343,17 @@ Item {
             Item {
                 id: thumb
 
-                anchors.top: parent.top
-                anchors.topMargin: 8 - (cell.lifted ? 2 : 0)
+                /// §11.2: the pointer lifts the thumbnail 2 dp. The lift rides
+                /// `y` rather than `anchors.topMargin` so a `YAnimator` can run
+                /// it on the render thread; `topMargin` has no animator type.
+                y: 8 - (cell.lifted ? 2 : 0)
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: root.thumbWidth
                 height: root.thumbHeight
 
-                Behavior on anchors.topMargin {
+                Behavior on y {
                     enabled: Theme.motion
-                    NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic }
+                    YAnimator { duration: Theme.motionFast; easing.type: Easing.OutCubic }
                 }
 
                 Rectangle {
@@ -382,6 +384,7 @@ Item {
                     anchors.centerIn: parent
                     visible: !cell.showImage
                     category: cell.isDir ? "folder" : cell.category
+                    path: cell.filePath
                     edge: cell.glyphEdge
                 }
 

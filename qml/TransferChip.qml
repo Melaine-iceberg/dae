@@ -38,7 +38,9 @@ Rectangle {
     }
 
     Accessible.role: Accessible.Button
-    Accessible.name: qsTr("%1 项传输，%2%").arg(count).arg(percent)
+    Accessible.name: qsTr("%1 个传输，%2%").arg(count).arg(percent)
+        + (Workspace.transferSpeed !== ""
+            ? qsTr("，%1").arg(Workspace.transferSpeed) : "")
         + qsTr("，查看传输队列")
     Accessible.onPressAction: chip.openPanel()
 
@@ -57,7 +59,7 @@ Rectangle {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("%1 项传输").arg(chip.count)
+            text: qsTr("%1 个传输").arg(chip.count)
             color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
         }
@@ -81,6 +83,16 @@ Rectangle {
             color: Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
             font.family: Theme.monoFamily
+        }
+
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: Workspace.transferSpeed !== ""
+            text: Workspace.transferSpeed
+            color: Theme.inkTertiary
+            font.pixelSize: Theme.typeMicro
+            font.family: Theme.monoFamily
+            font.features: { "tnum": 1 }
         }
     }
 

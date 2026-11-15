@@ -44,33 +44,57 @@ Item {
         target.contentY = maximum * offset / runway
     }
 
-    Rectangle {
+    Item {
         id: thumb
 
         readonly property bool lit: pointer.containsMouse || pointer.pressed
 
-        width: lit ? 8 : 6
+        /// §6.6: hover is a 6 → 8 dp growth in `inkTertiary`. Qt Quick has no
+        /// width animator and no `ColorAnimator`, so both are two capsules
+        /// crossfading — the narrow one in the rest colour, the wide one in the
+        /// lit colour — and each fade is an `OpacityAnimator` inside the
+        /// `Behavior`, so the animation runs on the render thread instead of
+        /// repainting a colour on the GUI thread.
+        width: 8
         height: bar.thumbLength
-        radius: width / 2
         x: (bar.width - width) / 2
         y: bar.maximum > 0
             ? (bar.travel - bar.thumbLength) * bar.target.contentY / bar.maximum
             : 0
-        color: lit ? Theme.inkTertiary : Theme.lineStrong
 
-        Behavior on width {
-            enabled: Theme.motion
-            NumberAnimation {
-                duration: Theme.motionFast
-                easing.type: Easing.OutQuad
+        Rectangle {
+            anchors.centerIn: parent
+            width: 6
+            height: parent.height
+            radius: width / 2
+            color: Theme.lineStrong
+            opacity: thumb.lit ? 0 : 1
+            Accessible.ignored: true
+
+            Behavior on opacity {
+                enabled: Theme.motion
+                OpacityAnimator {
+                    duration: Theme.motionFast
+                    easing.type: Easing.OutQuad
+                }
             }
         }
 
-        Behavior on color {
-            enabled: Theme.motion
-            ColorAnimation {
-                duration: Theme.motionFast
-                easing.type: Easing.OutQuad
+        Rectangle {
+            anchors.centerIn: parent
+            width: 8
+            height: parent.height
+            radius: width / 2
+            color: Theme.inkTertiary
+            opacity: thumb.lit ? 1 : 0
+            Accessible.ignored: true
+
+            Behavior on opacity {
+                enabled: Theme.motion
+                OpacityAnimator {
+                    duration: Theme.motionFast
+                    easing.type: Easing.OutQuad
+                }
             }
         }
     }

@@ -51,7 +51,7 @@ Item {
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1200
@@ -249,6 +249,8 @@ Item {
             root.command("select-all", qsTr("全选"),
                          root.shortcutHint("explorer.selectAll", "Ctrl+A"),
                          "check", qsTr("文件")),
+            root.command("invert-selection", qsTr("反选"), "", "check", qsTr("文件")),
+            root.command("select-by-type", qsTr("按类型选择…"), "", "file", qsTr("文件")),
             root.command("refresh", qsTr("刷新"),
                          root.shortcutHint("explorer.refresh", "F5"),
                          "", qsTr("文件")),
@@ -280,9 +282,15 @@ Item {
 
     function viewCommands() {
         return [
-            root.command("view-list", qsTr("列表视图"), "", "list", qsTr("视图")),
-            root.command("view-grid", qsTr("网格视图"), "", "grid", qsTr("视图")),
-            root.command("view-column", qsTr("分栏视图"), "", "column", qsTr("视图")),
+            root.command("view-list", qsTr("列表视图"),
+                         root.shortcutHint("explorer.viewList", "Ctrl+1"),
+                         "list", qsTr("视图")),
+            root.command("view-grid", qsTr("网格视图"),
+                         root.shortcutHint("explorer.viewGrid", "Ctrl+2"),
+                         "grid", qsTr("视图")),
+            root.command("view-column", qsTr("分栏视图"),
+                         root.shortcutHint("explorer.viewColumn", "Ctrl+3"),
+                         "column", qsTr("视图")),
             root.command("sort-name", qsTr("按名称排序"), "", "", qsTr("视图")),
             root.command("sort-modified", qsTr("按修改时间排序"), "", "", qsTr("视图")),
             root.command("sort-type", qsTr("按类型排序"), "", "", qsTr("视图")),
@@ -874,7 +882,6 @@ Item {
                     color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
-                    font.letterSpacing: 0.6
                 }
             }
 

@@ -189,9 +189,9 @@ FocusScope {
                 radius: Theme.radiusSm
                 visible: apps.needsFilter
                 color: root.fieldColor
-                border.width: 1
+                border.width: filterInput.activeFocus ? 1.5 : 1
                 border.color: filterInput.activeFocus
-                    ? Theme.focusRing
+                    ? Theme.accent
                     : root.hairline
 
                 Text {

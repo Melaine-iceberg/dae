@@ -191,6 +191,12 @@ Item {
     onPathsChanged: if (root.paths.length === 1) detailsController.open(root.paths[0])
     Component.onCompleted: controller.setDark(root.dark)
 
+    /// §8.3: where F6 puts focus when the ring reaches the inspector. The
+    /// pane itself is a column of text, so the scroll surface is the stop.
+    function takeFocus() {
+        scroller.forceActiveFocus()
+    }
+
     function showPaths(next, breakdownJson) {
         trashItem = null
         breakdown = breakdownJson !== undefined ? breakdownJson : ""
@@ -350,7 +356,6 @@ Item {
             color: root.faintColor
             font.family: Theme.uiFamily
             font.pixelSize: Theme.typeCaption
-            font.letterSpacing: 0.4
             font.weight: Font.Medium
         }
 
@@ -416,6 +421,31 @@ Item {
         contentHeight: content.height + 28
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        /// §8.3: the inspector is one stop in the F6 ring, so it has to be
+        /// able to hold focus; its own rows are text, so the scroller is the
+        /// stop and the arrow keys scroll it.
+        activeFocusOnTab: true
+        Keys.onUpPressed: function (event) {
+            scroller.contentY = Math.max(0, scroller.contentY - 40)
+            event.accepted = true
+        }
+        Keys.onDownPressed: function (event) {
+            scroller.contentY = Math.min(
+                Math.max(0, scroller.contentHeight - scroller.height),
+                scroller.contentY + 40)
+            event.accepted = true
+        }
+        Keys.onPressed: function (event) {
+            if (event.key === Qt.Key_PageUp) {
+                scroller.contentY = Math.max(0, scroller.contentY - scroller.height)
+                event.accepted = true
+            } else if (event.key === Qt.Key_PageDown) {
+                scroller.contentY = Math.min(
+                    Math.max(0, scroller.contentHeight - scroller.height),
+                    scroller.contentY + scroller.height)
+                event.accepted = true
+            }
+        }
 
         Column {
             id: content
@@ -470,7 +500,6 @@ Item {
                     color: root.faintColor
                     font.family: Theme.uiFamily
                     font.pixelSize: Theme.typeMicro
-                    font.letterSpacing: 0.5
                 }
 
                 Column {
@@ -657,7 +686,6 @@ Item {
                     color: root.faintColor
                     font.family: Theme.uiFamily
                     font.pixelSize: Theme.typeMicro
-                    font.letterSpacing: 0.5
                 }
 
                 Column {
@@ -977,12 +1005,15 @@ Item {
                         anchors.centerIn: parent
                         spacing: 6
 
-                        Glyph {
+                        FileIcon {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: 44
-                            height: 44
-                            kind: "folder"
-                            tint: Theme.fileColor("folder")
+                            /// §6.3.2: the inspector's well uses the family
+                            /// glyph at 64–96 dp, so the preview and the row
+                            /// show the same shape at two scales.
+                            edge: 72
+                            category: "folder"
+                            path: root.directoryPath
+                            outline: Theme.inkSecondary
                         }
 
                         Text {
@@ -1016,12 +1047,19 @@ Item {
                         anchors.centerIn: parent
                         spacing: 6
 
-                        Glyph {
+                        FileIcon {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: 40
-                            height: 40
-                            kind: "file"
-                            tint: root.faintColor
+                            /// §6.3.2: a file with no inner preview still gets
+                            /// its own outline and family mark, at the
+                            /// inspector's 64–96 dp size. The family comes from
+                            /// the properties controller, which is what knows
+                            /// the entry's category; the preview controller
+                            /// only knows how to draw one.
+                            edge: 72
+                            category: detailsController.category !== ""
+                                ? detailsController.category : "file"
+                            path: detailsController.path
+                            outline: Theme.inkTertiary
                         }
 
                         Text {
@@ -1217,7 +1255,7 @@ Item {
 
                 width: chipRow.implicitWidth + 18
                 height: Theme.controlXs + 2
-                radius: height / 2
+                radius: Theme.radiusXs
                 color: on ? Theme.hover : "transparent"
                 border.width: 1
                 border.color: on ? Theme.line : Theme.hairline
@@ -1233,7 +1271,7 @@ Item {
                         height: 6
                         radius: 3
                         anchors.verticalCenter: parent.verticalCenter
-                        color: tagChip.modelData.color
+                        color: Theme.tagColorFor(tagChip.modelData.color)
                     }
 
                     Text {
@@ -1279,7 +1317,13 @@ Item {
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
+            /// §12.5: the rule is one device pixel tall, and it has to *sit*
+            /// on one too. The row's bottom is not reliably on the grid — the
+            /// pane's content starts at 14 dp and text heights are fractional
+            /// — so the top is snapped instead of anchored: at 125 % a
+            /// fractional bottom smears a 0.8 dp rule across two rows.
+            y: Math.round((parent.height - height) * Screen.devicePixelRatio)
+               / Screen.devicePixelRatio
             height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: Theme.hairline
         }

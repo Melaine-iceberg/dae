@@ -20,6 +20,9 @@ FocusScope {
 
     /// `general`, `permissions` (unix), `attributes` (windows) or `checksum`.
     property string tab: "general"
+    /// The entry being inspected. The controller owns the metadata; this copy
+    /// is for the glyph, which needs the path to recognise a known folder.
+    property string path: ""
 
     // The editable draft. Integers and booleans rather than the controller's
     // properties, because a binding would write back the moment the user
@@ -84,6 +87,7 @@ FocusScope {
     Accessible.name: qsTr("属性")
 
     function open(path) {
+        root.path = path
         root.tab = "general"
         root.recursive = false
         root.copiedAlgorithm = ""
@@ -434,6 +438,7 @@ FocusScope {
                         FileIcon {
                             edge: 64
                             category: controller.category
+                            path: root.path
                             outline: Theme.inkSecondary
                         }
 
@@ -1273,9 +1278,9 @@ FocusScope {
         height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
-        border.width: 1
+        border.width: fieldInput.activeFocus ? 1.5 : 1
         border.color: fieldInput.activeFocus
-            ? Theme.focusRing
+            ? Theme.accent
             : root.hairline
 
         TextInput {

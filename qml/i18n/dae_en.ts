@@ -1316,6 +1316,71 @@
         <translation>No matches</translation>
     </message>
     <message>
+        <location filename="../FileList.qml" line="343"/>
+        <source>没有匹配“%1”的文件</source>
+        <translation>No files match “%1”</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="356"/>
+        <source>在此文件夹中搜索内容</source>
+        <translation>Search contents in this folder</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="347"/>
+        <source>无法读取这个文件夹</source>
+        <translation>Could not read this folder</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="344"/>
+        <source>这个位置已不存在</source>
+        <translation>This location no longer exists</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="356"/>
+        <source>返回到上一级</source>
+        <translation>Go to parent folder</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="355"/>
+        <source>重新连接</source>
+        <translation>Reconnect</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="365"/>
+        <source>复制错误详情</source>
+        <translation>Copy error details</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1580"/>
+        <source>链接已失效</source>
+        <translation>Link target is missing</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1581"/>
+        <source>只读，无写入权限</source>
+        <translation>Read-only, no write permission</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1665"/>
+        <source>正在传输</source>
+        <translation>Transferring</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="2433"/>
+        <source>错误详情已复制</source>
+        <translation>Error details copied</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js" line="119"/>
+        <source>以管理员身份打开…</source>
+        <translation>Opening as administrator…</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js" line="121"/>
+        <source>只有本地文件夹可以以管理员身份重试</source>
+        <translation>Only local folders can be retried as administrator</translation>
+    </message>
+    <message>
         <location filename="../FileList.qml" line="179"/>
         <source>文件夹</source>
         <translation>Folder</translation>
@@ -4197,8 +4262,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="176"/>
-        <source>信号橙</source>
-        <translation>Signal orange</translation>
+        <source>青蓝</source>
+        <translation>Teal</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="180"/>
@@ -4748,8 +4813,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="714"/>
-        <source>“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。</source>
-        <translation>“System” reads the desktop accent color; “signal orange” uses the app&apos;s own signal color.</translation>
+        <source>“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。</source>
+        <translation>“System” reads the desktop accent color; “teal” uses the app&apos;s own accent.</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="740"/>
@@ -4770,6 +4835,11 @@
         <location filename="../SettingsPanel.qml" line="186"/>
         <source>亚克力 (Acrylic)</source>
         <translation>Acrylic</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="186"/>
+        <source>不透明</source>
+        <translation>Opaque</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="194"/>
@@ -4820,8 +4890,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="856"/>
-        <source>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</source>
-        <translation>Mica samples a tint from the desktop wallpaper, while Acrylic blurs the windows behind in real time. Mica is the default; the window falls back to a solid fill when the system does not support it or transparency is off.</translation>
+        <source>Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。</source>
+        <translation>Mica samples the wallpaper and Acrylic blurs live; choosing a material turns the background effect on. Opaque by default.</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="1243"/>

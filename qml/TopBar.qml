@@ -82,6 +82,8 @@ Item {
     signal tabTornOff(int index, real globalX, real globalY)
     /// Right-click on a chip, in bar coordinates.
     signal tabContextRequested(int index, real x, real y)
+    /// Files dropped on a chip: the shell moves them into that tab's folder.
+    signal filesDropped(int index, var paths)
 
     implicitHeight: Theme.shellTitle
     height: Theme.shellTitle
@@ -89,8 +91,7 @@ Item {
     readonly property bool isMac: Qt.platform.os === "osx"
     /// Where the tab strip ends and the window buttons begin. The shell anchors
     /// its strip to this instead of repeating the button width in QML.
-    readonly property real buttonWidth: isMac ? 0
-        : (Qt.platform.os === "linux" ? 40 : 46)
+    readonly property real buttonWidth: isMac ? 0 : 46
     readonly property real buttonsWidth: buttonWidth * 3
 
     readonly property color chromeTint: Theme.backdropTint(material, dark, false)
@@ -126,6 +127,16 @@ Item {
     readonly property real clientLeft: tabLeft
     readonly property real clientRight: Math.min(tabX(tabs.length) + plusWidth,
                                                  stripWidth)
+
+    /// The URLs a drop carries, as strings. `Workspace.localDropPaths` turns
+    /// the `file:` half into paths; anything else (a browser URL) is dropped
+    /// there, so only the real files reach the pipeline.
+    function urlsOf(drag) {
+        const urls = []
+        for (let index = 0; index < drag.urls.length; index += 1)
+            urls.push(String(drag.urls[index]))
+        return urls
+    }
 
     function tabX(index) {
         return tabLeft + index * (tabWidthValue + tabGap)
@@ -206,10 +217,15 @@ Item {
     }
 
     /// Marks where a tab drag hovering this bar would insert. The window's
-    /// `DropArea` drives this while the native loop runs.
+    /// `DropArea` drives this while the native loop runs. `x` arrives in bar
+    /// coordinates; the indicator lives in the strip's scrolled content, so
+    /// the current offset is added here once.
     function showDrop(x) {
-        dropX = x
+        dropX = x + tabFlick.contentX
     }
+
+    onActiveIndexChanged: Qt.callLater(function () { tabFlick.revealTab(root.activeIndex) })
+    onTabsChanged: Qt.callLater(function () { tabFlick.revealTab(root.activeIndex) })
 
     function clearDrop() {
         dropX = -1
@@ -448,16 +464,67 @@ Item {
     }
 
     // The chips, `+` and the drop indicator. Clipped at the button columns so a
-    // full strip never paints over them.
-    Item {
-        id: strip
+    // full strip never paints over them, and scrolled horizontally (§7.3.1:
+    // one row, never wrapped) once the tabs outgrow the width.
+    Flickable {
+        id: tabFlick
         x: 0
         y: 0
         width: root.stripWidth
         height: root.height
         clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.HorizontalFlick
+        contentWidth: Math.max(tabRow.x + tabRow.width, width)
+        contentHeight: height
+        /// Not `interactive`: the chips drag to reorder and tear off, and a
+        /// Flickable that also took horizontal drags would steal those
+        /// gestures after six pixels. The wheel and the reveal-on-switch rule
+        /// below are how a strip that does not fit is traversed.
+        interactive: false
+
+        /// The wheel is the pointer's way along the strip; a horizontal wheel
+        /// delta (a trackpad's two-finger swipe) is honoured too. Without this
+        /// the last tabs were simply unreachable.
+        WheelHandler {
+            onWheel: function (event) {
+                if (tabFlick.contentWidth <= tabFlick.width) {
+                    event.accepted = false
+                    return
+                }
+                const step = event.angleDelta.y !== 0
+                    ? -event.angleDelta.y / 2 : event.angleDelta.x
+                tabFlick.contentX = Math.max(0, Math.min(
+                    tabFlick.contentWidth - tabFlick.width,
+                    tabFlick.contentX + step))
+                event.accepted = true
+            }
+        }
+
+        /// Keeps the active chip inside the strip after a switch, a close or a
+        /// new tab. `ViewTransition` is not involved: the strip is not a view.
+        function revealTab(index) {
+            if (index < 0 || contentWidth <= width)
+                return
+            const left = root.tabX(index) - root.tabGap
+            const right = root.tabX(index) + root.tabWidthValue + root.tabGap
+            if (left < contentX)
+                contentX = Math.max(0, left)
+            else if (right > contentX + width)
+                contentX = Math.min(contentWidth - width, right - width)
+        }
+
+        onWidthChanged: revealTab(root.activeIndex)
+        /// The row's width lands one layout pass after `tabs` changes, so a
+        /// reveal that ran on `tabsChanged` alone would clamp against the old
+        /// content width and leave the new chip half under the window buttons.
+        onContentWidthChanged: Qt.callLater(function () {
+            revealTab(root.activeIndex)
+        })
+        Component.onCompleted: revealTab(root.activeIndex)
 
         Row {
+            id: tabRow
             x: root.tabLeft
             y: root.tabTop
             height: root.tabHeightValue
@@ -486,6 +553,88 @@ Item {
                     /// `tabMouse` stops short of the close button so a press
                     /// there cannot activate the tab.
                     HoverHandler { id: tabHover }
+
+                    /// §7.3.1: a tab names its directory; the full path is one
+                    /// hover away, which is the only place the truncated
+                    /// middle of a deep path can be read.
+                    ToolTip {
+                        text: tabItem.modelData ? String(tabItem.modelData.title) : ""
+                    }
+
+                    /// §7.3.1: a transfer belongs to the tab it lands in, so
+                    /// this chip carries the queue's progress as a 2 dp bar
+                    /// along its bottom edge.
+                    readonly property bool receiving: tabItem.modelData !== null
+                        && Workspace.busy
+                        && Workspace.transferDestination !== ""
+                        && Workspace.transferDestination === tabItem.modelData.title
+                    readonly property real progress: Workspace.progressTotal > 0
+                        ? Math.max(0, Math.min(1,
+                            Workspace.progressDone / Workspace.progressTotal))
+                        : 0
+
+                    Rectangle {
+                        visible: tabItem.receiving
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        height: 2
+                        radius: 1
+                        color: Theme.line
+                        z: 2
+
+                        Rectangle {
+                            width: parent.width * tabItem.progress
+                            height: parent.height
+                            radius: 1
+                            color: Theme.accent
+                        }
+                    }
+
+                    /// Whether a file drag from the OS is over this chip. A
+                    /// drop here moves the files into the tab's directory,
+                    /// which is the same act as dropping on a breadcrumb.
+                    property bool fileDropTarget: false
+
+                    DropArea {
+                        anchors.fill: parent
+                        keys: ["text/uri-list"]
+                        onEntered: function (drag) {
+                            tabItem.fileDropTarget = true
+                            drag.accept(Qt.CopyAction)
+                        }
+                        onPositionChanged: function (drag) {
+                            tabItem.fileDropTarget = true
+                            drag.accept(Qt.CopyAction)
+                        }
+                        onExited: tabItem.fileDropTarget = false
+                        onDropped: function (drop) {
+                            tabItem.fileDropTarget = false
+                            // qmllint disable missing-property
+                            const paths = Workspace.localDropPaths(root.urlsOf(drop))
+                            if (paths.length === 0) {
+                                drop.accepted = false
+                                return
+                            }
+                            // qmllint enable missing-property
+                            drop.accept(Qt.CopyAction)
+                            root.filesDropped(tabItem.index, paths)
+                        }
+                    }
+
+                    /// The drop feedback the whole window uses: 12 % accent
+                    /// fill and a 1.5 dp accent frame (§10.3).
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: tabItem.fileDropTarget
+                        radius: Theme.radiusSm
+                        color: Theme.accentSoft
+                        border.width: 1.5
+                        border.color: Theme.accent
+                        z: 3
+                    }
 
                     /// A tab is the first thing Tab should reach, and Enter is
                     /// the keyboard's click.
@@ -574,8 +723,12 @@ Item {
                         anchors.rightMargin: 24
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-
+                            | Qt.MiddleButton
                         onPressed: function (mouse) {
+                            if (mouse.button === Qt.MiddleButton) {
+                                root.tabClosed(tabItem.index)
+                                return
+                            }
                             if (mouse.button === Qt.RightButton) {
                                 const point = root.mapFromItem(tabMouse,
                                                                mouse.x, mouse.y)
@@ -600,8 +753,10 @@ Item {
                                                root.dragStartY)
                         }
 
-                        onReleased: {
+                        onReleased: function (mouse) {
                             root.dragArmed = false
+                            if (mouse.button !== Qt.LeftButton)
+                                return
                             // The release that ended a native drag may arrive
                             // as a click after the loop; it must not activate
                             // the tab.
@@ -718,28 +873,15 @@ Item {
                         : (button.hovered ? Theme.hover : "transparent")
                 }
 
-                // Windows keeps its own glyph font. The other two platforms
-                // have no font that carries these code points — naming
-                // "Segoe Fluent Icons" there is how the buttons used to render
-                // as empty boxes — so they get drawn shapes instead.
-                Text {
-                    anchors.centerIn: parent
-                    visible: Qt.platform.os === "windows"
-                    text: button.isClose ? "\uE8BB"
-                        : button.isMaximize
-                            ? (root.maximized ? "\uE923" : "\uE922")
-                            : "\uE921"
-                    color: button.isClose && button.hovered ? Theme.onSolid : root.textColor
-                    font.family: "Segoe Fluent Icons"
-                    font.pixelSize: Theme.typeMicro
-                }
-
+                // One set of geometry on every platform (§5.4): a minimise
+                // line, a maximise square, a restore pair and a close cross.
+                // Windows still owns the NC hit test and the Snap Layouts
+                // hover, but it no longer supplies the glyph.
                 Item {
                     id: drawnGlyph
                     anchors.centerIn: parent
                     width: 14
                     height: 14
-                    visible: Qt.platform.os !== "windows"
 
                     readonly property color ink: button.isClose && button.hovered
                         ? Theme.onSolid : root.textColor

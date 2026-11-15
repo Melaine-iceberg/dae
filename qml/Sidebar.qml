@@ -51,10 +51,45 @@ Item {
     /// the pointer is over them.
     property bool favoriteDropActive: false
 
-    /// Narrow columns drop the "used / total" pair: at 184 px it is the first
-    /// thing that would collide with the filesystem. The percentage on the
-    /// name line still says how full the drive is.
-    readonly property bool narrow: width < 200
+    /// §7.3.2: folded groups, remembered across launches. The value is the
+    /// same comma-separated list the preference stores, so there is one
+    /// spelling of "Favorites is folded" in the process.
+    readonly property var foldedSections: {
+        const raw = ExplorerPrefs.foldedSidebarSections
+        return raw === "" ? [] : raw.split(",")
+    }
+
+    function isFolded(section) {
+        if (section === "")
+            return false
+        return root.foldedSections.indexOf(section) >= 0
+    }
+
+    /// Folds or unfolds a group and persists the whole list. The order is the
+    /// sidebar's own section order, so the stored value is stable.
+    function toggleSection(section) {
+        if (section === "")
+            return
+        const next = root.foldedSections.slice()
+        const at = next.indexOf(section)
+        if (at >= 0)
+            next.splice(at, 1)
+        else
+            next.push(section)
+        ExplorerPrefs.setString("foldedSidebarSections", next.join(","))
+        // A folded group cannot hold the cursor; move it to the header's row.
+        if (list.currentIndex >= 0 && root.isFolded(root.sectionAtRow(list.currentIndex)))
+            list.currentIndex = -1
+    }
+
+    /// The section of a row, asked of the model rather than of a delegate:
+    /// folded rows have no delegate to ask.
+    function sectionAtRow(row) {
+        if (!sidebarModel || row < 0 || row >= list.count)
+            return ""
+        return sidebarModel.sectionAt(row)
+    }
+
     readonly property string trashLabel: Qt.platform.os === "osx"
         ? qsTr("废纸篓") : qsTr("回收站")
 
@@ -122,18 +157,32 @@ Item {
         volumeRevision += 1
     }
 
+    /// §8.3: where F6 puts focus when the ring reaches the sidebar. The list
+    /// holds the keyboard cursor, so focus goes there rather than to the pane.
+    function takeFocus() {
+        list.forceActiveFocus()
+    }
+
     /// Moves the keyboard cursor by one row. A negative index means "nothing is
     /// under the cursor yet", which is why the first ↓ starts at 0 rather than
     /// at 1 — otherwise the first press after tabbing in would skip a row.
+    /// Rows inside a folded group are stepped over: a cursor nobody can see is
+    /// a cursor nobody can use.
     function moveCursor(delta) {
         if (list.count === 0)
             return
         let index = list.currentIndex
         if (index < 0)
             index = delta > 0 ? -1 : list.count
-        index = Math.max(0, Math.min(list.count - 1, index + delta))
-        list.currentIndex = index
-        list.positionViewAtIndex(index, ListView.Contain)
+        const step = delta > 0 ? 1 : -1
+        let next = index + delta
+        while (next >= 0 && next < list.count
+                && root.isFolded(root.sectionAtRow(next)))
+            next += step
+        if (next < 0 || next >= list.count)
+            return
+        list.currentIndex = next
+        list.positionViewAtIndex(next, ListView.Contain)
     }
 
     /// Runs the row under the cursor through the same branch the pointer uses.
@@ -277,53 +326,14 @@ Item {
         }
     }
 
-    /// The column's masthead. drift opens its sidebar with a wordmark; the
-    /// window's title bar carries a tab strip, so this is the only place the
-    /// product's name is printed rather than resolved from a tab.
-    Item {
-        id: masthead
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: 62
-
-        Text {
-            id: wordmark
-            x: 18
-            y: 10
-            text: "dae"
-            color: Theme.ink
-            font.family: Theme.uiFamily
-            font.italic: true
-            font.pixelSize: 38
-            font.letterSpacing: -1
-            /// Decorative: the window's title and its accessible name already
-            /// say which application this is, and a reader that lands in the
-            /// sidebar wants the destinations, not the brand.
-            Accessible.ignored: true
-        }
-
-        Text {
-            anchors.left: wordmark.right
-            anchors.leftMargin: 1
-            anchors.baseline: wordmark.baseline
-            text: "."
-            color: Theme.accent
-            font.family: Theme.uiFamily
-            font.italic: true
-            font.pixelSize: 38
-            Accessible.ignored: true
-        }
-    }
-
     ListView {
         id: list
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: masthead.bottom
+        anchors.top: parent.top
         anchors.bottom: discoveryArea.top
-        anchors.topMargin: 4
+        anchors.topMargin: 8
         model: sidebarModel
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -389,20 +399,42 @@ Item {
 
             readonly property bool favoriteSection: section === "Favorites"
             readonly property bool lit: favoriteSection && root.favoriteDropActive
+            readonly property bool folded: root.isFolded(sectionRow.section)
 
             width: ListView.view.width
             height: Theme.controlXs
+
+            /// The header is the fold control (§7.3.2): one click closes the
+            /// group, the next opens it, and the state is remembered.
+            Accessible.role: Accessible.Button
+            Accessible.name: root.sectionLabel(sectionRow.section)
+            Accessible.description: sectionRow.folded
+                ? qsTr("已折叠，点击展开") : qsTr("已展开，点击折叠")
+            Accessible.onPressAction: root.toggleSection(sectionRow.section)
+
+            Glyph {
+                id: foldMark
+                x: 4
+                width: 10
+                height: 10
+                anchors.verticalCenter: parent.verticalCenter
+                kind: sectionRow.folded ? "chevronRight" : "chevronDown"
+                tint: sectionRow.favoriteSection && sectionRow.lit
+                    ? Theme.accent
+                    : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
+                Accessible.ignored: true
+            }
 
             Text {
                 x: 18
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 4
                 text: root.sectionLabel(sectionRow.section)
-                color: parent.lit ? Theme.accent : Theme.inkTertiary
-                font.family: Theme.monoFamily
+                color: parent.lit ? Theme.accent
+                    : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
+                font.family: Theme.uiFamily
                 font.pixelSize: Theme.typeMicro
-                font.weight: Font.Medium
-                font.letterSpacing: 0.88
+                font.weight: Font.DemiBold
             }
 
             Text {
@@ -414,6 +446,14 @@ Item {
                 text: qsTr("松开以加入收藏")
                 color: Theme.accent
                 font.pixelSize: Theme.typeMicro
+            }
+
+            MouseArea {
+                id: headerMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.toggleSection(sectionRow.section)
             }
 
             /// The group header is the favorites drop target while the group
@@ -459,6 +499,14 @@ Item {
             required property string fileSystem
             /// 0..1 for a volume, 0 for everything else.
             required property real fill
+            /// Injected by the ListView from `section.property`; the fold state
+            /// is per group, so every row has to know its own.
+            required property string section
+
+            /// §7.3.2: a folded group keeps its header and gives up its rows.
+            /// Height 0 rather than `visible: false` so the ListView's own
+            /// geometry stays consistent while a section is closed.
+            readonly property bool folded: root.isFolded(row.section)
 
             readonly property bool isVolume: row.kind === "volume"
             readonly property bool treeOpen: row.isVolume && root.volumeExpanded(row.path)
@@ -467,10 +515,6 @@ Item {
             readonly property bool isAction: row.kind === "addConnection"
                 || row.kind === "addCloud"
                 || row.kind === "restorePlaces"
-            /// A place is a named destination in the first group: it carries a
-            /// number instead of a glyph, the way drift indexes the column.
-            readonly property bool place: !row.isVolume && !row.isAction
-                && row.kind !== "favoriteHint"
             readonly property bool builtInName: row.isAction
                 || row.kind === "favoriteHint"
                 || row.icon === "home" || row.icon === "desktop"
@@ -488,28 +532,23 @@ Item {
                 && list.currentIndex === row.index
             readonly property bool lit: row.focused || row.armed
                 || rowMouse.containsMouse
-            /// A volume is three bands — name and percentage, the capacity
-            /// gauge, then the filesystem and the used/total pair — so the
-            /// gauge can be as wide as the row without crowding either line.
-            readonly property int rowHeight: row.isVolume ? 58 : 28
-            readonly property int percent: Math.round(
-                Math.max(0, Math.min(1, row.fill)) * 100)
-            /// The gauge's cell count, the same 24 drift prints: fine enough
-            /// that one cell is ~4 %, coarse enough that it reads as a printed
-            /// gauge rather than a smooth meter.
-            readonly property int gaugeSegments: 24
-            readonly property int litSegments: Math.round(
-                Math.max(0, Math.min(1, row.fill)) * row.gaugeSegments)
+            /// Every destination is one 28 dp line (§7.3.2); a volume's tree
+            /// hangs below it rather than inside the row.
+            readonly property int rowHeight: 28
 
             width: ListView.view.width
-            height: rowHeight + (row.treeOpen ? treeLoader.height : 0)
+            height: row.folded ? 0 : rowHeight + (row.treeOpen ? treeLoader.height : 0)
+            visible: !row.folded
 
             /// A sidebar row is a destination: the name is what the reader says,
             /// the kind is where it goes, and the current row is the selected
             /// one. The volume's tree below it is a separate list of rows.
             Accessible.role: row.isAction ? Accessible.Button : Accessible.ListItem
             Accessible.name: row.name
-            Accessible.description: row.detail
+            Accessible.description: row.isVolume
+                ? (row.fileSystem !== "" ? row.fileSystem + " · " : "")
+                  + qsTr("%1 可用").arg(row.detail)
+                : row.detail
             Accessible.selectable: !row.isAction
             Accessible.selected: row.focused
             Accessible.onPressAction: row.activate()
@@ -534,7 +573,7 @@ Item {
                 root.navigateRequested(row.path)
             }
 
-            /// The visible row is only the 28 / 46 px band; an expanded volume's
+            /// The visible row is only the 28 px band; an expanded volume's
             /// tree hangs below it. Keeping that distinction explicit means the
             /// icon and label still centre on the row, not on the whole subtree.
             Item {
@@ -549,12 +588,12 @@ Item {
                     x: 8
                     width: rowBody.width - 16
                     height: rowBody.height
-                    /// The current destination is a solid ink band with the
-                    /// paper showing through the type. A drop target is the
-                    /// only row that gets a signal wash and a dashed frame,
-                    /// which keeps it apart from the solid keyboard ring.
+                    radius: Theme.radiusSm
+                    /// The current destination is an 8 % accent wash with the
+                    /// text staying `ink` (§7.3.2); a drop target is the same
+                    /// wash one step stronger. Neither inverts the type.
                     color: row.armed ? Theme.accentSoft
-                        : row.focused ? Theme.ink
+                        : row.focused ? Theme.accentFaint
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
                     border.width: row.cursor && !row.armed ? Theme.edgeWidth : 0
                     border.color: Theme.accent
@@ -570,24 +609,6 @@ Item {
                     border.color: Theme.accent
                 }
 
-                /// The index of a place, in mono. It replaces the glyph: a
-                /// number says "the third destination" and survives being read
-                /// at a glance, where six outline icons at 14 dp only say
-                /// "somewhere".
-                Text {
-                    id: placeIndex
-                    visible: row.place
-                    x: 18
-                    y: 0
-                    height: rowBody.height
-                    width: 20
-                    verticalAlignment: Text.AlignVCenter
-                    text: String(row.index + 1).padStart(2, "0")
-                    color: row.focused ? Theme.accent : Theme.inkTertiary
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
-                }
-
                 // A volume's chevron is a separate hit target from the row
                 // itself: the label still navigates to the drive, only the
                 // glyph toggles the subtree.
@@ -596,7 +617,7 @@ Item {
 
                     visible: row.isVolume
                     x: 8
-                    y: 3
+                    y: 4
                     width: 16
                     height: Theme.controlXs
                     z: 2
@@ -627,134 +648,93 @@ Item {
                 Glyph {
                     id: rowIcon
 
-                    visible: !row.place
                     x: row.isVolume ? 26 : 18
-                    y: row.isVolume ? 6 : 7
-                    width: 14
-                    height: 14
+                    y: 6
+                    width: 16
+                    height: 16
                     kind: root.glyphKind(row.icon)
-                    tint: row.lit ? Theme.ink : Theme.inkSecondary
+                    tint: row.focused && !row.armed ? Theme.accent
+                        : (row.lit ? Theme.inkSecondary : Theme.inkTertiary)
                 }
 
                 Text {
                     id: nameText
 
                     x: row.isVolume ? 46 : 40
-                    y: row.isVolume ? 3 : 0
-                    height: row.isVolume ? 20 : 28
-                    // A volume's percentage owns the right edge of the name
-                    // line, the used/total pair the last line, so the drive name
-                    // elides only against the smaller of the two.
+                    y: 0
+                    height: 28
+                    // A volume's free-space figure owns the right edge, so the
+                    // drive name elides only against that one run.
                     width: Math.max(0, (row.isVolume
-                        ? percentText.x
+                        ? freeText.x
                         : detailText.x) - x - 6)
                     verticalAlignment: Text.AlignVCenter
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: row.kind === "favoriteHint" && root.favoriteDropActive
                         ? Theme.accent
-                        : row.focused && !row.armed ? Theme.canvas
+                        : row.focused && !row.armed ? Theme.ink
                         : (row.lit ? Theme.ink : Theme.inkSecondary)
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                 }
 
+                /// A volume says how much is free, not how full it is: the
+                /// percentage is the 2 dp bar below, where it costs neither a
+                /// line nor a monospace numeral (§7.3.2).
                 Text {
-                    id: percentText
+                    id: freeText
 
                     visible: row.isVolume
                     anchors.right: parent.right
                     anchors.rightMargin: 18
-                    y: 3
-                    height: 20
-                    width: implicitWidth
+                    height: 28
+                    width: Math.min(implicitWidth, Math.max(0, rowBody.width * 0.45))
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
-                    text: row.percent + "%"
-                    color: row.focused && !row.armed ? Theme.canvas
+                    text: qsTr("%1 可用").arg(row.detail)
+                    color: row.focused && !row.armed ? Theme.ink
                         : row.fill > 0.9 ? Theme.warning : Theme.inkTertiary
-                    font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
+                    elide: Text.ElideRight
                 }
 
-                /// The capacity gauge, in drift's segmented form. It sits
-                /// between the name and the filesystem so the bar can use the
-                /// row's width instead of a 112 px strip on a text line.
-                Row {
-                    id: gauge
+                /// One continuous bar over `hairline`, not a segmented gauge:
+                /// the only question a volume row answers is "how full".
+                Rectangle {
+                    id: capacity
 
                     visible: row.isVolume
                     x: 46
-                    y: 26
+                    y: rowBody.height - 2
                     width: Math.max(0, rowBody.width - 46 - 18)
-                    height: 10
-                    spacing: 2
+                    height: 2
+                    color: Theme.hairline
 
-                    Repeater {
-                        model: row.isVolume ? row.gaugeSegments : 0
-
-                        Rectangle {
-                            required property int index
-                            /// The gaps come off the width first; a cell sized
-                            /// from the bar alone would overflow the right
-                            /// margin by the last gap.
-                            width: Math.max(1, (gauge.width
-                                - (row.gaugeSegments - 1) * 2) / row.gaugeSegments)
-                            height: gauge.height
-                            color: index < row.litSegments
-                                ? (row.focused && !row.armed ? Theme.canvas
-                                    : row.fill > 0.9 ? Theme.warning : Theme.ink)
-                                : Theme.hairline
-                        }
+                    Rectangle {
+                        width: Math.round(parent.width
+                            * Math.max(0, Math.min(1, row.fill)))
+                        height: parent.height
+                        color: row.fill > 0.9 ? Theme.warning : Theme.inkTertiary
                     }
                 }
 
                 Text {
                     id: detailText
 
-                    visible: !row.isVolume || !root.narrow
+                    visible: !row.isVolume
                     anchors.right: parent.right
                     anchors.rightMargin: 18
-                    y: row.isVolume ? 40 : 0
-                    height: row.isVolume ? 16 : 28
-                    // A volume keeps the pair readable beside the filesystem;
-                    // anything else is capped to a strip on the name line. The
-                    // filesystem's own width is what is reserved, so a longer
-                    // label ("fuseblk") eats the pair rather than disappearing.
-                    width: Math.min(implicitWidth, row.isVolume
-                        ? Math.max(0, rowBody.width - 46 - 18
-                            - (row.fileSystem !== ""
-                                ? fileSystemText.implicitWidth + 6 : 0))
-                        : 112)
+                    height: 28
+                    width: Math.min(implicitWidth, 112)
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
-                    // A narrow column drops the pair; the percentage on the
-                    // name line still answers how full the drive is.
                     text: root.detailLabel(row.detail)
-                    color: row.focused && !row.armed ? Theme.canvas
-                        : row.isVolume && row.fill > 0.9
-                            ? Theme.warning : Theme.inkTertiary
+                    color: row.focused && !row.armed ? Theme.inkSecondary
+                        : Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
-                    elide: Text.ElideRight
-                }
-
-                // The filesystem is the one thing a drive row could not say in
-                // one line; it shares that line with the used/total pair.
-                Text {
-                    id: fileSystemText
-
-                    visible: row.isVolume && row.fileSystem !== ""
-                    x: 46
-                    y: 40
-                    height: 16
-                    width: Math.max(0, (root.narrow
-                        ? rowBody.width - 18 : detailText.x) - x - 6)
-                    verticalAlignment: Text.AlignVCenter
-                    text: row.fileSystem
-                    color: row.focused && !row.armed ? Theme.canvas : Theme.inkTertiary
-                    font.pixelSize: Theme.typeMicro
                     elide: Text.ElideRight
                 }
 
@@ -885,7 +865,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: savedArea.top
         visible: root.discovered.length > 0
-        height: visible ? 26 + serverList.height + 10 : 0
+        height: visible ? 28 + serverList.height + 8 : 0
 
         Rectangle {
             anchors.left: parent.left
@@ -902,9 +882,9 @@ Item {
             y: 8
             text: qsTr("网络")
             color: Theme.inkTertiary
+            font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.88
+            font.weight: Font.DemiBold
         }
 
         Glyph {
@@ -945,8 +925,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 24
-            height: Math.min(contentHeight, 3 * 24)
+            anchors.topMargin: 28
+            height: Math.min(contentHeight, 3 * 28)
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -957,7 +937,7 @@ Item {
                 required property var modelData
 
                 width: ListView.view.width
-                height: 24
+                height: 28
 
                 readonly property bool hovered: serverMouse.containsMouse
                 readonly property string label: modelData.name !== ""
@@ -976,15 +956,15 @@ Item {
 
                 Glyph {
                     x: 18
-                    width: 12
-                    height: 12
+                    width: 16
+                    height: 16
                     anchors.verticalCenter: parent.verticalCenter
                     kind: "network"
                     tint: Theme.inkTertiary
                 }
 
                 Text {
-                    x: 36
+                    x: 40
                     anchors.right: protocolText.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
@@ -1031,7 +1011,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: tagsArea.top
         visible: savedSearches.length > 0
-        height: visible ? 26 + savedList.height + 10 : 0
+        height: visible ? 28 + savedList.height + 8 : 0
 
         /// A malformed document reads as "no saved searches" rather than
         /// breaking the column; the preference setter already drops entries
@@ -1060,9 +1040,9 @@ Item {
             y: 8
             text: qsTr("保存的搜索")
             color: Theme.inkTertiary
+            font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.88
+            font.weight: Font.DemiBold
         }
 
         ListView {
@@ -1070,8 +1050,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 24
-            height: Math.min(contentHeight, 4 * 24)
+            anchors.topMargin: 28
+            height: Math.min(contentHeight, 4 * 28)
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -1082,7 +1062,7 @@ Item {
                 required property var modelData
 
                 width: ListView.view.width
-                height: 24
+                height: 28
 
                 readonly property bool hovered: savedMouse.containsMouse
 
@@ -1102,10 +1082,10 @@ Item {
                 }
 
                 Glyph {
-                    x: 20
+                    x: 18
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 12
-                    height: 12
+                    width: 16
+                    height: 16
                     kind: "search"
                     tint: Theme.inkTertiary
                 }
@@ -1113,7 +1093,7 @@ Item {
                 Text {
                     id: savedName
 
-                    x: 38
+                    x: 40
                     anchors.right: parent.right
                     anchors.rightMargin: savedRow.hovered ? 32 : 18
                     anchors.verticalCenter: parent.verticalCenter
@@ -1178,7 +1158,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: trashArea.top
         visible: tags.length > 0
-        height: visible ? 26 + tagList.height + 10 : 0
+        height: visible ? 28 + tagList.height + 8 : 0
 
         readonly property var tags: {
             try {
@@ -1213,9 +1193,9 @@ Item {
             y: 8
             text: qsTr("标签")
             color: Theme.inkTertiary
+            font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
-            font.letterSpacing: 0.88
+            font.weight: Font.DemiBold
         }
 
         ListView {
@@ -1223,8 +1203,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 24
-            height: Math.min(contentHeight, 6 * 24)
+            anchors.topMargin: 28
+            height: Math.min(contentHeight, 6 * 28)
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -1235,7 +1215,7 @@ Item {
                 required property var modelData
 
                 width: ListView.view.width
-                height: 24
+                height: 28
 
                 readonly property bool hovered: tagMouse.containsMouse
                 readonly property bool armed: tagDrop.containsDrag

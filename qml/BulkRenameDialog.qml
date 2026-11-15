@@ -215,14 +215,14 @@ FocusScope {
             } else {
                 const key = newName.toLocaleLowerCase()
                 if (seen[key] === true) {
-                    status = "error"
+                    status = "conflict"
                     errorKey = "duplicate"
                 } else {
                     seen[key] = true
                 }
             }
 
-            if (status === "error")
+            if (status === "error" || status === "conflict")
                 errorCount += 1
             else if (newName === entry.name)
                 status = "unchanged"
@@ -588,7 +588,9 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: planRow.modelData.name
                             color: root.mutedColor
+                            font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
+                            font.features: { "tnum": 1 }
                             elide: Text.ElideMiddle
                         }
 
@@ -608,14 +610,19 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: planRow.modelData.status === "unchanged"
                                 ? planRow.modelData.name + qsTr("（不变）")
-                                : (planRow.modelData.status === "error"
+                                : ((planRow.modelData.status === "error"
+                                    || planRow.modelData.status === "conflict")
                                     ? root.errorTextFor(planRow.modelData)
                                     : planRow.modelData.newName)
                             color: planRow.modelData.status === "error"
                                 ? root.dangerColor
-                                : (planRow.modelData.status === "unchanged"
-                                    ? root.mutedColor : root.textColor)
+                                : (planRow.modelData.status === "conflict"
+                                    ? Theme.warning
+                                    : (planRow.modelData.status === "unchanged"
+                                        ? root.mutedColor : root.textColor))
+                            font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
+                            font.features: { "tnum": 1 }
                             elide: Text.ElideMiddle
                         }
                     }
@@ -708,9 +715,9 @@ FocusScope {
         height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
-        border.width: 1
+        border.width: fieldInput.activeFocus ? 1.5 : 1
         border.color: fieldInput.activeFocus
-            ? Theme.focusRing
+            ? Theme.accent
             : root.hairline
 
         function focusInput() {
@@ -770,9 +777,9 @@ FocusScope {
             height: Theme.controlSm
             radius: Theme.radiusSm
             color: root.fieldColor
-            border.width: 1
+            border.width: numberInput.activeFocus ? 1.5 : 1
             border.color: numberInput.activeFocus
-                ? Theme.focusRing
+                ? Theme.accent
                 : root.hairline
 
             TextInput {

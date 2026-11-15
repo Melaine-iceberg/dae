@@ -35,7 +35,8 @@ Rectangle {
     border.width: 1
     border.color: {
         if (root.focused || root.activeFocus)
-            return root.tone === "quiet" ? Theme.accent : Theme.onAccent
+            return root.tone === "quiet" ? Theme.accent
+                : (root.tone === "danger" ? Theme.onDanger : Theme.onAccent)
         return root.tone === "quiet" ? Theme.line : "transparent"
     }
 
@@ -47,7 +48,8 @@ Rectangle {
         id: labelText
         anchors.centerIn: parent
         text: root.label
-        color: root.tone === "quiet" ? Theme.ink : Theme.onAccent
+        color: root.tone === "quiet" ? Theme.ink
+            : (root.tone === "danger" ? Theme.onDanger : Theme.onAccent)
         font.pixelSize: Theme.typeCaption
     }
 

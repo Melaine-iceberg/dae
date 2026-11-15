@@ -86,11 +86,20 @@ Window {
     /// selection, and an always-on panel spends 300 dp on "nothing selected".
     /// Ctrl+I or the status bar button opens it, per window.
     property bool inspectorVisible: false
-    /// The second pane's tab. Created the first time split view is enabled and
-    /// disposed when it is turned off, so an unused pane never holds a watcher.
-    property var splitTab: null
+    /// The second pane's own tabs (§11.4): the pane has a strip and a history
+    /// of its own, so it behaves like a second window docked to the right
+    /// rather than a preview of the first. Created the first time split view
+    /// is enabled and disposed when it is turned off, so an unused pane never
+    /// holds a watcher.
+    property var splitTabs: []
+    property int splitActiveIndex: 0
+    readonly property var splitTab: (splitActiveIndex >= 0
+        && splitActiveIndex < splitTabs.length) ? splitTabs[splitActiveIndex] : null
     property real splitRatio: 0.5
     property bool splitFocused: false
+    /// True while the second pane's locator shows its editor instead of the
+    /// breadcrumb trail. The pane owns its own path, so it owns its own mode.
+    property bool splitPathEditing: false
     /// True while the path bar shows its editor instead of the breadcrumb
     /// trail. Only the editor has a path to type into; the trail is the bar's
     /// normal shape.
@@ -108,9 +117,11 @@ Window {
     /// shell keeps the id so a language change or a mode switch cannot lose
     /// the selection.
     property string searchType: "all"
-    /// Where a name search looks: `current`, `favorites`, `recent` or
-    /// `volumes`. A tag click switches this to `volumes` for its one query.
-    property string searchScope: "current"
+    /// Where a name search looks: `here` (this folder only), `subfolders`
+    /// (this folder and everything under it) or `all` (every volume). A tag
+    /// click switches this to `all` for its one query, because a tag is a fact
+    /// about files across the disk rather than about this folder.
+    property string searchScope: "subfolders"
     /// Name search reuses the listing's buckets: one filter vocabulary, one
     /// menu, one place to explain what "images" means.
     readonly property string searchKind: ExplorerPrefs.kindFilter
@@ -200,7 +211,7 @@ Window {
     /// folder and no editor or dialog owns the keyboard. While they do, the
     /// configured refresh key stands down if it is one of those two keys.
     readonly property bool splitTransferActive: splitActive && !modalOpen
-        && !pathEditing
+        && !pathEditing && !splitPathEditing
     /// The listing the footer's action bar acts on: the focused pane when
     /// split view is on, the primary one otherwise — the same rule a
     /// window-level shortcut follows.
@@ -228,12 +239,10 @@ Window {
                                         : activeTab.nameSearch.loaded
     }
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
-    /// System accent follows the OS; the brand accent is the app's own signal
-    /// orange, one shade per theme. `accent` is the only colour views consume,
-    /// so switching the preference retints the whole shell.
-    readonly property color accent: Appearance.accent === "brand"
-        ? Theme.accent
-        : Workspace.accent
+    /// `Theme.accent` already resolves the preference (`system` reads the
+    /// desktop accent, `brand` keeps the app's teal), so the shell passes the
+    /// same colour down rather than deciding a second time.
+    readonly property color accent: Theme.accent
     /// Whether the active tab has somewhere to go back or forward to. The
     /// stacks live on the tab, so a torn-off window keeps its own.
     /// One switch for every Behavior in the shell. Qt 6 has no system-wide
@@ -373,6 +382,22 @@ Window {
         default: return Localize.message(text)
         }
     }
+    /// §7.3.3's left-hand sentence: `58 项 · 2 个文件夹 · 56 个文件`. The two
+    /// counts come from the same single pass that already fills the type
+    /// breakdown, so this line costs no extra walk. A listing that ended in an
+    /// error has no counts to show and keeps its status message instead.
+    function listingSummary(listing) {
+        if (!listing.finished)
+            return listing.loaded + qsTr(" 项 · 读取中…")
+        if (!/^\d+ items?$/.test(listing.status))
+            return root.localizeBackend(listing.status)
+        let text = qsTr("%1 项").arg(listing.loaded)
+        if (listing.folders > 0)
+            text += " · " + qsTr("%1 个文件夹").arg(listing.folders)
+        if (listing.files > 0)
+            text += " · " + qsTr("%1 个文件").arg(listing.files)
+        return text
+    }
     readonly property string sourceLabel: config === null ? ""
         : config.startupSource === "deepLink" ? qsTr("深链")
         : config.startupSource === "recent" ? qsTr("最近访问")
@@ -388,6 +413,75 @@ Window {
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
+
+    /// A word-and-glyph switch in the 28 dp status strip. §7.3.3 puts tags,
+    /// filters and the sidebar here; they share the existing pane switches'
+    /// focus, hover and checked language instead of growing three copies.
+    component StatusChip: Item {
+        id: chip
+
+        property string label: ""
+        property string glyph: "star"
+        property bool checked: false
+
+        signal activated()
+
+        width: chipRow.implicitWidth + 12
+        height: Theme.controlSm
+
+        Accessible.role: Accessible.Button
+        Accessible.name: chip.label
+        Accessible.onPressAction: chip.activated()
+
+        activeFocusOnTab: chip.visible
+        Keys.onReturnPressed: chip.activated()
+        Keys.onSpacePressed: chip.activated()
+
+        Rectangle {
+            anchors.fill: parent
+            visible: chip.activeFocus
+            color: "transparent"
+            border.width: 1
+            border.color: Theme.accent
+            radius: Theme.radiusXs
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radiusXs
+            color: chipMouse.containsMouse ? Theme.hover : "transparent"
+        }
+
+        Row {
+            id: chipRow
+            anchors.centerIn: parent
+            spacing: 4
+
+            Glyph {
+                anchors.verticalCenter: parent.verticalCenter
+                kind: chip.glyph
+                implicitWidth: 13
+                implicitHeight: 13
+                tint: chip.checked ? Theme.ink : Theme.inkTertiary
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: chip.label
+                color: chip.checked ? Theme.ink : Theme.inkTertiary
+                font.pixelSize: Theme.typeMicro
+                textFormat: Text.PlainText
+            }
+        }
+
+        MouseArea {
+            id: chipMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: chip.activated()
+        }
+    }
 
     Loader {
         id: configLoader
@@ -572,19 +666,15 @@ Window {
             root.insertTab(tab)
     }
 
-    /// A new tab inherits the current surface rather than always landing on a
-    /// folder. From Overview, a space or the recycle bin, the new tab shows
-    /// the same surface again.
+    /// §10.2's new tab: it lands on the folder the window is showing, not on
+    /// the start page. A surface tab (overview, space, recycle bin) still
+    /// knows its directory, so the new tab is a folder tab there too; only a
+    /// window that has never shown a folder falls back to the home directory.
     function addTabHere() {
-        if (root.overviewActive) {
-            root.addSurfaceTab("overview", "")
-        } else if (root.spaceActive) {
-            root.addSurfaceTab("space", root.activeSpaceId)
-        } else if (root.trashActive) {
-            root.addSurfaceTab("trash", "")
-        } else {
-            root.addTab(root.activePath)
-        }
+        let path = root.activeTab !== null ? root.activeTab.listing.path : ""
+        if (path === "")
+            path = Workspace.homeDirectory
+        root.addTab(path)
     }
 
     function addSurfaceTab(kind, id) {
@@ -944,6 +1034,38 @@ Window {
             root.activeIndex += 1
     }
 
+    /// A tab's chip label: the directory name, with its parent in front when
+    /// the pane shows the same name twice (§7.3.1). The second pane's strip
+    /// uses it, because it cannot reach the primary strip's helper.
+    function tabLabelOf(tab) {
+        if (tab === null || tab === undefined)
+            return ""
+        const text = String(tab.title || "")
+        const trimmed = text.replace(/[\\/]+$/, "")
+        const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
+        const name = cut < 0 ? trimmed : trimmed.substring(cut + 1)
+        if (name === "")
+            return text
+        for (let index = 0; index < root.splitTabs.length; index += 1) {
+            const other = root.splitTabs[index]
+            if (other === tab || other === null)
+                continue
+            const otherText = String(other.title || "").replace(/[\\/]+$/, "")
+            const otherCut = Math.max(otherText.lastIndexOf("/"),
+                                      otherText.lastIndexOf("\\"))
+            if ((otherCut < 0 ? otherText : otherText.substring(otherCut + 1)) === name) {
+                const parentCut = Math.max(trimmed.lastIndexOf("/"),
+                                           trimmed.lastIndexOf("\\"))
+                const parent = parentCut < 0 ? ""
+                    : String(tab.title).substring(0, parentCut).replace(/[\\/]+$/, "")
+                const parentName = parent.substring(Math.max(
+                    parent.lastIndexOf("/"), parent.lastIndexOf("\\")) + 1)
+                return parentName === "" ? name : parentName + " · " + name
+            }
+        }
+        return name
+    }
+
     function cycleTab(delta) {
         if (root.tabs.length < 2)
             return
@@ -1075,6 +1197,14 @@ Window {
             if (root.searchQuery !== "")
                 root.acceptSearchText("")
         }
+        // §11.4: each pane owns its path bar, so the editor opens in the pane
+        // the keyboard is in. Search stays with the primary pane, which is the
+        // one that owns the query.
+        if (root.splitActive && root.splitFocused && root.splitTab !== null) {
+            root.splitPathEditing = true
+            Qt.callLater(splitLocator.focusAddress)
+            return
+        }
         root.pathEditing = true
         // The field is only visible once `pathEditing` is on, and a hidden item
         // cannot take focus: wait for the state to settle before focusing.
@@ -1100,14 +1230,65 @@ Window {
     }
 
     function ensureSplitTab() {
-        if (root.splitTab === null) {
+        if (root.splitTabs.length === 0) {
             const tab = root.createTab(root.activePath)
             if (tab === null)
                 return
-            root.splitTab = tab
-        } else if (root.splitTab.listing.path === "" && root.activePath !== "") {
+            root.splitTabs = [tab]
+            root.splitActiveIndex = 0
+        } else if (root.splitTab !== null && root.splitTab.listing.path === ""
+                && root.activePath !== "") {
             root.splitTab.navigate(root.activePath)
         }
+    }
+
+    /// The second pane's `+`: a new tab at the same directory, like the
+    /// primary strip's plus.
+    function splitAddTab() {
+        if (!root.splitActive)
+            return
+        const tab = root.createTab(root.splitTab !== null
+            ? root.splitTab.listing.path : root.activePath)
+        if (tab === null)
+            return
+        const next = root.splitTabs.slice()
+        next.push(tab)
+        root.splitTabs = next
+        root.splitActiveIndex = next.length - 1
+        Qt.callLater(splitList.takeFocus)
+    }
+
+    function splitSelectTab(index) {
+        if (index < 0 || index >= root.splitTabs.length)
+            return
+        root.splitActiveIndex = index
+        root.splitPathEditing = false
+        Qt.callLater(splitList.takeFocus)
+    }
+
+    function splitCloseTab(index) {
+        if (index < 0 || index >= root.splitTabs.length)
+            return
+        const closing = root.splitTabs[index]
+        const next = root.splitTabs.slice()
+        next.splice(index, 1)
+        // A pane with no tabs is a pane with nothing to show: split view ends
+        // with its last tab, exactly like a window.
+        if (next.length === 0) {
+            if (closing)
+                closing.dispose()
+            root.splitTabs = []
+            root.splitActiveIndex = 0
+            ExplorerPrefs.setBool("splitEnabled", false)
+            return
+        }
+        root.splitTabs = next
+        if (root.splitActiveIndex >= next.length)
+            root.splitActiveIndex = next.length - 1
+        else if (root.splitActiveIndex > index)
+            root.splitActiveIndex -= 1
+        if (closing)
+            closing.dispose()
     }
 
     function applySplitPreference() {
@@ -1115,10 +1296,13 @@ Window {
             root.ensureSplitTab()
             return
         }
-        if (root.splitTab !== null) {
-            root.splitTab.dispose()
-            root.splitTab = null
+        for (let index = 0; index < root.splitTabs.length; index += 1) {
+            if (root.splitTabs[index])
+                root.splitTabs[index].dispose()
         }
+        root.splitTabs = []
+        root.splitActiveIndex = 0
+        root.splitPathEditing = false
         root.splitFocused = false
     }
 
@@ -1468,6 +1652,14 @@ Window {
         toast.show(message, false, true)
     }
 
+    /// §10.5: the clipboard chip is the one control that can drop what a menu
+    /// put there. It clears the in-app clipboard, which is the one dae pastes
+    /// from; the system clipboard belongs to the OS and is left alone.
+    function clearClipboard() {
+        Workspace.clearClipboard()
+        toast.show(qsTr("已清空剪贴板"), false)
+    }
+
     function acceptSearchText(value) {
         root.searchQuery = value
         root.scheduleSearch()
@@ -1558,9 +1750,29 @@ Window {
         const query = "tag:" + name
         root.openSearch()
         root.searchMode = "name"
-        root.searchScope = "volumes"
+        root.searchScope = "all"
         root.setSearchText(query)
         root.acceptSearchText(query)
+    }
+
+    /// The status bar's 标签 entry. With no selection the useful action is to
+    /// find files carrying a tag, which is exactly what `searchTag` does; with
+    /// a selection the row menu owns toggling, so this stays a filter door.
+    function openTagsMenu(anchor) {
+        let tags = []
+        try {
+            tags = JSON.parse(TagStore.tagsJson)
+        } catch (error) {
+            tags = []
+        }
+        const items = []
+        for (let index = 0; index < tags.length; index += 1)
+            items.push({ id: "tag:" + tags[index].name, label: tags[index].name })
+        if (items.length === 0)
+            items.push({ id: "tag:none", label: qsTr("尚无标签"), enabled: false })
+        tagsMenu.actions = items
+        const point = anchor.mapToItem(null, 0, 0)
+        tagsMenu.openAbove(point.x, point.y)
     }
 
     /// The filter row's "保存" chip. The name comes from the shell's one-line
@@ -1599,7 +1811,13 @@ Window {
             root.navigate(root.activePath)
         root.openSearch()
         root.searchMode = entry.mode === "content" ? "content" : "name"
-        root.searchScope = entry.scope ? entry.scope : "current"
+        root.searchScope = entry.scope ? entry.scope : "subfolders"
+        // A saved search from before the redesign spells the recursive scope
+        // `current`; the chip that owns it is 子文件夹 now.
+        if (root.searchScope === "current")
+            root.searchScope = "subfolders"
+        if (root.searchScope === "volumes")
+            root.searchScope = "all"
         root.searchType = entry.typeId ? entry.typeId : "all"
         root.searchFilter = entry.filter ? entry.filter : ""
         root.searchRegex = entry.regex === true
@@ -1848,10 +2066,12 @@ Window {
             if (root.tabs[index])
                 root.tabs[index].dispose()
         }
-        if (root.splitTab !== null) {
-            root.splitTab.dispose()
-            root.splitTab = null
+        for (let index = 0; index < root.splitTabs.length; index += 1) {
+            if (root.splitTabs[index])
+                root.splitTabs[index].dispose()
         }
+        root.splitTabs = []
+        root.splitActiveIndex = 0
         root.tabs = []
     }
 
@@ -2031,6 +2251,91 @@ Window {
         namePrompt.open(qsTr("重命名"), name, "")
     }
 
+    /// The mount a path lives on, spelled the way a user would say it:
+    /// `c:` for a drive, `\\server\share` for a UNC share, `/` elsewhere.
+    function volumeOf(path) {
+        const text = String(path || "")
+        const drive = /^([a-zA-Z]:)[\\/]/.exec(text)
+        if (drive)
+            return drive[1].toLowerCase()
+        if (text.indexOf("\\\\") === 0 || text.indexOf("//") === 0) {
+            const parts = text.split(/[\\/]+/)
+            return "//" + (parts[2] || "") + "/" + (parts[3] || "")
+        }
+        return "/"
+    }
+
+    /// §10.3's drag verdict: same volume moves, across volumes copies. It is
+    /// the same rule the OS applies when the drag offers both actions, so the
+    /// line under the drag ghost is a prediction, not a promise the drop can
+    /// contradict.
+    function dropVerdict(source, destination) {
+        if (source === undefined || destination === undefined
+                || source === "" || destination === "")
+            return "move"
+        return root.volumeOf(source) === root.volumeOf(destination) ? "move" : "copy"
+    }
+
+    /// §10.1's 按类型选择: one menu built from the families the listing
+    /// actually contains, so a folder with no images in it does not offer
+    /// "图片". A selection of zero is reported rather than silent.
+    function openSelectFamilyMenu() {
+        const list = root.actionList
+        if (list === null)
+            return
+        const families = list.familyList()
+        if (families.length === 0) {
+            toast.show(qsTr("这个文件夹没有可选的文件"), false)
+            return
+        }
+        const items = []
+        for (let index = 0; index < families.length; index += 1) {
+            items.push({
+                id: "family:" + families[index].id,
+                glyph: "file",
+                label: Localize.familyName(families[index].id),
+                shortcut: String(families[index].count)
+            })
+        }
+        const x = Math.max(8, Math.min(root.width - 200,
+            Shell.cursorLogicalX() - root.x))
+        const y = Math.max(8, Math.min(root.height - 80,
+            Shell.cursorLogicalY() - root.y))
+        menu.openAt(x, y, items)
+    }
+
+    /// §10.4: a name is edited in the row it belongs to. `list` is the pane the
+    /// request came from; a surface without rows (grid, column, overview) or a
+    /// network listing still needs a field somewhere, so that path keeps the
+    /// modal prompt as its fallback and nothing else changes.
+    function renameInList(list, path) {
+        if (path === "")
+            return
+        if (list !== null && list !== undefined)
+            list.requestRename(path)
+    }
+
+    /// §10.3: a drop on a breadcrumb segment or a tab. Both name a directory,
+    /// so they share the rule: same volume moves, anything else copies.
+    function dropFilesOnPath(paths, destination) {
+        if (!paths || paths.length === 0 || destination === "")
+            return
+        Workspace.transferEntries(paths, destination,
+                                  root.dropVerdict(paths[0], destination) === "move")
+    }
+
+    /// §10.3: a drop on a tab moves the files into the folder that tab shows.
+    /// A surface tab (overview, space, recycle bin) has no directory to take
+    /// them, so it refuses instead of guessing one.
+    function dropFilesOnTab(index, paths) {
+        if (index < 0 || index >= root.tabs.length)
+            return
+        const tab = root.tabs[index]
+        if (tab === null || !tab.folder || tab.listing.path === "")
+            return
+        root.dropFilesOnPath(paths, tab.listing.path)
+    }
+
     function promptSpaceCreate(addPath) {
         if (root.modalOpen)
             return
@@ -2112,9 +2417,15 @@ Window {
         } else if (id === "new-file") {
             root.promptCreateIn(root.activePath, false)
         } else if (id === "rename") {
-            const path = fileList.currentPath()
+            const list = root.splitActive && root.splitFocused ? splitList : fileList
+            const path = list.currentPath()
             if (path !== "")
-                root.promptRename(path, root.activeTab.listing.nameOf(path))
+                root.renameInList(list, path)
+        } else if (id === "invert-selection") {
+            if (root.actionList !== null)
+                root.actionList.invertSelection()
+        } else if (id === "select-by-type") {
+            root.openSelectFamilyMenu()
         } else if (id === "trash-selection") {
             if (!root.remoteLocation) {
                 const selection = root.currentSelection()
@@ -2672,6 +2983,84 @@ Window {
         inspector.showPaths(paths, several ? model.selectionBreakdown() : "")
     }
 
+    /// §8.3: F6's ring. Only regions that are on screen take turns, so a
+    /// window without an inspector or a terminal cycles between two stops
+    /// instead of parking focus on a hidden item.
+    function focusRegions() {
+        const regions = []
+        if (root.sidebarVisible)
+            regions.push("sidebar")
+        if (root.folderActive && !root.contentSearchActive)
+            regions.push("list")
+        if (root.splitActive)
+            regions.push("split")
+        if (root.inspectorVisible)
+            regions.push("inspector")
+        if (root.terminalActive)
+            regions.push("terminal")
+        return regions
+    }
+
+    /// Which region owns `item`, found by walking its parents. The window's
+    /// `activeFocusItem` is the only reliable answer: a list, a sidebar row and
+    /// a terminal can all hold focus, and each belongs to one of these roots.
+    /// The terminal lives in a loader, so it is matched by the item the loader
+    /// created rather than by an id inside the component.
+    function regionOf(item) {
+        const terminal = terminalLoader.item
+        let node = item
+        while (node !== null && node !== undefined) {
+            if (node === sidebar)
+                return "sidebar"
+            if (node === fileList)
+                return "list"
+            if (node === splitList)
+                return "split"
+            if (node === inspector)
+                return "inspector"
+            if (terminal !== null && node === terminal)
+                return "terminal"
+            node = node.parent
+        }
+        return ""
+    }
+
+    function focusRegion(name) {
+        if (name === "sidebar") {
+            sidebar.takeFocus()
+        } else if (name === "list") {
+            if (root.splitActive && root.splitFocused)
+                splitList.takeFocus()
+            else
+                fileList.takeFocus()
+        } else if (name === "split") {
+            root.splitFocused = true
+            splitList.takeFocus()
+        } else if (name === "inspector") {
+            inspector.takeFocus()
+        } else if (name === "terminal") {
+            if (terminalLoader.item !== null)
+                terminalLoader.item.focusTerminal()
+        }
+    }
+
+    /// Moves focus to the next (or previous) region in §8.3's order. Focus
+    /// that is nowhere in the ring — a dialog just closed, say — enters at the
+    /// first region rather than doing nothing.
+    function cycleFocus(backwards) {
+        const regions = root.focusRegions()
+        if (regions.length === 0)
+            return
+        let at = regions.indexOf(root.regionOf(root.activeFocusItem))
+        if (at < 0)
+            at = backwards ? 0 : regions.length - 1
+        const step = backwards ? -1 : 1
+        const next = regions[(at + step + regions.length) % regions.length]
+        if (next === "list")
+            root.splitFocused = false
+        root.focusRegion(next)
+    }
+
     /// Ctrl+I and the status bar button (proposal §11.5). Opening with no
     /// selection describes the directory rather than showing an empty pane.
     function toggleInspector() {
@@ -2724,6 +3113,42 @@ Window {
         if (items.length === 0)
             return
         root.contextTab = split ? root.splitTab : null
+        menu.openAt(x, y, items)
+    }
+
+    /// §7.2: a segment's `⌄` lists the directories beside it, so a jump to a
+    /// parallel branch costs one click instead of a trip up and back down.
+    /// The siblings come from the filesystem on demand; the current segment is
+    /// marked and does nothing.
+    function openSiblingsMenu(x, y, path, split) {
+        if (!path || path === "")
+            return
+        root.contextKind = "breadcrumb"
+        root.contextTab = split ? root.splitTab : null
+        // The parent of `path`: everything up to the last separator, kept with
+        // that separator so the children can be joined by name.
+        const trimmed = String(path).replace(/[\\/]+$/, "")
+        const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
+        const parent = cut < 0 ? "" : trimmed.substring(0, cut + 1)
+        const current = cut < 0 ? trimmed : trimmed.substring(cut + 1)
+        if (parent === "")
+            return
+        const names = Workspace.subdirectories(parent)
+        const items = []
+        for (let index = 0; index < names.length; index += 1) {
+            const name = String(names[index])
+            items.push({
+                id: "sibling:" + parent + name,
+                glyph: "folder",
+                label: name,
+                shortcut: name === current ? qsTr("当前") : "",
+                enabled: name !== current
+            })
+        }
+        if (items.length === 0) {
+            toast.show(qsTr("这个位置没有同级目录"), false)
+            return
+        }
         menu.openAt(x, y, items)
     }
 
@@ -2961,7 +3386,7 @@ Window {
             if (many)
                 bulkRenameDialog.open(paths)
             else
-                root.promptRename(first, first.split(/[\\/]/).pop())
+                root.renameInList(list, first)
             break
         case "trash":
             if (root.remoteLocation) {
@@ -3027,6 +3452,11 @@ Window {
             root.clearContext()
             return
         }
+        if (id.indexOf("sibling:") === 0) {
+            root.navigatePane(root.contextTab, id.substring("sibling:".length))
+            root.clearContext()
+            return
+        }
         // The installed apps' commands carry their own id after the prefix;
         // the selection captured by the menu is what they run on.
         if (id.indexOf("shell:") === 0) {
@@ -3044,6 +3474,18 @@ Window {
         }
         if (id.indexOf("hidePlace:") === 0) {
             Workspace.hidePlace(id.substring("hidePlace:".length))
+            root.clearContext()
+            return
+        }
+        // The palette's type menu: the id says which family, because the menu
+        // itself carries no state once it is open.
+        if (id.indexOf("family:") === 0) {
+            const list = root.actionList
+            if (list !== null) {
+                const count = list.selectFamily(id.substring("family:".length))
+                if (count === 0)
+                    toast.show(qsTr("没有这类文件"), false)
+            }
             root.clearContext()
             return
         }
@@ -3178,7 +3620,7 @@ Window {
             root.startExtractTo(path)
             break
         case "rename":
-            root.promptRename(path, path.split(/[\\/]/).pop())
+            root.renameInList(root.contextList, path)
             break
         case "ejectDrive":
             Workspace.ejectDrive(path)
@@ -3588,6 +4030,9 @@ Window {
                 onTabTornOff: function (index, globalX, globalY) {
                     root.detachTab(index, globalX, globalY)
                 }
+                onFilesDropped: function (index, paths) {
+                    root.dropFilesOnTab(index, paths)
+                }
             }
         }
 
@@ -3596,6 +4041,11 @@ Window {
             width: parent.width
             height: Theme.shellNav
             color: root.chromeColor
+            /// The address field's completion list hangs below the bar, so the
+            /// bar has to paint above the body that follows it in the column.
+            /// Without this the list is drawn under the column header, which
+            /// looks like a truncated popup rather than a covered one.
+            z: 20
 
             // The toolbar is a model, not a fixed row: every action is a
             // Loader over `toolbarLeadingItems`/`toolbarTrailingItems`, so a
@@ -3685,6 +4135,11 @@ Window {
                     accent: root.accent
                     textColor: root.textColor
                     mutedColor: root.mutedColor
+                    /// §11.4: the active pane's path bar carries the accent
+                    /// border, the inactive one the hairline. With one pane
+                    /// there is no "other" pane to distinguish, so the bar
+                    /// keeps its quiet frame.
+                    paneFocused: root.splitActive && !root.splitFocused
                     addressPath: root.activePath
                     searchMode: root.searchMode
                     searchBusy: root.searchBusy
@@ -3695,6 +4150,12 @@ Window {
                     }
                     onAncestorsRequested: function (x, y, names, paths) {
                         root.openBreadcrumbMenu(x, y, names, paths, false)
+                    }
+                    onSiblingsRequested: function (x, y, path) {
+                        root.openSiblingsMenu(x, y, path, false)
+                    }
+                    onFilesDropped: function (paths, path) {
+                        root.dropFilesOnPath(paths, path)
                     }
                     onContextMenuRequested: function (x, y) {
                         root.openBreadcrumbBarMenu(x, y, false)
@@ -4165,6 +4626,7 @@ Window {
             regex: root.searchRegex
             typeId: root.searchType
             scope: root.searchScope
+            indexAvailable: Workspace.searchIndexAvailable
             hasHistory: root.searchHistoryEntries.length > 0
             busy: root.searchBusy
             matchCount: root.searchMatchCount
@@ -4305,6 +4767,8 @@ Window {
                         searchModel: root.searchActive && root.activeTab !== null
                                      && root.searchMode === "name"
                                      ? root.activeTab.nameSearch : null
+                        searchQuery: root.searchQuery
+                        searchMode: root.searchMode
                         shortcutMap: root.shortcutMap
 
                         onNavigateRequested: function (path) {
@@ -4314,8 +4778,13 @@ Window {
                         onRenameRequested: function (path, name) {
                             root.promptRename(path, name)
                         }
+                        onRenameSubmitted: function (path, text) {
+                            Workspace.renameEntry(path, text)
+                        }
                         onCreateFolderRequested: root.promptCreate(true)
                         onClearSearchRequested: root.closeSearch()
+                        onContentSearchRequested: root.setSearchMode("content")
+                        onToastRequested: function(message) { toast.show(message, false) }
                         onContextRequested: function (path, isDir, x, y) {
                             root.showRowMenu(path, isDir, x, y)
                         }
@@ -4364,11 +4833,136 @@ Window {
                         anchors.bottom: parent.bottom
                         visible: root.splitActive
 
+                        /// §11.4: the pane's own tab strip. It is 30 dp, one
+                        /// row, and scrolls horizontally like the primary one;
+                        /// the chips name their directory and a middle click
+                        /// closes them.
+                        Rectangle {
+                            id: splitStrip
+                            width: parent.width
+                            height: 32
+                            color: root.chromeColor
+
+                            Row {
+                                id: splitStripRow
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+
+                                Repeater {
+                                    model: root.splitTabs
+
+                                    Rectangle {
+                                        id: splitChip
+                                        required property int index
+                                        required property var modelData
+
+                                        readonly property bool active:
+                                            root.splitActiveIndex === splitChip.index
+                                        readonly property string label:
+                                            root.tabLabelOf(splitChip.modelData)
+                                        width: Math.min(160,
+                                            Math.max(64, splitChipText.implicitWidth + 20))
+                                        height: 24
+                                        radius: Theme.radiusSm
+                                        color: active ? Theme.canvas
+                                            : (chipMouse.containsMouse ? Theme.hover : "transparent")
+
+                                        Accessible.role: Accessible.PageTab
+                                        Accessible.name: splitChip.modelData
+                                            ? splitChip.modelData.title : ""
+                                        Accessible.selectable: true
+                                        Accessible.selected: splitChip.active
+
+                                        Text {
+                                            id: splitChipText
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 8
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: splitChip.label
+                                            color: splitChip.active
+                                                ? root.textColor : root.mutedColor
+                                            font.pixelSize: Theme.typeCaption
+                                            font.weight: splitChip.active
+                                                ? Font.Medium : Font.Normal
+                                            elide: Text.ElideMiddle
+                                        }
+
+                                        ToolTip {
+                                            text: splitChip.modelData
+                                                ? String(splitChip.modelData.title) : ""
+                                        }
+
+                                        MouseArea {
+                                            id: chipMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                                            onClicked: function (mouse) {
+                                                if (mouse.button === Qt.MiddleButton)
+                                                    root.splitCloseTab(splitChip.index)
+                                                else
+                                                    root.splitSelectTab(splitChip.index)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Item {
+                                    width: 20
+                                    height: 20
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: Theme.radiusXs
+                                        color: splitPlusMouse.containsMouse
+                                            ? Theme.hover : "transparent"
+                                    }
+
+                                    Glyph {
+                                        anchors.centerIn: parent
+                                        width: 12
+                                        height: 12
+                                        kind: "plus"
+                                        tint: splitPlusMouse.containsMouse
+                                            ? root.textColor : Theme.inkSecondary
+                                    }
+
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("在此窗格新建标签页")
+                                    Accessible.onPressAction: root.splitAddTab()
+
+                                    MouseArea {
+                                        id: splitPlusMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onClicked: root.splitAddTab()
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: Theme.ruleWidth(Screen.devicePixelRatio)
+                                color: root.hairline
+                            }
+                        }
+
                         Rectangle {
                             id: splitPathBar
+                            anchors.top: splitStrip.bottom
                             width: parent.width
-                            height: Theme.controlLg
+                            height: Theme.shellNav
                             color: root.chromeColor
+                            /// Same rule as the primary bar: the pane's field
+                            /// completion list hangs over the pane's list.
+                            z: 20
 
                             Text {
                                 id: splitClose
@@ -4381,48 +4975,41 @@ Window {
                                 font.pixelSize: Theme.typeBody
                             }
 
-                            // The second pane names its own directory the same
-                            // way the first one does; a bare path string here
-                            // would be the only place in the window where the
-                            // trail is missing.
-                            //
-                            // Declared after the bar's own click area: later
-                            // siblings paint on top, and crumbs the click
-                            // target covered would never receive their clicks.
                             MouseArea {
-                                Accessible.role: Accessible.Button
-                                Accessible.name: qsTr("路径栏")
-                                anchors.fill: parent
+                                id: splitCloseMouse
+                                anchors.right: splitClose.right
+                                anchors.rightMargin: -6
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: splitClose.width + 12
+                                height: splitClose.height + 12
                                 hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                onClicked: function (mouse) {
-                                    if (mouse.button === Qt.RightButton) {
-                                        const point = mapToItem(null, mouse.x, mouse.y)
-                                        root.openBreadcrumbBarMenu(point.x, point.y, true)
-                                    } else if (splitCloseMouse.containsMouse) {
-                                        ExplorerPrefs.setBool("splitEnabled", false)
-                                    } else {
-                                        splitList.takeFocus()
-                                    }
-                                }
+                                acceptedButtons: Qt.LeftButton
+                                onClicked: ExplorerPrefs.setBool("splitEnabled", false)
+
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("关闭分屏")
                             }
 
+                            /// The pane's own locator: a breadcrumb trail, the
+                            /// `⌄` sibling menus, the address editor and the
+                            /// segment drop targets, all against the pane's
+                            /// path instead of the primary tab's (§11.4).
                             Locator {
+                                id: splitLocator
                                 anchors.left: parent.left
                                 anchors.leftMargin: 8
                                 anchors.right: splitClose.left
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                height: Theme.controlSm
-                                // The split pane keeps a read-only trail: the
-                                // left click still belongs to the pane's focus
-                                // target.
-                                framed: false
-                                interactive: false
+                                height: Theme.controlLg
+                                mode: root.splitPathEditing ? "address" : "breadcrumb"
+                                paneFocused: root.splitFocused
                                 names: root.splitTab !== null
                                     ? root.splitTab.listing.breadcrumbNames : []
                                 paths: root.splitTab !== null
                                     ? root.splitTab.listing.breadcrumbPaths : []
+                                addressPath: root.splitTab !== null
+                                    ? root.splitTab.listing.path : ""
                                 dark: root.dark
                                 textColor: root.textColor
                                 mutedColor: root.mutedColor
@@ -4434,23 +5021,24 @@ Window {
                                 onAncestorsRequested: function (x, y, names, paths) {
                                     root.openBreadcrumbMenu(x, y, names, paths, true)
                                 }
+                                onSiblingsRequested: function (x, y, path) {
+                                    root.openSiblingsMenu(x, y, path, true)
+                                }
+                                onFilesDropped: function (paths, path) {
+                                    root.dropFilesOnPath(paths, path)
+                                }
                                 onContextMenuRequested: function (x, y) {
                                     root.openBreadcrumbBarMenu(x, y, true)
                                 }
-                            }
-
-                            MouseArea {
-                                id: splitCloseMouse
-                                x: splitClose.x - 6
-                                y: splitClose.y - 6
-                                width: splitClose.width + 12
-                                height: splitClose.height + 12
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton
-                                onClicked: ExplorerPrefs.setBool("splitEnabled", false)
-
-                                Accessible.role: Accessible.Button
-                                Accessible.name: qsTr("关闭分屏")
+                                onAddressRequested: {
+                                    root.splitFocused = true
+                                    root.splitPathEditing = true
+                                }
+                                onAddressAccepted: function (path) {
+                                    root.splitPathEditing = false
+                                    root.navigateSplit(path)
+                                }
+                                onAddressCanceled: root.splitPathEditing = false
                             }
 
                             Rectangle {
@@ -4478,6 +5066,9 @@ Window {
                             onUpRequested: root.goUpSplit()
                             onRenameRequested: function (path, name) {
                                 root.promptRename(path, name)
+                            }
+                            onRenameSubmitted: function (path, text) {
+                                Workspace.renameEntry(path, text)
                             }
                             onCreateFolderRequested: root.promptCreateIn(
                                 root.splitTab !== null ? root.splitTab.listing.path : "", true)
@@ -4555,48 +5146,11 @@ Window {
                         }
                     }
 
-                    /// §11.4: the active pane is an accent outline; the other
-                    /// pane is the hairline the window already uses. The outline
-                    /// sits above the list and below menus, and never eats a
-                    /// click.
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: root.splitActive ? splitDivider.x : 0
-                        visible: root.splitActive && !root.contentSearchActive
-                        color: "transparent"
-                        border.width: root.splitFocused ? 1 : 0
-                        border.color: root.hairline
-                        z: 40
-                        Accessible.ignored: true
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: root.splitActive && !root.splitFocused ? splitDivider.x : 0
-                        visible: width > 0 && !root.contentSearchActive
-                        color: "transparent"
-                        border.width: 1.5
-                        border.color: Theme.accent
-                        z: 41
-                        Accessible.ignored: true
-                    }
-
-                    Rectangle {
-                        anchors.left: splitDivider.right
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        visible: root.splitActive && !root.contentSearchActive
-                        color: "transparent"
-                        border.width: root.splitFocused ? 1.5 : 0
-                        border.color: root.splitFocused ? Theme.accent : root.hairline
-                        z: 40
-                        Accessible.ignored: true
-                    }
+                    // §11.4: the active pane is marked by its path bar's
+                    // accent border rather than by an outline around the whole
+                    // pane. A pane-wide frame doubled every row's own edge and
+                    // read as a second selection. `paneFocused` on each Locator
+                    // carries the state.
 
                     ContentResults {
                         anchors.fill: parent
@@ -4717,6 +5271,7 @@ Window {
                     id: terminalPanelComponent
 
                     TerminalPanel {
+                        id: terminalPanel
                         width: parent ? parent.width : 0
                         active: root.folderActive && root.terminalActive
                         tab: root.activeTab
@@ -4873,11 +5428,7 @@ Window {
                     const listing = root.activeTab.listing
                     if (Workspace.busy && Workspace.progressLabel !== "")
                         return root.localizeBackend(Workspace.progressLabel)
-                    const base = listing.finished
-                        ? root.localizeBackend(listing.status)
-                        : (listing.loaded + qsTr(" 项 · 读取中…"))
-                    if (fileList.selectionCount > 0)
-                        return base + " · " + qsTr("已选 %1 项").arg(fileList.selectionCount)
+                    const base = root.listingSummary(listing)
                     return base
                 }
                 color: Theme.inkSecondary
@@ -4891,7 +5442,8 @@ Window {
 
             /// What is on the clipboard, while something is. The in-app
             /// clipboard outlives the menu that filled it, so the footer is the
-            /// only place that says a paste is still possible.
+            /// only place that says a paste is still possible — and, per
+            /// §10.5, the place to clear it.
             Row {
                 id: clipboardChip
                 anchors.left: statusText.right
@@ -4900,6 +5452,17 @@ Window {
                 visible: Workspace.clipboardMode !== "" && root.width > 900
                 spacing: 5
 
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("剪贴板 %1 项，点击清空").arg(
+                    clipboardCount)
+                Accessible.onPressAction: root.clearClipboard()
+
+                /// QStringList exposes `.length` to QML; qmllint's type model
+                /// does not (same caveat as the transfer chip).
+                // qmllint disable missing-property
+                readonly property int clipboardCount: Workspace.clipboardPaths.length
+                // qmllint enable missing-property
+
                 Rectangle {
                     width: 6
                     height: 12
@@ -4907,17 +5470,44 @@ Window {
                 }
 
                 Text {
-                    /// QStringList exposes `.length` to QML; qmllint's type
-                    /// model does not (same caveat as the transfer chip).
-                    // qmllint disable missing-property
-                    text: qsTr("剪贴板") + " " + Workspace.clipboardPaths.length
+                    text: qsTr("剪贴板") + " " + clipboardChip.clipboardCount
                         + " · " + (Workspace.clipboardMode === "cut"
                                    ? qsTr("剪切") : qsTr("复制"))
-                    // qmllint enable missing-property
-                    color: Theme.inkSecondary
+                    color: clipboardHover.hovered
+                        ? Theme.ink : Theme.inkSecondary
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.typeCaption
                     font.features: { "tnum": 1 }
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 12
+                    height: 12
+                    visible: clipboardHover.hovered
+                    color: "transparent"
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 9
+                        height: 9
+                        kind: "close"
+                        tint: Theme.inkSecondary
+                    }
+                }
+
+                ToolTip { text: qsTr("清空剪贴板") }
+
+                /// Handlers, not a MouseArea: a positioner may not lay out a
+                /// child that fills its parent, and the chip is a `Row`.
+                HoverHandler {
+                    id: clipboardHover
+                    cursorShape: Qt.PointingHandCursor
+                }
+
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: root.clearClipboard()
                 }
             }
 
@@ -4929,31 +5519,6 @@ Window {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 onOpenRequested: function (x, y) { transferQueue.openAbove(x, y) }
-            }
-
-            /// The block cursor at the end of the strip. drift ends its footer
-            /// with one, and it is the only moving thing in the frame: a
-            /// reminder that the listing takes typing (type-ahead, the search
-            /// bar) without spending a word on saying so.
-            Rectangle {
-                id: statusCursor
-                anchors.right: statusRight.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: 7
-                height: 13
-                color: Theme.accent
-
-                /// Reduced motion turns the blink off rather than shortening
-                /// it: a cursor that fades in 110 ms still blinks.
-                SequentialAnimation on opacity {
-                    running: Theme.motion
-                    loops: Animation.Infinite
-                    NumberAnimation { to: 0; duration: 1 }
-                    PauseAnimation { duration: 550 }
-                    NumberAnimation { to: 1; duration: 1 }
-                    PauseAnimation { duration: 550 }
-                }
             }
 
             // ── Right: repository and pane switches ───────────────────────
@@ -5106,6 +5671,48 @@ Window {
                     visible: gitStatus.visible
                 }
 
+                // §7.3.3: tags, filters and the sidebar are status-bar
+                // entries, not view-menu secrets. They only make sense over a
+                // real listing, so the overview, a space and the bin keep
+                // their own footers.
+                StatusChip {
+                    id: tagsStatus
+                    label: qsTr("标签")
+                    glyph: "star"
+                    visible: root.folderActive && !root.remoteLocation
+                    onActivated: root.openTagsMenu(tagsStatus)
+                }
+
+                StatusChip {
+                    id: filtersStatus
+                    label: qsTr("筛选")
+                    glyph: "filter"
+                    checked: filterMenu.active
+                    visible: root.folderActive
+                    onActivated: {
+                        const point = filtersStatus.mapToItem(null, 0, 0)
+                        filterMenu.openAbove(point.x, point.y)
+                    }
+                }
+
+                StatusChip {
+                    id: sidebarStatus
+                    label: qsTr("侧栏")
+                    glyph: "panel"
+                    checked: root.sidebarVisible
+                    visible: root.folderActive
+                    onActivated: root.sidebarVisible = !root.sidebarVisible
+                }
+
+                Rectangle {
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
+                    height: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.hairline
+                    visible: tagsStatus.visible || filtersStatus.visible
+                        || sidebarStatus.visible
+                }
+
                 Item {
                     id: inspectorToggle
                     width: inspectorToggleRow.implicitWidth + 12
@@ -5240,6 +5847,7 @@ Window {
             visible: root.actionActive
             background: root.chromeColor
             count: root.actionCount
+            sizeText: root.actionList !== null ? root.actionList.selectionSizeText : ""
             remote: root.remoteLocation
             clipboardReady: Workspace.clipboardMode !== ""
 
@@ -5355,6 +5963,20 @@ Window {
         }
     }
 
+    /// The status bar's tag filter. One row per defined tag; choosing one runs
+    /// the same `tag:` search the inspector's tag list uses, so there is one
+    /// meaning of "show me this tag" in the shell.
+    Menu {
+        id: tagsMenu
+        anchors.fill: parent
+        dark: root.dark
+
+        onActionTriggered: function (id) {
+            if (id.indexOf("tag:") === 0 && id !== "tag:none")
+                root.searchTag(id.substring(4))
+        }
+    }
+
     /// The filter row's type categories. It is its own menu rather than a row
     /// of chips because the catalogue is six entries long and the bar has to
     /// stay one row; the entries are the categories the backend already
@@ -5380,17 +6002,20 @@ Window {
     }
 
     Shortcut {
-        sequence: "Ctrl+1"
+        sequence: root.shortcutSequence("explorer.viewList")
+        enabled: !root.modalOpen && sequence !== ""
         onActivated: ExplorerPrefs.setString("viewMode", "list")
     }
 
     Shortcut {
-        sequence: "Ctrl+2"
+        sequence: root.shortcutSequence("explorer.viewGrid")
+        enabled: !root.modalOpen && sequence !== ""
         onActivated: ExplorerPrefs.setString("viewMode", "grid")
     }
 
     Shortcut {
-        sequence: "Ctrl+3"
+        sequence: root.shortcutSequence("explorer.viewColumn")
+        enabled: !root.modalOpen && sequence !== ""
         onActivated: ExplorerPrefs.setString("viewMode", "column")
     }
 
@@ -5411,22 +6036,21 @@ Window {
     }
 
     Shortcut {
-        /// §11.4 gives F6 to "move to the other pane" whenever both panes
-        /// show a folder, so this binding yields: a stored F6 is read as
-        /// Shift+F6 here (with two panes the reverse cycle is the same
-        /// toggle), while any other user binding is left alone.
-        sequence: {
-            const stored = root.shortcutSequence("explorer.switchPane")
-            return (root.splitTransferActive && stored === "F6") ? "Shift+F6" : stored
-        }
-        enabled: root.splitTransferActive && sequence !== ""
-        onActivated: {
-            root.splitFocused = !root.splitFocused
-            if (root.splitFocused)
-                splitList.takeFocus()
-            else
-                fileList.takeFocus()
-        }
+        /// §8.3 / §10.2: F6 cycles the window's regions — sidebar, listing,
+        /// the second pane, inspector, terminal — and Shift+F6 walks the same
+        /// ring backwards. The old behaviour (toggle the split panes) only
+        /// worked while split view was on; the ring includes the second pane,
+        /// so both panes are still one key apart.
+        sequence: root.shortcutSequence("explorer.switchPane")
+        enabled: !root.modalOpen && !root.pathEditing && !root.splitPathEditing
+            && sequence !== ""
+        onActivated: root.cycleFocus(false)
+    }
+
+    Shortcut {
+        sequence: "Shift+F6"
+        enabled: !root.modalOpen && !root.pathEditing && !root.splitPathEditing
+        onActivated: root.cycleFocus(true)
     }
 
     Shortcut {
@@ -5458,8 +6082,11 @@ Window {
         onActivated: root.transferToOtherPane("copy")
     }
 
+    // F6 belongs to the focus ring above (§10.2). The old "move to the other
+    // pane" gesture moves to Ctrl+F5, which keeps the verb reachable without
+    // fighting the cycle.
     Shortcut {
-        sequence: "F6"
+        sequence: "Ctrl+F5"
         enabled: root.splitTransferActive
         onActivated: root.transferToOtherPane("cut")
     }
@@ -6360,6 +6987,15 @@ Window {
             // directory the user was on, not to the one now shown.
             root.pathEditing = false
             root.applyRemotePolicy()
+        }
+
+        function onSplitActiveIndexChanged() {
+            root.splitPathEditing = false
+        }
+
+        function onSplitActiveChanged() {
+            if (!root.splitActive)
+                root.splitPathEditing = false
         }
 
         function onTrashActiveChanged() {

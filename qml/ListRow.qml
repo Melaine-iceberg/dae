@@ -117,14 +117,20 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        visible: row.flash
+        /// §7.1.7: the one-shot paste/create highlight. Fading needs a value
+        /// that changes, so opacity carries the flash; `visible` also follows
+        /// the property because an `OpacityAnimator` only commits it when the
+        /// animation finishes — waiting on the committed value alone would cut
+        /// the fade-out off. The animator runs on the render thread (§6.6).
+        opacity: row.flash ? 1 : 0
+        visible: row.flash || opacity > 0
         radius: Theme.radiusSm
         color: Theme.accentSoftStrong
         Accessible.ignored: true
 
         Behavior on opacity {
             enabled: Theme.motion
-            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            OpacityAnimator { duration: 160; easing.type: Easing.OutCubic }
         }
     }
 

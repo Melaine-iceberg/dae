@@ -295,7 +295,6 @@ Item {
                     color: Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
-                    font.letterSpacing: 0.4
                 }
 
                 Flow {
@@ -382,7 +381,6 @@ Item {
                         color: Theme.inkTertiary
                         font.pixelSize: Theme.typeMicro
                         font.weight: Font.Medium
-                        font.letterSpacing: 0.4
                     }
 
                     Repeater {

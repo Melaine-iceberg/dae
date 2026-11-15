@@ -23,7 +23,7 @@ Item {
     opacity: visible ? 1 : 0
     Behavior on opacity {
         enabled: Theme.motion
-        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+        OpacityAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
     focus: visible
     z: 1003
@@ -107,7 +107,6 @@ Item {
                 text: qsTr("状态中心")
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
-                font.letterSpacing: 0.55
             }
 
             Row {

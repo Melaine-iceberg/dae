@@ -150,9 +150,9 @@ FocusScope {
                 height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.field
-                border.width: 1
+                border.width: passwordInput.activeFocus ? 1.5 : 1
                 border.color: passwordInput.activeFocus
-                    ? Theme.focusRing
+                    ? Theme.accent
                     : Theme.hairline
 
                 TextInput {
@@ -197,9 +197,9 @@ FocusScope {
                 height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.field
-                border.width: 1
+                border.width: confirmInput.activeFocus ? 1.5 : 1
                 border.color: confirmInput.activeFocus
-                    ? Theme.focusRing
+                    ? Theme.accent
                     : Theme.hairline
 
                 TextInput {

@@ -209,9 +209,9 @@ FocusScope {
                     height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: root.fieldColor
-                    border.width: 1
+                    border.width: pathInput.activeFocus ? 1.5 : 1
                     border.color: pathInput.activeFocus
-                        ? Theme.focusRing
+                        ? Theme.accent
                         : root.hairline
 
                     TextInput {

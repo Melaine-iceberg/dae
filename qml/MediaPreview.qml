@@ -18,6 +18,9 @@ Item {
     property color mutedColor: Theme.inkSecondary
     property color sectionColor: Theme.inset
     property color hairline: Theme.hairline
+    /// The play triangle sits on an accent plate, so its ink has to follow the
+    /// resolved accent rather than stay white (§6.1.4).
+    readonly property color playInk: Theme.onAccent
 
     property bool muted: false
     /// True once playback has started, so the poster steps aside for the
@@ -159,14 +162,13 @@ Item {
                 onSourceChanged: if (source === "") hadPoster = false
             }
 
-            /// No poster, no album art: the sheet is what the player has to
-            /// show. Drawn at 44 dp so the waveform inside it still reads.
-            DriftSheet {
+            /// No poster, no album art: the family glyph is what the player
+            /// has to show. Drawn at 44 dp so the family mark reads.
+            FileIcon {
                 visible: !root.video
                 anchors.centerIn: parent
-                width: 44
+                edge: 44
                 category: "audio"
-                detail: true
             }
 
             Item {
@@ -195,7 +197,7 @@ Item {
                         context.lineTo(16, 10)
                         context.lineTo(0, 20)
                         context.closePath()
-                        context.fillStyle = "#ffffff"
+                        context.fillStyle = root.playInk.toString()
                         context.fill()
                     }
                 }
@@ -227,7 +229,7 @@ Item {
                 width: parent.width - 24
                 visible: root.failureText !== ""
                 text: root.failureText
-                color: "#e06c75"
+                color: Theme.danger
                 font.pixelSize: Theme.typeMicro
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
@@ -324,7 +326,7 @@ Item {
                         context.lineTo(9, 5.5)
                         context.lineTo(0, 11)
                         context.closePath()
-                        context.fillStyle = "#ffffff"
+                        context.fillStyle = root.playInk.toString()
                         context.fill()
                     }
                 }

@@ -117,6 +117,9 @@ function line(value) {
     case "Invalid search expression": return qsTr("搜索表达式无效")
     case "Loading…": return qsTr("读取中…")
     case "Loading folder…": return qsTr("读取文件夹…")
+    case "Opening as administrator…": return qsTr("以管理员身份打开…")
+    case "Opening as administrator is only available for local folders":
+        return qsTr("只有本地文件夹可以以管理员身份重试")
     case "No subfolders": return qsTr("没有子文件夹")
     case "Folder": return qsTr("文件夹")
     case "File": return qsTr("文件")

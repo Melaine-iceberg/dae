@@ -52,7 +52,6 @@ Item {
             color: Theme.inkTertiary
             font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
-            font.letterSpacing: 0.55
         }
 
         Text {
@@ -66,12 +65,16 @@ Item {
     }
 
     Text {
-        anchors.centerIn: parent
+        x: 24
+        y: 24
+        width: Math.min(parent.width - 48, 420)
         visible: root.model !== null && root.model.finished && root.model.loaded === 0
         text: root.model !== null && root.model.status !== ""
             ? Localize.message(root.model.status) : qsTr("没有匹配内容")
-        color: root.mutedColor
+        color: Theme.inkSecondary
         font.pixelSize: Theme.typeBody
+        wrapMode: Text.Wrap
+        lineHeight: Theme.leadingBody
     }
 
     ListView {

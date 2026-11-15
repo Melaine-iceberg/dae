@@ -340,7 +340,7 @@ FocusScope {
                                 id: replaceLabel
                                 anchors.centerIn: parent
                                 text: qsTr("替换")
-                                color: Theme.onAccent
+                                color: root.applyToAll ? Theme.onDanger : Theme.onAccent
                                 font.pixelSize: Theme.typeCaption
                             }
 

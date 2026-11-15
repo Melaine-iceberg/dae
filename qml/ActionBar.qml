@@ -18,6 +18,10 @@ Item {
 
     /// Rows selected in the listing this bar acts on.
     property int count: 0
+    /// The selected files' total, already formatted by the model. Empty when
+    /// nothing measurable is selected (a folders-only selection), in which
+    /// case the summary is the count alone rather than a made-up `0 B`.
+    property string sizeText: ""
     /// The listing is on a network backend: local-only verbs are disabled and
     /// 删除 becomes the permanent-delete confirmation.
     property bool remote: false
@@ -147,7 +151,8 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        text: qsTr("已选 %1 项").arg(bar.count)
+        text: qsTr("%1 项").arg(bar.count)
+            + (bar.sizeText !== "" ? " · " + bar.sizeText : "")
         color: Theme.inkSecondary
         font.family: Theme.monoFamily
         font.pixelSize: Theme.typeCaption

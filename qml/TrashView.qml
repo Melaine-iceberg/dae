@@ -439,7 +439,6 @@ Item {
                 color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
-                font.letterSpacing: 0.55
                 elide: Text.ElideRight
             }
 
@@ -450,7 +449,6 @@ Item {
                 color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
-                font.letterSpacing: 0.55
                 elide: Text.ElideRight
             }
 
@@ -461,7 +459,6 @@ Item {
                 color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
-                font.letterSpacing: 0.55
             }
 
             Text {
@@ -471,7 +468,6 @@ Item {
                 color: Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
-                font.letterSpacing: 0.55
             }
         }
     }
@@ -483,7 +479,6 @@ Item {
         anchors.bottom: actionBar.top
         visible: root.model !== null && root.model.loaded
                  && root.model.error === "" && root.model.count === 0
-        glyph: "trash"
         title: qsTr("回收站为空")
         hint: qsTr("删除的文件会先放在这里，可以随时还原。")
     }
@@ -744,7 +739,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? Theme.onSolid
+            color: button.danger ? Theme.onDanger
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: Theme.typeMicro
         }

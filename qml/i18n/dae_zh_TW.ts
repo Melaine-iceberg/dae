@@ -1316,6 +1316,71 @@
         <translation>沒有符合項</translation>
     </message>
     <message>
+        <location filename="../FileList.qml" line="343"/>
+        <source>没有匹配“%1”的文件</source>
+        <translation>沒有符合「%1」的檔案</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="356"/>
+        <source>在此文件夹中搜索内容</source>
+        <translation>在此資料夾中搜尋內容</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="347"/>
+        <source>无法读取这个文件夹</source>
+        <translation>無法讀取此資料夾</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="344"/>
+        <source>这个位置已不存在</source>
+        <translation>此位置已不存在</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="356"/>
+        <source>返回到上一级</source>
+        <translation>返回上一層</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="355"/>
+        <source>重新连接</source>
+        <translation>重新連線</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="365"/>
+        <source>复制错误详情</source>
+        <translation>複製錯誤詳情</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1580"/>
+        <source>链接已失效</source>
+        <translation>連結已失效</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1581"/>
+        <source>只读，无写入权限</source>
+        <translation>唯讀，無寫入權限</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="1665"/>
+        <source>正在传输</source>
+        <translation>正在傳輸</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml" line="2433"/>
+        <source>错误详情已复制</source>
+        <translation>錯誤詳情已複製</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js" line="119"/>
+        <source>以管理员身份打开…</source>
+        <translation>以管理員身分開啟…</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js" line="121"/>
+        <source>只有本地文件夹可以以管理员身份重试</source>
+        <translation>只有本機資料夾可以管理員身分重試</translation>
+    </message>
+    <message>
         <location filename="../FileList.qml" line="179"/>
         <source>文件夹</source>
         <translation>資料夾</translation>
@@ -4197,8 +4262,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="176"/>
-        <source>信号橙</source>
-        <translation>訊號橙</translation>
+        <source>青蓝</source>
+        <translation>青藍</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="180"/>
@@ -4748,8 +4813,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="714"/>
-        <source>“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。</source>
-        <translation>“系統”讀取桌面輔色，“訊號橙”使用應用自帶的訊號色。</translation>
+        <source>“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。</source>
+        <translation>「系統」讀取桌面強調色，「青藍」使用應用自帶的強調色。</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="740"/>
@@ -4770,6 +4835,11 @@
         <location filename="../SettingsPanel.qml" line="186"/>
         <source>亚克力 (Acrylic)</source>
         <translation>壓克力 (Acrylic)</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="186"/>
+        <source>不透明</source>
+        <translation>不透明</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="194"/>
@@ -4820,8 +4890,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="856"/>
-        <source>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</source>
-        <translation>Mica 從桌面桌布取色，Acrylic 實時模糊身後的視窗。預設 Mica；系統不支援或關閉透明效果時視窗回退為實色。</translation>
+        <source>Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。</source>
+        <translation>Mica 從桌布取色，Acrylic 即時模糊；選擇材質會開啟背景效果，預設不透明。</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="1243"/>

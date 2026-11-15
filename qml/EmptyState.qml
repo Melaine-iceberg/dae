@@ -1,16 +1,16 @@
 import QtQuick
 
-// The one empty state: icon, title, hint, and up to two text actions.
+// The one empty state (§10.8): a left-aligned sentence, an optional reason,
+// and one or two text actions.
 //
-// Every view used to compose its own version — a muted sentence here, a
-// two-line column there — so the same "folder is empty" moment had three
-// different weights. The parts below are the whole grammar from
-// docs/ui-instrument-migration.md §6.5: an icon, a name, a quiet explanation,
-// and actions that are only ever text in the signal colour.
+// The icon, the centred headline and the decorative glyph that used to live
+// here are gone. A file manager's empty folder is not a moment to illustrate;
+// it is a place to say what happened and offer the next step. The block sits
+// at the content's top-left rather than the middle of the viewport so the
+// blank area below it does not become the subject.
 Item {
     id: root
 
-    property string glyph: "folder"
     property string title: ""
     property string hint: ""
     property string primaryLabel: ""
@@ -25,31 +25,20 @@ Item {
     Column {
         id: content
 
-        anchors.centerIn: parent
-        width: Math.min(parent.width - 48, 380)
-        spacing: 2
-
-        Glyph {
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 28
-            height: Theme.controlMd
-            kind: root.glyph
-            tint: Theme.inkSecondary
-        }
-
-        Item {
-            width: 1
-            height: 8
-        }
+        x: 24
+        y: 24
+        width: Math.max(0, Math.min(parent.width - 48, 420))
+        spacing: 8
 
         Text {
             width: parent.width
+            visible: root.title !== ""
             text: root.title
-            color: Theme.ink
+            color: Theme.inkSecondary
             font.pixelSize: Theme.typeBody
-            horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
+            lineHeight: Theme.leadingBody
         }
 
         Text {
@@ -58,27 +47,26 @@ Item {
             text: root.hint
             color: Theme.inkTertiary
             font.pixelSize: Theme.typeCaption
-            horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            lineHeight: Theme.leadingProse
+            lineHeight: Theme.leadingBody
         }
 
         Item {
             width: 1
-            height: 10
+            height: 2
             visible: actions.visible
         }
 
         Row {
             id: actions
 
-            anchors.horizontalCenter: parent.horizontalCenter
             spacing: 18
             visible: root.primaryLabel !== "" || root.secondaryLabel !== ""
 
             TextButton {
                 visible: root.primaryLabel !== ""
+                primary: true
                 label: root.primaryLabel
                 onClicked: root.primaryClicked()
             }
@@ -95,6 +83,7 @@ Item {
         id: button
 
         property string label: ""
+        property bool primary: false
 
         signal clicked()
 
@@ -108,7 +97,7 @@ Item {
             id: labelText
             anchors.centerIn: parent
             text: button.label
-            color: Theme.accent
+            color: button.primary ? Theme.accent : Theme.inkSecondary
             font.pixelSize: Theme.typeCaption
             font.underline: buttonMouse.containsMouse
             textFormat: Text.PlainText
