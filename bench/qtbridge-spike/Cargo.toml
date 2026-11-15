@@ -1,0 +1,14 @@
+[package]
+name = "qtbridge_spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Feasibility gate for the Qt Bridge migration: engine access, C++ QML types and the abstract item model"
+
+[dependencies]
+qtbridge = "0.4.1"
+
+[build-dependencies]
+cc = "1"
+
+[workspace]
