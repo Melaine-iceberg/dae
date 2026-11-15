@@ -1,6 +1,6 @@
 # Qt Bridge 迁移执行手册
 
-> **状态：进行中。** 分支 `feat/qtbridge`，已有 3 个提交，4 个 QObject 已迁移并通过
+> **状态：进行中。** 分支 `feat/qtbridge`，已有 4 个提交，4 个 QObject 已迁移并通过
 > 构建、单元测试和整机启动验证；其余约 20 个 QObject、`main.rs` 和 `cxx-qt-build`
 > 的移除尚未完成。本文是给下一次对话直接执行用的，不需要上一次对话的上下文。
 
@@ -14,6 +14,7 @@
 | `9988d08` | 可行性闸门 `bench/qtbridge-spike`（三个 C++ 结合点 + 抽象模型 + 自建 build.rs） |
 | `6a68e6d` | `Startup`、`Session`、`TagStore` → qtbridge |
 | `ed5f4f8` | `AppConfig` → qtbridge（保留 C++ extern 的混合形态） |
+| `c2403c0` | 本文档 |
 
 ## 0. 三条硬约束（先读，决定后面所有写法）
 
