@@ -44,6 +44,10 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         #[rust_name = "register_file_glyph_provider"]
         unsafe fn dae_qt_register_file_glyph_provider(engine: *mut QQmlApplicationEngine);
+
+        #[namespace = "dae_qt"]
+        #[rust_name = "register_glyph_provider"]
+        unsafe fn dae_qt_register_glyph_provider(engine: *mut QQmlApplicationEngine);
     }
 
     extern "Rust" {
@@ -76,6 +80,10 @@ pub fn register_provider(engine: *mut cxx_qt_lib::QQmlApplicationEngine) {
         // The built-in file glyphs (§12.3): one cached raster per family and
         // pixel edge, painted by `FileIcon.qml` as a plain `Image`.
         qobject::register_file_glyph_provider(engine);
+        // The interface glyphs (§6.3.1, §12.3): the Solar marks, rasterised
+        // once per (kind, edge, dp, ink, wash) and painted by `Glyph.qml` as a
+        // plain `Image`.
+        qobject::register_glyph_provider(engine);
     }
 }
 

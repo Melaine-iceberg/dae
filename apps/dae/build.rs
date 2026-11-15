@@ -45,7 +45,6 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/FileGrid.qml", "qml/FileGrid.qml"),
     ("../../qml/ColumnView.qml", "qml/ColumnView.qml"),
     ("../../qml/EmptyState.qml", "qml/EmptyState.qml"),
-    ("../../qml/DriftSheet.qml", "qml/DriftSheet.qml"),
     ("../../qml/Shadow.qml", "qml/Shadow.qml"),
     // The nine-patch shadow, one texture per theme (proposal §6.5).
     ("../../Assets/shadow-light.png", "qml/assets/shadow-light.png"),
@@ -58,7 +57,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/MediaPreview.qml", "qml/MediaPreview.qml"),
     ("../../qml/Sidebar.qml", "qml/Sidebar.qml"),
     ("../../qml/Glyph.qml", "qml/Glyph.qml"),
-    ("../../qml/SolarMarks.js", "qml/SolarMarks.js"),
+    ("../../qml/solar-marks.json", "qml/solar-marks.json"),
     ("../../qml/SidebarTree.qml", "qml/SidebarTree.qml"),
     ("../../qml/OverviewView.qml", "qml/OverviewView.qml"),
     ("../../qml/SpaceView.qml", "qml/SpaceView.qml"),

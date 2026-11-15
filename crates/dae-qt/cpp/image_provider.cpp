@@ -1,6 +1,7 @@
 #include "image_provider.h"
 
 #include "dae-qt/src/icons.cxxqt.h"
+#include "solar_marks.h"
 
 #include <QFileInfo>
 #include <QColor>
@@ -346,6 +347,17 @@ QImage renderFileGlyph(int edge, const QString& family, const QColor& ink,
     painter.setClipPath(page);
     drawFamilyMark(painter, family, tint);
     painter.restore();
+
+    // §6.3.2: at 20 dp and above the page also carries a 2 device-pixel family
+    // bar along its bottom edge. The bar is a size signal, not a second mark,
+    // so it is absent from the 18 dp listing glyph.
+    if (edge >= 20) {
+        QPen bar(tint);
+        bar.setWidthF(2.0 / scale);
+        bar.setCapStyle(Qt::RoundCap);
+        painter.setPen(bar);
+        painter.drawLine(QPointF(5.2, 17.4), QPointF(15.0, 17.4));
+    }
     return image;
 }
 
@@ -438,6 +450,93 @@ void dae_qt_register_file_glyph_provider(QQmlApplicationEngine* engine)
     if (engine)
         engine->addImageProvider(QStringLiteral("fileglyph"),
                                  new FileGlyphImageProvider());
+}
+
+GlyphImageProvider::GlyphImageProvider()
+    : QQuickImageProvider(QQuickImageProvider::Image)
+{
+    m_cache.setMaxCost(128);
+}
+
+namespace {
+
+/// The interface glyph counter, on the same terms as the file glyph one: one
+/// line per actual rasterisation when `DAE_GLYPH_PERF=1`, nothing on a hit.
+const bool kGlyphPerf = qEnvironmentVariableIsSet("DAE_GLYPH_PERF");
+std::atomic<quint64> glyphRasters{ 0 };
+
+} // namespace
+
+QImage GlyphImageProvider::requestImage(const QString& id, QSize* size,
+                                        const QSize& requestedSize)
+{
+    constexpr int kMinEdge = 8;
+    constexpr int kMaxEdge = 128;
+
+    const int queryStart = id.indexOf(QLatin1Char('?'));
+    QString kind = queryStart >= 0 ? id.left(queryStart) : id;
+    while (kind.startsWith(QLatin1Char('/')))
+        kind.remove(0, 1);
+    const QUrlQuery query(queryStart >= 0 ? id.mid(queryStart + 1) : QString());
+
+    int edge = requestedSize.isValid()
+        ? qMax(requestedSize.width(), requestedSize.height())
+        : 0;
+    if (edge <= 0)
+        edge = query.queryItemValue(QStringLiteral("size")).toInt();
+    edge = qBound(kMinEdge, edge, kMaxEdge);
+
+    // The dp size the item is drawn at, not `edge / dpr`: the stroke
+    // correction is defined against it (§6.3.1).
+    const int dp = qBound(kMinEdge,
+                          query.queryItemValue(QStringLiteral("dp")).toInt(),
+                          kMaxEdge);
+    const QColor ink = glyphColor(query, QStringLiteral("ink"),
+                                  QColor(0x6b, 0x6d, 0x72));
+    const qreal wash =
+        qBound(0.0, query.queryItemValue(QStringLiteral("wash")).toDouble(), 1.0);
+    const QString key = QStringLiteral("%1|%2|%3|%4|%5")
+                            .arg(kind)
+                            .arg(edge)
+                            .arg(dp)
+                            .arg(ink.name(QColor::HexArgb))
+                            .arg(wash, 0, 'f', 2);
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (const QImage* cached = m_cache.object(key)) {
+            if (size)
+                *size = cached->size();
+            return *cached;
+        }
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    const QImage image = renderSolarMark(kind, edge, dp, ink, wash);
+    const qint64 micros = timer.nsecsElapsed() / 1000;
+    const quint64 raster = glyphRasters.fetch_add(1) + 1;
+    if (kGlyphPerf) {
+        fprintf(stderr,
+                "[glyph] raster #%llu %s edge=%d dp=%d ink=%s wash=%.2f %.2f ms\n",
+                static_cast<unsigned long long>(raster), qUtf8Printable(kind), edge,
+                dp, qUtf8Printable(ink.name(QColor::HexArgb)), wash,
+                double(micros) / 1000.0);
+    }
+    {
+        QMutexLocker locker(&m_mutex);
+        m_cache.insert(key, new QImage(image));
+    }
+    if (size)
+        *size = image.size();
+    return image;
+}
+
+void dae_qt_register_glyph_provider(QQmlApplicationEngine* engine)
+{
+    if (engine)
+        engine->addImageProvider(QStringLiteral("glyph"),
+                                 new GlyphImageProvider());
 }
 
 void dae_qt_register_thumbnail_provider(QQmlApplicationEngine* engine)
