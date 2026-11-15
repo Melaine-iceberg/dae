@@ -1,80 +1,20 @@
-//! The window/tab session restored on the next launch.
+//! The process-wide session document behind `Session.restoreJson`.
 //!
-//! The tabs themselves live in QML: a `Tab` is a `QtObject` owning its listing
-//! model, search models and terminal, and tearing one off moves the object
-//! rather than copying state. This module therefore never models a tab — it
-//! stores whatever JSON the window hands it, one record per window token, and
-//! returns the whole document once at startup.
+//! One window record per window, written by the view that owns it; the file is
+//! what the next launch restores. The JSON is opaque here: the shape belongs to
+//! `qml/ShellWindow.qml`, and this module only keeps it ordered and durable.
 //!
-//! Two things it does own:
-//!
-//! * **Ordering.** Records keep the order windows were created in, so a
-//!   restored session puts the main window back first and the torn-off ones
-//!   after it instead of stealing focus in id order.
-//! * **The dirty flag.** `clean` is written `false` when a run starts and
-//!   `true` when the last window closes normally. A document left with
-//!   `clean = false` is how the next launch knows the previous one crashed, so
-//!   the restore can say so rather than silently pretending nothing happened.
+//! Ported from CXX-Qt to Qt Bridge. The element name, the module and every
+//! property/slot name are unchanged, so no QML file knows about the move; the
+//! manual [`QmlElement`] impl is what pins them.
 
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::{LazyLock, Mutex};
 
-use cxx_qt_lib::QString;
+use qtbridge::{QmlElement, qobject};
 use serde::{Deserialize, Serialize};
 
-const FILE_NAME: &str = "session-qt.json";
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    unsafe extern "RustQt" {
-        /// The process-wide session document, reachable from QML as `Session`.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        /// The previous run's windows, as JSON, once. Empty before the first
-        /// call and after it: a second window must not restore the session a
-        /// second time.
-        #[qproperty(QString, restore_json, cxx_name = "restoreJson")]
-        /// True when the document being restored was left by a run that did
-        /// not close normally.
-        #[qproperty(bool, crashed)]
-        type Session = super::SessionRust;
-
-        /// Stores one window's record under `token`, replacing an older record
-        /// for the same window. `json` is the window's own serialization; this
-        /// module only checks that it parses and keeps its key order.
-        #[qinvokable]
-        #[cxx_name = "saveWindow"]
-        fn save_window(self: Pin<&mut Session>, token: &QString, json: &QString);
-
-        /// Returns the previous run's windows once and empties the property, so
-        /// a second window cannot restore the same tabs a second time.
-        #[qinvokable]
-        fn take(self: Pin<&mut Session>) -> QString;
-
-        /// Forgets a window that no longer exists (a torn-off window closed
-        /// while the main one stayed open).
-        #[qinvokable]
-        #[cxx_name = "removeWindow"]
-        fn remove_window(self: Pin<&mut Session>, token: &QString);
-
-        /// Marks the run clean. Called when the last window closes, so the next
-        /// launch does not report a crash.
-        #[qinvokable]
-        #[cxx_name = "markClean"]
-        fn mark_clean(self: Pin<&mut Session>);
-
-        /// Deletes the document, so the next launch starts from scratch.
-        #[qinvokable]
-        fn clear(self: Pin<&mut Session>);
-    }
-}
+const FILE_NAME: &str = "session.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -147,12 +87,18 @@ fn with_document(update: impl FnOnce(&mut SessionDocument)) {
     persist(document);
 }
 
-pub struct SessionRust {
-    restore_json: QString,
+/// The process-wide session document, reachable from QML as `Session`.
+pub struct Session {
+    /// The previous run's windows, as JSON, once. Empty before the first call
+    /// and after it: a second window must not restore the session a second
+    /// time.
+    restore_json: String,
+    /// True when the document being restored was left by a run that did not
+    /// close normally.
     crashed: bool,
 }
 
-impl Default for SessionRust {
+impl Default for Session {
     fn default() -> Self {
         let (document, crashed) = load_and_begin_run();
         {
@@ -165,19 +111,33 @@ impl Default for SessionRust {
         }
         let restore = serde_json::to_string(&document).unwrap_or_default();
         Self {
-            restore_json: QString::from(restore.as_str()),
+            restore_json: restore,
             crashed,
         }
     }
 }
 
-impl qobject::Session {
-    fn save_window(self: Pin<&mut Self>, token: &QString, json: &QString) {
-        let token = token.to_string();
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+impl Session {
+    qproperty!(
+        "restoreJson",
+        Member = restore_json,
+        Notify = restore_json_changed
+    );
+    qproperty!("crashed", Member = crashed, Constant);
+
+    #[qsignal]
+    fn restore_json_changed(&mut self);
+
+    /// Stores one window's record under `token`, replacing an older record
+    /// for the same window. `json` is the window's own serialization; this
+    /// module only checks that it parses and keeps its key order.
+    #[qslot]
+    fn save_window(&mut self, token: String, json: String) {
         if token.is_empty() {
             return;
         }
-        let Ok(mut record) = serde_json::from_str::<StoredWindow>(&json.to_string()) else {
+        let Ok(mut record) = serde_json::from_str::<StoredWindow>(&json) else {
             log::warn!(target: "dae::session", "ignoring a malformed window record");
             return;
         };
@@ -195,16 +155,21 @@ impl qobject::Session {
         });
     }
 
-    fn take(mut self: Pin<&mut Self>) -> QString {
-        let document = self.restore_json.clone();
+    /// Returns the previous run's windows once and empties the property, so a
+    /// second window cannot restore the same tabs a second time.
+    #[qslot]
+    fn take(&mut self) -> String {
+        let document = std::mem::take(&mut self.restore_json);
         if !document.is_empty() {
-            self.as_mut().set_restore_json(QString::default());
+            self.restore_json_changed();
         }
         document
     }
 
-    fn remove_window(self: Pin<&mut Self>, token: &QString) {
-        let token = token.to_string();
+    /// Forgets a window that no longer exists (a torn-off window closed
+    /// while the main one stayed open).
+    #[qslot]
+    fn remove_window(&mut self, token: String) {
         if token.is_empty() {
             return;
         }
@@ -213,11 +178,16 @@ impl qobject::Session {
         });
     }
 
-    fn mark_clean(self: Pin<&mut Self>) {
+    /// Marks the run clean. Called when the last window closes, so the next
+    /// launch does not report a crash.
+    #[qslot]
+    fn mark_clean(&mut self) {
         with_document(|document| document.clean = true);
     }
 
-    fn clear(mut self: Pin<&mut Self>) {
+    /// Deletes the document, so the next launch starts from scratch.
+    #[qslot]
+    fn clear(&mut self) {
         {
             let mut guard = STATE
                 .lock()
@@ -230,8 +200,17 @@ impl qobject::Session {
                 persist(document);
             }
         }
-        self.as_mut().set_restore_json(QString::default());
+        self.restore_json.clear();
+        self.restore_json_changed();
     }
+}
+
+impl QmlElement for Session {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "Session";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
 }
 
 #[cfg(test)]

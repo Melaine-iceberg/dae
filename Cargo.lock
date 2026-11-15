@@ -1063,6 +1063,7 @@ dependencies = [
  "log",
  "percent-encoding",
  "pulldown-cmark",
+ "qtbridge",
  "serde",
  "serde_json",
  "syntect",
@@ -3504,6 +3505,82 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "which",
+]
+
+[[package]]
+name = "qtbridge"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b1f45464845f3375cd55f4a03e96e557424ade46764e164efc095bf359bf67b"
+dependencies = [
+ "qtbridge-gen",
+ "qtbridge-interfaces",
+ "qtbridge-runtime",
+ "qtbridge-type-lib",
+]
+
+[[package]]
+name = "qtbridge-build-utils"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5801d0fd3e756c400aaea93f66e99e6e4b7030c13538ca701e52f45779d9dd21"
+dependencies = [
+ "cc",
+ "qt-build-utils",
+]
+
+[[package]]
+name = "qtbridge-gen"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4a1fccfab4ad36c6e61e9d8e5c15b6369c6dc5292ff190fbaef68614429fe82"
+dependencies = [
+ "proc-macro2",
+ "qtbridge-build-utils",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "qtbridge-interfaces"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da031180d7e1ea520b5e9d1372a1d95651c21dcbbf881adff32811e457edc56"
+dependencies = [
+ "cxx",
+ "cxx-build",
+ "cxx-qt-lib",
+ "qtbridge-build-utils",
+ "qtbridge-runtime",
+ "qtbridge-type-lib",
+]
+
+[[package]]
+name = "qtbridge-runtime"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f48008749c95457dbdaf6d53dc8efc3c617eb5e0a78d4c4276ecbb9c578c5b13"
+dependencies = [
+ "cxx",
+ "cxx-build",
+ "cxx-qt",
+ "cxx-qt-lib",
+ "qtbridge-build-utils",
+ "qtbridge-type-lib",
+]
+
+[[package]]
+name = "qtbridge-type-lib"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1311d95cf22398ef32c181671f3fca23861efff731459283539b8a1e76b21832"
+dependencies = [
+ "cc",
+ "cxx",
+ "cxx-build",
+ "cxx-qt",
+ "cxx-qt-lib",
+ "qtbridge-build-utils",
 ]
 
 [[package]]

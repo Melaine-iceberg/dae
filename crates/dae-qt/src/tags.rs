@@ -9,139 +9,39 @@
 //! The storage itself — `tags.toml`, the per-entry stream/xattr and the
 //! per-volume index — is `dae_core::fs::tags`; this file only carries its
 //! answers across the bridge.
+//!
+//! Ported from CXX-Qt to Qt Bridge. Element, property and slot names are
+//! unchanged (`TagStore.tagsJson`, `TagStore.setTags(paths, ids)`); the manual
+//! [`QmlElement`] impl pins the module name so the QML tree keeps importing
+//! `dae 1.0`.
 
 use std::path::Path;
-use std::pin::Pin;
 
-use cxx_qt_lib::{QString, QStringList};
 use dae_core::fs::tags as tag_core;
+use qtbridge::{QmlElement, qobject};
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-    }
-
-    unsafe extern "RustQt" {
-        /// QML usage: `TagStore.tagsJson`, `TagStore.setTags(paths, ids)`.
-        ///
-        /// `tagsJson` is a JSON array of `{ id, name, color, count }`, so the
-        /// sidebar, the editor and the context menu render from one value and
-        /// cannot disagree about a definition.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        #[qproperty(QString, tags_json, cxx_name = "tagsJson")]
-        /// The sentence the editor shows after a write that could not store
-        /// the tags with the file ("this location keeps them in dae only"), or
-        /// the empty string.
-        #[qproperty(QString, note)]
-        type TagStore = super::TagStoreRust;
-
-        #[qinvokable]
-        fn reload(self: Pin<&mut TagStore>);
-
-        /// Creates a definition and returns its id, or an empty string with
-        /// `note` carrying the reason.
-        #[qinvokable]
-        #[cxx_name = "createTag"]
-        fn create_tag(self: Pin<&mut TagStore>, name: &QString, color: &QString) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "updateTag"]
-        fn update_tag(
-            self: Pin<&mut TagStore>,
-            id: &QString,
-            name: &QString,
-            color: &QString,
-        ) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "removeTag"]
-        fn remove_tag(self: Pin<&mut TagStore>, id: &QString) -> QString;
-
-        /// Replaces the tags of every path with `ids`. Empty `ids` clears.
-        /// Returns the empty string on success.
-        #[qinvokable]
-        #[cxx_name = "setTags"]
-        fn set_tags(self: Pin<&mut TagStore>, paths: &QStringList, ids: &QStringList) -> QString;
-
-        /// Adds `id` to every path that lacks it, removes it from every path
-        /// that has it — one call for a mixed selection.
-        #[qinvokable]
-        #[cxx_name = "toggleTag"]
-        fn toggle_tag(self: Pin<&mut TagStore>, paths: &QStringList, id: &QString) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "clearTags"]
-        fn clear_tags(self: Pin<&mut TagStore>, paths: &QStringList) -> QString;
-
-        /// The definitions every path in `paths` carries, as the same JSON
-        /// shape as `tagsJson`. The multi-selection details pane shows what
-        /// the selection has in common, not one arbitrary member's tags.
-        #[qinvokable]
-        #[cxx_name = "commonTagsJson"]
-        fn common_tags_json(self: Pin<&mut TagStore>, paths: &QStringList) -> QString;
-
-        /// Writes the definitions to `path` in the same `tags.toml` format the
-        /// config directory holds. Answers `{"ok":true}` or
-        /// `{"ok":false,"error":"…"}`.
-        #[qinvokable]
-        #[cxx_name = "exportDefinitions"]
-        fn export_definitions(self: Pin<&mut TagStore>, path: &QString) -> QString;
-
-        /// Merges a `tags.toml` document at `path` into the definitions: a
-        /// known id overwrites name and colour, an unknown one is appended.
-        /// Answers `{"ok":true,"added":n,"updated":n,"skipped":[…]}` or
-        /// `{"ok":false,"error":"…"}`.
-        #[qinvokable]
-        #[cxx_name = "importDefinitions"]
-        fn import_definitions(self: Pin<&mut TagStore>, path: &QString) -> QString;
-
-        /// Reconciles the tag index with the files it names: drops entries for
-        /// deleted files, adopts ids from the file's own stream, follows
-        /// renames, and quarantines shard documents that no longer parse.
-        /// Answers `{"ok":true,"entries":n,"droppedMissing":n,…}` or
-        /// `{"ok":false,"error":"…"}`.
-        #[qinvokable]
-        #[cxx_name = "rebuildIndex"]
-        fn rebuild_index(self: Pin<&mut TagStore>) -> QString;
-
-        /// Emitted after a definition or a count changed. Listings answer it
-        /// by re-reading `tags.toml`; the sidebar answers by re-reading
-        /// `tagsJson`.
-        #[qsignal]
-        #[cxx_name = "definitionsChanged"]
-        fn definitions_changed(self: Pin<&mut TagStore>);
-
-        /// The paths whose ids were just written, so each visible listing can
-        /// repaint those rows (or re-sort, when it is ordered by tag).
-        #[qsignal]
-        #[cxx_name = "tagsChanged"]
-        fn tags_changed(self: Pin<&mut TagStore>, paths: &QStringList);
-    }
+/// `tagsJson` is a JSON array of `{ id, name, color, count }`, so the sidebar,
+/// the editor and the context menu render from one value and cannot disagree
+/// about a definition.
+pub struct TagStore {
+    tags_json: String,
+    /// The sentence the editor shows after a write that could not store the
+    /// tags with the file ("this location keeps them in dae only"), or the
+    /// empty string.
+    note: String,
 }
 
-pub struct TagStoreRust {
-    tags_json: QString,
-    note: QString,
-}
-
-impl Default for TagStoreRust {
+impl Default for TagStore {
     fn default() -> Self {
         Self {
             tags_json: snapshot(),
-            note: QString::default(),
+            note: String::new(),
         }
     }
 }
 
 /// The definitions with their counts, as the one string QML reads.
-fn snapshot() -> QString {
+fn snapshot() -> String {
     let definitions = tag_core::definitions();
     let counts = tag_core::counts();
     let rows: Vec<serde_json::Value> = definitions
@@ -155,127 +55,149 @@ fn snapshot() -> QString {
             })
         })
         .collect();
-    QString::from(
-        serde_json::to_string(&rows)
-            .unwrap_or_else(|_| "[]".to_owned())
-            .as_str(),
-    )
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_owned())
 }
 
 fn store() -> Option<tag_core::TagStore> {
     tag_core::TagStore::app()
 }
 
-fn failure(message: String) -> QString {
-    QString::from(message.as_str())
-}
-
-fn paths_list(paths: &QStringList) -> Vec<String> {
-    paths.iter().map(|path| path.to_string()).collect()
-}
-
-fn ids_list(ids: &QStringList) -> Vec<String> {
-    ids.iter().map(|id| id.to_string()).collect()
+fn failure(message: String) -> String {
+    message
 }
 
 /// What the note says after a write that could not put the tags on the file.
 const INDEX_ONLY_NOTE: &str = "此位置无法随文件保存标签，标签只在 dae 内生效";
 
-impl qobject::TagStore {
-    fn reload(mut self: Pin<&mut Self>) {
-        self.as_mut().set_tags_json(snapshot());
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+impl TagStore {
+    qproperty!("tagsJson", Member = tags_json, Notify = tags_json_changed);
+    qproperty!("note", Member = note, Notify = note_changed);
+
+    /// Emitted after a definition or a count changed. Listings answer it by
+    /// re-reading `tags.toml`; the sidebar answers by re-reading `tagsJson`.
+    #[qsignal]
+    fn definitions_changed(&mut self);
+
+    /// The paths whose ids were just written, so each visible listing can
+    /// repaint those rows (or re-sort, when it is ordered by tag).
+    #[qsignal]
+    fn tags_changed(&mut self, paths: Vec<String>);
+
+    #[qsignal]
+    fn tags_json_changed(&mut self);
+
+    #[qsignal]
+    fn note_changed(&mut self);
+
+    #[qslot]
+    fn reload(&mut self) {
+        self.tags_json = snapshot();
+        self.tags_json_changed();
     }
 
-    fn create_tag(mut self: Pin<&mut Self>, name: &QString, color: &QString) -> QString {
+    /// Creates a definition and returns its id, or an empty string with
+    /// `note` carrying the reason.
+    #[qslot]
+    fn create_tag(&mut self, name: String, color: String) -> String {
         let Some(store) = store() else {
             return failure("无法定位配置目录".to_owned());
         };
-        match store.create_tag(&name.to_string(), &color.to_string()) {
+        match store.create_tag(&name, &color) {
             Ok((definition, _)) => {
-                self.as_mut().set_tags_json(snapshot());
-                self.as_mut().set_note(QString::default());
-                self.as_mut().definitions_changed();
-                QString::from(definition.id.as_str())
+                self.tags_json = snapshot();
+                self.tags_json_changed();
+                self.note.clear();
+                self.note_changed();
+                self.definitions_changed();
+                definition.id
             }
             Err(error) => {
-                self.as_mut().set_note(failure(error.to_string()));
-                QString::default()
+                self.note = failure(error.to_string());
+                self.note_changed();
+                String::new()
             }
         }
     }
 
-    fn update_tag(
-        mut self: Pin<&mut Self>,
-        id: &QString,
-        name: &QString,
-        color: &QString,
-    ) -> QString {
+    #[qslot]
+    fn update_tag(&mut self, id: String, name: String, color: String) -> String {
         let Some(store) = store() else {
             return failure("无法定位配置目录".to_owned());
         };
-        match store.update_tag(&id.to_string(), &name.to_string(), &color.to_string()) {
+        match store.update_tag(&id, &name, &color) {
             Ok(_) => {
-                self.as_mut().set_tags_json(snapshot());
-                self.as_mut().set_note(QString::default());
-                self.as_mut().definitions_changed();
-                QString::default()
+                self.tags_json = snapshot();
+                self.tags_json_changed();
+                self.note.clear();
+                self.note_changed();
+                self.definitions_changed();
+                String::new()
             }
             Err(error) => failure(error.to_string()),
         }
     }
 
-    fn remove_tag(mut self: Pin<&mut Self>, id: &QString) -> QString {
+    #[qslot]
+    fn remove_tag(&mut self, id: String) -> String {
         let Some(store) = store() else {
             return failure("无法定位配置目录".to_owned());
         };
-        match store.remove_tag(&id.to_string()) {
+        match store.remove_tag(&id) {
             Ok(_) => {
-                self.as_mut().set_tags_json(snapshot());
-                self.as_mut().set_note(QString::default());
-                self.as_mut().definitions_changed();
-                QString::default()
+                self.tags_json = snapshot();
+                self.tags_json_changed();
+                self.note.clear();
+                self.note_changed();
+                self.definitions_changed();
+                String::new()
             }
             Err(error) => failure(error.to_string()),
         }
     }
 
-    fn set_tags(mut self: Pin<&mut Self>, paths: &QStringList, ids: &QStringList) -> QString {
+    /// Replaces the tags of every path with `ids`. Empty `ids` clears.
+    /// Returns the empty string on success.
+    #[qslot]
+    fn set_tags(&mut self, paths: Vec<String>, ids: Vec<String>) -> String {
         let Some(store) = store() else {
             return failure("无法定位配置目录".to_owned());
         };
-        let paths = paths_list(paths);
         if paths.is_empty() {
-            return QString::default();
+            return String::new();
         }
-        match store.set_tags(&paths, &ids_list(ids)) {
+        match store.set_tags(&paths, &ids) {
             Ok(report) => {
                 let note = if report.file_store_unavailable {
                     INDEX_ONLY_NOTE.to_owned()
                 } else {
                     String::new()
                 };
-                let mut message = QString::from(note.as_str());
+                let mut message = note;
                 if !report.failed.is_empty() {
                     message = failure(format!("{} 项无法写入标签", report.failed.len()));
                 }
-                self.as_mut().set_note(message);
-                self.as_mut().set_tags_json(snapshot());
-                self.as_mut().definitions_changed();
-                self.as_mut().tags_changed(&qstringlist(&paths));
-                QString::default()
+                self.note = message;
+                self.note_changed();
+                self.tags_json = snapshot();
+                self.tags_json_changed();
+                self.definitions_changed();
+                self.tags_changed(paths);
+                String::new()
             }
             Err(error) => failure(error.to_string()),
         }
     }
 
-    fn toggle_tag(mut self: Pin<&mut Self>, paths: &QStringList, id: &QString) -> QString {
+    /// Adds `id` to every path that lacks it, removes it from every path
+    /// that has it — one call for a mixed selection.
+    #[qslot]
+    fn toggle_tag(&mut self, paths: Vec<String>, id: String) -> String {
         let Some(store) = store() else {
             return failure("无法定位配置目录".to_owned());
         };
-        let paths = paths_list(paths);
-        let id = id.to_string();
         if paths.is_empty() || id.is_empty() {
-            return QString::default();
+            return String::new();
         }
         // Read once for the batch, then write each path with the one id
         // flipped. A mixed selection converges on "all tagged" or "all clear"
@@ -303,33 +225,57 @@ impl qobject::TagStore {
             }
         }
 
-        self.as_mut().set_note(QString::from(
-            if failed > 0 {
-                format!("{failed} 项无法写入标签")
-            } else if index_only {
-                INDEX_ONLY_NOTE.to_owned()
-            } else {
-                String::new()
-            }
-            .as_str(),
-        ));
-        self.as_mut().set_tags_json(snapshot());
-        self.as_mut().definitions_changed();
-        self.as_mut().tags_changed(&qstringlist(&paths));
-        QString::default()
+        self.note = if failed > 0 {
+            format!("{failed} 项无法写入标签")
+        } else if index_only {
+            INDEX_ONLY_NOTE.to_owned()
+        } else {
+            String::new()
+        };
+        self.note_changed();
+        self.tags_json = snapshot();
+        self.tags_json_changed();
+        self.definitions_changed();
+        self.tags_changed(paths);
+        String::new()
     }
 
-    fn common_tags_json(self: Pin<&mut Self>, paths: &QStringList) -> QString {
-        let paths = paths_list(paths);
+    #[qslot]
+    fn clear_tags(&mut self, paths: Vec<String>) -> String {
         let Some(store) = store() else {
-            return QString::from("[]");
+            return failure("无法定位配置目录".to_owned());
         };
         if paths.is_empty() {
-            return QString::from("[]");
+            return String::new();
+        }
+        match store.set_tags(&paths, &[]) {
+            Ok(_) => {
+                self.note.clear();
+                self.note_changed();
+                self.tags_json = snapshot();
+                self.tags_json_changed();
+                self.definitions_changed();
+                self.tags_changed(paths);
+                String::new()
+            }
+            Err(error) => failure(error.to_string()),
+        }
+    }
+
+    /// The definitions every path in `paths` carries, as the same JSON shape
+    /// as `tagsJson`. The multi-selection details pane shows what the
+    /// selection has in common, not one arbitrary member's tags.
+    #[qslot]
+    fn common_tags_json(&mut self, paths: Vec<String>) -> String {
+        let Some(store) = store() else {
+            return "[]".to_owned();
+        };
+        if paths.is_empty() {
+            return "[]".to_owned();
         }
         let per_path = store.tags_for(&paths);
         let Some(first) = per_path.first() else {
-            return QString::from("[]");
+            return "[]".to_owned();
         };
         let common: Vec<String> = first
             .tag_ids
@@ -349,54 +295,47 @@ impl qobject::TagStore {
                 })
             })
             .collect();
-        QString::from(
-            serde_json::to_string(&rows)
-                .unwrap_or("[]".to_owned())
-                .as_str(),
-        )
+        serde_json::to_string(&rows).unwrap_or("[]".to_owned())
     }
 
-    fn clear_tags(mut self: Pin<&mut Self>, paths: &QStringList) -> QString {
-        let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
-        };
-        let paths = paths_list(paths);
-        if paths.is_empty() {
-            return QString::default();
-        }
-        match store.set_tags(&paths, &[]) {
-            Ok(_) => {
-                self.as_mut().set_note(QString::default());
-                self.as_mut().set_tags_json(snapshot());
-                self.as_mut().definitions_changed();
-                self.as_mut().tags_changed(&qstringlist(&paths));
-                QString::default()
-            }
-            Err(error) => failure(error.to_string()),
-        }
-    }
-
-    fn export_definitions(self: Pin<&mut Self>, path: &QString) -> QString {
+    /// Writes the definitions to `path` in the same `tags.toml` format the
+    /// config directory holds. Answers `{"ok":true}` or
+    /// `{"ok":false,"error":"…"}`.
+    #[qslot]
+    fn export_definitions(&mut self, path: String) -> String {
         let Some(store) = store() else {
             return json_error("无法定位配置目录");
         };
-        export_reply(&store, &path.to_string())
+        export_reply(&store, &path)
     }
 
-    fn import_definitions(mut self: Pin<&mut Self>, path: &QString) -> QString {
+    /// Merges a `tags.toml` document at `path` into the definitions: a
+    /// known id overwrites name and colour, an unknown one is appended.
+    /// Answers `{"ok":true,"added":n,"updated":n,"skipped":[…]}` or
+    /// `{"ok":false,"error":"…"}`.
+    #[qslot]
+    fn import_definitions(&mut self, path: String) -> String {
         let Some(store) = store() else {
             return json_error("无法定位配置目录");
         };
-        let reply = import_reply(&store, &path.to_string());
+        let reply = import_reply(&store, &path);
         if reply_ok(&reply) {
-            self.as_mut().set_tags_json(snapshot());
-            self.as_mut().set_note(QString::default());
-            self.as_mut().definitions_changed();
+            self.tags_json = snapshot();
+            self.tags_json_changed();
+            self.note.clear();
+            self.note_changed();
+            self.definitions_changed();
         }
         reply
     }
 
-    fn rebuild_index(mut self: Pin<&mut Self>) -> QString {
+    /// Reconciles the tag index with the files it names: drops entries for
+    /// deleted files, adopts ids from the file's own stream, follows
+    /// renames, and quarantines shard documents that no longer parse.
+    /// Answers `{"ok":true,"entries":n,"droppedMissing":n,…}` or
+    /// `{"ok":false,"error":"…"}`.
+    #[qslot]
+    fn rebuild_index(&mut self) -> String {
         let Some(store) = store() else {
             return json_error("无法定位配置目录");
         };
@@ -404,25 +343,35 @@ impl qobject::TagStore {
         if reply_ok(&reply) {
             // Counts and names can move, so the sidebar and every open listing
             // re-read the definitions after a rebuild.
-            self.as_mut().set_tags_json(snapshot());
-            self.as_mut().set_note(QString::default());
-            self.as_mut().definitions_changed();
+            self.tags_json = snapshot();
+            self.tags_json_changed();
+            self.note.clear();
+            self.note_changed();
+            self.definitions_changed();
         }
         reply
     }
 }
 
+impl QmlElement for TagStore {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "TagStore";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
+}
+
 /// The three replies below are free functions over a store so the JSON
 /// contract can be tested without a QML engine; the invokables only add the
 /// signals. Every reply is `{"ok":true,…}` or `{"ok":false,"error":"…"}`.
-fn export_reply(store: &tag_core::TagStore, path: &str) -> QString {
+fn export_reply(store: &tag_core::TagStore, path: &str) -> String {
     match store.export_to(Path::new(path)) {
         Ok(()) => json_ok(serde_json::json!({ "ok": true })),
         Err(error) => json_error(&error.to_string()),
     }
 }
 
-fn import_reply(store: &tag_core::TagStore, path: &str) -> QString {
+fn import_reply(store: &tag_core::TagStore, path: &str) -> String {
     match store.import_from(Path::new(path)) {
         Ok(report) => json_ok(serde_json::json!({
             "ok": true,
@@ -434,7 +383,7 @@ fn import_reply(store: &tag_core::TagStore, path: &str) -> QString {
     }
 }
 
-fn rebuild_reply(store: &tag_core::TagStore) -> QString {
+fn rebuild_reply(store: &tag_core::TagStore) -> String {
     match store.repair_index() {
         Ok(report) => json_ok(serde_json::json!({
             "ok": true,
@@ -448,8 +397,8 @@ fn rebuild_reply(store: &tag_core::TagStore) -> QString {
     }
 }
 
-fn reply_ok(reply: &QString) -> bool {
-    serde_json::from_str::<serde_json::Value>(&reply.to_string())
+fn reply_ok(reply: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(reply)
         .ok()
         .and_then(|value| value.get("ok").and_then(serde_json::Value::as_bool))
         .unwrap_or(false)
@@ -458,30 +407,12 @@ fn reply_ok(reply: &QString) -> bool {
 /// The one success shape the settings page parses. `json!` rather than a
 /// struct because each call answers different counters, and a second mirror
 /// of the core's report types would be a second definition to keep in sync.
-fn json_ok(value: serde_json::Value) -> QString {
-    QString::from(
-        serde_json::to_string(&value)
-            .unwrap_or_else(|_| "{\"ok\":true}".to_owned())
-            .as_str(),
-    )
+fn json_ok(value: serde_json::Value) -> String {
+    serde_json::to_string(&value).unwrap_or_else(|_| "{\"ok\":true}".to_owned())
 }
 
-fn json_error(message: &str) -> QString {
-    QString::from(
-        serde_json::json!({ "ok": false, "error": message })
-            .to_string()
-            .as_str(),
-    )
-}
-
-/// Rebuilds the `QStringList` the signal carries from the paths the core
-/// reported.
-fn qstringlist(paths: &[String]) -> QStringList {
-    let mut list = QStringList::default();
-    for path in paths {
-        list.append(QString::from(path.as_str()));
-    }
-    list
+fn json_error(message: &str) -> String {
+    serde_json::json!({ "ok": false, "error": message }).to_string()
 }
 
 #[cfg(test)]
@@ -492,7 +423,7 @@ mod tests {
     fn the_snapshot_is_a_json_array_of_definitions() {
         // The process-wide store reads the real config directory; the test
         // only asserts the shape, not the user's tags.
-        let json = snapshot().to_string();
+        let json = snapshot();
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(parsed.is_array());
     }
@@ -511,7 +442,7 @@ mod tests {
         // arrives as the one reply shape.
         let unwritable = dir.path().join("no/such/directory/x.toml");
         let reply = export_reply(&store, &unwritable.to_string_lossy());
-        let parsed: serde_json::Value = serde_json::from_str(&reply.to_string()).expect("json");
+        let parsed: serde_json::Value = serde_json::from_str(&reply).expect("json");
         assert_eq!(parsed["ok"], false);
         assert!(
             parsed["error"]
@@ -522,7 +453,7 @@ mod tests {
         let incoming = dir.path().join("incoming.toml");
         std::fs::write(&incoming, "[[tags]]\nid = \"urgent\"\nname = \"Urgent\"\n").expect("write");
         let reply = import_reply(&store, &incoming.to_string_lossy());
-        let parsed: serde_json::Value = serde_json::from_str(&reply.to_string()).expect("json");
+        let parsed: serde_json::Value = serde_json::from_str(&reply).expect("json");
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["added"], 1);
         assert_eq!(parsed["updated"], 0);
@@ -541,7 +472,7 @@ mod tests {
         std::fs::remove_file(&file).expect("delete");
 
         let reply = rebuild_reply(&store);
-        let parsed: serde_json::Value = serde_json::from_str(&reply.to_string()).expect("json");
+        let parsed: serde_json::Value = serde_json::from_str(&reply).expect("json");
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["entries"], 0);
         assert_eq!(parsed["droppedMissing"], 1);

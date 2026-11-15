@@ -23,34 +23,28 @@
 //! nothing unless `DAE_STARTUP_PERF` is set, so an ordinary launch pays one
 //! hash lookup per call at most.
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
+use qtbridge::{QmlElement, qobject};
 
-    unsafe extern "RustQt" {
-        /// QML usage: `Startup.mark("qml-first-model")`.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        type Startup = super::StartupRust;
+/// QML usage: `Startup.mark("qml-first-model")`.
+///
+/// Ported from CXX-Qt to Qt Bridge: the manual [`QmlElement`] impl keeps the
+/// module and element name the QML tree already imports, and `NoQmlElement`
+/// keeps the macro from registering a second, crate-named copy.
+#[derive(Default)]
+pub struct Startup;
 
-        #[qinvokable]
-        fn mark(self: Pin<&mut Startup>, stage: &QString);
+#[qobject(NoQmlElement)]
+impl Startup {
+    #[qslot]
+    fn mark(&mut self, stage: String) {
+        crate::window::startup_mark_once(&stage);
     }
 }
 
-use std::pin::Pin;
-
-use cxx_qt_lib::QString;
-
-#[derive(Default)]
-pub struct StartupRust;
-
-impl qobject::Startup {
-    fn mark(self: Pin<&mut Self>, stage: &QString) {
-        crate::window::startup_mark_once(&stage.to_string());
-    }
+impl QmlElement for Startup {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "Startup";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
 }

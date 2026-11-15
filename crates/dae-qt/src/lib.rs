@@ -88,6 +88,14 @@ pub mod workspace;
 
 /// Process-wide setup that must run before the QML engine creates a window.
 pub fn init() {
+    // Qt Bridge types are registered by hand instead of through a generated
+    // plugin, so this has to happen before `Main.qml` is parsed. `Startup` is
+    // the first module the migration moved; the list grows until CXX-Qt is
+    // gone and this becomes the only registration path.
+    use qtbridge::QmlElement as _;
+    startup::Startup::register();
+    session::Session::register();
+    tags::TagStore::register();
     // First, so the settings/profile lines below and every `dae-core` warning
     // reach the file. Idempotent: the binary calls it before claiming the
     // instance lock, and this call is then a no-op.

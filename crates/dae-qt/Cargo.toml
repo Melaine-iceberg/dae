@@ -22,6 +22,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }
+# The migration target. Types move here one module at a time; the QML module
+# name is kept by a manual `QmlElement` impl per type (see `src/startup.rs`),
+# so no `.qml` file changes while both bridges are live.
+qtbridge = "0.4.1"
 dae-core = { path = "../dae-core" }
 # The sink for `dae-core`'s own `log` calls. Same crate version, so one logger
 # installed here covers the domain layer too — see `src/logging.rs`. `std` is
