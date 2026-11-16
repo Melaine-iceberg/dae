@@ -77,6 +77,24 @@ pub struct AppSettings {
     pub shell_first: bool,
     /// Copy and move behaviour that outlives a launch.
     pub transfer: TransferSettings,
+    /// User-chosen families for the shell's two faces. `None` keeps the
+    /// bundled Noto Sans SC / GoogleSansCode NFM pair.
+    pub fonts: FontSettings,
+}
+
+/// Custom font families. A missing or blank value means "use the bundled
+/// face", which is why both fields are optional rather than defaulted to a
+/// family name: a later build can change the bundled face without rewriting a
+/// user's file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FontSettings {
+    /// The application/UI family. Applied before the first QML document, so a
+    /// change takes effect on the next launch.
+    pub ui_family: Option<String>,
+    /// Fixed-pitch family for the terminal, sizes, rates and code previews.
+    /// QML binds this live, so a change applies immediately.
+    pub mono_family: Option<String>,
 }
 
 /// How the transfer engine behaves by default.
@@ -185,6 +203,7 @@ impl Default for AppSettings {
             warm_tab_pool: true,
             shell_first: true,
             transfer: TransferSettings::default(),
+            fonts: FontSettings::default(),
         }
     }
 }
@@ -387,6 +406,7 @@ fn read_settings_file(path: &Path) -> Result<AppSettings, FileSystemError> {
 fn normalize(mut settings: AppSettings) -> AppSettings {
     settings.shortcuts = normalize_shortcuts(settings.shortcuts);
     settings.terminal = normalize_terminal(settings.terminal);
+    settings.fonts = normalize_fonts(settings.fonts);
     settings.actions = normalize_actions(settings.actions);
     if !["system", "light", "dark"].contains(&settings.theme.as_str()) {
         settings.theme = "system".to_string();
@@ -478,6 +498,21 @@ fn normalize_terminal(terminal: TerminalSettings) -> TerminalSettings {
         line_height,
         font_family: terminal.font_family,
         ansi_colors,
+    }
+}
+
+/// Trims both family names and turns an empty string into `None`, so a file
+/// written by hand cannot ask for a family called " ". The length cap keeps a
+/// pathological document from putting a paragraph in the chrome.
+fn normalize_fonts(fonts: FontSettings) -> FontSettings {
+    let clean = |family: Option<String>| {
+        family
+            .map(|name| name.trim().to_owned())
+            .filter(|name| !name.is_empty() && name.chars().count() <= 128)
+    };
+    FontSettings {
+        ui_family: clean(fonts.ui_family),
+        mono_family: clean(fonts.mono_family),
     }
 }
 
@@ -599,6 +634,8 @@ mod tests {
         settings.blur = false;
         settings.window_material = "acrylic".to_string();
         settings.shell_first = false;
+        settings.fonts.ui_family = Some("Noto Sans".to_string());
+        settings.fonts.mono_family = Some("GoogleSansCode NFM".to_string());
 
         let saved = save_settings(settings.clone()).expect("save");
         assert_eq!(saved.terminal.font_size, 16);
@@ -608,6 +645,11 @@ mod tests {
         assert!(!saved.blur);
         assert_eq!(saved.window_material, "acrylic");
         assert!(!saved.shell_first);
+        assert_eq!(saved.fonts.ui_family.as_deref(), Some("Noto Sans"));
+        assert_eq!(
+            saved.fonts.mono_family.as_deref(),
+            Some("GoogleSansCode NFM")
+        );
         assert!(settings_path(&dir).exists(), "settings.toml written");
 
         use_config_dir_for_tests(dir.clone()).expect("reload");
@@ -641,6 +683,8 @@ mod tests {
         assert_eq!(loaded.terminal.font_size, 15);
         assert_eq!(loaded.terminal.line_height, 1.75);
         assert_eq!(loaded.terminal.font_family, None);
+        assert_eq!(loaded.fonts.ui_family, None);
+        assert_eq!(loaded.fonts.mono_family, None);
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.accent, "brand");
         assert_eq!(loaded.language, "system");
@@ -688,6 +732,26 @@ mod tests {
         fs::write(settings_path(&dir), "warmTabPool = false\n").expect("write off");
         use_config_dir_for_tests(dir.clone()).expect("init");
         assert!(!load_settings().expect("load").warm_tab_pool);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn blank_font_names_fall_back_to_the_bundled_faces() {
+        let _guard = lock();
+        let dir = temp_config_dir();
+        use_config_dir_for_tests(dir.clone()).expect("init");
+
+        let mut settings = AppSettings::default();
+        settings.fonts.ui_family = Some("   ".to_string());
+        settings.fonts.mono_family = Some("  GoogleSansCode NFM  ".to_string());
+
+        let saved = save_settings(settings).expect("save");
+        assert_eq!(saved.fonts.ui_family, None);
+        assert_eq!(
+            saved.fonts.mono_family.as_deref(),
+            Some("GoogleSansCode NFM")
+        );
 
         fs::remove_dir_all(&dir).ok();
     }

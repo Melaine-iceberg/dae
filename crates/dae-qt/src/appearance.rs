@@ -40,6 +40,10 @@ pub mod qobject {
 
         include!("translator.h");
         #[namespace = "dae_qt"]
+        fn dae_qt_i18n_apply_deferred(language: &QString);
+
+        include!("translator.h");
+        #[namespace = "dae_qt"]
         fn dae_qt_i18n_system_language() -> QString;
     }
 }
@@ -201,11 +205,24 @@ pub struct Appearance {
     /// tree is still being built (`docs/qml-aot.md` §16). Read by `main`
     /// before the engine exists, so it cannot live in QML state.
     shell_first: bool,
+    /// The UI family chosen in settings. Empty keeps the bundled Noto Sans SC.
+    /// This is the saved preference, not necessarily the family this process
+    /// started with.
+    ui_font_family: String,
+    /// The fixed-pitch family chosen in settings. Empty keeps the bundled
+    /// GoogleSansCode NFM. QML binds this live, so no restart is needed.
+    mono_font_family: String,
+    /// The UI family this process applied before QML started. `Theme` reads
+    /// this instead of `ui_font_family`: `QQuickText` copies the application
+    /// font when it is created, so a new preference cannot repaint the open
+    /// window and must wait for the next launch.
+    applied_ui_font: String,
 }
 
 impl Default for Appearance {
     fn default() -> Self {
         let stored = dae_core::settings::load_settings().unwrap_or_default();
+        let ui_font_family = stored.fonts.ui_family.unwrap_or_default();
         Self {
             theme: stored.theme,
             accent: stored.accent,
@@ -213,6 +230,9 @@ impl Default for Appearance {
             blur_enabled: stored.blur,
             window_material: stored.window_material,
             shell_first: stored.shell_first,
+            applied_ui_font: ui_font_family.clone(),
+            ui_font_family,
+            mono_font_family: stored.fonts.mono_family.unwrap_or_default(),
         }
     }
 }
@@ -229,6 +249,9 @@ impl Appearance {
         Notify = window_material_changed
     );
     qproperty!("shellFirst", Member = shell_first, Notify = shell_first_changed);
+    qproperty!("uiFontFamily", Member = ui_font_family, Notify = ui_font_family_changed);
+    qproperty!("monoFontFamily", Member = mono_font_family, Notify = mono_font_family_changed);
+    qproperty!("appliedUiFont", Member = applied_ui_font, Notify = applied_ui_font_changed);
 
     #[qsignal]
     fn theme_changed(&mut self);
@@ -242,6 +265,12 @@ impl Appearance {
     fn window_material_changed(&mut self);
     #[qsignal]
     fn shell_first_changed(&mut self);
+    #[qsignal]
+    fn ui_font_family_changed(&mut self);
+    #[qsignal]
+    fn mono_font_family_changed(&mut self);
+    #[qsignal]
+    fn applied_ui_font_changed(&mut self);
 
     // `SettingsPanel` calls these `chooseTheme`, `chooseAccent`, … — the names
     // the CXX-Qt bridge exported through `cxx_name`. They stay, so no `.qml`
@@ -274,7 +303,7 @@ impl Appearance {
         self.language.clone_from(&value);
         self.language_changed();
         save(|settings| settings.language = value.clone());
-        crate::i18n::apply(&value);
+        crate::i18n::apply_deferred(&value);
     }
 
     #[qslot]
@@ -295,6 +324,30 @@ impl Appearance {
         self.window_material.clone_from(&value);
         self.window_material_changed();
         save(|settings| settings.window_material = value);
+    }
+
+    /// Stores the two families. The mono side binds live in QML; the UI side
+    /// is applied before the next launch, because existing `Text` items copy
+    /// the application font when they are created.
+    #[qslot]
+    fn choose_fonts(&mut self, ui: String, mono: String) {
+        let ui = ui.trim().to_owned();
+        let mono = mono.trim().to_owned();
+        if self.ui_font_family == ui && self.mono_font_family == mono {
+            return;
+        }
+        if self.ui_font_family != ui {
+            self.ui_font_family.clone_from(&ui);
+            self.ui_font_family_changed();
+        }
+        if self.mono_font_family != mono {
+            self.mono_font_family.clone_from(&mono);
+            self.mono_font_family_changed();
+        }
+        save(|settings| {
+            settings.fonts.ui_family = (!ui.is_empty()).then_some(ui.clone());
+            settings.fonts.mono_family = (!mono.is_empty()).then_some(mono.clone());
+        });
     }
 
     /// Takes effect on the next launch: the current one has already decided

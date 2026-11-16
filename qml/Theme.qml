@@ -348,14 +348,16 @@ QtObject {
     /// document is created, so this sees them.
     readonly property var installedFamilies: Qt.fontFamilies()
 
-    /// The UI face (proposal §6.2.1): bundled Inter Variable, one file for
-    /// every weight the type scale uses. Decision 2 (§14) keeps Chinese on the
-    /// system face; a family without CJK glyphs is filled in per glyph by Qt,
-    /// so `font.family` here still names only the Latin face. The old platform
-    /// names remain as the fallback for a build whose font resource failed to
-    /// mount.
+    /// The UI face (proposal §6.2.1): bundled Noto Sans SC, one variable file
+    /// for every weight the type scale uses and for both Latin and Chinese.
+    /// `Appearance.appliedUiFont` is the custom family this process started
+    /// with; `uiFontFamily` is the setting for the next launch, because a
+    /// `Text` copies the application font when it is created.
     readonly property string uiFamily: {
-        const names = ["Inter Variable", "Inter"]
+        const custom = String(Appearance.appliedUiFont || "").trim()
+        if (custom !== "" && theme.installedFamilies.indexOf(custom) >= 0)
+            return custom
+        const names = ["Noto Sans SC", "Noto Sans"]
         for (let index = 0; index < names.length; index += 1) {
             if (theme.installedFamilies.indexOf(names[index]) >= 0)
                 return names[index]
@@ -365,13 +367,20 @@ QtObject {
             : "Noto Sans"
     }
 
-    /// Fixed-pitch for terminals, diffs, sizes and rates: bundled JetBrains
-    /// Mono, the same family on all three platforms. QML cannot express a
-    /// fallback list on `font.family`, so the platform face is chosen only when
-    /// the bundled one is missing.
+    /// Fixed-pitch for terminals, diffs, sizes and rates: bundled
+    /// GoogleSansCode NFM (the Nerd Font Mono patch), the same family on all
+    /// three platforms. A custom family from settings binds live here. QML
+    /// cannot express a fallback list on `font.family`, so the platform face
+    /// is chosen only when the bundled one is missing.
     readonly property string monoFamily: {
-        if (theme.installedFamilies.indexOf("JetBrains Mono") >= 0)
-            return "JetBrains Mono"
+        const custom = String(Appearance.monoFontFamily || "").trim()
+        if (custom !== "" && theme.installedFamilies.indexOf(custom) >= 0)
+            return custom
+        const names = ["GoogleSansCode NFM", "Google Sans Code"]
+        for (let index = 0; index < names.length; index += 1) {
+            if (theme.installedFamilies.indexOf(names[index]) >= 0)
+                return names[index]
+        }
         return Qt.platform.os === "osx" ? "SF Mono"
             : Qt.platform.os === "windows" ? "Consolas"
             : "DejaVu Sans Mono"

@@ -5,8 +5,13 @@
 #include <QHash>
 #include <QLocale>
 #include <QQmlEngine>
+#include <QTimer>
 #include <QTranslator>
 #include <QXmlStreamReader>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 namespace dae_qt {
 namespace {
@@ -126,13 +131,32 @@ QString resolve(const QString &preference) {
       preference == QStringLiteral("zh-TW"))
     return preference;
 
-  // The system locale picks the Chinese script; everything else is English.
+#ifdef Q_OS_WIN
+  // QLocale::system() follows the regional format, which can remain English
+  // after the user switches Windows' display language to Chinese. The shell's
+  // "follow system" choice means the display language, so ask the same Win32
+  // API that the UI-font fallback uses instead of inferring it from formats.
+  const LANGID language = GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(language) == LANG_CHINESE) {
+    switch (SUBLANGID(language)) {
+    case SUBLANG_CHINESE_TRADITIONAL:
+    case SUBLANG_CHINESE_HONGKONG:
+    case SUBLANG_CHINESE_MACAU:
+      return QStringLiteral("zh-TW");
+    default:
+      return QStringLiteral("zh-CN");
+    }
+  }
+  return QStringLiteral("en");
+#else
+  // Other platforms expose the UI locale directly through Qt.
   const QLocale locale = QLocale::system();
   if (locale.script() == QLocale::TraditionalChineseScript)
     return QStringLiteral("zh-TW");
   if (locale.name().startsWith(QStringLiteral("zh"), Qt::CaseInsensitive))
     return QStringLiteral("zh-CN");
   return QStringLiteral("en");
+#endif
 }
 
 } // namespace
@@ -168,6 +192,15 @@ bool dae_qt_i18n_apply(const QString &language) {
     g_engine->retranslate();
 
   return installed;
+}
+
+void dae_qt_i18n_apply_deferred(const QString &language) {
+  // A settings slot owns a mutable Rust borrow until it returns. Both the
+  // translator's LanguageChange event and QQmlEngine::retranslate() can read
+  // Appearance.language, so neither may run before that borrow is released.
+  QTimer::singleShot(0, QCoreApplication::instance(), [language]() {
+    dae_qt_i18n_apply(language);
+  });
 }
 
 QString dae_qt_i18n_system_language() { return resolve(QStringLiteral("system")); }

@@ -266,7 +266,7 @@ fn pre_open(theme: &Theme, dark: bool) -> String {
         .unwrap_or_else(|| if dark { "#f7f7f9" } else { "#1c1e23" }.to_owned());
     format!(
         "<pre style=\"margin:0; background-color:{background}; color:{foreground}; \
-         font-family:'JetBrains Mono','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
+         font-family:'GoogleSansCode NFM','Google Sans Code','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
          white-space:pre;\">"
     )
 }
@@ -623,7 +623,7 @@ impl Renderer<'_> {
     fn inline_code(&mut self, code: &str) {
         let _ = write!(
             self.out,
-            "<span style=\"font-family:'JetBrains Mono','Cascadia Mono',Consolas,monospace; color:{}; \
+            "<span style=\"font-family:'GoogleSansCode NFM','Google Sans Code','Cascadia Mono',Consolas,monospace; color:{}; \
              background-color:{};\">",
             self.palette.inline_code_fg, self.palette.inline_code_bg
         );

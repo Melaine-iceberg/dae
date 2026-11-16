@@ -86,8 +86,10 @@ TerminalItem::TerminalItem(QQuickItem* parent)
     setFocus(true);
     setActiveFocusOnTab(true);
 
-    m_font.setFamilies({ QStringLiteral("JetBrains Mono"),
-                         QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
+    m_font.setFamilies({ QStringLiteral("GoogleSansCode NFM"),
+                         QStringLiteral("Google Sans Code"),
+                         QStringLiteral("Cascadia Mono"),
+                         QStringLiteral("Consolas"),
                          QStringLiteral("Courier New") });
     m_font.setStyleHint(QFont::Monospace);
     m_font.setFixedPitch(true);
@@ -182,8 +184,10 @@ void TerminalItem::setFontFamily(const QString& family)
         return;
     m_fontFamily = trimmed;
     if (trimmed.isEmpty()) {
-        m_font.setFamilies({ QStringLiteral("JetBrains Mono"),
-                             QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"),
+        m_font.setFamilies({ QStringLiteral("GoogleSansCode NFM"),
+                             QStringLiteral("Google Sans Code"),
+                             QStringLiteral("Cascadia Mono"),
+                             QStringLiteral("Consolas"),
                              QStringLiteral("Courier New") });
     } else {
         m_font.setFamilies({ trimmed });

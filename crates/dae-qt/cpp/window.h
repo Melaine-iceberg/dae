@@ -1150,78 +1150,20 @@ inline double dae_qt_native_handle(const QString&)
 inline void dae_qt_enable_alpha()
 {
     QQuickWindow::setDefaultAlphaBuffer(true);
-    // Native glyph rasterisation (proposal §9.2, §12.4): DirectWrite on
-    // Windows, FreeType on Linux, CoreText on macOS, instead of Qt's
-    // distance-field renderer, which is soft at 11–13 px on a 100 % display.
-    // Static and global, and it has to be chosen before the first window
-    // exists; the matching `PreferVerticalHinting` is set on the application
-    // font in `dae_qt_apply_fonts`. The shell's motion rules only animate
-    // opacity, so nothing here relies on scaling live text.
-    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
+    // Keep Qt's antialiased distance-field glyphs. NativeTextRendering made
+    // small UI text look unsmoothed on Windows regardless of the font family.
+    // Set this globally before the first window exists so every QML Text uses
+    // the same renderer; the old NativeTextRendering experiment must not return
+    // without an A/B check on a 100%-scale Windows display.
+    QQuickWindow::setTextRenderType(QQuickWindow::QtTextRendering);
 }
 
-/// Loads the bundled faces and selects the application font.
-///
-/// Inter Variable is the UI face and JetBrains Mono the fixed-pitch one
-/// (proposal §6.2.1, §9.2). Decision 2 keeps Chinese on the system face, so
-/// the family list places the platform's own CJK UI face after Inter: Qt walks
-/// a family list per glyph, and a label that mixes Latin and Chinese then keeps
-/// one baseline, one weight and one line height across the two scripts.
-///
-/// `addApplicationFont` is what makes the families visible to QML's
-/// `Qt.fontFamilies()` and to `Theme.uiFamily`; both fonts are mounted under
-/// `:/fonts` by `apps/dae/build.rs`. The hinting preference is set here as
-/// well: it only does anything under `NativeRendering`, which
-/// `dae_qt_enable_alpha` selects before the first window exists, and the
-/// application font is what a `Text` inherits when it names only a size.
-///
-/// Deliberately no `QFontDatabase::families()` here: the first font-database
-/// query builds the whole Windows database (200–300 ms on this machine), and
-/// `dae_qt_warm_font_database` pays that on a worker while the engine loads.
-/// `addApplicationFont` returns the families it registered, which is enough to
-/// build the list below; a name Qt cannot resolve falls through the list.
-inline void dae_qt_apply_fonts()
+/// The platform faces behind the bundled UI family. macOS and Linux name
+/// their CJK families directly; Windows resolves through the UI language id,
+/// which is more authoritative than the locale because Windows 11 reports
+/// plain "Segoe UI" as its non-client font even on a Chinese system.
+inline QStringList dae_qt_ui_fallback_families()
 {
-    static const struct {
-        const char* path;
-    } faces[] = {
-        { ":/fonts/InterVariable.ttf" },
-        { ":/fonts/JetBrainsMono-Regular.ttf" },
-        { ":/fonts/JetBrainsMono-Medium.ttf" },
-    };
-
-    QStringList uiFamilies;
-    for (const auto& face : faces) {
-        const QString path = QString::fromLatin1(face.path);
-        const int id = QFontDatabase::addApplicationFont(path);
-        if (id < 0) {
-            qWarning("dae: bundled font not loaded: %s", qUtf8Printable(path));
-            continue;
-        }
-        const QStringList families = QFontDatabase::applicationFontFamilies(id);
-        if (path.contains(QLatin1String("Inter"))) {
-            for (const QString& family : families) {
-                if (!uiFamilies.contains(family))
-                    uiFamilies << family;
-            }
-        }
-    }
-    // A missing resource is a packaging defect, not a reason to paint in the
-    // platform face: the old family names fall through to the system font.
-    if (uiFamilies.isEmpty()) {
-        uiFamilies << QStringLiteral("Inter Variable") << QStringLiteral("Inter");
-    }
-    // The variable font answers to its canonical name and to the split names
-    // GDI derives for it. Put the canonical one first so a Text that names
-    // `Theme.uiFamily` and a Text that inherits `Qt.application.font` resolve
-    // to the same face.
-    if (uiFamilies.removeAll(QStringLiteral("Inter Variable")) > 0)
-        uiFamilies.prepend(QStringLiteral("Inter Variable"));
-
-    // The face this display language's own UI uses. macOS and Linux name their
-    // CJK families directly; Windows resolves through the UI language id, which
-    // is more authoritative than the locale because Windows 11 reports plain
-    // "Segoe UI" as its non-client font even on a Chinese system.
     QStringList preferred;
 #if defined(Q_OS_WIN)
     const LANGID language = GetUserDefaultUILanguage();
@@ -1271,24 +1213,101 @@ inline void dae_qt_apply_fonts()
     preferred << QStringLiteral("Noto Sans")
               << QStringLiteral("DejaVu Sans");
 #endif
+    return preferred;
+}
 
-    QStringList families = uiFamilies;
-    for (const QString& face : preferred) {
-        if (!families.contains(face))
-            families << face;
+/// The families registered from the bundled Noto Sans SC file. Filled once by
+/// `dae_qt_apply_fonts`; a missing resource leaves it empty and the platform
+/// list takes over.
+inline QStringList& dae_qt_bundled_ui_families()
+{
+    static QStringList families;
+    return families;
+}
+
+/// Selects the application font. `custom` is the family from settings.toml;
+/// empty keeps the bundled Noto Sans SC. The platform faces stay after it, so
+/// a custom Latin-only face gets CJK glyphs per glyph instead of a row of
+/// boxes.
+inline void dae_qt_set_ui_font(const QString& custom)
+{
+    QStringList families;
+    const QString trimmed = custom.trimmed();
+    if (!trimmed.isEmpty())
+        families << trimmed;
+    for (const QString& family : dae_qt_bundled_ui_families()) {
+        if (!families.contains(family))
+            families << family;
     }
+    for (const QString& family : dae_qt_ui_fallback_families()) {
+        if (!families.contains(family))
+            families << family;
+    }
+    if (families.isEmpty())
+        families << QStringLiteral("Noto Sans SC");
 
     QFont font = QGuiApplication::font();
     font.setFamilies(families);
-    // Proposal §12.4: native glyph rasterisation and vertical hinting. The
-    // preference is a no-op under Qt's distance-field renderer, which
-    // `dae_qt_enable_alpha` has already replaced.
-    font.setHintingPreference(QFont::PreferVerticalHinting);
+    // Noto Sans SC's variable default instance is Thin (wght=100), and Qt does
+    // not translate QFont::weight into the axis for an inherited font. Pin the
+    // text weight, or every label renders with the thin face and reads blurry.
+    font.setVariableAxis(QFont::Tag("wght"), 400.0f);
     QGuiApplication::setFont(font);
     // The family list is in the startup line on purpose: a Qt upgrade that
-    // renames the variable font's family would otherwise show up only as text
-    // that quietly fell back to Segoe UI.
-    dae_qt_startup_mark(QStringLiteral("fonts [%1]").arg(uiFamilies.join(QLatin1Char('|'))));
+    // renames a bundled family would otherwise show up only as text that
+    // quietly fell back to the platform face.
+    dae_qt_startup_mark(QStringLiteral("fonts [%1]").arg(families.join(QLatin1Char('|'))));
+}
+
+/// Loads the bundled faces and selects the default application font.
+///
+/// Noto Sans SC is the UI face and GoogleSansCode NFM (Nerd Font Mono) the
+/// fixed-pitch one (proposal §6.2.1, §9.2). One Noto file covers Latin and
+/// Simplified Chinese, so a label that mixes both scripts keeps one baseline,
+/// one weight and one line height. A custom UI family from settings is applied
+/// by `dae_qt_set_ui_font` before the first QML document exists.
+///
+/// `addApplicationFont` is what makes the families visible to QML's
+/// `Qt.fontFamilies()` and to `Theme.uiFamily`; both fonts are mounted under
+/// `:/fonts` by `apps/dae/build.rs`.
+///
+/// Deliberately no `QFontDatabase::families()` here: the first font-database
+/// query builds the whole Windows database (200–300 ms on this machine), and
+/// `dae_qt_warm_font_database` pays that on a worker while the engine loads.
+/// `addApplicationFont` returns the families it registered, which is enough to
+/// build the list below; a name Qt cannot resolve falls through the list.
+inline void dae_qt_apply_fonts()
+{
+    static const char* faces[] = {
+        ":/fonts/NotoSansSC.ttf",
+        ":/fonts/GoogleSansCodeNerdFontMono-Regular.ttf",
+        ":/fonts/GoogleSansCodeNerdFontMono-Bold.ttf",
+    };
+
+    QStringList uiFamilies;
+    for (const char* face : faces) {
+        const QString path = QString::fromLatin1(face);
+        const int id = QFontDatabase::addApplicationFont(path);
+        if (id < 0) {
+            qWarning("dae: bundled font not loaded: %s", qUtf8Printable(path));
+            continue;
+        }
+        if (path.contains(QLatin1String("NotoSans"))) {
+            for (const QString& family : QFontDatabase::applicationFontFamilies(id))
+                if (!uiFamilies.contains(family))
+                    uiFamilies << family;
+        }
+    }
+    // A missing resource is a packaging defect, not a reason to paint in the
+    // platform face: the canonical name falls through to the system font.
+    if (uiFamilies.isEmpty())
+        uiFamilies << QStringLiteral("Noto Sans SC");
+    // Put the canonical name first so a Text that names `Theme.uiFamily` and
+    // a Text that inherits `Qt.application.font` resolve to the same face.
+    if (uiFamilies.removeAll(QStringLiteral("Noto Sans SC")) > 0)
+        uiFamilies.prepend(QStringLiteral("Noto Sans SC"));
+    dae_qt_bundled_ui_families() = uiFamilies;
+    dae_qt_set_ui_font(QString());
 }
 
 /// Populates the font database on a worker thread. Qt documents every

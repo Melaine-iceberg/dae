@@ -45,6 +45,15 @@ pub fn apply(language: &str) -> bool {
     crate::appearance::qobject::dae_qt_i18n_apply(&cxx_qt_lib::QString::from(language))
 }
 
+/// Applies a settings-panel choice once its QtBridge slot has returned.
+///
+/// Synchronous retranslation reads `Appearance.language`; doing that while
+/// `choose_language` still owns `&mut self` trips QtBridge's runtime borrow
+/// guard and aborts across the FFI boundary.
+pub fn apply_deferred(language: &str) {
+    crate::appearance::qobject::dae_qt_i18n_apply_deferred(&cxx_qt_lib::QString::from(language));
+}
+
 /// The locale name the language menu can show beside "follow system".
 pub fn system_language() -> String {
     crate::appearance::qobject::dae_qt_i18n_system_language().to_string()

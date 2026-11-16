@@ -48,6 +48,8 @@ FocusScope {
     property string shortcutError: ""
     property string terminalError: ""
     property string terminalStatus: ""
+    property string fontError: ""
+    property string fontStatus: ""
     property string tagError: ""
     /// Which of the eight fixed tag colours the next tag gets. A picked option
     /// is stored as its light hex, so a tag keeps its identity across themes.
@@ -358,6 +360,9 @@ FocusScope {
         root.terminalError = ""
         root.terminalStatus = ""
         root.syncTerminalFields()
+        root.fontError = ""
+        root.fontStatus = ""
+        root.syncFontFields()
         Workspace.refreshDefaultManager()
         root.forceActiveFocus()
         Qt.callLater(function () {
@@ -377,6 +382,32 @@ FocusScope {
         heightInput.text = Workspace.terminalLineHeight.toFixed(2)
         familyInput.text = Workspace.terminalFontFamily
         shellInput.text = ExplorerPrefs.terminalShell
+    }
+
+    function syncFontFields() {
+        uiFontInput.text = Appearance.uiFontFamily
+        monoFontInput.text = Appearance.monoFontFamily
+    }
+
+    function saveFonts() {
+        const ui = uiFontInput.text.trim()
+        const mono = monoFontInput.text.trim()
+        const installed = Theme.installedFamilies
+        if (ui !== "" && installed.indexOf(ui) < 0) {
+            root.fontError = qsTr("未找到界面字体“%1”").arg(ui)
+            return
+        }
+        if (mono !== "" && installed.indexOf(mono) < 0) {
+            root.fontError = qsTr("未找到等宽字体“%1”").arg(mono)
+            return
+        }
+        const uiChanged = ui !== Appearance.uiFontFamily
+        Appearance.chooseFonts(ui, mono)
+        root.fontError = ""
+        root.fontStatus = uiChanged
+            ? qsTr("已保存；界面字体在重新启动后生效")
+            : qsTr("已保存")
+        fontStatusTimer.restart()
     }
 
     /// The stored actions, unfiltered: a row whose program is missing must
@@ -597,12 +628,13 @@ FocusScope {
             visible: setting.showReset
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            width: 60
+            width: Math.max(60, resetText.implicitWidth + 20)
             height: 24
             radius: Theme.radiusSm
             color: resetMouse.containsMouse ? Theme.hover : "transparent"
 
             Text {
+                id: resetText
                 anchors.centerIn: parent
                 text: qsTr("恢复默认")
                 color: resetMouse.containsMouse ? root.textColor : root.mutedColor
@@ -634,6 +666,12 @@ FocusScope {
         id: terminalStatusTimer
         interval: 2200
         onTriggered: root.terminalStatus = ""
+    }
+
+    Timer {
+        id: fontStatusTimer
+        interval: 3200
+        onTriggered: root.fontStatus = ""
     }
 
     // A full page, not a dialog: the chrome bar stays live so the window can
@@ -689,6 +727,7 @@ FocusScope {
                 spacing: 2
 
                 NavItem { label: qsTr("外观与语言"); value: "appearance" }
+                NavItem { label: qsTr("字体设置"); value: "fonts" }
                 NavItem { label: qsTr("快捷键"); value: "shortcuts" }
                 NavItem { label: qsTr("动作"); value: "actions" }
                 NavItem { label: qsTr("终端"); value: "terminal" }
@@ -1233,6 +1272,135 @@ FocusScope {
                 anchors.rightMargin: 18
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
+            }
+
+            // ----------------------------------------------------------- fonts
+            Item {
+                anchors.fill: parent
+                visible: root.page === "fonts"
+
+                Text {
+                    x: 24; y: 20
+                    text: qsTr("字体设置")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeHeading
+                    font.weight: Font.Medium
+                }
+                Text {
+                    x: 24; y: 50
+                    width: content.width - 48
+                    text: qsTr("输入系统已安装的字体族名；留空使用内置字体。界面字体在重新启动后生效，等宽字体立即生效。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    x: 24; y: 92
+                    text: qsTr("界面字体")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                }
+                FieldFrame {
+                    id: uiFontFrame
+                    x: 130; y: 86
+                    width: content.width - 130 - 48
+                    height: Theme.controlMd
+                }
+                TextInput {
+                    id: uiFontInput
+                    anchors.fill: uiFontFrame
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: root.textColor
+                    selectionColor: root.accent
+                    selectedTextColor: Theme.onAccent
+                    font.pixelSize: Theme.typeCaption
+                    selectByMouse: true
+                    clip: true
+                    onAccepted: root.saveFonts()
+                }
+                Text {
+                    x: 130; y: 118
+                    width: content.width - 178
+                    text: qsTr("留空使用内置 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。")
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    x: 24; y: 158
+                    text: qsTr("等宽字体")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                }
+                FieldFrame {
+                    id: monoFontFrame
+                    x: 130; y: 152
+                    width: content.width - 130 - 48
+                    height: Theme.controlMd
+                }
+                TextInput {
+                    id: monoFontInput
+                    anchors.fill: monoFontFrame
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: root.textColor
+                    selectionColor: root.accent
+                    selectedTextColor: Theme.onAccent
+                    font.pixelSize: Theme.typeCaption
+                    selectByMouse: true
+                    clip: true
+                    onAccepted: root.saveFonts()
+                }
+                Text {
+                    x: 130; y: 184
+                    width: content.width - 178
+                    text: qsTr("留空使用内置 GoogleSansCode NFM（Nerd Font Mono）；终端、大小、速率与代码预览共用。")
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    x: 24; y: 232
+                    width: content.width - 48
+                    text: qsTr("已安装的字体族可在此输入；切换界面字体不会改变等宽区域。")
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    x: 24; y: 264
+                    width: content.width - 48
+                    visible: text !== ""
+                    text: root.fontError
+                    color: Theme.danger
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    x: 24
+                    y: 296
+                    spacing: 10
+
+                    PrimaryButton {
+                        label: qsTr("保存字体")
+                        onClicked: root.saveFonts()
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.fontStatus
+                        color: Theme.success
+                        font.pixelSize: Theme.typeMicro
+                    }
+                }
             }
 
             // ------------------------------------------------------- shortcuts
@@ -1927,7 +2095,7 @@ FocusScope {
                 }
                 Text {
                     x: 130; y: 222
-                    text: qsTr("留空使用 JetBrains Mono")
+                    text: qsTr("终端字体覆盖；留空使用「字体设置」页的全局等宽字体")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                 }
@@ -2430,7 +2598,9 @@ FocusScope {
             Text {
                 x: 24
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("更改会立即生效")
+                text: root.page === "fonts"
+                    ? qsTr("等宽字体立即生效，界面字体下次启动生效")
+                    : qsTr("更改会立即生效")
                 color: root.faintColor
                 font.pixelSize: Theme.typeMicro
             }

@@ -4929,11 +4929,6 @@
         <translation>Font family</translation>
     </message>
     <message>
-        <location filename="../SettingsPanel.qml" line="1913"/>
-        <source>留空使用 JetBrains Mono</source>
-        <translation>Leave empty to use JetBrains Mono</translation>
-    </message>
-    <message>
         <location filename="../SettingsPanel.qml" line="2254"/>
         <source>把 dae 注册为系统打开文件夹的应用。这个设置修改操作系统关联，不写入 settings.toml。</source>
         <translation>Register dae as the system&apos;s folder-opening app. This changes an OS association and is not written to settings.toml.</translation>
@@ -5500,6 +5495,58 @@
         <location filename="../SettingsPanel.qml" line="2793"/>
         <source>导出标签定义</source>
         <translation>Export tag definitions</translation>
+    </message>
+    <message>
+        <source>字体设置</source>
+        <translation>Fonts</translation>
+    </message>
+    <message>
+        <source>输入系统已安装的字体族名；留空使用内置字体。界面字体在重新启动后生效，等宽字体立即生效。</source>
+        <translation>Enter an installed font family; leave empty to use the bundled faces. The UI font applies after a restart; the mono font applies immediately.</translation>
+    </message>
+    <message>
+        <source>界面字体</source>
+        <translation>UI font</translation>
+    </message>
+    <message>
+        <source>留空使用内置 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。</source>
+        <translation>Leave empty to use bundled Noto Sans SC; for example Noto Sans SC or Microsoft YaHei UI.</translation>
+    </message>
+    <message>
+        <source>等宽字体</source>
+        <translation>Monospace font</translation>
+    </message>
+    <message>
+        <source>留空使用内置 GoogleSansCode NFM（Nerd Font Mono）；终端、大小、速率与代码预览共用。</source>
+        <translation>Leave empty to use bundled GoogleSansCode NFM (Nerd Font Mono); shared by the terminal, sizes, rates and code previews.</translation>
+    </message>
+    <message>
+        <source>已安装的字体族可在此输入；切换界面字体不会改变等宽区域。</source>
+        <translation>Type an installed font family here; changing the UI font does not affect monospace areas.</translation>
+    </message>
+    <message>
+        <source>未找到界面字体“%1”</source>
+        <translation>UI font not found: “%1”</translation>
+    </message>
+    <message>
+        <source>未找到等宽字体“%1”</source>
+        <translation>Monospace font not found: “%1”</translation>
+    </message>
+    <message>
+        <source>已保存；界面字体在重新启动后生效</source>
+        <translation>Saved; the UI font applies after a restart</translation>
+    </message>
+    <message>
+        <source>保存字体</source>
+        <translation>Save fonts</translation>
+    </message>
+    <message>
+        <source>等宽字体立即生效，界面字体下次启动生效</source>
+        <translation>Mono font applies immediately; UI font applies on next launch</translation>
+    </message>
+    <message>
+        <source>终端字体覆盖；留空使用「字体设置」页的全局等宽字体</source>
+        <translation>Terminal font override; leave empty to use the global monospace font from the Fonts page</translation>
     </message>
 </context>
 <context>

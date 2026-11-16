@@ -110,14 +110,22 @@ pub fn init() {
     // The application font is the fallback for every Text item that does not
     // name a family; it has to be chosen before the first QML component is
     // created so nothing paints in the old face and then reflows. This is also
-    // where the bundled Inter/JetBrains Mono resources enter the font
-    // database (proposal §6.2.1, §9.2).
+    // where the bundled Noto Sans SC / GoogleSansCode NFM resources enter the
+    // font database (proposal §6.2.1, §9.2).
     window::apply_fonts();
     if let Err(error) = dae_core::settings::init() {
         log::error!(target: "dae", "settings initialization failed: {error}");
     } else {
         appearance::migrate_legacy();
     }
+    // A custom UI family has to be chosen before the first QML document: every
+    // `Text` copies the application font when it is created. The mono family
+    // is a QML binding and updates live.
+    let ui_font = dae_core::settings::load_settings()
+        .ok()
+        .and_then(|settings| settings.fonts.ui_family)
+        .unwrap_or_default();
+    window::set_ui_font(&ui_font);
     // `format::size` is called from `data()`; it has to know the unit before
     // the first listing, not when the preferences singleton is first touched.
     preferences::apply_process_wide_preferences();

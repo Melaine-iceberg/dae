@@ -15,6 +15,11 @@ void dae_qt_i18n_attach_engine(std::size_t engine);
 /// so it needs none.
 bool dae_qt_i18n_apply(const QString &language);
 
+/// Applies a settings-panel choice after its Rust slot has returned. Running
+/// the translator change and QML retranslation inside the slot re-enters the
+/// Appearance property getter while QtBridge still holds its mutable borrow.
+void dae_qt_i18n_apply_deferred(const QString &language);
+
 /// The OS UI language reduced to the two languages this shell ships.
 QString dae_qt_i18n_system_language();
 

@@ -4929,11 +4929,6 @@
         <translation>字型</translation>
     </message>
     <message>
-        <location filename="../SettingsPanel.qml" line="1913"/>
-        <source>留空使用 JetBrains Mono</source>
-        <translation>留空使用 JetBrains Mono</translation>
-    </message>
-    <message>
         <location filename="../SettingsPanel.qml" line="2254"/>
         <source>把 dae 注册为系统打开文件夹的应用。这个设置修改操作系统关联，不写入 settings.toml。</source>
         <translation>把 dae 註冊為系統開啟資料夾的應用。這個設定修改作業系統關聯，不寫入 settings.toml。</translation>
@@ -5500,6 +5495,58 @@
         <location filename="../SettingsPanel.qml" line="2793"/>
         <source>导出标签定义</source>
         <translation>匯出標籤定義</translation>
+    </message>
+    <message>
+        <source>字体设置</source>
+        <translation>字型設定</translation>
+    </message>
+    <message>
+        <source>输入系统已安装的字体族名；留空使用内置字体。界面字体在重新启动后生效，等宽字体立即生效。</source>
+        <translation>輸入系統已安裝的字型家族名稱；留空使用內建字型。介面字型在重新啟動後生效，等寬字型立即生效。</translation>
+    </message>
+    <message>
+        <source>界面字体</source>
+        <translation>介面字型</translation>
+    </message>
+    <message>
+        <source>留空使用内置 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。</source>
+        <translation>留空使用內建 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。</translation>
+    </message>
+    <message>
+        <source>等宽字体</source>
+        <translation>等寬字型</translation>
+    </message>
+    <message>
+        <source>留空使用内置 GoogleSansCode NFM（Nerd Font Mono）；终端、大小、速率与代码预览共用。</source>
+        <translation>留空使用內建 GoogleSansCode NFM（Nerd Font Mono）；終端、大小、速率與程式碼預覽共用。</translation>
+    </message>
+    <message>
+        <source>已安装的字体族可在此输入；切换界面字体不会改变等宽区域。</source>
+        <translation>已安裝的字型家族可在此輸入；切換介面字型不會改變等寬區域。</translation>
+    </message>
+    <message>
+        <source>未找到界面字体“%1”</source>
+        <translation>找不到介面字型「%1」</translation>
+    </message>
+    <message>
+        <source>未找到等宽字体“%1”</source>
+        <translation>找不到等寬字型「%1」</translation>
+    </message>
+    <message>
+        <source>已保存；界面字体在重新启动后生效</source>
+        <translation>已儲存；介面字型在重新啟動後生效</translation>
+    </message>
+    <message>
+        <source>保存字体</source>
+        <translation>儲存字型</translation>
+    </message>
+    <message>
+        <source>等宽字体立即生效，界面字体下次启动生效</source>
+        <translation>等寬字型立即生效，介面字型下次啟動生效</translation>
+    </message>
+    <message>
+        <source>终端字体覆盖；留空使用「字体设置」页的全局等宽字体</source>
+        <translation>終端字型覆寫；留空使用「字型設定」頁的全域等寬字型</translation>
     </message>
 </context>
 <context>

@@ -392,7 +392,8 @@ Item {
         dark: root.dark
         fontSize: Workspace.terminalFontSize
         lineHeight: Workspace.terminalLineHeight
-        fontFamily: Workspace.terminalFontFamily
+        fontFamily: Workspace.terminalFontFamily !== ""
+            ? Workspace.terminalFontFamily : Theme.monoFamily
     }
 
     Connections {
