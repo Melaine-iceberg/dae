@@ -1,14 +1,16 @@
 # Qt Bridge 迁移执行手册
 
-> **状态：进行中。** 分支 `feat/qtbridge`，已有 8 个提交，7 个 QObject 已迁移并通过
-> 构建、单元测试和整机启动验证；三个“叶子单例”已全部完成，下一步是列表模型。
-> 其余约 17 个 QObject、`main.rs` 和 `cxx-qt-build` 的移除尚未完成。本文是给下一次
-> 对话直接执行用的，不需要上一次对话的上下文。
+> **状态：进行中。** 迁移已合并进 `main`（`feat/qtbridge` 快进），之后又补了 QML
+> 元数据生成与一处槽名回归。7 个 QObject 已迁移并通过构建、单元测试、CI 那组静态闸门
+> 和整机启动验证；三个“叶子单例”已全部完成，下一步是列表模型。其余约 17 个 QObject、
+> `main.rs` 和 `cxx-qt-build` 的移除尚未完成。本文是给下一次对话直接执行用的，不需要
+> 上一次对话的上下文。
 
 - 目标：`crates/dae-qt` 从 CXX-Qt 0.10 全量迁到 [Qt Bridge for Rust](https://doc.qt.io/qtbridge-rust/)（beta，API 已按 0.4.1 固定）。
 - 依赖版本：`qtbridge = "0.4.1"`，MSRV 1.88，Qt ≥ 6.10。本机 Qt 6.12.0：
   `K:/Qt/6.12.0/msvc2022_64`，`qmake.exe` 在同目录 `bin/`。
-- 分支：`feat/qtbridge`（基于 `main` @ `913f219`）。`main` 未被改动。
+- 分支：`feat/qtbridge` 已合入 `main`（快进，无合并提交），后续迁移直接在 `main` 上
+  提交或另开分支；CXX-Qt 与 Qt Bridge 在这一版里共存，所以半迁移状态的 `main` 可用。
 
 | 提交 | 内容 |
 |---|---|
@@ -19,6 +21,10 @@
 | `aaff2f5` | `Appearance` → qtbridge（保留 translator.h 的 C++ extern） |
 | `906bdbf` | `NetworkDiscovery` → qtbridge（`QThreadHandle` 替换 `qt_thread()`） |
 | `54dbb4d` | `ExplorerPrefs` → qtbridge（36 属性 + `notifying_setters!`） |
+| `9c214b9` | 迁移分支合入 `main`（快进） |
+| `0a472a4` | 修正 `Appearance` 槽名（`choose*` 被机械化改成了 `change*`） |
+| `5c38637` | `apps/dae/build.rs` 从 Rust 声明生成已迁移类型的 qmltypes；`qmllint` 改用同一份 |
+| `ebb4b5d` | `FileList.qml` 两处 required 属性限定（既有 lint 警告） |
 
 ## 0. 三条硬约束（先读，决定后面所有写法）
 
@@ -191,6 +197,14 @@ target\debug\dae.exe
 **没有** `ReferenceError` / `TypeError` / `is not defined` / `Cannot assign`。
 `qml-root-completed` 就是 `Startup.mark` 打出来的，等于顺带验证了 QML→Rust 通路。
 
+启动检查只覆盖**启动时**调用的成员：用户点击才走的槽（`Appearance.chooseTheme`、
+`TagStore.toggleTag`）坏了它看不出来。所以每个模块还要跑一次 CI 的那组静态闸门
+（见 §7.1），`qmllint` 会把每个 QML 调用点对照迁移后的元数据查一遍：
+
+```bat
+set DAE_QML_AOT=1&& set DAE_QML_TYPEC=1&& set DAE_QML_LINT=1&& cargo build -p dae-app
+```
+
 ### 3.5 提交
 
 一个模块一个提交，按现有风格 `feat(qt): port <Type> to Qt Bridge`，正文写清
@@ -298,27 +312,35 @@ impl QmlElement for Model { /* URI "dae"，ELEMENT_NAME，IS_SINGLETON = false *
 
 ### 7.1 QML AOT / qmltypes
 
-`apps/dae/build.rs` 用 `qmlcachegen` 预编译 53 个 QML 文件，输入是 cxx-qt 导出的
-`plugin.qmltypes` + `qmldir`。qtbridge 运行时注册，不产出 qmltypes，所以已迁移类型
-（`Startup` 等）会从类型表里消失，release 构建的 AOT 步骤会**降级**（不是失败），
-冷启动退回 1120 ms（+265 ms）。
+`apps/dae/build.rs` 用 `qmlcachegen` 预编译 53 个 QML 文件，`qmltc` 做类型编译，
+`qmllint` 做零警告检查；三者的输入都是 cxx-qt 导出的 `plugin.qmltypes` + `qmldir`。
+qtbridge 运行时注册、不产出 qmltypes，所以已迁移类型会从类型表里消失：
+`DAE_QML_TYPEC=1` 直接报 `AppConfig was not found`，`qmllint` 把每个
+`ExplorerPrefs`/`TagStore` 引用都报成 unqualified，AOT 也会降级（冷启动 1120 ms）。
 
-方案（推荐）：模块名仍是 `dae`，`apps/dae/build.rs` 的 `prepare_module` 已经会生成
-一份给 `qmltc` 用的 `qmldir` + 净化后的 qmltypes。把已迁移类型按**不透明类型**补进去即可：
+**已实现**（`apps/dae/build.rs`，提交 `5c38637`）：`prepare_module` 在把净化后的
+qmltypes 写给 `qmltc` 之前，从 `crates/dae-qt/src` 反读已迁移类型的声明并补回一条
+**不透明** component：
 
+| qmltypes 字段 | 来源 |
+|---|---|
+| `name` / `exports` 的 URI+版本 | `impl QmlElement` 的 `ELEMENT_NAME`/`URI`/`MAJOR_VERSION`/`MINOR_VERSION` |
+| `isSingleton` / `isCreatable` | `IS_SINGLETON`（单例即 `isCreatable: false`） |
+| `Property` 名与类型 | `qproperty!("name", Member = field, …)` + 该字段的 Rust 类型（`String`→`QString`、`i32`→`int`、`Vec<String>`→`QStringList`，其余 `var`） |
+| `Method` / `Signal` 名与元数 | `#[qslot]` / `#[qsignal]`，`ConvertToCamelCase` 时也转驼峰；参数类型写 `var` |
+
+因此**不需要**为每个迁移模块维护第二份清单，迁完自动出现在元数据里。`qmllint` 也改用
+同一份 `prepare_module` 输出（提交 `5c38637`），两个工具看同一份类型表。
+
+验收（每个模块迁完都跑一次，CI 的 qt-check 也跑同一组）：
+
+```bat
+set DAE_QML_AOT=1&& set DAE_QML_TYPEC=1&& set DAE_QML_LINT=1&& cargo build -p dae-app
 ```
-Component {
-    name: "Startup"
-    exports: ["dae/Startup 1.0"]
-    isSingleton: true
-    isCreatable: false
-    isTypeOpaque: true
-}
-```
 
-需要为每个已迁移类型维护一条（名字、是否单例、属性/方法可省略）。等上游提供
-qmltypes 导出后可删。验收：`DAE_QML_AOT=1 cargo build --release` 不降级，且
-`%LOCALAPPDATA%\dae\cache\qmlcache` 不再写 `.qmlc`。
+三条都绿才算迁完。`qmllint` 会在**编译期**发现槽名写错（例如 `chooseTheme` 被机械地
+改成 `changeTheme`），这是启动时间线查不出来的那类回归。等上游提供 qmltypes 导出后可删
+这段生成逻辑。
 
 ### 7.2 线程
 
@@ -420,6 +442,11 @@ C++ 画笔已经用 `QMetaObject::invokeMethod` 按 **`QByteArray`** 取帧和�
 
 ## 8. 陷阱清单（踩过的）
 
+- **`cxx_name` 的改名不会跟着迁。** 旧桥里 `fn change_theme(…)` 可以用
+  `#[cxx_name = "chooseTheme"]` 导出成另一个名字；qtbridge 的 `ConvertToCamelCase`
+  只做 `change_theme → changeTheme`。`Appearance` 六个 `choose*` 因此变成了
+  `change*`，启动和单测都绿，只有打开设置面板才会 `TypeError`。迁的时候把 Rust 名改成
+  QML 名（`choose_theme`），跑 §3.4 的 `DAE_QML_LINT=1` 静态确认。
 - **不要跑 `cargo fmt -p dae-qt`**：仓库当前不是 rustfmt-clean，它会顺手重排
   `model.rs`/`workspace.rs` 等无关文件的 import（本次已产生过一次 400+ 行噪声并撤回）。
   只格式化自己改的文件，或改完手工检查 `git diff`。
@@ -454,9 +481,9 @@ C++ 画笔已经用 `QMetaObject::invokeMethod` 按 **`QByteArray`** 取帧和�
 ## 10. 新对话可直接粘贴的开场提示
 
 ```text
-在 K:/code/dae 的 feat/qtbridge 分支上继续 Qt Bridge 迁移。先读
+在 K:/code/dae 的 main 分支上继续 Qt Bridge 迁移。先读
 docs/decisions/qtbridge-migration.md（执行手册）和 bench/qtbridge-spike/README.md
-（已通过的可行性闸门），再读 git log origin/main..HEAD 的提交。
+（已通过的可行性闸门），再读 git log 里 qtbridge 相关提交。
 
 三个叶子单例已完成。按手册 §5 开始迁列表模型：
 sidebar_model.rs → trash_model.rs → spaces_model.rs → shell_command_model.rs →
