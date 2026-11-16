@@ -18,6 +18,10 @@ class ActivationServer;
 
 /// Collects the directories named by a second launch.
 ///
+/// A leading `open` or `reveal` argument names the verb instead of a path:
+/// `reveal` buffers `{directory, select}` pairs for QML to show with the entry
+/// selected, everything else keeps the plain open-a-directory behaviour.
+///
 /// QML listens to `activated()` and pulls through `takePending()`. The pending
 /// list is what makes a launch that arrives while the first window is still
 /// being built survive; the signal alone would be emitted before QML connected.
@@ -30,6 +34,10 @@ public:
 
     /// Everything collected since the last call, oldest first.
     Q_INVOKABLE QStringList takePending();
+
+    /// The `reveal` activations collected since the last call, as a JSON array
+    /// of `{directory, select}` objects. Empty array when nothing is pending.
+    Q_INVOKABLE QString takePendingReveals();
 
     /// Feeds a target the operating system opened for us rather than argv.
     ///
@@ -50,8 +58,12 @@ private:
 
     void enqueue(const QStringList& args, const QString& workingDirectory);
     void addPending(const QStringList& paths);
+    void addPendingReveals(const QStringList& entries);
 
     QStringList m_pending;
+    /// One JSON object per reveal target, kept as text so the QML side parses
+    /// the whole batch once instead of the native side parsing it at all.
+    QStringList m_pendingReveals;
 };
 
 /// Claims the process-wide single-instance slot.

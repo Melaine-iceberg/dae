@@ -17,6 +17,12 @@
 //! A file target resolves to its directory; a target that no longer exists is
 //! dropped. A second launch with no valid target still brings the running
 //! window forward, because the native side reports every activation.
+//!
+//! The first argument may name a verb instead of a path: `dae reveal <path>`
+//! opens the parent directory with the named entry selected, the way a shell
+//! "show in folder" does. `dae open …` and a bare path list keep the plain
+//! behaviour. A folder literally called `open` or `reveal` must be spelled
+//! `./open` or as an absolute path, like any subcommand-style command line.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -50,6 +56,14 @@ pub mod qobject {
         /// Turns a forwarded command line into openable directories. Called by
         /// the native server in `cpp/activation.cpp` before it wakes QML.
         fn dae_qt_activation_resolve(
+            args: &QStringList,
+            working_directory: &QString,
+        ) -> QStringList;
+
+        /// The `reveal` verb's half of the same pipeline: one JSON object per
+        /// target, `{"directory":…,"select":…}`, as a list of strings so the
+        /// native side can buffer and dedupe them without parsing JSON.
+        fn dae_qt_activation_resolve_reveals(
             args: &QStringList,
             working_directory: &QString,
         ) -> QStringList;
@@ -143,14 +157,7 @@ pub fn target_for_arg(arg: &OsStr, working_directory: &Path) -> Option<LaunchTar
 /// The Rust side of the native server: resolve every forwarded argument, drop
 /// duplicates, and return the paths QML should open.
 fn dae_qt_activation_resolve(args: &QStringList, working_directory: &QString) -> QStringList {
-    let base = {
-        let text = working_directory.to_string();
-        if text.is_empty() {
-            std::env::current_dir().unwrap_or_default()
-        } else {
-            PathBuf::from(text)
-        }
-    };
+    let base = base_directory(working_directory);
 
     let mut seen = Vec::new();
     let mut resolved = QStringList::default();
@@ -169,6 +176,86 @@ fn dae_qt_activation_resolve(args: &QStringList, working_directory: &QString) ->
         }
     }
     resolved
+}
+
+/// One `reveal` target: the directory to show and the row to select in it, as
+/// the entry's full path — the listing matches rows by path, not by name. An
+/// empty `select` means the directory itself was named, so nothing is selected.
+#[derive(serde::Serialize)]
+struct RevealTarget {
+    directory: String,
+    select: String,
+}
+
+fn dae_qt_activation_resolve_reveals(
+    args: &QStringList,
+    working_directory: &QString,
+) -> QStringList {
+    let base = base_directory(working_directory);
+
+    let mut seen = Vec::new();
+    let mut resolved = QStringList::default();
+    for arg in args.iter() {
+        let text = arg.to_string();
+        let Some(target) = reveal_target_for_arg(OsStr::new(&text), &base) else {
+            continue;
+        };
+        let key = (target.directory.clone(), target.select.clone());
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        let json = serde_json::to_string(&target).unwrap_or_default();
+        if json.is_empty() {
+            continue;
+        }
+        resolved.append(QString::from(json.as_str()));
+        if resolved.len() >= MAX_TARGETS as isize {
+            break;
+        }
+    }
+    resolved
+}
+
+fn base_directory(working_directory: &QString) -> PathBuf {
+    let text = working_directory.to_string();
+    if text.is_empty() {
+        std::env::current_dir().unwrap_or_default()
+    } else {
+        PathBuf::from(text)
+    }
+}
+
+/// A reveal names the entry itself, not just its directory: a file keeps its
+/// full path as the selection, a directory is shown without one. Deep links
+/// carry no entry name, so they reveal the directory they resolve to.
+fn reveal_target_for_arg(arg: &OsStr, base: &Path) -> Option<RevealTarget> {
+    if let Some(text) = arg.to_str() {
+        if looks_like_deep_link(text) {
+            return parse_open_directory(text, base).map(|path| RevealTarget {
+                directory: native_spelling(path).to_string_lossy().into_owned(),
+                select: String::new(),
+            });
+        }
+    }
+
+    let candidate = native_spelling(candidate_path(&PathBuf::from(arg), base));
+    if candidate.is_dir() {
+        return Some(RevealTarget {
+            directory: candidate.to_string_lossy().into_owned(),
+            select: String::new(),
+        });
+    }
+    if candidate.is_file() {
+        let parent = candidate
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())?;
+        return Some(RevealTarget {
+            directory: parent.to_string_lossy().into_owned(),
+            select: candidate.to_string_lossy().into_owned(),
+        });
+    }
+    None
 }
 
 fn looks_like_deep_link(text: &str) -> bool {
@@ -218,11 +305,7 @@ fn query_path_value(query: &str) -> Option<String> {
 /// A target becomes its own directory when it is one, or its parent when it is
 /// a file. Relative targets are resolved against the launching directory.
 fn resolve_directory(path: &Path, base: &Path) -> Option<PathBuf> {
-    let candidate = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base.join(path)
-    };
+    let candidate = candidate_path(path, base);
 
     if candidate.is_dir() {
         return Some(candidate);
@@ -234,6 +317,28 @@ fn resolve_directory(path: &Path, base: &Path) -> Option<PathBuf> {
             .map(Path::to_path_buf);
     }
     None
+}
+
+fn candidate_path(path: &Path, base: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
+/// The listing spells its rows with the platform separator, and a reveal
+/// selects a row by exact path, so a command line written with `/` on Windows
+/// has to be folded to `\` before it can match one.
+fn native_spelling(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        PathBuf::from(path.to_string_lossy().replace('/', "\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
 }
 
 /// The command Windows stores under `shell\open\command`. `%1` is replaced by
@@ -513,6 +618,94 @@ mod tests {
             resolved.get(0).unwrap().to_string(),
             child.to_string_lossy()
         );
+    }
+
+    fn reveals(args: &[&str], base: &Path) -> Vec<serde_json::Value> {
+        let mut list = QStringList::default();
+        for arg in args {
+            list.append(QString::from(*arg));
+        }
+        let resolved =
+            dae_qt_activation_resolve_reveals(&list, &QString::from(base.to_string_lossy().as_ref()));
+        let mut joined = String::from("[");
+        for index in 0..resolved.len() {
+            if index > 0 {
+                joined.push(',');
+            }
+            joined.push_str(&resolved.get(index).unwrap().to_string());
+        }
+        joined.push(']');
+        serde_json::from_str(&joined).expect("reveal resolver emits a JSON array")
+    }
+
+    #[test]
+    fn a_revealed_file_selects_its_name_in_its_parent() {
+        let temp = TempDir::new("reveal-file");
+        let file = temp.path().join("notes.txt");
+        std::fs::write(&file, b"x").expect("write temp file");
+
+        let entries = reveals(&[file.to_string_lossy().as_ref()], temp.path());
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["directory"], temp.path().to_string_lossy().as_ref());
+        assert_eq!(entries[0]["select"], file.to_string_lossy().as_ref());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_forward_slash_reveal_matches_the_native_row_spelling() {
+        let temp = TempDir::new("reveal-slashes");
+        let file = temp.path().join("notes.txt");
+        std::fs::write(&file, b"x").expect("write temp file");
+        let slashed = file.to_string_lossy().replace('\\', "/");
+
+        let entries = reveals(&[&slashed], temp.path());
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["select"], file.to_string_lossy().as_ref());
+        assert_eq!(
+            entries[0]["directory"],
+            temp.path().to_string_lossy().as_ref()
+        );
+    }
+
+    #[test]
+    fn a_revealed_directory_and_a_deep_link_select_nothing() {
+        let temp = TempDir::new("reveal-dir");
+        let child = temp.path().join("child");
+        std::fs::create_dir_all(&child).expect("create child directory");
+
+        let entries = reveals(
+            &[
+                child.to_string_lossy().as_ref(),
+                &format!("dae://open?path={}", encoded(temp.path())),
+                &format!("dae://open?path={}", encoded(&child)),
+            ],
+            temp.path(),
+        );
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["directory"], child.to_string_lossy().as_ref());
+        assert_eq!(entries[1]["directory"], temp.path().to_string_lossy().as_ref());
+        for entry in &entries {
+            assert_eq!(entry["select"], "");
+        }
+    }
+
+    #[test]
+    fn reveal_resolves_relative_paths_and_drops_missing_and_duplicates() {
+        let temp = TempDir::new("reveal-mixed");
+        let file = temp.path().join("notes.txt");
+        std::fs::write(&file, b"x").expect("write temp file");
+
+        let entries = reveals(
+            &[
+                "notes.txt",
+                file.to_string_lossy().as_ref(),
+                "missing.txt",
+                "--flag",
+            ],
+            temp.path(),
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["select"], file.to_string_lossy().as_ref());
     }
 
     #[test]

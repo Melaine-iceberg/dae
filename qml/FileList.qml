@@ -957,10 +957,13 @@ Item {
         root.pendingFocus = ""
         if (index < 0)
             return
-        if (viewMode === "grid" && gridView !== null)
+        if (viewMode === "grid" && gridView !== null) {
             gridView.setCursor(index)
-        else
+            gridView.positionCursor(index)
+        } else {
             list.currentIndex = index
+            list.positionViewAtIndex(index, ListView.Contain)
+        }
         root.model.selectOnly(index)
         if (root.tab !== null)
             root.tab.selectionAnchor = path

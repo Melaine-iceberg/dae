@@ -10,7 +10,7 @@ import QtQuick.tooling 1.2
 Module {
     Component {
         file: "activation.h"
-        lineNumber: 24
+        lineNumber: 28
         name: "Activation"
         accessSemantics: "reference"
         prototype: "QObject"
@@ -21,8 +21,13 @@ Module {
         Method {
             name: "takePending"
             type: "QStringList"
-            lineNumber: 32
+            lineNumber: 36
         }
-        Signal { name: "activated"; lineNumber: 45 }
+        Method {
+            name: "takePendingReveals"
+            type: "QString"
+            lineNumber: 40
+        }
+        Signal { name: "activated"; lineNumber: 53 }
     }
 }

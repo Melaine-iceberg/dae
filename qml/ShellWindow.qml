@@ -700,7 +700,7 @@ Window {
     /// The window is brought back first, together with every tab it already
     /// had. Each target then either restores an existing tab (in any window)
     /// or becomes a new tab here; it never replaces what the user was viewing.
-    function receiveActivation(paths) {
+    function receiveActivation(paths, reveals) {
         if (!Shell.focusWindow(root.token)) {
             if (root.visibility === Window.Minimized)
                 root.showNormal()
@@ -710,10 +710,14 @@ Window {
             root.requestActivate()
         }
 
-        if (!paths)
-            return
-        for (let index = 0; index < paths.length; index += 1)
-            root.openActivationPath(paths[index])
+        if (paths) {
+            for (let index = 0; index < paths.length; index += 1)
+                root.openActivationPath(paths[index])
+        }
+        if (reveals) {
+            for (let index = 0; index < reveals.length; index += 1)
+                root.openRevealTarget(reveals[index])
+        }
     }
 
     function openActivationPath(path) {
@@ -734,14 +738,51 @@ Window {
         Workspace.recordRecent(path, true, false)
     }
 
+    /// A `dae reveal` target: show the directory with one entry selected, the
+    /// way a shell's "show in folder" does. The tab rules are the open ones —
+    /// restore a tab that already shows the directory, in any window, else add
+    /// one here — and the selection waits for the row to stream in.
+    function openRevealTarget(entry) {
+        if (!entry || !entry.directory)
+            return
+
+        const existing = ShellState.findOpenTab(entry.directory)
+        if (existing !== null) {
+            const existingWindow = ShellState.windowFor(existing.token)
+            if (existingWindow !== null) {
+                existingWindow.activeIndex = existing.index
+                existingWindow.revealSelection(entry.select)
+                Shell.focusWindow(existingWindow.token)
+                return
+            }
+        }
+
+        root.addTab(entry.directory)
+        root.revealSelection(entry.select)
+        Workspace.recordRecent(entry.directory, true, false)
+    }
+
+    function revealSelection(select) {
+        if (select)
+            fileList.focusPath(select)
+    }
+
     /// Pulls what the native side buffered. `focusAlways` is for the signal:
     /// a second launch with no openable argument still raises the window.
     function consumePendingActivation(focusAlways) {
         if (ShellState.activationTarget() !== root)
             return
         const paths = Activation.takePending()
-        if (paths.length > 0 || focusAlways)
-            root.receiveActivation(paths)
+        let reveals = []
+        try {
+            reveals = JSON.parse(Activation.takePendingReveals())
+        } catch (error) {
+            reveals = []
+        }
+        if (!Array.isArray(reveals))
+            reveals = []
+        if (paths.length > 0 || reveals.length > 0 || focusAlways)
+            root.receiveActivation(paths, reveals)
     }
 
     /// The part of a tab a session record carries. Selections are not stored:

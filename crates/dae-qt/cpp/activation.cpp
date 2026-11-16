@@ -226,9 +226,34 @@ QStringList Activation::takePending()
     return pending;
 }
 
+QString Activation::takePendingReveals()
+{
+    if (m_pendingReveals.isEmpty())
+        return QStringLiteral("[]");
+    const QString joined = m_pendingReveals.join(QLatin1Char(','));
+    m_pendingReveals.clear();
+    return QLatin1Char('[') + joined + QLatin1Char(']');
+}
+
 void Activation::enqueue(const QStringList& args, const QString& workingDirectory)
 {
-    const QStringList paths = dae_qt_activation_resolve(args, workingDirectory);
+    // The verb is part of the command line rather than the wire format, so a
+    // launch from an older build — which forwards its argv unchanged — still
+    // reaches the right pipeline.
+    QStringList rest = args;
+    QString command = QStringLiteral("open");
+    if (!rest.isEmpty()
+        && (rest.first() == QLatin1String("open") || rest.first() == QLatin1String("reveal"))) {
+        command = rest.takeFirst();
+    }
+
+    if (command == QLatin1String("reveal")) {
+        addPendingReveals(dae_qt_activation_resolve_reveals(rest, workingDirectory));
+        emit activated();
+        return;
+    }
+
+    const QStringList paths = dae_qt_activation_resolve(rest, workingDirectory);
     addPending(paths);
     emit activated();
 }
@@ -240,6 +265,16 @@ void Activation::addPending(const QStringList& paths)
             break;
         if (!m_pending.contains(path))
             m_pending.append(path);
+    }
+}
+
+void Activation::addPendingReveals(const QStringList& entries)
+{
+    for (const QString& entry : entries) {
+        if (m_pendingReveals.size() >= kMaxPendingPaths)
+            break;
+        if (!m_pendingReveals.contains(entry))
+            m_pendingReveals.append(entry);
     }
 }
 
