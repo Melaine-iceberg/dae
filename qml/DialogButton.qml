@@ -18,12 +18,15 @@ Rectangle {
     signal clicked()
 
     activeFocusOnTab: true
-    Keys.onReturnPressed: root.clicked()
-    Keys.onEnterPressed: root.clicked()
-    Keys.onSpacePressed: root.clicked()
+    Keys.onReturnPressed: if (root.enabled) root.clicked()
+    Keys.onEnterPressed: if (root.enabled) root.clicked()
+    Keys.onSpacePressed: if (root.enabled) root.clicked()
 
     implicitWidth: Math.max(64, labelText.implicitWidth + 24)
     implicitHeight: Theme.controlMd
+    /// A disabled button keeps its size but not its invitation: the plate goes
+    /// quiet and the pointer stops answering it.
+    opacity: enabled ? 1 : 0.45
     radius: Theme.radiusSm
     color: {
         if (root.tone === "danger")
@@ -42,7 +45,7 @@ Rectangle {
 
     Accessible.role: Accessible.Button
     Accessible.name: root.label
-    Accessible.onPressAction: root.clicked()
+    Accessible.onPressAction: if (root.enabled) root.clicked()
 
     Text {
         id: labelText
@@ -56,6 +59,7 @@ Rectangle {
     MouseArea {
         id: buttonMouse
         anchors.fill: parent
+        enabled: root.enabled
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()

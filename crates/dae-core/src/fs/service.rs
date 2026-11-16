@@ -270,6 +270,33 @@ pub async fn create_entry(
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
+/// Instantiates a template into `directory` under `name`.
+///
+/// The template's own kind decides the undo record, and the template path is
+/// kept so redo can copy the contents again rather than create an empty shell.
+pub async fn create_from_template(
+    directory: String,
+    template: String,
+    name: String,
+    host: Arc<dyn Host>,
+) -> Result<String, FileSystemError> {
+    tokio::task::spawn_blocking(move || {
+        let kind = super::templates::template_kind(&template)?;
+        let created = super::templates::create_from_template(&directory, &template, &name)?;
+        undo::state().record(
+            host.as_ref(),
+            Operation::CreateFromTemplate {
+                path: created.clone(),
+                template,
+                kind,
+            },
+        );
+        Ok(created)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
 /// See `commands::copy_entries` for the contract; this half is engine-free.
 pub async fn copy_entries(
     items: Vec<TransferItem>,

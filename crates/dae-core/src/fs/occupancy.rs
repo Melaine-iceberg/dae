@@ -66,6 +66,110 @@ pub fn holders_sentence(paths: &[String]) -> Option<String> {
     Some(names.join("、"))
 }
 
+/// What "查看占用进程" asks: every file the selection names, plus the files
+/// under any selected directory.
+///
+/// A folder has no byte stream for Restart Manager or `lsof` to report, and a
+/// process editing a file inside it is exactly what a user means by "this
+/// folder is in use". The walk is bounded so a right-click on a huge tree
+/// answers instead of hammering the disk; `truncated` is the honest footnote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HolderReport {
+    pub holders: Vec<Holder>,
+    /// Files handed to the platform probe.
+    pub scanned: usize,
+    /// True when the walk stopped at [`DEEP_SCAN_LIMIT`].
+    pub truncated: bool,
+}
+
+/// Files one Locksmith query will inspect. Deep enough for the folders people
+/// right-click, small enough that the probe stays a diagnostic rather than a
+/// scan.
+pub const DEEP_SCAN_LIMIT: usize = 4096;
+
+pub fn holders_deep(paths: &[String]) -> HolderReport {
+    let mut files: Vec<String> = Vec::new();
+    let mut scanned = 0_usize;
+    let mut truncated = false;
+
+    for path in paths {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let as_path = std::path::Path::new(trimmed);
+        match std::fs::symlink_metadata(as_path) {
+            Ok(metadata) if metadata.is_dir() => {
+                collect_files(as_path, &mut files, &mut scanned, &mut truncated);
+            }
+            _ => {
+                if scanned >= DEEP_SCAN_LIMIT {
+                    truncated = true;
+                    break;
+                }
+                files.push(trimmed.to_owned());
+                scanned += 1;
+            }
+        }
+    }
+
+    HolderReport {
+        holders: platform::holders(&files),
+        scanned,
+        truncated,
+    }
+}
+
+fn collect_files(
+    directory: &std::path::Path,
+    files: &mut Vec<String>,
+    scanned: &mut usize,
+    truncated: &mut bool,
+) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        if *scanned >= DEEP_SCAN_LIMIT {
+            *truncated = true;
+            return;
+        }
+
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if file_type.is_dir() {
+            collect_files(&path, files, scanned, truncated);
+            if *truncated {
+                return;
+            }
+        } else {
+            files.push(path.to_string_lossy().into_owned());
+            *scanned += 1;
+        }
+    }
+}
+
+/// Ends one process by pid, the action File Locksmith offers beside a holder.
+///
+/// This process is refused: dae may be holding the file in a preview or a
+/// hash pass, and a dialog that can kill its own window is not a diagnostic.
+/// Privileges are the caller's; another user's process fails with the OS
+/// error instead of pretending it worked.
+pub fn end_process(pid: u32) -> Result<(), FileSystemError> {
+    if pid == 0 || pid == std::process::id() || (cfg!(unix) && pid == 1) {
+        return Err(FileSystemError::InvalidInput(
+            "This process cannot be ended from dae".to_owned(),
+        ));
+    }
+
+    platform::end_process(pid)
+}
+
 /// Fails with `path` and, when something holds it, says what.
 ///
 /// This is the one place the probe is wired into a user-visible outcome: a
@@ -101,11 +205,13 @@ pub fn annotate_lock_error(paths: &[String], error: FileSystemError) -> FileSyst
 #[cfg(windows)]
 mod platform {
     use super::Holder;
-    use windows::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
+    use crate::error::FileSystemError;
+    use windows::Win32::Foundation::{CloseHandle, ERROR_MORE_DATA, ERROR_SUCCESS};
     use windows::Win32::System::RestartManager::{
         CCH_RM_SESSION_KEY, RM_PROCESS_INFO, RmEndSession, RmGetList, RmRegisterResources,
         RmStartSession,
     };
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
     use windows::core::PWSTR;
 
     /// Ends the Restart Manager session even when a probe bails out early.
@@ -208,6 +314,18 @@ mod platform {
         holders
     }
 
+    pub(super) fn end_process(pid: u32) -> Result<(), FileSystemError> {
+        // SAFETY: OpenProcess validates the pid; the handle is closed on every
+        // path after a successful open.
+        unsafe {
+            let process = OpenProcess(PROCESS_TERMINATE, false, pid)
+                .map_err(|error| FileSystemError::PermissionDenied(error.message()))?;
+            let terminated = TerminateProcess(process, 1);
+            let _ = CloseHandle(process);
+            terminated.map_err(|error| FileSystemError::PermissionDenied(error.message()))
+        }
+    }
+
     /// UTF-16 to `String`, stopping at the first NUL.
     fn wide_to_string(buffer: &[u16]) -> String {
         let length = buffer
@@ -225,8 +343,22 @@ mod platform {
 #[cfg(target_os = "linux")]
 mod platform {
     use super::Holder;
+    use crate::error::FileSystemError;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+
+    pub(super) fn end_process(pid: u32) -> Result<(), FileSystemError> {
+        // SIGTERM gives the program a chance to flush; SIGKILL remains the
+        // user's next step, not a surprise first move from a file manager.
+        let outcome = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        if outcome == 0 {
+            Ok(())
+        } else {
+            Err(FileSystemError::PermissionDenied(
+                std::io::Error::last_os_error().to_string(),
+            ))
+        }
+    }
 
     pub(super) fn holders(paths: &[String]) -> Vec<Holder> {
         // Canonical spellings only: `/proc/<pid>/fd` links point at the real
@@ -307,6 +439,18 @@ mod platform {
 #[cfg(target_os = "macos")]
 mod platform {
     use super::Holder;
+    use crate::error::FileSystemError;
+
+    pub(super) fn end_process(pid: u32) -> Result<(), FileSystemError> {
+        let outcome = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        if outcome == 0 {
+            Ok(())
+        } else {
+            Err(FileSystemError::PermissionDenied(
+                std::io::Error::last_os_error().to_string(),
+            ))
+        }
+    }
 
     pub(super) fn holders(paths: &[String]) -> Vec<Holder> {
         // `-F p` is the pid field, `-F c` the command name: both one per line,
@@ -352,6 +496,13 @@ mod platform {
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod platform {
     use super::Holder;
+    use crate::error::FileSystemError;
+
+    pub(super) fn end_process(_pid: u32) -> Result<(), FileSystemError> {
+        Err(FileSystemError::Unsupported(
+            "ending processes is not implemented on this platform".to_owned(),
+        ))
+    }
 
     pub(super) fn holders(_paths: &[String]) -> Vec<Holder> {
         Vec::new()
@@ -376,6 +527,37 @@ mod tests {
             .into_owned();
 
         assert!(holders_of(&[missing]).is_empty());
+    }
+
+    #[test]
+    fn the_deep_scan_walks_a_directory_and_counts_files() {
+        let root = std::env::temp_dir().join(format!(
+            "dae-occupancy-deep-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(root.join("nested")).expect("create the tree");
+        std::fs::write(root.join("one.txt"), b"1").expect("write a file");
+        std::fs::write(root.join("nested").join("two.txt"), b"2").expect("write a nested file");
+
+        let report = holders_deep(&[root.to_string_lossy().into_owned()]);
+        assert_eq!(report.scanned, 2);
+        assert!(!report.truncated);
+        // The walk is the assertion; whether a holder exists depends on the
+        // platform and on what else is running, so only well-formedness holds.
+        assert!(report.holders.iter().all(|holder| !holder.name.is_empty()));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dae_refuses_to_end_itself() {
+        let error = end_process(std::process::id()).expect_err("dae must not kill itself");
+        assert!(matches!(error, FileSystemError::InvalidInput(_)));
+        assert!(end_process(0).is_err());
     }
 
     /// The probe is a real one on every platform that has `open`: the file this

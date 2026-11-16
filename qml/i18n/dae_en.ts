@@ -3176,6 +3176,16 @@
         <source>位置</source>
         <translation>Location</translation>
     </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>模板文件夹不存在</source>
+        <translation>The templates folder does not exist</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>无法读取设置</source>
+        <translation>Could not read settings</translation>
+    </message>
 </context>
 <context>
     <name>Locator</name>
@@ -6884,6 +6894,66 @@
         <source>状态中心</source>
         <translation>Status Center</translation>
     </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板只能用于本地文件夹</source>
+        <translation>Templates can only be used in local folders</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>从模板新建</source>
+        <translation>New from template</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板：%1</source>
+        <translation>Template: %1</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>尚无模板</source>
+        <translation>No templates yet</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>打开模板文件夹</source>
+        <translation>Open templates folder</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>选择模板文件夹…</source>
+        <translation>Choose templates folder…</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>选择模板文件夹</source>
+        <translation>Choose templates folder</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>无法更新模板文件夹：%1</source>
+        <translation>Could not update the templates folder: %1</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板文件夹已更新</source>
+        <translation>Templates folder updated</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>查看占用进程</source>
+        <translation>Check what's using it</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板文件夹不存在</source>
+        <translation>The templates folder does not exist</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>无法读取设置</source>
+        <translation>Could not read settings</translation>
+    </message>
 </context>
 <context>
     <name>Sidebar</name>
@@ -7653,6 +7723,99 @@
         <location filename="../UpdateDialog.qml" line="338"/>
         <source>下载并安装</source>
         <translation>Download and install</translation>
+    </message>
+</context>
+<context>
+    <name>LocksmithDialog</name>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>查看占用进程</source>
+        <translation>Check what's using it</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法读取查询结果</source>
+        <translation>Could not read the query result</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法检查所选项目：%1</source>
+        <translation>Could not check the selected items: %1</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>已复制进程列表</source>
+        <translation>Process list copied</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法写入剪贴板</source>
+        <translation>Could not write to the clipboard</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法结束进程：%1</source>
+        <translation>Could not end the process: %1</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>%1 等 %2 个项目</source>
+        <translation>%1 and others (%2 items)</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>正在检查…</source>
+        <translation>Checking…</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>没有找到占用所选项目的进程。</source>
+        <translation>No process is using the selected items.</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>%1 个占用进程</source>
+        <translation>Using processes: %1</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>已检查 %1 个文件</source>
+        <translation>Files checked: %1</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>；目录过大，仅检查了前 %1 个文件</source>
+        <translation>; the folder is large — only the first %1 files were checked</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>确认结束</source>
+        <translation>Confirm end</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>结束进程</source>
+        <translation>End task</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>其他用户运行的进程可能不在列表中。</source>
+        <translation>Processes run by other users may not be listed.</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>关闭</source>
+        <translation>Close</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>复制信息</source>
+        <translation>Copy details</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>重新检查</source>
+        <translation>Check again</translation>
     </message>
 </context>
 </TS>

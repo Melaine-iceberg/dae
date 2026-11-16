@@ -73,6 +73,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/PropertiesDialog.qml", "qml/PropertiesDialog.qml"),
     ("../../qml/BulkRenameDialog.qml", "qml/BulkRenameDialog.qml"),
     ("../../qml/MoveToDialog.qml", "qml/MoveToDialog.qml"),
+    ("../../qml/LocksmithDialog.qml", "qml/LocksmithDialog.qml"),
     ("../../qml/OpenWithDialog.qml", "qml/OpenWithDialog.qml"),
     ("../../qml/SettingsPanel.qml", "qml/SettingsPanel.qml"),
     ("../../qml/ConnectDialog.qml", "qml/ConnectDialog.qml"),

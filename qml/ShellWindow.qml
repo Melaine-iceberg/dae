@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
+import QtQuick.Dialogs
 import dae 1.0
 import dae.activation 1.0
 import "Localize.js" as Localize
@@ -146,6 +147,8 @@ Window {
     }
     property string promptMode: ""
     property string promptPath: ""
+    /// The template a "template" prompt will instantiate into `promptPath`.
+    property string promptTemplate: ""
     property string contextPath: ""
     /// The current folder's display name, captured with the bar menu so
     /// "copy name" copies what the crumb showed, not a re-derived basename.
@@ -363,6 +366,8 @@ Window {
         case "Redone": return qsTr("已重做")
         case "Opened": return qsTr("已打开")
         case "Restored": return qsTr("已恢复")
+        case "The templates folder does not exist": return qsTr("模板文件夹不存在")
+        case "Could not read settings": return qsTr("无法读取设置")
         case "Trash emptied": return qsTr("已清空回收站")
         case "Done": return qsTr("完成")
         case "Opened in system terminal": return qsTr("已在系统终端中打开")
@@ -2160,6 +2165,17 @@ Window {
         return parts.length > 0 ? parts[parts.length - 1] : path
     }
 
+    /// A `FolderDialog` answers with a URL; the backend and settings store a
+    /// native path. Mirrors the helper the settings panel uses.
+    function localPath(url) {
+        let text = String(url)
+        if (text.startsWith("file:///"))
+            text = text.substring(8)
+        else if (text.startsWith("file://"))
+            text = text.substring(7)
+        return decodeURIComponent(text)
+    }
+
     function startCompress(format, encrypted) {
         const paths = root.currentSelection()
         const destination = root.contextDirectory()
@@ -2241,6 +2257,26 @@ Window {
         root.promptPath = path
         namePrompt.open(folder ? qsTr("新建文件夹") : qsTr("新建文件"),
                         folder ? qsTr("新建文件夹") : qsTr("新建文件.txt"), "")
+    }
+
+    /// "从模板新建": the suggested name is the template's own name, which is
+    /// what makes a file called `Meeting notes.txt` a useful template. The
+    /// directory is the one the menu was opened in, exactly like "新建文件".
+    function promptFromTemplate(templatePath) {
+        if (root.modalOpen || templatePath === "")
+            return
+        if (root.rowMenuRemote()) {
+            toast.show(qsTr("模板只能用于本地文件夹"), true)
+            return
+        }
+        const directory = root.contextDirectory()
+        if (directory === "")
+            return
+        const name = root.displayNameOfPath(templatePath)
+        root.promptMode = "template"
+        root.promptPath = directory
+        root.promptTemplate = templatePath
+        namePrompt.open(qsTr("从模板新建"), name, qsTr("模板：%1").arg(name))
     }
 
     function promptRename(path, name) {
@@ -2674,11 +2710,15 @@ Window {
     function acceptName(text) {
         const mode = root.promptMode
         const path = root.promptPath
+        const template = root.promptTemplate
         root.promptMode = ""
+        root.promptTemplate = ""
         if (mode === "folder")
             Workspace.createFolder(path, text)
         else if (mode === "file")
             Workspace.createFile(path, text)
+        else if (mode === "template")
+            Workspace.createFromTemplate(path, template, text)
         else if (mode === "rename")
             Workspace.renameEntry(path, text)
         else if (mode === "spaceCreate") {
@@ -2818,6 +2858,8 @@ Window {
                 { id: "compress7zEncrypted", label: qsTr("7Z 压缩包（加密）") }
             ] },
             { separator: true },
+            { id: "fileLocksmith", glyph: "exe", label: qsTr("查看占用进程"),
+              enabled: hasPath && !remote },
             { id: "properties", glyph: "info", label: qsTr("属性"),
               shortcut: root.shortcutDisplay("explorer.properties"),
               enabled: hasPath && !many }
@@ -2827,6 +2869,35 @@ Window {
                          label: qsTr("应用扩展"), submenu: shellCommands })
         items.push({ id: "moreMenu", glyph: "more", label: qsTr("更多…") })
         return items
+    }
+
+    /// The templates submenu, rebuilt every time the menu opens so a template
+    /// just dropped into the folder is already there. Rows carry the template
+    /// path in the id; the menu itself has no state once it is open.
+    function templateSubmenu() {
+        let templates = []
+        try {
+            templates = JSON.parse(Workspace.templatesJson())
+        } catch (error) {
+            templates = []
+        }
+
+        const entries = []
+        for (let index = 0; index < templates.length; index += 1) {
+            const template = templates[index]
+            entries.push({
+                id: "template:" + template.path,
+                glyph: template.isDir ? "folder" : "file",
+                label: template.name
+            })
+        }
+        if (entries.length === 0)
+            entries.push({ id: "templateNone", label: qsTr("尚无模板"), enabled: false })
+        entries.push({ separator: true })
+        entries.push({ id: "openTemplates", glyph: "folder", label: qsTr("打开模板文件夹") })
+        entries.push({ id: "chooseTemplates", glyph: "gear",
+                       label: qsTr("选择模板文件夹…") })
+        return entries
     }
 
     /// The tag rows, rebuilt from the singleton every time the menu opens so a
@@ -3220,6 +3291,8 @@ Window {
             { id: "newFolder", glyph: "folder", label: qsTr("新建文件夹"),
               shortcut: root.chord("Mod+Shift+N") },
             { id: "newFile", glyph: "file", label: qsTr("新建文件") },
+            { id: "newFromTemplate", glyph: "file", label: qsTr("从模板新建"),
+              enabled: !remote, submenu: root.templateSubmenu() },
             { separator: true },
             { id: "paste", glyph: "paste", label: qsTr("粘贴"),
               shortcut: root.shortcutDisplay("explorer.paste"),
@@ -3477,6 +3550,27 @@ Window {
             root.clearContext()
             return
         }
+        // The templates submenu carries the template path in the id; the menu
+        // has no per-row state once it is open.
+        if (id.indexOf("template:") === 0) {
+            root.promptFromTemplate(id.substring("template:".length))
+            root.clearContext()
+            return
+        }
+        if (id === "openTemplates") {
+            Workspace.openTemplatesDirectory()
+            root.clearContext()
+            return
+        }
+        if (id === "chooseTemplates") {
+            templateFolderDialog.open()
+            root.clearContext()
+            return
+        }
+        if (id === "templateNone") {
+            root.clearContext()
+            return
+        }
         // The palette's type menu: the id says which family, because the menu
         // itself carries no state once it is open.
         if (id.indexOf("family:") === 0) {
@@ -3570,6 +3664,9 @@ Window {
             break
         case "bulkRename":
             bulkRenameDialog.open(root.currentSelection())
+            break
+        case "fileLocksmith":
+            locksmithDialog.open(root.currentSelection())
             break
         case "properties":
             // Windows has the real sheet; elsewhere the in-app dialog is the
@@ -6216,6 +6313,23 @@ Window {
     }
 
     LazySurface {
+        id: locksmithDialog
+        anchors.fill: parent
+        z: 1008
+        surface: Component {
+            LocksmithDialog {
+                anchors.fill: parent
+                dark: root.dark
+
+                onClosed: root.modalClosed()
+            }
+        }
+        function open(paths) {
+            instantiate().open(paths);
+        }
+    }
+
+    LazySurface {
         id: namePrompt
         anchors.fill: parent
         z: 1001
@@ -6981,6 +7095,21 @@ Window {
             if (!root.activationReady || ShellState.activationTarget() !== root)
                 return
             root.consumePendingActivation(true)
+        }
+    }
+
+    FolderDialog {
+        id: templateFolderDialog
+        title: qsTr("选择模板文件夹")
+
+        onAccepted: {
+            const path = root.localPath(selectedFolder)
+            Workspace.setTemplatesDirectory(path)
+            if (Workspace.lastError !== "")
+                toast.show(qsTr("无法更新模板文件夹：%1")
+                           .arg(root.localizeBackend(Workspace.lastError)), true)
+            else
+                toast.show(qsTr("模板文件夹已更新"), false)
         }
     }
 

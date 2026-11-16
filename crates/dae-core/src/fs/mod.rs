@@ -54,6 +54,7 @@ pub mod sidebar;
 pub mod smb;
 pub mod spaces;
 pub mod tags;
+pub mod templates;
 pub mod thumbnails;
 pub mod transfer;
 pub mod transfer_control;

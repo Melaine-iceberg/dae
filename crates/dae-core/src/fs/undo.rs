@@ -58,6 +58,14 @@ pub enum Operation {
     Trash { records: Vec<TrashRecord> },
     /// One created file or directory.
     Create { path: String, kind: NewEntryKind },
+    /// One entry instantiated from a template. `kind` is the template's kind,
+    /// and `template` is kept so redo copies the contents again instead of
+    /// leaving an empty shell.
+    CreateFromTemplate {
+        path: String,
+        template: String,
+        kind: NewEntryKind,
+    },
     /// Duplicates produced by the "创建副本" action.
     Duplicate {
         sources: Vec<String>,
@@ -73,7 +81,7 @@ impl Operation {
             Operation::RenameBatch { pairs } => pairs.is_empty(),
             Operation::Copy { created, .. } => created.is_empty(),
             Operation::Trash { records } => records.is_empty(),
-            Operation::Create { .. } => false,
+            Operation::Create { .. } | Operation::CreateFromTemplate { .. } => false,
             Operation::Duplicate { created, .. } => created.is_empty(),
         }
     }
@@ -86,7 +94,7 @@ impl Operation {
             Operation::Rename { .. } | Operation::RenameBatch { .. } => "rename",
             Operation::Copy { .. } => "copy",
             Operation::Trash { .. } => "trash",
-            Operation::Create { .. } => "create",
+            Operation::Create { .. } | Operation::CreateFromTemplate { .. } => "create",
             Operation::Duplicate { .. } => "duplicate",
         }
     }
@@ -100,6 +108,7 @@ impl Operation {
             Operation::Copy { .. }
             | Operation::Trash { .. }
             | Operation::Create { .. }
+            | Operation::CreateFromTemplate { .. }
             | Operation::Duplicate { .. } => FileOperationKind::Delete,
         }
     }
@@ -111,6 +120,7 @@ impl Operation {
             | Operation::Rename { .. }
             | Operation::RenameBatch { .. }
             | Operation::Create { .. } => FileOperationKind::Move,
+            Operation::CreateFromTemplate { .. } => FileOperationKind::Copy,
             Operation::Copy { .. } | Operation::Duplicate { .. } => FileOperationKind::Copy,
             Operation::Trash { .. } => FileOperationKind::Delete,
         }
@@ -291,6 +301,20 @@ pub fn execute_undo(
             let redo = (!removed.is_empty()).then_some(Operation::Create { path, kind });
             Ok((count, redo))
         }
+        Operation::CreateFromTemplate {
+            path,
+            template,
+            kind,
+        } => {
+            let removed = trash_or_delete(std::slice::from_ref(&path), progress)?;
+            let count = removed.len() as u64;
+            let redo = (!removed.is_empty()).then_some(Operation::CreateFromTemplate {
+                path,
+                template,
+                kind,
+            });
+            Ok((count, redo))
+        }
         Operation::Duplicate { sources, created } => {
             let removed = trash_or_delete(&created, progress)?;
             let count = removed.len() as u64;
@@ -352,6 +376,18 @@ pub fn execute_redo(
         Operation::Create { path, kind } => {
             redo_create(&path, kind)?;
             Ok((1, Some(Operation::Create { path, kind })))
+        }
+        Operation::CreateFromTemplate {
+            path,
+            template,
+            kind,
+        } => {
+            super::templates::create_from_template_at(&path, &template)?;
+            Ok((1, Some(Operation::CreateFromTemplate {
+                path,
+                template,
+                kind,
+            })))
         }
         Operation::Duplicate { sources, .. } => {
             let created = redo_duplicate(&sources, progress)?;

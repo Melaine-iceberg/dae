@@ -3176,6 +3176,16 @@
         <source>位置</source>
         <translation>位置</translation>
     </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>模板文件夹不存在</source>
+        <translation>模板文件夹不存在</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>无法读取设置</source>
+        <translation>无法读取设置</translation>
+    </message>
 </context>
 <context>
     <name>Locator</name>
@@ -6884,6 +6894,66 @@
         <source>状态中心</source>
         <translation>状态中心</translation>
     </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板只能用于本地文件夹</source>
+        <translation>模板只能用于本地文件夹</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>从模板新建</source>
+        <translation>从模板新建</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板：%1</source>
+        <translation>模板：%1</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>尚无模板</source>
+        <translation>尚无模板</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>打开模板文件夹</source>
+        <translation>打开模板文件夹</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>选择模板文件夹…</source>
+        <translation>选择模板文件夹…</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>选择模板文件夹</source>
+        <translation>选择模板文件夹</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>无法更新模板文件夹：%1</source>
+        <translation>无法更新模板文件夹：%1</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板文件夹已更新</source>
+        <translation>模板文件夹已更新</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>查看占用进程</source>
+        <translation>查看占用进程</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>模板文件夹不存在</source>
+        <translation>模板文件夹不存在</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>无法读取设置</source>
+        <translation>无法读取设置</translation>
+    </message>
 </context>
 <context>
     <name>Sidebar</name>
@@ -7653,6 +7723,99 @@
         <location filename="../UpdateDialog.qml" line="338"/>
         <source>下载并安装</source>
         <translation>下载并安装</translation>
+    </message>
+</context>
+<context>
+    <name>LocksmithDialog</name>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>查看占用进程</source>
+        <translation>查看占用进程</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法读取查询结果</source>
+        <translation>无法读取查询结果</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法检查所选项目：%1</source>
+        <translation>无法检查所选项目：%1</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>已复制进程列表</source>
+        <translation>已复制进程列表</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法写入剪贴板</source>
+        <translation>无法写入剪贴板</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>无法结束进程：%1</source>
+        <translation>无法结束进程：%1</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>%1 等 %2 个项目</source>
+        <translation>%1 等 %2 个项目</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>正在检查…</source>
+        <translation>正在检查…</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>没有找到占用所选项目的进程。</source>
+        <translation>没有找到占用所选项目的进程。</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>%1 个占用进程</source>
+        <translation>%1 个占用进程</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>已检查 %1 个文件</source>
+        <translation>已检查 %1 个文件</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>；目录过大，仅检查了前 %1 个文件</source>
+        <translation>；目录过大，仅检查了前 %1 个文件</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>确认结束</source>
+        <translation>确认结束</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>结束进程</source>
+        <translation>结束进程</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>其他用户运行的进程可能不在列表中。</source>
+        <translation>其他用户运行的进程可能不在列表中。</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>关闭</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>复制信息</source>
+        <translation>复制信息</translation>
+    </message>
+    <message>
+        <location filename="../LocksmithDialog.qml"/>
+        <source>重新检查</source>
+        <translation>重新检查</translation>
     </message>
 </context>
 </TS>

@@ -21,6 +21,15 @@ that shell; `git log` and the decision document are where it lives now.
   have, that *one operation* is replayed by an elevated copy of the binary
   instead of elevating the whole app; and a delete that fails because a program
   holds the file names the program instead of only saying "access denied".
+- **Templates worth reusing.** "New from template" instantiates any file or
+  folder kept in the templates directory: a whole project skeleton copies as a
+  tree, a document copies its contents, and the undo record remembers the
+  template so redo recreates the same thing rather than an empty shell. The
+  folder is yours to choose from the menu.
+- **Know who has it open.** "Check what's using it" asks the platform which
+  processes hold the selected files — walking a selected folder's contents —
+  and lists them with their pids. Ending a task takes two clicks, and dae
+  refuses to end itself.
 - **A terminal in the frame.** An xterm panel beside the listing.
 - **Tagged, sorted, grouped.** Colour tags that travel with the file where the
   file system can carry them (NTFS streams, xattr) and live in dae's index

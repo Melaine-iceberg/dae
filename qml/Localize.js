@@ -176,6 +176,8 @@ function line(value) {
     case "Redone": return qsTr("已重做")
     case "Opened": return qsTr("已打开")
     case "Restored": return qsTr("已恢复")
+    case "The templates folder does not exist": return qsTr("模板文件夹不存在")
+    case "Could not read settings": return qsTr("无法读取设置")
     case "Trash emptied": return qsTr("已清空回收站")
     case "Done": return qsTr("完成")
     case "Opened in system terminal": return qsTr("已在系统终端中打开")

@@ -336,7 +336,7 @@ fn unique_sibling_path(
     }
 }
 
-fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
+pub(crate) fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
     if name.is_empty() || name == "." || name == ".." {
         return Err(FileSystemError::InvalidInput(
             "The name must not be empty, . or ..".into(),
@@ -452,6 +452,29 @@ fn copy_entry(
         "Unsupported entry type: {}",
         path_to_string(source)
     )))
+}
+
+/// A no-op reporter for copies nobody watches (a template instantiation).
+struct UnreportedCopy;
+
+impl FileOperationProgressReporterTrait for UnreportedCopy {
+    fn start(&self, _total: u64) {}
+    fn begin_entry(&self, _path: &Path) {}
+    fn advance_by(&self, _units: u64, _path: &Path) {}
+    fn finish(&self) {}
+}
+
+/// Copies a file, folder or symlink tree without a progress sink.
+///
+/// Same walker as a paste: symlinks are recreated rather than followed,
+/// directories are copied in parallel, and `fs::copy` keeps its server-side
+/// and reflink behaviour. Used for "new from template", where the tree is a
+/// handful of entries and a percent bar would be noise.
+pub(crate) fn copy_entry_unreported(
+    source: &Path,
+    destination: &Path,
+) -> Result<(), FileSystemError> {
+    transfer_pool().install(|| copy_entry(source, destination, &UnreportedCopy, false))
 }
 
 /// Copies one file through this process so the rate limit can see the bytes.

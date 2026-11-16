@@ -80,6 +80,9 @@ pub struct AppSettings {
     /// User-chosen families for the shell's two faces. `None` keeps the
     /// bundled Noto Sans SC / GoogleSansCode NFM pair.
     pub fonts: FontSettings,
+    /// Where "new from template" reads its templates. An absent directory
+    /// means the app-owned `templates` folder under the config directory.
+    pub templates: TemplateSettings,
 }
 
 /// Custom font families. A missing or blank value means "use the bundled
@@ -95,6 +98,16 @@ pub struct FontSettings {
     /// Fixed-pitch family for the terminal, sizes, rates and code previews.
     /// QML binds this live, so a change applies immediately.
     pub mono_family: Option<String>,
+}
+
+/// Template collection for "new from template".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TemplateSettings {
+    /// Absolute directory holding one file or folder per template. `None`
+    /// uses `config_dir()/templates`; a hand-edited blank string is normalized
+    /// back to `None` rather than naming the process's working directory.
+    pub directory: Option<String>,
 }
 
 /// How the transfer engine behaves by default.
@@ -204,6 +217,7 @@ impl Default for AppSettings {
             shell_first: true,
             transfer: TransferSettings::default(),
             fonts: FontSettings::default(),
+            templates: TemplateSettings::default(),
         }
     }
 }
@@ -408,6 +422,7 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
     settings.terminal = normalize_terminal(settings.terminal);
     settings.fonts = normalize_fonts(settings.fonts);
     settings.actions = normalize_actions(settings.actions);
+    settings.templates = normalize_templates(settings.templates);
     if !["system", "light", "dark"].contains(&settings.theme.as_str()) {
         settings.theme = "system".to_string();
     }
@@ -513,6 +528,16 @@ fn normalize_fonts(fonts: FontSettings) -> FontSettings {
     FontSettings {
         ui_family: clean(fonts.ui_family),
         mono_family: clean(fonts.mono_family),
+    }
+}
+
+/// A blank template directory means the default, not the current directory.
+fn normalize_templates(templates: TemplateSettings) -> TemplateSettings {
+    TemplateSettings {
+        directory: templates
+            .directory
+            .map(|directory| directory.trim().to_owned())
+            .filter(|directory| !directory.is_empty()),
     }
 }
 

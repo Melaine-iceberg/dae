@@ -34,10 +34,12 @@ use dae_core::fs::directory_size;
 use dae_core::fs::drives;
 use dae_core::fs::hashing;
 use dae_core::fs::open_with;
+use dae_core::fs::occupancy;
 use dae_core::fs::recents::RecentSource;
 use dae_core::fs::service;
 use dae_core::fs::sidebar::{self, Favorite, PlaceKind};
 use dae_core::fs::smb;
+use dae_core::fs::templates;
 use dae_core::fs::trash_view;
 use dae_core::fs::types::{
     ConflictAction, EntryKind, NewEntryKind, TransferConflict, TransferItem, display_name_from_path,
@@ -211,6 +213,47 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "createFile"]
         fn create_file(self: Pin<&mut Workspace>, directory: &QString, name: &QString);
+
+        /// Instantiates the file or folder at `template` as `directory/name`.
+        /// Only direct children of the templates folder are accepted; the core
+        /// re-checks that rather than trusting the menu row.
+        #[qinvokable]
+        #[cxx_name = "createFromTemplate"]
+        fn create_from_template(
+            self: Pin<&mut Workspace>,
+            directory: &QString,
+            template_path: &QString,
+            name: &QString,
+        );
+
+        /// The templates menu's rows as JSON (`[{path,name,isDir}]`).
+        #[qinvokable]
+        #[cxx_name = "templatesJson"]
+        fn templates_json(&self) -> QString;
+
+        /// Opens the templates folder in the OS, creating it if needed.
+        #[qinvokable]
+        #[cxx_name = "openTemplatesDirectory"]
+        fn open_templates_directory(self: Pin<&mut Workspace>);
+
+        /// Persists the folder the templates menu reads. `lastError` carries a
+        /// failure; a successful call clears it.
+        #[qinvokable]
+        #[cxx_name = "setTemplatesDirectory"]
+        fn set_templates_directory(self: Pin<&mut Workspace>, path: &QString);
+
+        /// Asks which processes hold any of `paths` (directories are walked).
+        /// The answer arrives on `fileHoldersFound`, tagged with the request so
+        /// a dialog can ignore a stale result.
+        #[qinvokable]
+        #[cxx_name = "fileHolders"]
+        fn file_holders(self: Pin<&mut Workspace>, paths: &QStringList);
+
+        /// Ends one process a holder row named. The outcome arrives on
+        /// `processEnded`; dae refuses to end itself and pid 0.
+        #[qinvokable]
+        #[cxx_name = "endProcess"]
+        fn end_process(self: Pin<&mut Workspace>, pid: i32);
 
         #[qinvokable]
         #[cxx_name = "renameEntry"]
@@ -716,6 +759,24 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "folderSizesMeasured"]
         fn folder_sizes_measured(self: Pin<&mut Workspace>, sizes: &QString);
+
+        /// The Locksmith query for `request` finished. `report` is JSON
+        /// (`{holders,scanned,truncated}`); `error` is a user-facing sentence
+        /// when the query could not run, empty otherwise.
+        #[qsignal]
+        #[cxx_name = "fileHoldersFound"]
+        fn file_holders_found(
+            self: Pin<&mut Workspace>,
+            request: &QString,
+            report: &QString,
+            error: &QString,
+        );
+
+        /// `endProcess` finished. `ok` is the platform verdict; on failure
+        /// `message` is the OS error.
+        #[qsignal]
+        #[cxx_name = "processEnded"]
+        fn process_ended(self: Pin<&mut Workspace>, pid: i32, ok: bool, message: &QString);
 
         /// An extraction needs a password. `target` is the archive path and
         /// `message` is a ready-to-display explanation (also a wrong-password
@@ -1728,6 +1789,179 @@ impl qobject::Workspace {
     fn create_file(mut self: Pin<&mut Self>, directory: &QString, name: &QString) {
         self.as_mut()
             .create_entry(directory, name, NewEntryKind::File, "create");
+    }
+
+    fn create_from_template(
+        mut self: Pin<&mut Self>,
+        directory: &QString,
+        template_path: &QString,
+        name: &QString,
+    ) {
+        let directory = directory.to_string();
+        let template_path = template_path.to_string();
+        let name = name.to_string();
+        if name.trim().is_empty() {
+            self.as_mut()
+                .finish_operation("create", "", Some("Name cannot be empty".to_owned()));
+            return;
+        }
+        if !vfs::is_local_path(&directory) || !vfs::is_local_path(&template_path) {
+            self.as_mut().finish_operation(
+                "create",
+                "",
+                Some("Templates can only be used in local folders".to_owned()),
+            );
+            return;
+        }
+
+        self.as_mut().begin_operation("Creating…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        dispatch(thread, "create", async move {
+            match service::create_from_template(directory, template_path, name, host).await {
+                Ok(created) => Outcome::ok(created),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn templates_json(&self) -> QString {
+        match templates::list() {
+            Ok(entries) => {
+                let text = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+                QString::from(text.as_str())
+            }
+            Err(_) => QString::from("[]"),
+        }
+    }
+
+    fn open_templates_directory(mut self: Pin<&mut Self>) {
+        let directory = match templates::ensure_directory() {
+            Ok(directory) => directory,
+            Err(error) => {
+                self.as_mut()
+                    .finish_operation("open", "", Some(error.to_string()));
+                return;
+            }
+        };
+        let path = directory.to_string_lossy().into_owned();
+        if let Err(message) = platform::open_path(&path) {
+            self.as_mut().finish_operation("open", "", Some(message));
+            return;
+        }
+    }
+
+    fn set_templates_directory(mut self: Pin<&mut Self>, path: &QString) {
+        let directory = path.to_string().trim().to_owned();
+        if directory.is_empty() || !Path::new(&directory).is_dir() {
+            self.as_mut()
+                .set_last_error(QString::from("The templates folder does not exist"));
+            return;
+        }
+
+        let Ok(mut settings) = dae_core::settings::load_settings() else {
+            self.as_mut()
+                .set_last_error(QString::from("Could not read settings"));
+            return;
+        };
+        settings.templates.directory = Some(directory);
+        match dae_core::settings::save_settings(settings) {
+            Ok(_) => self.as_mut().set_last_error(QString::default()),
+            Err(error) => self
+                .as_mut()
+                .set_last_error(QString::from(error.to_string().as_str())),
+        }
+    }
+
+    fn file_holders(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let requested: Vec<String> = strings(paths)
+            .into_iter()
+            .filter(|path| !path.trim().is_empty())
+            .collect();
+        let request =
+            serde_json::to_string(&requested).unwrap_or_else(|_| "[]".to_owned());
+        let local: Vec<String> = requested
+            .iter()
+            .filter(|path| vfs::is_local_path(path))
+            .cloned()
+            .collect();
+
+        if local.is_empty() {
+            let report = QString::from(r#"{"holders":[],"scanned":0,"truncated":false}"#);
+            let request_value = QString::from(request.as_str());
+            let error = QString::from("Locksmith only checks local paths");
+            self.as_mut()
+                .file_holders_found(&request_value, &report, &error);
+            return;
+        }
+
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let outcome =
+                tokio::task::spawn_blocking(move || occupancy::holders_deep(&local)).await;
+
+            let _ = thread.queue(move |mut workspace| match outcome {
+                Ok(report) => {
+                    let report =
+                        serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_owned());
+                    let request_value = QString::from(request.as_str());
+                    let report_value = QString::from(report.as_str());
+                    workspace.as_mut().file_holders_found(
+                        &request_value,
+                        &report_value,
+                        &QString::default(),
+                    );
+                }
+                Err(error) => {
+                    let request_value = QString::from(request.as_str());
+                    let report_value =
+                        QString::from(r#"{"holders":[],"scanned":0,"truncated":false}"#);
+                    let message = QString::from(error.to_string().as_str());
+                    workspace.as_mut().file_holders_found(
+                        &request_value,
+                        &report_value,
+                        &message,
+                    );
+                }
+            });
+        });
+    }
+
+    fn end_process(mut self: Pin<&mut Self>, pid: i32) {
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let outcome = tokio::task::spawn_blocking(move || {
+                if pid <= 0 {
+                    return Err(FileSystemError::InvalidInput(
+                        "No process was selected".to_owned(),
+                    ));
+                }
+                occupancy::end_process(pid as u32)
+            })
+            .await;
+
+            let _ = thread.queue(move |mut workspace| match outcome {
+                Ok(Ok(())) => workspace
+                    .as_mut()
+                    .process_ended(pid, true, &QString::default()),
+                Ok(Err(error)) => {
+                    let message = error.to_string();
+                    workspace.as_mut().process_ended(
+                        pid,
+                        false,
+                        &QString::from(message.as_str()),
+                    );
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    workspace.as_mut().process_ended(
+                        pid,
+                        false,
+                        &QString::from(message.as_str()),
+                    );
+                }
+            });
+        });
     }
 
     fn create_entry(
