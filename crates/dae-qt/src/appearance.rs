@@ -243,8 +243,11 @@ impl Appearance {
     #[qsignal]
     fn shell_first_changed(&mut self);
 
+    // `SettingsPanel` calls these `chooseTheme`, `chooseAccent`, … — the names
+    // the CXX-Qt bridge exported through `cxx_name`. They stay, so no `.qml`
+    // file changed; `ConvertToCamelCase` reproduces them from these idents.
     #[qslot]
-    fn change_theme(&mut self, value: String) {
+    fn choose_theme(&mut self, value: String) {
         if !THEMES.contains(&value.as_str()) || self.theme == value {
             return;
         }
@@ -254,7 +257,7 @@ impl Appearance {
     }
 
     #[qslot]
-    fn change_accent(&mut self, value: String) {
+    fn choose_accent(&mut self, value: String) {
         if !ACCENTS.contains(&value.as_str()) || self.accent == value {
             return;
         }
@@ -264,7 +267,7 @@ impl Appearance {
     }
 
     #[qslot]
-    fn change_language(&mut self, value: String) {
+    fn choose_language(&mut self, value: String) {
         if !LANGUAGES.contains(&value.as_str()) || self.language == value {
             return;
         }
@@ -275,7 +278,7 @@ impl Appearance {
     }
 
     #[qslot]
-    fn change_blur(&mut self, enabled: bool) {
+    fn choose_blur(&mut self, enabled: bool) {
         if self.blur_enabled == enabled {
             return;
         }
@@ -285,7 +288,7 @@ impl Appearance {
     }
 
     #[qslot]
-    fn change_window_material(&mut self, value: String) {
+    fn choose_window_material(&mut self, value: String) {
         if !MATERIALS.contains(&value.as_str()) || self.window_material == value {
             return;
         }
@@ -297,7 +300,7 @@ impl Appearance {
     /// Takes effect on the next launch: the current one has already decided
     /// whether to show the stand-in window.
     #[qslot]
-    fn change_shell_first(&mut self, enabled: bool) {
+    fn choose_shell_first(&mut self, enabled: bool) {
         if self.shell_first == enabled {
             return;
         }
