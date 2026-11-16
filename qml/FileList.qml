@@ -2446,6 +2446,7 @@ Item {
                                     model: row.tagNamesList.slice(0, 2)
 
                                     Rectangle {
+                                        id: tagCapsule
                                         required property string modelData
                                         required property int index
 
@@ -2467,13 +2468,13 @@ Item {
                                                 radius: 2.5
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 color: Theme.tagColorFor(
-                                                    row.tagColorsList[index] || "")
+                                                    row.tagColorsList[tagCapsule.index] || "")
                                             }
 
                                             Text {
                                                 width: Math.min(30, implicitWidth)
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                text: modelData
+                                                text: tagCapsule.modelData
                                                 color: Theme.inkSecondary
                                                 font.pixelSize: Theme.typeMicro
                                                 textFormat: Text.PlainText
