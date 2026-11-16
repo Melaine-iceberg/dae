@@ -3051,7 +3051,28 @@ Window {
     function syncInspector(paths, model) {
         const several = paths.length > 1 && model !== null
             && typeof model.selectionBreakdown === "function"
-        inspector.showPaths(paths, several ? model.selectionBreakdown() : "")
+        const neighbors = paths.length === 1 ? root.neighborPaths(paths[0], model) : []
+        inspector.showPaths(paths, several ? model.selectionBreakdown() : "", neighbors)
+    }
+
+    /// The rows the selection is likely to move to next: the two below and
+    /// the one above, in that order. The preview controller reads them ahead
+    /// at low priority, so arrowing through a folder finds them already read.
+    function neighborPaths(path, model) {
+        if (model === null || model === undefined
+                || typeof model.indexOfPath !== "function")
+            return []
+        const row = model.indexOfPath(path)
+        if (row < 0)
+            return []
+        const out = []
+        const offsets = [1, 2, -1]
+        for (let index = 0; index < offsets.length; index += 1) {
+            const neighbor = model.pathAt(row + offsets[index])
+            if (neighbor !== "")
+                out.push(neighbor)
+        }
+        return out
     }
 
     /// §8.3: F6's ring. Only regions that are on screen take turns, so a
@@ -3169,7 +3190,8 @@ Window {
             return
         }
         root.inspectorVisible = true
-        inspector.showPaths([path])
+        inspector.showPaths([path], "", root.neighborPaths(path,
+            root.activeTab !== null ? root.activeTab.listing : null))
     }
 
     /// The ancestors the breadcrumb bar folded into its `…`. The bar draws the

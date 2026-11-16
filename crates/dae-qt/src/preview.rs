@@ -5,11 +5,20 @@
 //! the shared Tokio runtime and is applied back on the Qt thread; a newer
 //! `open()` bumps a generation so a slow file cannot overwrite the current one.
 //!
+//! `preload()` is the speculative half: the shell hands it the rows around the
+//! selection, and it fills the same snapshot cache on a dedicated low-priority
+//! runtime, so arrowing through a folder finds the next preview already read.
+//! A newer selection bumps the preload epoch and the tasks that have not
+//! started their content reads drop themselves.
+//!
 //! Thumbnails are not decoded here: `PreviewPanel.qml` asks the
 //! `thumbnail://` image provider for the bytes, which keeps decoding off the
 //! GUI thread and behind its own cache.
 
+use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
@@ -107,6 +116,12 @@ pub mod qobject {
         #[qinvokable]
         fn open(self: Pin<&mut PreviewController>, path: &QString);
 
+        /// Fills the snapshot cache for the rows around the selection, in the
+        /// order the shell expects to reach them. Low priority and cancellable:
+        /// a newer `open()` or `preload()` drops whatever has not started.
+        #[qinvokable]
+        fn preload(self: Pin<&mut PreviewController>, paths: &QStringList);
+
         #[qinvokable]
         fn clear(self: Pin<&mut PreviewController>);
 
@@ -167,6 +182,10 @@ pub struct PreviewControllerRust {
     error: QString,
     remote: bool,
     generation: u64,
+    /// Shared with the in-flight preload tasks: every `open()`, `clear()` and
+    /// `preload()` bumps it, and a task whose epoch no longer matches drops
+    /// itself instead of reading for a selection that has moved on.
+    preload_epoch: Arc<AtomicU64>,
     source_text: String,
     source_kind: SourceKind,
     source_path: String,
@@ -176,6 +195,7 @@ pub struct PreviewControllerRust {
     dark: bool,
 }
 
+#[derive(Clone, Default)]
 struct Snapshot {
     name: String,
     is_directory: bool,
@@ -204,11 +224,86 @@ struct Snapshot {
     remote: bool,
 }
 
+/// How many snapshots the cache keeps. Each holds at most a 64 KiB peek plus
+/// its rendered HTML and an Office body, so the ceiling is a few tens of MB
+/// even for a folder of large documents — and arrowing back and forth stays
+/// inside it.
+const SNAPSHOT_CACHE_ENTRIES: usize = 16;
+/// How many neighbours one `preload()` call may queue. The shell sends the
+/// next two rows and the previous one; the cap keeps a longer list from
+/// turning speculation into a directory walk.
+const PRELOAD_NEIGHBORS: usize = 3;
+
+/// Snapshots by path, dated by the same mtime-size revision the thumbnail URL
+/// carries. A hit means the file has not changed since the read, so the pane
+/// can skip the content reads entirely; a file edited on disk misses and is
+/// read again. FIFO eviction: the oldest speculation is the least likely to
+/// be reached next.
+struct SnapshotCache {
+    entries: HashMap<String, (String, Snapshot)>,
+    order: VecDeque<String>,
+}
+
+fn snapshot_cache() -> &'static Mutex<SnapshotCache> {
+    static CACHE: OnceLock<Mutex<SnapshotCache>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        Mutex::new(SnapshotCache {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        })
+    })
+}
+
+fn cache_get(path: &str, revision: &str) -> Option<Snapshot> {
+    let cache = snapshot_cache()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    cache
+        .entries
+        .get(path)
+        .filter(|(cached, _)| cached == revision)
+        .map(|(_, snapshot)| snapshot.clone())
+}
+
+fn cache_insert(path: &str, revision: &str, snapshot: &Snapshot) {
+    let mut cache = snapshot_cache()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if !cache.entries.contains_key(path) {
+        if cache.entries.len() >= SNAPSHOT_CACHE_ENTRIES
+            && let Some(oldest) = cache.order.pop_front()
+        {
+            cache.entries.remove(&oldest);
+        }
+        cache.order.push_back(path.to_owned());
+    }
+    cache
+        .entries
+        .insert(path.to_owned(), (revision.to_owned(), snapshot.clone()));
+}
+
+/// The freshness stamp of a snapshot: the same pair the thumbnail provider
+/// versions its URL with, so text and image agree on what "changed" means.
+fn revision_of(properties: &FileProperties) -> String {
+    format!(
+        "{}-{}",
+        properties.modified_at.unwrap_or(0),
+        properties.size.unwrap_or(0)
+    )
+}
+
 impl qobject::PreviewController {
     fn open(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
         let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
         self.as_mut().rust_mut().generation = generation;
+        // The selection moved: speculation for the old neighbourhood is no
+        // longer worth a thread. The shell's `preload()` for the new one
+        // bumps the epoch again and queues under that.
+        self.as_mut()
+            .rust_mut()
+            .preload_epoch
+            .fetch_add(1, AtomicOrdering::AcqRel);
 
         // The previous snapshot stays on screen until the new one is ready.
         // Clearing it here collapsed the pane to a placeholder for every
@@ -226,9 +321,43 @@ impl qobject::PreviewController {
         });
     }
 
+    fn preload(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let epoch = Arc::clone(&self.as_mut().rust_mut().preload_epoch);
+        let generation = epoch.fetch_add(1, AtomicOrdering::AcqRel) + 1;
+        let dark = self.dark;
+        for path in paths.iter().take(PRELOAD_NEIGHBORS) {
+            let path = path.to_string();
+            // A remote read's latency is unpredictable, and one stuck SFTP
+            // request would hold the single preload lane for every local
+            // neighbour behind it. Speculation stays on local disk.
+            if !vfs::is_local_path(&path) {
+                continue;
+            }
+            let epoch = Arc::clone(&epoch);
+            runtime::spawn_preload(async move {
+                if epoch.load(AtomicOrdering::Acquire) != generation {
+                    return;
+                }
+                let Ok(properties) = service::get_file_properties(path.clone()).await else {
+                    return;
+                };
+                // The stat is the cheap half; the content reads are what a
+                // moved-on selection must not pay for.
+                if epoch.load(AtomicOrdering::Acquire) != generation {
+                    return;
+                }
+                snapshot_cached(properties, &path, dark).await;
+            });
+        }
+    }
+
     fn clear(mut self: Pin<&mut Self>) {
         let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
         self.as_mut().rust_mut().generation = generation;
+        self.as_mut()
+            .rust_mut()
+            .preload_epoch
+            .fetch_add(1, AtomicOrdering::AcqRel);
 
         self.as_mut().set_path(QString::default());
         self.as_mut().set_name(QString::default());
@@ -418,6 +547,25 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
     let properties = service::get_file_properties(path.to_owned())
         .await
         .map_err(|error| friendly_preview_error(&error.to_string()))?;
+    Ok(snapshot_cached(properties, path, dark).await)
+}
+
+/// The stat is done: answer from the cache when the file has not changed since
+/// the cached read, otherwise read the body and cache it. Shared by the
+/// interactive open and the preload lane, so a preload is exactly the read the
+/// open would have done — the open then costs one stat.
+async fn snapshot_cached(properties: FileProperties, path: &str, dark: bool) -> Snapshot {
+    let revision = revision_of(&properties);
+    if let Some(hit) = cache_get(&properties.path, &revision) {
+        return hit;
+    }
+    let key = properties.path.clone();
+    let snapshot = snapshot_body(properties, path, dark).await;
+    cache_insert(&key, &revision, &snapshot);
+    snapshot
+}
+
+async fn snapshot_body(properties: FileProperties, path: &str, dark: bool) -> Snapshot {
     let is_directory = properties.kind == EntryKind::Directory;
 
     let (text, media, exif) = if is_directory {
@@ -479,9 +627,9 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         }
     };
 
-    Ok(snapshot_from(
+    snapshot_from(
         properties, text, media, exif, children, office, office_error, dark,
-    ))
+    )
 }
 
 /// The pane names the first few children of a selected folder. This is a
@@ -535,6 +683,7 @@ fn snapshot_from(
     dark: bool,
 ) -> Snapshot {
     let is_directory = properties.kind == EntryKind::Directory;
+    let revision = revision_of(&properties);
     let (content, truncated, has_text, source_kind, content_html) = match text {
         Some(text) => {
             let kind = preview_markup::classify(&properties.name);
@@ -591,11 +740,7 @@ fn snapshot_from(
         truncated,
         has_text,
         has_thumbnail: has_thumbnail(&properties.path),
-        thumbnail_revision: format!(
-            "{}-{}",
-            properties.modified_at.unwrap_or(0),
-            properties.size.unwrap_or(0)
-        ),
+        thumbnail_revision: revision,
         media_text: metadata_block(media, exif),
         media_kind,
         media_url,
@@ -815,5 +960,67 @@ mod tests {
             friendly_office_error("fs.office_unreadable"),
             "This Office file cannot be read. It may be encrypted or damaged."
         );
+    }
+
+    #[test]
+    fn a_preloaded_snapshot_is_the_read_the_open_would_do() {
+        let root = std::env::temp_dir().join("dae-preview-preload-test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("notes.txt");
+        std::fs::write(&file, b"the quick brown fox").unwrap();
+        let path = file.to_string_lossy().into_owned();
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let snapshot = runtime.block_on(async {
+            let properties = service::get_file_properties(path.clone()).await.unwrap();
+            snapshot_cached(properties, &path, true).await
+        });
+        assert_eq!(snapshot.content, "the quick brown fox");
+        assert!(snapshot.has_text);
+
+        // The preload filled the cache under the file's own revision, so the
+        // interactive open finds it without a second content read.
+        let hit = cache_get(&path, &snapshot.thumbnail_revision)
+            .expect("preload cached the snapshot");
+        assert_eq!(hit.content, "the quick brown fox");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_snapshot_cache_dates_hits_and_evicts_the_oldest() {
+        let base = "C:/dae-preview-cache-test/";
+        let first = Snapshot {
+            name: "first".to_owned(),
+            ..Snapshot::default()
+        };
+        cache_insert(&format!("{base}a.txt"), "10-20", &first);
+        assert_eq!(
+            cache_get(&format!("{base}a.txt"), "10-20").unwrap().name,
+            "first"
+        );
+        // A file edited on disk carries a new revision and misses.
+        assert!(cache_get(&format!("{base}a.txt"), "11-20").is_none());
+        assert!(cache_get(&format!("{base}missing.txt"), "10-20").is_none());
+
+        // Re-reading the same path refreshes its entry in place.
+        cache_insert(&format!("{base}a.txt"), "11-20", &first);
+        assert!(cache_get(&format!("{base}a.txt"), "11-20").is_some());
+
+        // Past the ceiling the oldest entry goes; the newest stays.
+        for index in 0..SNAPSHOT_CACHE_ENTRIES {
+            cache_insert(
+                &format!("{base}fill{index}.txt"),
+                "1-1",
+                &Snapshot::default(),
+            );
+        }
+        cache_insert(&format!("{base}overflow.txt"), "1-1", &Snapshot::default());
+        assert!(cache_get(&format!("{base}overflow.txt"), "1-1").is_some());
+        assert!(cache_get(&format!("{base}a.txt"), "11-20").is_none());
     }
 }

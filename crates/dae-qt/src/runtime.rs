@@ -30,3 +30,27 @@ where
 {
     runtime().spawn(future);
 }
+
+/// The lane speculative work runs on: preview preloads today. Its own worker
+/// and blocking pool, because `spawn_blocking` inside a future lands on the
+/// *current* runtime's pool — sharing the interactive one would let a
+/// speculative read take a thread a selection or a listing is waiting on.
+/// One worker serializes the speculation; two blocking threads let a slow
+/// read overlap with the next file's stat without ever scaling up.
+pub(crate) fn spawn_preload<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    static PRELOAD: OnceLock<Runtime> = OnceLock::new();
+    PRELOAD
+        .get_or_init(|| {
+            Builder::new_multi_thread()
+                .worker_threads(1)
+                .max_blocking_threads(2)
+                .enable_all()
+                .thread_name("dae-preload")
+                .build()
+                .expect("failed to create the dae preload runtime")
+        })
+        .spawn(future);
+}

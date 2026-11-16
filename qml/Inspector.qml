@@ -20,6 +20,10 @@ Item {
     id: root
 
     property var paths: []
+    /// The rows around the selection, in the order the shell expects to reach
+    /// them. `showPaths` receives them from the listing model; the Space
+    /// overlay has no model to ask and leaves them empty.
+    property var neighbors: []
     /// One recycle-bin row, or null. The trash lists entries that no longer
     /// exist on disk, so the controller cannot describe them; the shell hands
     /// the row's strings over instead.
@@ -186,9 +190,20 @@ Item {
         root.directorySizeBytes = -1
         root.measuring = false
     }
-    /// A new single selection opens details for it; the controller drops the
-    /// previous hashes when it loads, so no digest can be attributed wrongly.
-    onPathsChanged: if (root.paths.length === 1) detailsController.open(root.paths[0])
+    /// A new single selection opens the preview and its details — the
+    /// controller drops the previous hashes when it loads, so no digest can
+    /// be attributed wrongly — and queues the neighbours for preload. The
+    /// trigger lives here rather than in `showPaths` because the Space
+    /// overlay binds `paths` directly instead of calling the function.
+    onPathsChanged: {
+        if (root.paths.length === 1) {
+            detailsController.open(root.paths[0])
+            controller.open(root.paths[0])
+            controller.preload(root.neighbors)
+        } else {
+            controller.clear()
+        }
+    }
     Component.onCompleted: controller.setDark(root.dark)
 
     /// §8.3: where F6 puts focus when the ring reaches the inspector. The
@@ -197,14 +212,11 @@ Item {
         scroller.forceActiveFocus()
     }
 
-    function showPaths(next, breakdownJson) {
+    function showPaths(next, breakdownJson, neighborPaths) {
         trashItem = null
         breakdown = breakdownJson !== undefined ? breakdownJson : ""
+        neighbors = (neighborPaths || []).slice()
         paths = (next || []).slice()
-        if (paths.length === 1)
-            controller.open(paths[0])
-        else
-            controller.clear()
     }
 
     /// A one-line permission read-out. Unix keeps the mode in the low bits and
