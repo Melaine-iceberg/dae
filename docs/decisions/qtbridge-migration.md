@@ -342,6 +342,11 @@ set DAE_QML_AOT=1&& set DAE_QML_TYPEC=1&& set DAE_QML_LINT=1&& cargo build -p da
 改成 `changeTheme`），这是启动时间线查不出来的那类回归。等上游提供 qmltypes 导出后可删
 这段生成逻辑。
 
+实测（2026-11-16）：`DAE_QML_AOT=1 cargo build --release -p dae-app` 通过，
+`target/release/build/dae-app-*/out/qmlcache/` 有编译单元、
+`dae_qmlcache_loader.o` 在归档里；release 二进制以 `DAE_STARTUP_PERF=1` 启动后时间线
+完整、无 QML 错误，说明 AOT 这一层重新拿到了完整的类型表。
+
 ### 7.2 线程
 
 `cxx_qt::Threading` + `qt_thread()`（55 处调用、15 个 impl）在 qtbridge 里换成

@@ -66,8 +66,9 @@ manual impl.
 
 ## Where the port stands
 
-Ported so far, all verified by `cargo test -p dae-qt --lib` (217 pass) and a
-real launch of `target/debug/dae.exe` with no QML warnings:
+Ported so far, all verified by `cargo test -p dae-qt --lib` (217 pass), the
+`DAE_QML_AOT/TYPEC/LINT` gate set and a real launch of `target/debug/dae.exe`
+with no QML warnings:
 
 | Module | Shape |
 |---|---|
@@ -75,8 +76,11 @@ real launch of `target/debug/dae.exe` with no QML warnings:
 | `session.rs` | singleton, 2 properties, 5 slots |
 | `tags.rs` | singleton, 2 properties, 2 signals, 10 slots, `Vec<String>` |
 | `config.rs` | element, 6 constant properties, C++ call kept in its cxx bridge |
+| `appearance.rs` | singleton, 6 properties, 6 slots, `translator.h` extern kept |
+| `network_discovery.rs` | singleton, 3 properties, 1 slot, `QThreadHandle` result |
+| `preferences.rs` | singleton, 36 properties, 11 slots, `notifying_setters!` |
 
-No `.qml` file changed. Per module the pattern is:
+No `.qml` file changed for a port. Per module the pattern is:
 
 1. `#[cxx_qt::bridge]`'s `RustQt` block becomes
    `#[qobject(NoQmlElement, ConvertToCamelCase)] impl` + a manual `QmlElement`
@@ -89,8 +93,11 @@ No `.qml` file changed. Per module the pattern is:
 4. A file that also calls C++ (e.g. `config.rs`'s `dae_qt_system_dark`) keeps
    its `#[cxx_qt::bridge]` `extern "C++"` block; only the `RustQt` half moves.
 
-Remaining, roughly in dependency order: leaf singletons (`appearance`,
-`network_discovery`, `preferences`), the command/overlay models
+5. The ported type is described back into the QML metadata by
+   `apps/dae/build.rs` (read from the `QmlElement`/`qproperty!`/`#[qslot]`
+   declarations), so `qmltc` and `qmllint` keep resolving `import dae`.
+
+Remaining, roughly in dependency order: the command/overlay models
 (`shell_command_model`, `open_with_model`), the listing models
 (`sidebar_model`, `sidebar_tree_model`, `spaces_model`, `trash_model`,
 `overview_model`, `search_model`, `model`), then `workspace` (45 properties),
