@@ -292,6 +292,10 @@ impl QmlElement for Model { /* URI "dae"，ELEMENT_NAME，IS_SINGLETON = false *
 - `data()` 里 `QVariant::from(&QString::from(...))` 可直接沿用。
 - 模型是 `#[qml_element]` 普通类型（`IS_SINGLETON = false`），QML 里 `Model {}` 实例化，
   QML 文件无需修改。
+- 元数据（§7.1）现在给每个已迁移类型写 `prototype: "QObject"`。列表模型迁完后，如果
+  `qmllint`/`qmltc` 报 `count`/`roleNames` 一类成员找不到，把生成处改成按
+  `#[qobject(Base = QAbstractItemModel, …)]` 输出 `prototype: "QAbstractItemModel"`
+  即可；那条信息在 `qobject` 属性里已经能读到，不需要新清单。
 
 建议顺序：`sidebar_model` → `trash_model` → `spaces_model` → `shell_command_model` →
 `open_with_model` → `overview_model` → `search_model` → `sidebar_tree_model` → `model`。
