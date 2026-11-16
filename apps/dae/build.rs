@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -275,6 +276,351 @@ fn qml_modules() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(cargo_target_dir)?;
     Some(base.join("qml_modules"))
+}
+
+/// One type that Qt Bridge registers at runtime, as its `QmlElement` impl and
+/// its `#[qobject]` impl declare it.
+struct PortedElement {
+    uri: String,
+    name: String,
+    major: u8,
+    minor: u8,
+    singleton: bool,
+    /// Properties, as (QML name, QML type).
+    properties: Vec<(String, String)>,
+    /// Slots and signals, as (QML name, parameter count).
+    slots: Vec<(String, usize)>,
+    signals: Vec<(String, usize)>,
+}
+
+/// The ported types that are missing from cxx-qt's `plugin.qmltypes`.
+///
+/// Qt Bridge registers at runtime and emits no type information, so every
+/// module that moves off CXX-Qt disappears from the metadata that
+/// `qmlcachegen`, `qmltc` and `qmllint` resolve `import dae` through — while the
+/// QML surface stays identical. The declarations are read back from the Rust
+/// sources: the URI, name, version and singleton flag from the `impl
+/// QmlElement` block, the invokables from the `#[qslot]`/`#[qsignal]` markers.
+/// Porting a module therefore needs no second list here, and a placeholder
+/// cannot disagree with what the type actually registers.
+fn ported_qml_elements() -> Vec<PortedElement> {
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let sources = manifest.join("../../crates/dae-qt/src");
+    let Ok(entries) = std::fs::read_dir(&sources) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|extension| extension == "rs"))
+        .collect();
+    files.sort();
+
+    let mut elements = Vec::new();
+    for path in files {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        const HEADER: &str = "impl QmlElement for ";
+        if !text.contains(HEADER) {
+            continue;
+        }
+        println!("cargo:rerun-if-changed={}", path.display());
+        // `ConvertToCamelCase` renames the members, not the properties.
+        let camel_case = text
+            .lines()
+            .filter(|line| line.trim_start().starts_with("#[qobject("))
+            .any(|line| line.contains("ConvertToCamelCase"));
+        let slots = bridged_members(&text, "#[qslot]", camel_case);
+        let signals = bridged_members(&text, "#[qsignal]", camel_case);
+
+        let mut rest = text.as_str();
+        while let Some(index) = rest.find(HEADER) {
+            rest = &rest[index + HEADER.len()..];
+            let Some(open) = rest.find('{') else { break };
+            let name = rest[..open].trim().to_owned();
+            let body = &rest[open + 1..];
+            // The impl's own closing brace is the first `}` in column 0.
+            let Some(close) = body.find("\n}") else { break };
+            let body = &body[..close];
+            rest = &rest[open + 1 + close..];
+
+            let (Some(uri), Some(major), Some(minor), Some(singleton)) = (
+                rust_string_const(body, "URI"),
+                rust_number_const(body, "MAJOR_VERSION"),
+                rust_number_const(body, "MINOR_VERSION"),
+                rust_bool_const(body, "IS_SINGLETON"),
+            ) else {
+                continue;
+            };
+            elements.push(PortedElement {
+                uri,
+                name: name.clone(),
+                major,
+                minor,
+                singleton,
+                properties: bridged_properties(&text, &name),
+                slots: slots.clone(),
+                signals: signals.clone(),
+            });
+        }
+    }
+    elements
+}
+
+/// The `#[qslot]`/`#[qsignal]` functions of a file, as (QML name, arity).
+///
+/// One file carries one ported type, so the markers do not need to be tied back
+/// to an impl block. The QML name follows the same rule the macro applies: with
+/// `ConvertToCamelCase` the identifier is camelCased, otherwise it is exported
+/// verbatim.
+fn bridged_members(text: &str, marker: &str, camel_case: bool) -> Vec<(String, usize)> {
+    let mut members = Vec::new();
+    let mut rest = text;
+    while let Some(index) = rest.find(marker) {
+        rest = &rest[index + marker.len()..];
+        let Some(fn_index) = rest.find("fn ") else { break };
+        rest = &rest[fn_index + 3..];
+        let Some(open) = rest.find('(') else { break };
+        let name = rest[..open].trim();
+        let name = if camel_case {
+            snake_to_camel(name)
+        } else {
+            name.to_owned()
+        };
+        let params = &rest[open + 1..];
+        // Match the closing parenthesis: a parameter type can nest parentheses
+        // (`Option<...>` no, but a closure or tuple in a default could).
+        let mut depth = 1usize;
+        let mut end = None;
+        for (offset, byte) in params.bytes().enumerate() {
+            match byte {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(offset);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { break };
+        let arity = params[..end]
+            .split(',')
+            .filter(|param| {
+                let param = param.trim();
+                !matches!(param, "" | "&self" | "&mut self" | "self" | "mut self")
+            })
+            .count();
+        rest = &params[end..];
+        members.push((name, arity));
+    }
+    members
+}
+
+/// The macro's own rule (`qtbridge-gen`'s `case_conv`): the first token keeps a
+/// lowercase head, every later token capitalises its head.
+fn snake_to_camel(name: &str) -> String {
+    let mut camel = String::with_capacity(name.len());
+    for token in name.split('_') {
+        let mut chars = token.chars();
+        let Some(first) = chars.next() else { continue };
+        let first = if camel.is_empty() {
+            first.to_ascii_lowercase()
+        } else {
+            first.to_ascii_uppercase()
+        };
+        camel.push(first);
+        camel.push_str(chars.as_str());
+    }
+    camel
+}
+
+/// The `qproperty!` declarations of a file, as (QML name, QML type).
+///
+/// The QML name is the string literal; the type comes from the struct field the
+/// declaration names with `Member = …`, because the macro does not repeat it.
+/// A field whose Rust type has no QML spelling yet is declared `var`: the value
+/// still resolves at run time, only static type checks are skipped.
+fn bridged_properties(text: &str, struct_name: &str) -> Vec<(String, String)> {
+    let field_types = struct_field_types(text, struct_name);
+    let mut properties = Vec::new();
+    let mut rest = text;
+    while let Some(index) = rest.find("qproperty!(") {
+        rest = &rest[index + "qproperty!(".len()..];
+        let Some(opening_quote) = rest.find('"') else {
+            break;
+        };
+        let after = &rest[opening_quote + 1..];
+        let Some(closing_quote) = after.find('"') else {
+            break;
+        };
+        let name = after[..closing_quote].to_owned();
+        let arguments = &after[closing_quote + 1..];
+        let arguments = &arguments[..arguments.find(')').unwrap_or(arguments.len())];
+        let field = arguments.find("Member = ").and_then(|at| {
+            let field = &arguments[at + "Member = ".len()..];
+            field
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+                .next()
+        });
+        let qml_type = field
+            .and_then(|field| field_types.get(field))
+            .map_or_else(|| "var".to_owned(), |ty| qml_type(ty));
+        properties.push((name, qml_type));
+        rest = &after[closing_quote..];
+    }
+    properties
+}
+
+/// The fields of `struct <name> { … }`, as Rust type text.
+fn struct_field_types(text: &str, struct_name: &str) -> HashMap<String, String> {
+    let header = format!("struct {struct_name} {{");
+    let mut types = HashMap::new();
+    let Some(start) = text.find(&header) else {
+        return types;
+    };
+    let body = &text[start + header.len()..];
+    let Some(end) = body.find("\n}") else {
+        return types;
+    };
+    for line in body[..end].lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("//") || line.starts_with("#[") {
+            continue;
+        }
+        let Some((name, ty)) = line.split_once(':') else {
+            continue;
+        };
+        let name = name.trim();
+        let ty = ty.trim().trim_end_matches(',').trim();
+        if !name.is_empty() && !ty.is_empty() {
+            types.insert(name.to_owned(), ty.to_owned());
+        }
+    }
+    types
+}
+
+/// The QML spelling of a Rust type the bridge can carry. Anything else stays
+/// `var`.
+fn qml_type(rust: &str) -> String {
+    match rust {
+        "String" => "QString",
+        "bool" => "bool",
+        "i32" => "int",
+        "i64" => "qlonglong",
+        "u32" => "uint",
+        "u64" => "qulonglong",
+        "f32" => "float",
+        "f64" => "double",
+        "Vec<String>" => "QStringList",
+        _ => "var",
+    }
+    .to_owned()
+}
+
+fn rust_const_value<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    let prefix = format!("const {key}:");
+    let line = body.lines().find(|line| line.trim_start().starts_with(&prefix))?;
+    Some(line.split_once('=')?.1.trim().trim_end_matches(';').trim())
+}
+
+fn rust_string_const(body: &str, key: &str) -> Option<String> {
+    let value = rust_const_value(body, key)?;
+    let quoted = value.strip_prefix('"')?.strip_suffix('"')?;
+    Some(quoted.to_owned())
+}
+
+fn rust_number_const(body: &str, key: &str) -> Option<u8> {
+    rust_const_value(body, key)?.parse().ok()
+}
+
+fn rust_bool_const(body: &str, key: &str) -> Option<bool> {
+    match rust_const_value(body, key)? {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+/// Appends the placeholders for `elements` to a `plugin.qmltypes` document.
+///
+/// `isTypeOpaque: true` says "this type's property list is not described here":
+/// a binding to one resolves at run time instead of being compiled, which is
+/// exactly the situation — Qt Bridge builds the metaobject at run time. qmllint
+/// still looks call sites up, so the invokables and signals are listed; their
+/// parameter types are `var`, because the Rust signatures are not available here
+/// and only the arity has to match for the lookup to resolve.
+///
+/// A singleton is not instantiable, so it mirrors what cxx-qt wrote for the ones
+/// it still owns.
+fn with_port_placeholders(text: &str, elements: &[PortedElement]) -> String {
+    if elements.is_empty() {
+        return text.to_owned();
+    }
+    let mut blocks = String::new();
+    for element in elements {
+        let PortedElement {
+            uri,
+            name,
+            major,
+            minor,
+            singleton,
+            properties,
+            slots,
+            signals,
+        } = element;
+        let creatable = !singleton;
+        blocks.push_str(&format!(
+            "    Component {{\n\
+             \x20       name: \"{name}\"\n\
+             \x20       accessSemantics: \"reference\"\n\
+             \x20       prototype: \"QObject\"\n\
+             \x20       exports: [\"{uri}/{name} {major}.{minor}\"]\n\
+             \x20       isCreatable: {creatable}\n\
+             \x20       isSingleton: {singleton}\n\
+             \x20       isTypeOpaque: true\n"
+        ));
+        for (name, qml_type) in properties {
+            blocks.push_str(&format!(
+                "        Property {{ name: \"{name}\"; type: \"{qml_type}\" }}\n"
+            ));
+        }
+        for (name, arity) in slots {
+            blocks.push_str("        Method {\n");
+            blocks.push_str(&format!("            name: \"{name}\"\n"));
+            blocks.push_str("            type: \"var\"\n");
+            push_parameters(&mut blocks, *arity);
+            blocks.push_str("        }\n");
+        }
+        for (name, arity) in signals {
+            blocks.push_str(&format!("        Signal {{ name: \"{name}\""));
+            if *arity > 0 {
+                blocks.push_str("; Parameter { name: \"arg0\"; type: \"var\" }");
+                for index in 1..*arity {
+                    blocks.push_str(&format!(
+                        "; Parameter {{ name: \"arg{index}\"; type: \"var\" }}"
+                    ));
+                }
+            }
+            blocks.push_str(" }\n");
+        }
+        blocks.push_str("    }\n");
+    }
+    // The document is one `Module { … }`; the placeholders belong inside it.
+    match text.rfind('}') {
+        Some(index) => format!("{}{}{}", &text[..index], blocks, &text[index..]),
+        None => text.to_owned(),
+    }
+}
+
+fn push_parameters(block: &mut String, arity: usize) {
+    for index in 0..arity {
+        block.push_str(&format!(
+            "            Parameter {{ name: \"arg{index}\"; type: \"var\" }}\n"
+        ));
+    }
 }
 
 fn cargo_target_dir() -> Option<PathBuf> {
@@ -623,7 +969,10 @@ mod typec {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    use super::{QML_FILES, QML_PREFIX, find_qt_tool, qml_modules, run_tool};
+    use super::{
+        QML_FILES, QML_PREFIX, find_qt_tool, ported_qml_elements, qml_modules, run_tool,
+        with_port_placeholders,
+    };
 
     /// Documents `qmltc` cannot compile today. `MediaPreview.qml` binds a
     /// `MediaPlayer`; Qt 6.12's own QtMultimedia qmltypes marks
@@ -716,7 +1065,7 @@ mod typec {
         Ok(())
     }
 
-    /// The `dae` module as `qmltc` needs to see it.
+    /// The `dae` module as `qmltc` and `qmllint` need to see it.
     ///
     /// cxx-qt's generated `plugin.qmltypes` declares every built-in value type
     /// it only references from a property (`QString`, `bool`, `double`, …) as
@@ -727,10 +1076,17 @@ mod typec {
     /// The generated file itself is left alone: qmlcachegen and qmllint read
     /// it, and it is cxx-qt's to write.
     ///
+    /// The same file is where the types that moved to Qt Bridge went missing
+    /// from: those register at run time and write no metadata, so every ported
+    /// type is added back as an opaque placeholder (see
+    /// [`ported_qml_elements`]). Stripping first and appending after is what
+    /// keeps the two apart — one pass would otherwise delete the placeholders it
+    /// depends on.
+    ///
     /// `depends QtQuick` is what resolves `QAbstractListModel`, the prototype
     /// of every model type here; cxx-qt cannot infer it from the prototype
     /// names, so it is added in `crates/dae-qt/build.rs` as well.
-    fn prepare_module(out_dir: &Path) -> Result<PathBuf, String> {
+    pub(super) fn prepare_module(out_dir: &Path) -> Result<PathBuf, String> {
         let modules =
             qml_modules().ok_or_else(|| "could not locate target/cxxqt/qml_modules".to_owned())?;
         let source = modules.join("dae");
@@ -747,7 +1103,8 @@ mod typec {
         let dir = out_dir.join("modules").join("dae");
         fs::create_dir_all(&dir)
             .map_err(|error| format!("could not create {}: {error}", dir.display()))?;
-        fs::write(dir.join("plugin.qmltypes"), strip_opaque(&text))
+        let prepared = with_port_placeholders(&strip_opaque(&text), &ported_qml_elements());
+        fs::write(dir.join("plugin.qmltypes"), prepared)
             .map_err(|error| format!("could not write the sanitised qmltypes: {error}"))?;
         // No `plugin`/`classname`/`prefer` lines: this copy exists for qmltc's
         // type resolver only, and it must not try to load a plugin.
@@ -851,7 +1208,7 @@ mod lint {
     use std::path::PathBuf;
     use std::process::Command;
 
-    use super::{QML_FILES, find_qt_tool, qml_modules};
+    use super::{QML_FILES, find_qt_tool, typec};
 
     pub(super) fn check() {
         for name in [
@@ -877,8 +1234,10 @@ mod lint {
             .ok_or_else(|| "qmllint was not found (set QMAKE or DAE_QMLLINT)".to_owned())?;
         let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
         let qml_dir = manifest.join("../../qml");
-        let modules =
-            qml_modules().ok_or_else(|| "could not locate target/cxxqt/qml_modules".to_owned())?;
+        // The sanitised copy, not cxx-qt's own file: it is the one that carries
+        // the ported types (see `typec::prepare_module`), and a type that only
+        // exists there would otherwise read as an unresolved import here.
+        let modules = typec::prepare_module(&PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")))?;
 
         for (source, alias) in QML_FILES {
             // The `.js` files are imported by name, not linted as documents,
