@@ -115,18 +115,45 @@ Item {
     /// The strip starts where the mark ends (14 + 17 + 13); on macOS it starts
     /// after the three traffic lights.
     readonly property int tabLeft: isMac ? 78 : 44
+    /// The `+` column. It is pinned to the right of the strip rather than
+    /// following the last chip, so opening a tab never depends on scrolling
+    /// the strip all the way to its end.
     readonly property int plusWidth: 26
+    /// Each overflow arrow claims this much of the strip.
+    readonly property int arrowWidth: 26
     /// Tabs stop before the button columns. The 8 dp gap stays caption, like
     /// the rest of the empty bar.
     readonly property real stripWidth: Math.max(0, width - buttonsWidth - 8)
 
-    /// The horizontal slice of the bar that the tabs occupy, in bar
-    /// coordinates. The shell forwards it to the native hit test so a tab
-    /// click reaches QML instead of starting a window drag; the empty space to
-    /// the right of `+` stays caption and remains the window's grab handle.
+    /// The chips' own width, before any scrolling arrows are inserted.
+    readonly property real tabsWidth: tabs.length === 0 ? 0
+        : tabs.length * tabWidthValue + (tabs.length - 1) * tabGap
+    /// True when the chips outgrow the space the strip leaves them. The arrows
+    /// then appear at both ends; `+` stays pinned at the right.
+    readonly property bool tabsOverflow: tabs.length > 0
+        && tabsWidth > Math.max(0, stripWidth - plusWidth - tabLeft)
+    /// The visible chip viewport, in bar coordinates. Its left edge moves
+    /// right by the left arrow only while the strip overflows, so the chips do
+    /// not jump while the window is resized across the threshold.
+    readonly property real tabViewportLeft: tabLeft
+        + (tabsOverflow ? arrowWidth : 0)
+    readonly property real tabViewportWidth: Math.max(0,
+        stripWidth - plusWidth - tabViewportLeft
+        - (tabsOverflow ? arrowWidth : 0))
+    /// The pinned `+` column, immediately left of the button columns.
+    readonly property real plusLeft: Math.max(0, stripWidth - plusWidth)
+    readonly property real plusRight: plusLeft + plusWidth
+
+    /// The horizontal slices of the bar that must stay client areas, in bar
+    /// coordinates. The shell forwards them to the native hit test so a click
+    /// on a chip or on `+` reaches QML instead of starting a window drag. Two
+    /// bands, because the chips and the pinned `+` are not adjacent: the
+    /// empty strip between them stays caption and remains the window's grab
+    /// handle. A zero-width band means "no client band".
     readonly property real clientLeft: tabLeft
-    readonly property real clientRight: Math.min(tabX(tabs.length) + plusWidth,
-                                                 stripWidth)
+    readonly property real clientRight: tabsOverflow
+        ? Math.max(tabLeft, plusLeft)
+        : Math.min(tabLeft + tabsWidth, plusLeft)
 
     /// The URLs a drop carries, as strings. `Workspace.localDropPaths` turns
     /// the `file:` half into paths; anything else (a browser URL) is dropped
@@ -138,25 +165,44 @@ Item {
         return urls
     }
 
+    /// A chip's left edge in the scroll content, which starts at the
+    /// viewport's left edge rather than at the bar's left edge.
     function tabX(index) {
-        return tabLeft + index * (tabWidthValue + tabGap)
+        return index * (tabWidthValue + tabGap)
     }
 
+    /// Which chip sits at a bar coordinate. The viewport's left edge and the
+    /// current scroll offset turn it into a content coordinate first.
     function indexAt(x) {
+        const content = x - tabViewportLeft + tabFlick.contentX
         for (let i = 0; i < tabs.length; i += 1) {
             const middle = tabX(i) + tabWidthValue / 2
-            if (x < middle)
+            if (content < middle)
                 return i
         }
         return tabs.length
     }
 
+    /// Where the drop indicator belongs, in scroll-content coordinates.
     function indicatorX(index) {
         if (index <= 0)
-            return root.tabLeft
+            return 0
         const column = Math.min(index, tabs.length) - 1
         return tabX(column) + tabWidthValue + tabGap / 2
     }
+
+    /// Scrolls by one chip. The arrows are the pointer's way along a strip
+    /// that overflows; the wheel still works as before.
+    function scrollStrip(delta) {
+        const max = Math.max(0, tabFlick.contentWidth - tabFlick.width)
+        const step = delta * (tabWidthValue + tabGap)
+        tabFlick.contentX = Math.max(0, Math.min(max,
+                                                 tabFlick.contentX + step))
+    }
+
+    readonly property bool canScrollLeft: tabFlick.contentX > 0.5
+    readonly property bool canScrollRight: tabFlick.contentX + tabFlick.width
+        < tabFlick.contentWidth - 0.5
 
     /// The chip names only its directory (§7.3.1). Two tabs showing the same
     /// name get the parent on the left of a middle dot; the path itself stays
@@ -218,10 +264,9 @@ Item {
 
     /// Marks where a tab drag hovering this bar would insert. The window's
     /// `DropArea` drives this while the native loop runs. `x` arrives in bar
-    /// coordinates; the indicator lives in the strip's scrolled content, so
-    /// the current offset is added here once.
+    /// coordinates; `indexAt` and the indicator convert it as needed.
     function showDrop(x) {
-        dropX = x + tabFlick.contentX
+        dropX = x
     }
 
     onActiveIndexChanged: Qt.callLater(function () { tabFlick.revealTab(root.activeIndex) })
@@ -463,29 +508,31 @@ Item {
         }
     }
 
-    // The chips, `+` and the drop indicator. Clipped at the button columns so a
-    // full strip never paints over them, and scrolled horizontally (§7.3.1:
-    // one row, never wrapped) once the tabs outgrow the width.
+    // The chips and the drop indicator. The overflow arrows and `+` are pinned
+    // outside this viewport, so they never scroll away; the chips are clipped
+    // at the button columns and scroll horizontally (§7.3.1: one row, never
+    // wrapped) once they outgrow the width.
     Flickable {
         id: tabFlick
-        x: 0
+        x: root.tabViewportLeft
         y: 0
-        width: root.stripWidth
+        width: root.tabViewportWidth
         height: root.height
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.HorizontalFlick
-        contentWidth: Math.max(tabRow.x + tabRow.width, width)
+        contentWidth: Math.max(tabRow.width, width)
         contentHeight: height
         /// Not `interactive`: the chips drag to reorder and tear off, and a
         /// Flickable that also took horizontal drags would steal those
-        /// gestures after six pixels. The wheel and the reveal-on-switch rule
-        /// below are how a strip that does not fit is traversed.
+        /// gestures after six pixels. The arrows, the wheel and the
+        /// reveal-on-switch rule below are how a strip that does not fit is
+        /// traversed.
         interactive: false
 
         /// The wheel is the pointer's way along the strip; a horizontal wheel
-        /// delta (a trackpad's two-finger swipe) is honoured too. Without this
-        /// the last tabs were simply unreachable.
+        /// delta (a trackpad's two-finger swipe) is honoured too. The arrows
+        /// are the same traversal for a pointer that has no wheel.
         WheelHandler {
             onWheel: function (event) {
                 if (tabFlick.contentWidth <= tabFlick.width) {
@@ -514,7 +561,14 @@ Item {
                 contentX = Math.min(contentWidth - width, right - width)
         }
 
-        onWidthChanged: revealTab(root.activeIndex)
+        onWidthChanged: {
+            // Closing tabs can make the strip stop overflowing; clamp before
+            // revealing so a stale offset cannot hide the active chip.
+            const max = Math.max(0, contentWidth - width)
+            if (contentX > max)
+                contentX = max
+            revealTab(root.activeIndex)
+        }
         /// The row's width lands one layout pass after `tabs` changes, so a
         /// reveal that ran on `tabsChanged` alone would clamp against the old
         /// content width and leave the new chip half under the window buttons.
@@ -525,7 +579,7 @@ Item {
 
         Row {
             id: tabRow
-            x: root.tabLeft
+            x: 0
             y: root.tabTop
             height: root.tabHeightValue
             spacing: root.tabGap
@@ -774,41 +828,6 @@ Item {
                     }
                 }
             }
-
-            Item {
-                width: root.plusWidth
-                height: root.plusWidth
-                // Centred against the 38 dp bar, not the 30 dp chip.
-                y: (root.height - root.plusWidth) / 2 - root.tabTop
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Theme.radiusSm
-                    color: plusMouse.containsMouse ? Theme.hover : "transparent"
-                }
-
-                Glyph {
-                    anchors.centerIn: parent
-                    width: 14
-                    height: 14
-                    kind: "plus"
-                    tint: plusMouse.containsMouse
-                        ? Theme.ink : Theme.inkSecondary
-                }
-
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("新建标签页")
-                Accessible.onPressAction: root.newTabRequested()
-
-                MouseArea {
-                    id: plusMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: root.newTabRequested()
-                }
-
-                ToolTip { text: qsTr("新建标签页") }
-            }
         }
 
         // Where the tab would land. The platform draws the dragged chip
@@ -823,6 +842,129 @@ Item {
             radius: 1
             color: root.accent
         }
+    }
+
+    // The pair the strip grows when it overflows. Each arrow scrolls one chip
+    // and dims at its own end; `+` sits between the right arrow and the window
+    // buttons, so it is always reachable.
+    Item {
+        id: scrollLeftButton
+        visible: root.tabsOverflow
+        x: root.tabLeft
+        y: (root.height - root.arrowWidth) / 2
+        width: root.arrowWidth
+        height: root.arrowWidth
+        readonly property bool canScroll: root.canScrollLeft
+        opacity: canScroll ? 1.0 : 0.4
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radiusSm
+            color: scrollLeftMouse.containsMouse && scrollLeftButton.canScroll
+                ? Theme.hover : "transparent"
+        }
+
+        Glyph {
+            anchors.centerIn: parent
+            width: 14
+            height: 14
+            kind: "chevronLeft"
+            tint: scrollLeftMouse.containsMouse && scrollLeftButton.canScroll
+                ? Theme.ink : Theme.inkSecondary
+        }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("向左滚动标签页")
+        Accessible.onPressAction: {
+            if (scrollLeftButton.canScroll)
+                root.scrollStrip(-1)
+        }
+
+        MouseArea {
+            id: scrollLeftMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            enabled: scrollLeftButton.canScroll
+            onClicked: root.scrollStrip(-1)
+        }
+    }
+
+    Item {
+        id: scrollRightButton
+        visible: root.tabsOverflow
+        x: Math.max(root.tabViewportLeft, root.plusLeft - root.arrowWidth)
+        y: (root.height - root.arrowWidth) / 2
+        width: root.arrowWidth
+        height: root.arrowWidth
+        readonly property bool canScroll: root.canScrollRight
+        opacity: canScroll ? 1.0 : 0.4
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radiusSm
+            color: scrollRightMouse.containsMouse && scrollRightButton.canScroll
+                ? Theme.hover : "transparent"
+        }
+
+        Glyph {
+            anchors.centerIn: parent
+            width: 14
+            height: 14
+            kind: "chevronRight"
+            tint: scrollRightMouse.containsMouse && scrollRightButton.canScroll
+                ? Theme.ink : Theme.inkSecondary
+        }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("向右滚动标签页")
+        Accessible.onPressAction: {
+            if (scrollRightButton.canScroll)
+                root.scrollStrip(1)
+        }
+
+        MouseArea {
+            id: scrollRightMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            enabled: scrollRightButton.canScroll
+            onClicked: root.scrollStrip(1)
+        }
+    }
+
+    Item {
+        id: plusButton
+        x: root.plusLeft
+        y: (root.height - root.plusWidth) / 2
+        width: root.plusWidth
+        height: root.plusWidth
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radiusSm
+            color: plusMouse.containsMouse ? Theme.hover : "transparent"
+        }
+
+        Glyph {
+            anchors.centerIn: parent
+            width: 14
+            height: 14
+            kind: "plus"
+            tint: plusMouse.containsMouse
+                ? Theme.ink : Theme.inkSecondary
+        }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("新建标签页")
+        Accessible.onPressAction: root.newTabRequested()
+
+        MouseArea {
+            id: plusMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.newTabRequested()
+        }
+
+        ToolTip { text: qsTr("新建标签页") }
     }
 
     Item {

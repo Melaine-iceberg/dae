@@ -40,7 +40,13 @@ pub mod qobject {
 
         #[namespace = "dae_qt"]
         #[rust_name = "set_window_caption_client"]
-        fn dae_qt_set_caption_client(token: &QString, left: f64, right: f64) -> bool;
+        fn dae_qt_set_caption_client(
+            token: &QString,
+            left: f64,
+            right: f64,
+            plus_left: f64,
+            plus_right: f64,
+        ) -> bool;
 
         #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
@@ -128,11 +134,18 @@ pub mod qobject {
             dark: bool,
         ) -> bool;
 
-        /// The horizontal slice of the chrome bar that carries the tabs, in dp
-        /// from the client's left edge. The rest of the bar drags the window.
+        /// The horizontal slices of the chrome bar that must stay client
+        /// areas, in dp from the client's left edge: first the tab chips, then
+        /// the pinned `+` column. The rest of the bar drags the window.
         #[qinvokable]
         #[cxx_name = "setCaptionClient"]
-        fn set_caption_client(self: Pin<&mut WindowController>, left: f64, right: f64) -> bool;
+        fn set_caption_client(
+            self: Pin<&mut WindowController>,
+            left: f64,
+            right: f64,
+            plus_left: f64,
+            plus_right: f64,
+        ) -> bool;
 
         /// What a double-click on the chrome bar should do here: `"zoom"`,
         /// `"minimize"` or `"none"`.
@@ -209,9 +222,15 @@ impl qobject::WindowController {
         applied
     }
 
-    pub fn set_caption_client(self: Pin<&mut Self>, left: f64, right: f64) -> bool {
+    pub fn set_caption_client(
+        self: Pin<&mut Self>,
+        left: f64,
+        right: f64,
+        plus_left: f64,
+        plus_right: f64,
+    ) -> bool {
         let token = self.token.clone();
-        qobject::set_window_caption_client(&token, left, right)
+        qobject::set_window_caption_client(&token, left, right, plus_left, plus_right)
     }
 
     pub fn titlebar_double_action(self: Pin<&mut Self>) -> QString {

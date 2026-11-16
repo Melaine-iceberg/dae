@@ -337,16 +337,20 @@ struct WindowState
     qreal dpr = 1.0;
     int material = 2; // 0 mica, 1 acrylic, 2 none
     bool dark = false;
-    /// The part of the bar that must stay a client area, in dp from the client's
-    /// left edge: where the tabs and their `+` are. Everything else in the bar
-    /// is caption, so the empty strip and the mark at the left both drag the
-    /// window natively and keep Aero Snap and double-click maximise.
+    /// The parts of the bar that must stay client areas, in dp from the
+    /// client's left edge: where the tab chips are, and where the pinned `+`
+    /// is. Everything else in the bar is caption, so the mark at the left and
+    /// the empty strip between the chips and `+` drag the window natively and
+    /// keep Aero Snap and double-click maximise.
     ///
-    /// QML owns these numbers because only QML knows how wide the tabs are; the
-    /// right edge moves as tabs are opened and closed. `left == right` means
-    /// "no client band", which is what a window with no tabs gets.
+    /// QML owns these numbers because only QML knows how wide the chips are;
+    /// the chip band's right edge moves as tabs are opened and closed.
+    /// `left == right` means "no client band", which is what a window with no
+    /// chips gets.
     double client_left_dp = 0.0;
     double client_right_dp = 0.0;
+    double plus_left_dp = 0.0;
+    double plus_right_dp = 0.0;
 };
 
 inline QHash<quintptr, WindowState>& window_states()
@@ -446,9 +450,14 @@ inline LRESULT hit_test_for(const WindowState& state, POINT screen)
             return HTMAXBUTTON;
         if (client.x >= right - 3 * button && client.x < right)
             return HTCLIENT;
-        const int band_left = qRound(state.client_left_dp * dpr);
-        const int band_right = qRound(state.client_right_dp * dpr);
-        if (band_right > band_left && client.x >= band_left && client.x < band_right)
+        const auto in_client_band = [&](double left, double right) {
+            const int band_left = qRound(left * dpr);
+            const int band_right = qRound(right * dpr);
+            return band_right > band_left
+                && client.x >= band_left && client.x < band_right;
+        };
+        if (in_client_band(state.client_left_dp, state.client_right_dp)
+            || in_client_band(state.plus_left_dp, state.plus_right_dp))
             return HTCLIENT;
         return HTCAPTION;
     }
@@ -771,15 +780,20 @@ inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
     return apply_backdrop_to(hwnd, material, dark);
 }
 
-/// Records which horizontal slice of the 38 dp bar must hit-test as client, in
-/// dp from the client's left edge. Called by the top bar whenever the number
-/// or the width of the tabs changes.
+/// Records which horizontal slices of the 38 dp bar must hit-test as client,
+/// in dp from the client's left edge: first the tab chips, then the pinned `+`.
+/// Called by the top bar whenever the number or the width of the tabs changes.
 ///
 /// QML owns the numbers, but they are geometry and can be stale for a frame
 /// while tabs are rebuilt or the window is resized. Clamping here keeps a stale
 /// band from swallowing the drag strip or the window buttons: the band may not
 /// start before the client edge or reach into the three button columns.
-inline bool dae_qt_set_caption_client(const QString& token, double left, double right)
+inline bool dae_qt_set_caption_client(
+    const QString& token,
+    double left,
+    double right,
+    double plus_left,
+    double plus_right)
 {
     QQuickWindow* window = find_window_by_token(token);
     if (!window)
@@ -787,16 +801,23 @@ inline bool dae_qt_set_caption_client(const QString& token, double left, double 
     WindowState* state = state_for(reinterpret_cast<HWND>(window->winId()));
     if (!state)
         return false;
-    if (window->width() > 0.0)
-        right = qMin(right, window->width() - 3.0 * kButtonDp);
-    left = qMax(0.0, left);
-    if (right > left) {
-        state->client_left_dp = left;
-        state->client_right_dp = right;
-    } else {
-        state->client_left_dp = 0.0;
-        state->client_right_dp = 0.0;
-    }
+    const double max_right = window->width() > 0.0
+        ? window->width() - 3.0 * kButtonDp : right;
+    const auto store_band = [&](double band_left, double band_right,
+                                double& out_left, double& out_right) {
+        band_left = qMax(0.0, band_left);
+        band_right = qMin(band_right, max_right);
+        if (band_right > band_left) {
+            out_left = band_left;
+            out_right = band_right;
+        } else {
+            out_left = 0.0;
+            out_right = 0.0;
+        }
+    };
+    store_band(left, right, state->client_left_dp, state->client_right_dp);
+    store_band(plus_left, plus_right,
+               state->plus_left_dp, state->plus_right_dp);
     return true;
 }
 
@@ -1108,7 +1129,8 @@ inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
 
 /// The caption band is a Windows hit-test input. QML's drag and resize
 /// handlers are the portable equivalent, so this is accepted and ignored.
-inline bool dae_qt_set_caption_client(const QString& token, double, double)
+inline bool dae_qt_set_caption_client(
+    const QString& token, double, double, double, double)
 {
     return find_window_by_token(token) != nullptr;
 }

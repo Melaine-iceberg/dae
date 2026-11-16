@@ -4004,12 +4004,18 @@ Window {
                 // caption and a click on a tab starts a window drag instead of
                 // activating it. The bar is full-width, so its own numbers are
                 // already window coordinates; the native setter clamps the
-                // right edge against the button columns.
+                // right edge against the button columns. The chips and the
+                // pinned `+` are separate bands, so the blank strip between
+                // them stays a native drag handle.
                 function pushCaptionBand() {
                     if (chrome.attached)
-                        chrome.setCaptionClient(clientLeft, clientRight)
+                        chrome.setCaptionClient(clientLeft, clientRight,
+                                               plusLeft, plusRight)
                 }
+                onClientLeftChanged: pushCaptionBand()
                 onClientRightChanged: pushCaptionBand()
+                onPlusLeftChanged: pushCaptionBand()
+                onPlusRightChanged: pushCaptionBand()
 
                 onTabActivated: function (index) {
                     root.activeIndex = index
