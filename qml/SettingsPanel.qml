@@ -1569,24 +1569,26 @@ FocusScope {
                             FieldFrame {
                                 width: parent.width
                                 height: 46
-                            }
-                            TextInput {
-                                Accessible.role: Accessible.EditableText
-                                Accessible.name: qsTr("动作参数")
-                                x: 8
-                                y: 6
-                                width: parent.width - 16
-                                height: parent.height - 12
-                                text: actionRow.editArgs
-                                onTextEdited: actionRow.editArgs = text
-                                color: root.textColor
-                                selectionColor: root.accent
-                                selectedTextColor: Theme.onAccent
-                                font.pixelSize: Theme.typeCaption
-                                font.family: Theme.monoFamily
-                                selectByMouse: true
-                                clip: true
-                                wrapMode: TextInput.WrapAnywhere
+
+                                TextInput {
+                                    Accessible.role: Accessible.EditableText
+                                    Accessible.name: qsTr("动作参数")
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    anchors.topMargin: 6
+                                    anchors.bottomMargin: 6
+                                    text: actionRow.editArgs
+                                    onTextEdited: actionRow.editArgs = text
+                                    color: root.textColor
+                                    selectionColor: root.accent
+                                    selectedTextColor: Theme.onAccent
+                                    font.pixelSize: Theme.typeCaption
+                                    font.family: Theme.monoFamily
+                                    selectByMouse: true
+                                    clip: true
+                                    wrapMode: TextInput.WrapAnywhere
+                                }
                             }
 
                             Row {
@@ -1726,24 +1728,26 @@ FocusScope {
                     FieldFrame {
                         width: parent.width
                         height: 46
-                    }
-                    TextInput {
-                        Accessible.role: Accessible.EditableText
-                        Accessible.name: qsTr("新动作参数")
-                        x: 8
-                        y: 6
-                        width: parent.width - 16
-                        height: parent.height - 12
-                        text: root.newActionArgs
-                        onTextEdited: root.newActionArgs = text
-                        color: root.textColor
-                        selectionColor: root.accent
-                        selectedTextColor: Theme.onAccent
-                        font.pixelSize: Theme.typeCaption
-                        font.family: Theme.monoFamily
-                        selectByMouse: true
-                        clip: true
-                        wrapMode: TextInput.WrapAnywhere
+
+                        TextInput {
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: qsTr("新动作参数")
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            anchors.topMargin: 6
+                            anchors.bottomMargin: 6
+                            text: root.newActionArgs
+                            onTextEdited: root.newActionArgs = text
+                            color: root.textColor
+                            selectionColor: root.accent
+                            selectedTextColor: Theme.onAccent
+                            font.pixelSize: Theme.typeCaption
+                            font.family: Theme.monoFamily
+                            selectByMouse: true
+                            clip: true
+                            wrapMode: TextInput.WrapAnywhere
+                        }
                     }
 
                     Row {
