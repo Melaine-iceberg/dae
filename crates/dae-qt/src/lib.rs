@@ -65,6 +65,7 @@ pub mod overview_model;
 pub mod platform;
 pub mod preferences;
 pub mod preview;
+mod preview_highlight;
 mod preview_markup;
 pub mod properties;
 mod runtime;

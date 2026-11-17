@@ -212,6 +212,33 @@ fn main() {
 
     builder.build();
 
+    // Vendored tree-sitter grammars (assets/grammars). Their published Rust
+    // bindings either link an older tree-sitter runtime or (LaTeX) omit the
+    // external scanner the parser references, so the generated C is compiled
+    // here against the single runtime the `tree-sitter` crate provides. Each
+    // parser includes its own `tree_sitter/` headers; only the `tree_sitter_*`
+    // entry symbol crosses into Rust (declared `extern "C"` in preview_highlight).
+    for grammar in ["dockerfile", "gitignore", "groovy", "json5", "kotlin", "latex", "less", "scss"] {
+        let dir = std::path::Path::new("assets/grammars").join(grammar);
+        let mut build = cc::Build::new();
+        build
+            .std("c11")
+            .include(&dir)
+            .file(dir.join("parser.c"))
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-Wno-unused-but-set-variable");
+        if cfg!(target_env = "msvc") {
+            build.flag("-utf-8");
+        }
+        let scanner = dir.join("scanner.c");
+        if scanner.exists() {
+            build.file(&scanner);
+            println!("cargo:rerun-if-changed={}", scanner.display());
+        }
+        println!("cargo:rerun-if-changed={}", dir.join("parser.c").display());
+        build.compile(&format!("dae_ts_{grammar}"));
+    }
+
     // The Wayland protocol is generated C, and its `wl_interface` tables are
     // what `window.h` binds to inside `extern "C"`. cxx-qt-build compiles every
     // `cpp_files` entry as C++, where a namespace-scope `const` has internal

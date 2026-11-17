@@ -1,9 +1,9 @@
 //! Rich rendering for the preview pane.
 //!
 //! Markdown is translated into the HTML subset `QTextDocument` understands and
-//! code is tokenised with syntect into coloured spans. Both are pure functions
-//! over the cached source, so the theme can be re-applied without touching the
-//! file again.
+//! code is highlighted by tree-sitter (see `preview_highlight`) into coloured
+//! spans. Both are pure functions over the cached source, so the theme can be
+//! re-applied without touching the file again.
 //!
 //! Anything that would need a second resource — raw HTML, remote images,
 //! non-web link schemes — is deliberately dropped or rendered as text. The
@@ -12,18 +12,15 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Color, FontStyle, Theme, ThemeSet};
-use syntect::parsing::{SyntaxReference, SyntaxSet};
-use syntect::util::LinesWithEndings;
 use url::Url;
 
+use crate::preview_highlight;
+
 /// What the text preview of a file is: plain, a Markdown document, or source
-/// code with a language token syntect can look up.
+/// code with a language token tree-sitter can look up.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum SourceKind {
     #[default]
@@ -39,8 +36,7 @@ impl SourceKind {
 }
 
 /// Classifies a display name. Markdown wins over the code table because the
-/// extension is also a syntect language (and the document is what the user
-/// wants to read, not its markup).
+/// document is what the user wants to read, not its markup.
 pub fn classify(name: &str) -> SourceKind {
     let lower = name.to_ascii_lowercase();
     let extension = lower
@@ -59,7 +55,7 @@ pub fn render(source: &str, source_path: &str, kind: &SourceKind, dark: bool) ->
     match kind {
         SourceKind::Plain => String::new(),
         SourceKind::Markdown => render_markdown(source, source_path, dark),
-        SourceKind::Code(language) => render_code(source, language, dark),
+        SourceKind::Code(language) => preview_highlight::render_code(source, language, dark),
     }
 }
 
@@ -76,8 +72,9 @@ pub fn file_url(path: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// File extensions and well-known names offered a code preview, mapped to the
-/// token syntect looks up. Dialects without a dedicated grammar borrow the
-/// closest supported one, matching the old webview preview.
+/// token `preview_highlight` looks up. Dialects without a dedicated grammar
+/// borrow the closest supported one; VB.NET has no highlight query and falls
+/// through to plain text.
 fn language_token(name: &str) -> Option<String> {
     let lower = name.to_ascii_lowercase();
     let named = match lower.as_str() {
@@ -86,6 +83,7 @@ fn language_token(name: &str) -> Option<String> {
         "cmakelists.txt" | "cmake" => Some("cmake"),
         "cargo.lock" => Some("toml"),
         "gemfile" | "rakefile" | "procfile" => Some("ruby"),
+        "jenkinsfile" => Some("groovy"),
         _ => None,
     };
     if named.is_some() {
@@ -98,26 +96,29 @@ fn language_token(name: &str) -> Option<String> {
         lower.rsplit_once('.').map(|(_, extension)| extension)?
     };
     let token = match extension {
-        "ts" | "mts" | "cts" | "tsx" => "ts",
-        "js" | "mjs" | "cjs" | "jsx" => "js",
-        "json" | "jsonc" | "json5" => "json",
-        "css" | "scss" | "less" | "styl" => "css",
-        "html" | "htm" | "xml" | "svg" | "xhtml" | "vue" | "svelte" | "astro" | "qml" => "html",
+        "ts" | "mts" | "cts" => "ts",
+        "tsx" => "tsx",
+        "js" | "mjs" | "cjs" => "js",
+        "jsx" => "jsx",
+        "json" => "json",
+        "jsonc" | "json5" => "json5",
+        "css" | "styl" => "css",
+        "scss" => "scss",
+        "less" => "less",
+        "html" | "htm" | "xml" | "svg" | "xhtml" | "vue" | "svelte" | "astro" => "html",
+        "qml" => "qml",
         "py" | "pyi" => "py",
         "rb" => "rb",
         "rs" => "rs",
         "go" => "go",
         "java" => "java",
-        "kt" | "kts" => "kt",
         "scala" => "scala",
-        "groovy" | "gradle" => "groovy",
         "c" => "c",
         "h" => "c",
         "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" => "cpp",
         "m" | "mm" => "m",
         "cs" => "cs",
         "fs" => "fs",
-        "vb" => "vb",
         "sh" | "bash" | "zsh" | "fish" => "sh",
         "ps1" | "psm1" => "ps1",
         "sql" => "sql",
@@ -127,103 +128,26 @@ fn language_token(name: &str) -> Option<String> {
         "dockerfile" => "dockerfile",
         "lua" => "lua",
         "php" => "php",
-        "gitignore" | "gitattributes" | "dockerignore" => "gitignore",
         "swift" => "swift",
         "dart" => "dart",
         "graphql" | "gql" => "graphql",
         "proto" => "proto",
         "tex" | "bib" | "sty" => "tex",
         "nix" => "nix",
-        "mk" => "makefile",
+        "mk" => "make",
+        "groovy" | "gradle" | "gvy" | "gy" | "gsh" => "groovy",
+        "gitignore" | "dockerignore" | "npmignore" => "gitignore",
+        "kt" | "kts" => "kotlin",
         _ => return None,
     };
     Some(token.to_owned())
-}
-
-/// `two-face` is bat's grammar pack: syntect's own defaults stop at Sublime's
-/// old packages, which have no TOML, INI, Dockerfile, PowerShell, TypeScript
-/// or Kotlin — the files the pane most often shows.
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
-
-/// The pane's own palettes, embedded as tmTheme documents so a colour can be
-/// tuned without touching Rust. Both are the shell's stock: `canvasAlt` behind,
-/// `ink` for identifiers, vermilion for keywords. The files document their
-/// contrast ratios, and a test enforces them.
-static DARK_THEME: LazyLock<Theme> =
-    LazyLock::new(|| load_theme(include_str!("../assets/preview-dark.tmTheme")));
-static LIGHT_THEME: LazyLock<Theme> =
-    LazyLock::new(|| load_theme(include_str!("../assets/preview-light.tmTheme")));
-
-fn syntax_set() -> &'static SyntaxSet {
-    &SYNTAX_SET
-}
-
-fn theme(dark: bool) -> &'static Theme {
-    if dark { &DARK_THEME } else { &LIGHT_THEME }
-}
-
-fn load_theme(document: &str) -> Theme {
-    ThemeSet::load_from_reader(&mut std::io::Cursor::new(document.as_bytes()))
-        .expect("the bundled preview theme parses")
-}
-
-fn resolve_syntax<'a>(set: &'a SyntaxSet, token: &str) -> &'a SyntaxReference {
-    let token = token.to_ascii_lowercase();
-    set.find_syntax_by_extension(&token)
-        .or_else(|| set.find_syntax_by_token(&token))
-        .or_else(|| {
-            let alias = match token.as_str() {
-                "ts" => "typescript",
-                "js" => "javascript",
-                "py" => "python",
-                "rb" => "ruby",
-                "sh" => "shell",
-                "ps1" => "powershell",
-                "kt" => "kotlin",
-                "cs" => "c#",
-                "fs" => "f#",
-                "vb" => "vb.net",
-                "m" => "objective-c",
-                "cpp" | "c" => "c++",
-                "makefile" => "make",
-                "gitignore" => "git",
-                _ => return None,
-            };
-            set.find_syntax_by_token(alias)
-                .or_else(|| set.find_syntax_by_extension(alias))
-        })
-        .unwrap_or_else(|| set.find_syntax_plain_text())
-}
-
-fn render_code(source: &str, language: &str, dark: bool) -> String {
-    let set = syntax_set();
-    let theme = theme(dark);
-    let syntax = resolve_syntax(set, language);
-    let mut highlighter = HighlightLines::new(syntax, theme);
-    let mut out = String::with_capacity(source.len() * 2);
-    out.push_str(&pre_open(theme, dark));
-    // Tokenising the expanded text rather than replacing after the fact keeps
-    // the spans and the glyphs in the same coordinate system.
-    let expanded = expand_tabs(source);
-    for line in LinesWithEndings::from(expanded.as_ref()) {
-        match highlighter.highlight_line(line, set) {
-            Ok(ranges) => {
-                for (style, text) in ranges {
-                    push_span(&mut out, style, text);
-                }
-            }
-            Err(_) => push_escaped(&mut out, line),
-        }
-    }
-    out.push_str("</pre>");
-    out
 }
 
 /// `QTextDocument` lays a tab out on an 80-device-unit grid rather than on the
 /// mono face's advance, so one tab in a file jumps about eleven columns and
 /// the code stops looking like code. Four spaces per stop is the grid the
 /// pane's 12 px face reads as.
-fn expand_tabs(source: &str) -> Cow<'_, str> {
+pub(crate) fn expand_tabs(source: &str) -> Cow<'_, str> {
     if !source.contains('\t') {
         return Cow::Borrowed(source);
     }
@@ -247,53 +171,6 @@ fn expand_tabs(source: &str) -> Cow<'_, str> {
         }
     }
     Cow::Owned(out)
-}
-
-/// A 12 px face, an 18 px line and `white-space:pre`: the three values the
-/// card's width and height are measured against. `padding` used to be here and
-/// was never applied — Qt's rich text engine only honours padding on table
-/// cells, and the card's own margins do the inset.
-fn pre_open(theme: &Theme, dark: bool) -> String {
-    let background = theme
-        .settings
-        .background
-        .map(color_hex)
-        .unwrap_or_else(|| if dark { "#101216" } else { "#fdfdfd" }.to_owned());
-    let foreground = theme
-        .settings
-        .foreground
-        .map(color_hex)
-        .unwrap_or_else(|| if dark { "#f7f7f9" } else { "#1c1e23" }.to_owned());
-    format!(
-        "<pre style=\"margin:0; background-color:{background}; color:{foreground}; \
-         font-family:'GoogleSansCode NFM','Google Sans Code','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
-         white-space:pre;\">"
-    )
-}
-
-fn push_span(out: &mut String, style: syntect::highlighting::Style, text: &str) {
-    if text.is_empty() {
-        return;
-    }
-    let mut css = format!("color:{};", color_hex(style.foreground));
-    if style.font_style.contains(FontStyle::BOLD) {
-        css.push_str("font-weight:600;");
-    }
-    if style.font_style.contains(FontStyle::ITALIC) {
-        css.push_str("font-style:italic;");
-    }
-    if style.font_style.contains(FontStyle::UNDERLINE) {
-        css.push_str("text-decoration:underline;");
-    }
-    out.push_str("<span style=\"");
-    out.push_str(&css);
-    out.push_str("\">");
-    push_escaped(out, text);
-    out.push_str("</span>");
-}
-
-fn color_hex(color: Color) -> String {
-    format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +500,7 @@ impl Renderer<'_> {
     fn inline_code(&mut self, code: &str) {
         let _ = write!(
             self.out,
-            "<span style=\"font-family:'GoogleSansCode NFM','Google Sans Code','Cascadia Mono',Consolas,monospace; color:{}; \
+            "<span style=\"font-family:'Mona Sans Mono VF','Mona Sans Mono','Cascadia Mono',Consolas,monospace; color:{}; \
              background-color:{};\">",
             self.palette.inline_code_fg, self.palette.inline_code_bg
         );
@@ -633,13 +510,8 @@ impl Renderer<'_> {
 
     fn emit_code_block(&mut self, language: &str, text: &str) {
         let text = text.strip_suffix('\n').unwrap_or(text);
-        if language.is_empty() || resolve_syntax(syntax_set(), language).name == "Plain Text" {
-            self.out.push_str(&pre_open(theme(self.dark), self.dark));
-            push_escaped(&mut self.out, &expand_tabs(text));
-            self.out.push_str("</pre>");
-        } else {
-            self.out.push_str(&render_code(text, language, self.dark));
-        }
+        self.out
+            .push_str(&preview_highlight::render_code(text, language, self.dark));
     }
 
     fn emit_image(&mut self, destination: &str, alt: &str) {
@@ -824,13 +696,21 @@ mod tests {
         assert_eq!(classify("README.md"), SourceKind::Markdown);
         assert_eq!(classify("notes.MARKDOWN"), SourceKind::Markdown);
         assert_eq!(classify("main.rs"), SourceKind::Code("rs".to_owned()));
-        assert_eq!(classify("Glyph.qml"), SourceKind::Code("html".to_owned()));
+        assert_eq!(classify("Glyph.qml"), SourceKind::Code("qml".to_owned()));
+        assert_eq!(classify("App.tsx"), SourceKind::Code("tsx".to_owned()));
+        assert_eq!(classify("theme.scss"), SourceKind::Code("scss".to_owned()));
         assert_eq!(
             classify("Dockerfile"),
             SourceKind::Code("dockerfile".to_owned())
         );
         assert_eq!(classify("notes.txt"), SourceKind::Plain);
         assert_eq!(classify("archive.zip"), SourceKind::Plain);
+        assert_eq!(classify(".gitignore"), SourceKind::Code("gitignore".to_owned()));
+        assert_eq!(classify(".dockerignore"), SourceKind::Code("gitignore".to_owned()));
+        assert_eq!(classify("build.gradle"), SourceKind::Code("groovy".to_owned()));
+        assert_eq!(classify("Jenkinsfile"), SourceKind::Code("groovy".to_owned()));
+        assert_eq!(classify("Main.kt"), SourceKind::Code("kotlin".to_owned()));
+        assert_eq!(classify("build.gradle.kts"), SourceKind::Code("kotlin".to_owned()));
     }
 
     #[test]
@@ -919,107 +799,12 @@ mod tests {
     }
 
     #[test]
-    fn code_is_escaped_and_coloured() {
-        let html = render_code("fn main() { let a = \"<tag>\"; }\n", "rs", true);
-        assert!(html.contains("<span style=\"color:"));
-        assert!(html.contains("&lt;tag&gt;"));
-        assert!(!html.contains("\"<tag>\""));
-    }
-
-    /// The tokens the pane maps are only worth mapping if a grammar answers.
-    /// syntect's own defaults fail this for half the list; `two-face` is what
-    /// makes it pass, so the test guards the feature, not the lookup helper.
-    /// `ps1` is absent from the pack — PowerShell still renders as plain text.
-    #[test]
-    fn every_mapped_language_resolves_to_a_grammar() {
-        for token in [
-            "rs",
-            "ts",
-            "tsx",
-            "kt",
-            "swift",
-            "dart",
-            "toml",
-            "ini",
-            "dockerfile",
-            "gitignore",
-            "graphql",
-            "proto",
-            "nix",
-            "yaml",
-            "sql",
-        ] {
-            assert_ne!(
-                resolve_syntax(syntax_set(), token).name,
-                "Plain Text",
-                "{token} fell back to plain text"
-            );
-        }
-    }
-
-    #[test]
     fn tabs_expand_on_a_four_column_grid() {
         assert_eq!(expand_tabs("\tx"), "    x");
         assert_eq!(expand_tabs("ab\tx"), "ab  x");
         assert_eq!(expand_tabs("abcd\tx"), "abcd    x");
         assert_eq!(expand_tabs("a\n\tb"), "a\n    b");
         assert!(matches!(expand_tabs("no tabs"), Cow::Borrowed(_)));
-    }
-
-    /// The QML card pins its gutter and horizontal viewport to these values.
-    #[test]
-    fn code_is_rendered_on_the_twelve_pixel_grid() {
-        let html = render_code("fn main() {}\n", "rs", true);
-        assert!(html.contains("font-size:12px"));
-        assert!(html.contains("line-height:18px"));
-        assert!(html.contains("white-space:pre;"));
-    }
-
-    /// A palette edit that drops a colour below AA body contrast fails here
-    /// instead of shipping as a washed-out pane.
-    #[test]
-    fn the_preview_themes_keep_text_readable() {
-        for dark in [true, false] {
-            let theme = theme(dark);
-            let background = theme.settings.background.expect("theme background");
-            let foreground = theme.settings.foreground.expect("theme foreground");
-            assert!(
-                contrast_ratio(foreground, background) >= 4.5,
-                "base text in {} theme",
-                if dark { "dark" } else { "light" }
-            );
-            for item in &theme.scopes {
-                if let Some(foreground) = item.style.foreground {
-                    assert!(
-                        contrast_ratio(foreground, background) >= 4.5,
-                        "a {:?} rule in the {} theme",
-                        item.scope,
-                        if dark { "dark" } else { "light" }
-                    );
-                }
-            }
-        }
-    }
-
-    fn contrast_ratio(a: Color, b: Color) -> f64 {
-        let (high, low) = if luminance(a) >= luminance(b) {
-            (a, b)
-        } else {
-            (b, a)
-        };
-        (luminance(high) + 0.05) / (luminance(low) + 0.05)
-    }
-
-    fn luminance(color: Color) -> f64 {
-        let channel = |value: u8| {
-            let value = f64::from(value) / 255.0;
-            if value <= 0.03928 {
-                value / 12.92
-            } else {
-                ((value + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
     }
 
     #[cfg(windows)]
