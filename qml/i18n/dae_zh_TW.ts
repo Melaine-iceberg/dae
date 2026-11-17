@@ -5519,16 +5519,16 @@
         <translation>介面字型</translation>
     </message>
     <message>
-        <source>留空使用内置 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。</source>
-        <translation>留空使用內建 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。</translation>
+        <source>留空使用内置 Mona Sans VF；中文回退到系统字体。</source>
+        <translation>留空使用內建 Mona Sans VF；中文回退到系統字型。</translation>
     </message>
     <message>
         <source>等宽字体</source>
         <translation>等寬字型</translation>
     </message>
     <message>
-        <source>留空使用内置 GoogleSansCode NFM（Nerd Font Mono）；终端、大小、速率与代码预览共用。</source>
-        <translation>留空使用內建 GoogleSansCode NFM（Nerd Font Mono）；終端、大小、速率與程式碼預覽共用。</translation>
+        <source>留空使用内置 Mona Sans Mono VF；终端、大小、速率与代码预览共用。</source>
+        <translation>留空使用內建 Mona Sans Mono VF；終端、大小、速率與程式碼預覽共用。</translation>
     </message>
     <message>
         <source>已安装的字体族可在此输入；切换界面字体不会改变等宽区域。</source>

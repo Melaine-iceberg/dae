@@ -78,7 +78,7 @@ pub struct AppSettings {
     /// Copy and move behaviour that outlives a launch.
     pub transfer: TransferSettings,
     /// User-chosen families for the shell's two faces. `None` keeps the
-    /// bundled Noto Sans SC / GoogleSansCode NFM pair.
+    /// bundled Mona Sans VF / Mona Sans Mono VF pair.
     pub fonts: FontSettings,
     /// Where "new from template" reads its templates. An absent directory
     /// means the app-owned `templates` folder under the config directory.
@@ -659,8 +659,8 @@ mod tests {
         settings.blur = false;
         settings.window_material = "acrylic".to_string();
         settings.shell_first = false;
-        settings.fonts.ui_family = Some("Noto Sans".to_string());
-        settings.fonts.mono_family = Some("GoogleSansCode NFM".to_string());
+        settings.fonts.ui_family = Some("Mona Sans".to_string());
+        settings.fonts.mono_family = Some("Mona Sans Mono VF".to_string());
 
         let saved = save_settings(settings.clone()).expect("save");
         assert_eq!(saved.terminal.font_size, 16);
@@ -670,10 +670,10 @@ mod tests {
         assert!(!saved.blur);
         assert_eq!(saved.window_material, "acrylic");
         assert!(!saved.shell_first);
-        assert_eq!(saved.fonts.ui_family.as_deref(), Some("Noto Sans"));
+        assert_eq!(saved.fonts.ui_family.as_deref(), Some("Mona Sans"));
         assert_eq!(
             saved.fonts.mono_family.as_deref(),
-            Some("GoogleSansCode NFM")
+            Some("Mona Sans Mono VF")
         );
         assert!(settings_path(&dir).exists(), "settings.toml written");
 
@@ -769,13 +769,13 @@ mod tests {
 
         let mut settings = AppSettings::default();
         settings.fonts.ui_family = Some("   ".to_string());
-        settings.fonts.mono_family = Some("  GoogleSansCode NFM  ".to_string());
+        settings.fonts.mono_family = Some("  Mona Sans Mono VF  ".to_string());
 
         let saved = save_settings(settings).expect("save");
         assert_eq!(saved.fonts.ui_family, None);
         assert_eq!(
             saved.fonts.mono_family.as_deref(),
-            Some("GoogleSansCode NFM")
+            Some("Mona Sans Mono VF")
         );
 
         fs::remove_dir_all(&dir).ok();

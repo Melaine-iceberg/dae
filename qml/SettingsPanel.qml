@@ -1324,7 +1324,7 @@ FocusScope {
                 Text {
                     x: 130; y: 118
                     width: content.width - 178
-                    text: qsTr("留空使用内置 Noto Sans SC；例如 Noto Sans SC、Microsoft YaHei UI。")
+                    text: qsTr("留空使用内置 Mona Sans VF；中文回退到系统字体。")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
@@ -1359,7 +1359,7 @@ FocusScope {
                 Text {
                     x: 130; y: 184
                     width: content.width - 178
-                    text: qsTr("留空使用内置 GoogleSansCode NFM（Nerd Font Mono）；终端、大小、速率与代码预览共用。")
+                    text: qsTr("留空使用内置 Mona Sans Mono VF；终端、大小、速率与代码预览共用。")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap

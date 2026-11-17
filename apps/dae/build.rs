@@ -692,24 +692,31 @@ fn main() {
         QResourceFile::new("../../qml/i18n/dae_zh_TW.ts").alias("dae_zh_TW.ts".to_owned()),
     ]);
 
-    // The UI faces (proposal §6.2.1, §9.2). Noto Sans SC covers the Latin
-    // alphabet and Simplified Chinese in one variable file, so every label
-    // keeps one face across both scripts; GoogleSansCode NFM (the Nerd Font
-    // Mono patch) covers hashes, paths, the terminal and code preview. Both
-    // are OFL 1.1, which requires the licence to travel with the fonts, so it
-    // is mounted beside them. `dae_qt_apply_fonts` loads these paths before
-    // the first QML document exists.
+    // The UI faces (proposal §6.2.1, §9.2). Mona Sans VF is the variable UI
+    // face — Latin, numbers and punctuation over the `wdth`/`wght`/`opsz` axes
+    // — and Mona Sans Mono VF is its fixed-pitch sibling for the terminal,
+    // sizes, rates and code previews. Neither carries CJK glyphs on purpose:
+    // Chinese falls through to the platform's own face (Microsoft YaHei UI,
+    // PingFang, Noto Sans CJK), which is what `dae_qt_ui_fallback_families`
+    // names. Symbols Nerd Font Mono is neither: it holds only the private-use
+    // icon glyphs a shell prompt draws, and takes part in no text run except
+    // when a cell asks for one of those codepoints.
+    //
+    // All three are redistributable but not public domain, so the licences
+    // travel beside them in the same resource prefix.
+    // `dae_qt_apply_fonts` loads these paths before the first QML document
+    // exists.
     let fonts = QResource::new().prefix("/fonts").files([
-        QResourceFile::new("../../Assets/fonts/NotoSansSC.ttf")
-            .alias("NotoSansSC.ttf".to_owned()),
-        QResourceFile::new("../../Assets/fonts/GoogleSansCodeNerdFontMono-Regular.ttf")
-            .alias("GoogleSansCodeNerdFontMono-Regular.ttf".to_owned()),
-        QResourceFile::new("../../Assets/fonts/GoogleSansCodeNerdFontMono-Bold.ttf")
-            .alias("GoogleSansCodeNerdFontMono-Bold.ttf".to_owned()),
-        QResourceFile::new("../../Assets/fonts/LICENSE-NotoSansSC.txt")
-            .alias("LICENSE-NotoSansSC.txt".to_owned()),
-        QResourceFile::new("../../Assets/fonts/LICENSE-GoogleSansCode.txt")
-            .alias("LICENSE-GoogleSansCode.txt".to_owned()),
+        QResourceFile::new("../../Assets/fonts/MonaSansVF.ttf")
+            .alias("MonaSansVF.ttf".to_owned()),
+        QResourceFile::new("../../Assets/fonts/MonaSansMonoVF.ttf")
+            .alias("MonaSansMonoVF.ttf".to_owned()),
+        QResourceFile::new("../../Assets/fonts/SymbolsNerdFontMono-Regular.ttf")
+            .alias("SymbolsNerdFontMono-Regular.ttf".to_owned()),
+        QResourceFile::new("../../Assets/fonts/LICENSE-MonaSans.txt")
+            .alias("LICENSE-MonaSans.txt".to_owned()),
+        QResourceFile::new("../../Assets/fonts/LICENSE-NerdFontsSymbols.txt")
+            .alias("LICENSE-NerdFontsSymbols.txt".to_owned()),
     ]);
 
     // The C++ type descriptions for the two modules registered by hand at run

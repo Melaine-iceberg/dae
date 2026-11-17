@@ -28,6 +28,44 @@ quint16 readU16(const uchar* data)
     return quint16(data[0]) | (quint16(data[1]) << 8);
 }
 
+/// The fixed-pitch faces in resolution order: the bundled Mona Sans Mono VF,
+/// then Symbols Nerd Font Mono (private-use icon glyphs only — the ones a
+/// powerline/oh-my-posh prompt draws), then the platform monos. Qt walks the
+/// list per glyph, so Chinese and icons reach a face that has them while every
+/// cell that does have a Mona glyph keeps its advance.
+QStringList bundledMonoFamilies()
+{
+    return QStringList{ QStringLiteral("Mona Sans Mono VF"),
+                        QStringLiteral("Mona Sans Mono"),
+                        QStringLiteral("Symbols Nerd Font Mono"),
+                        QStringLiteral("Cascadia Mono"),
+                        QStringLiteral("Consolas"),
+                        QStringLiteral("Courier New") };
+}
+
+/// Draws `text` into `rect`, squeezing it horizontally when the face that owns
+/// the glyphs advances wider than the cells those glyphs occupy.
+///
+/// A Mona Sans Mono cell is 0.618 em; an icon face's glyph is a full em. Drawn
+/// at its own advance an icon would run past the right edge of its cell and be
+/// clipped there (Qt clips `drawText` to the rectangle it was given), so the
+/// grid wins: the run keeps its height and baseline and gives up width. Text
+/// from the cell's own face measures exactly `rect` wide, so this is a no-op
+/// for every ordinary run.
+void drawCellText(QPainter* painter, const QRectF& rect, const QString& text)
+{
+    const qreal natural = QFontMetricsF(painter->font()).horizontalAdvance(text);
+    painter->save();
+    if (natural > rect.width() + 0.5) {
+        const qreal left = rect.left();
+        painter->translate(left, 0.0);
+        painter->scale(rect.width() / natural, 1.0);
+        painter->translate(-left, 0.0);
+    }
+    painter->drawText(rect, Qt::TextSingleLine | Qt::AlignLeft | Qt::AlignVCenter, text);
+    painter->restore();
+}
+
 quint32 readU32(const uchar* data)
 {
     return quint32(data[0]) | (quint32(data[1]) << 8) | (quint32(data[2]) << 16)
@@ -86,14 +124,16 @@ TerminalItem::TerminalItem(QQuickItem* parent)
     setFocus(true);
     setActiveFocusOnTab(true);
 
-    m_font.setFamilies({ QStringLiteral("GoogleSansCode NFM"),
-                         QStringLiteral("Google Sans Code"),
-                         QStringLiteral("Cascadia Mono"),
-                         QStringLiteral("Consolas"),
-                         QStringLiteral("Courier New") });
+    m_font.setFamilies(bundledMonoFamilies());
     m_font.setStyleHint(QFont::Monospace);
     m_font.setFixedPitch(true);
     m_font.setPixelSize(13);
+    // Mona Sans Mono VF's variable default instance is ExtraLight (wght=200),
+    // and while Qt maps QFont::weight onto `wght` for a request, pinning it
+    // says out loud which instance the grid is measured from. Bold cells raise
+    // the same axis in `styleFont` instead of padding it with a synthetic
+    // embolden.
+    m_font.setVariableAxis(QFont::Tag("wght"), 400.0f);
     // The terminal paints through QPainter, not the scene graph's text path,
     // so it needs the same hinting preference the application font carries
     // (proposal §9.2, §12.4). Vertical hinting keeps 13 px cells on the pixel
@@ -183,15 +223,13 @@ void TerminalItem::setFontFamily(const QString& family)
     if (m_fontFamily == trimmed)
         return;
     m_fontFamily = trimmed;
-    if (trimmed.isEmpty()) {
-        m_font.setFamilies({ QStringLiteral("GoogleSansCode NFM"),
-                             QStringLiteral("Google Sans Code"),
-                             QStringLiteral("Cascadia Mono"),
-                             QStringLiteral("Consolas"),
-                             QStringLiteral("Courier New") });
-    } else {
-        m_font.setFamilies({ trimmed });
-    }
+    if (trimmed.isEmpty() || bundledMonoFamilies().contains(trimmed))
+        m_font.setFamilies(bundledMonoFamilies());
+    else
+        // A chosen family still gets the icon face behind it: a prompt's
+        // private-use glyphs are almost never in an ordinary mono, and a cell
+        // that cannot be drawn is worse than one drawn from a fallback.
+        m_font.setFamilies({ trimmed, QStringLiteral("Symbols Nerd Font Mono") });
     m_fallbackFamilies.clear();
     m_fallbackCandidates.clear();
     measureCells();
@@ -373,9 +411,9 @@ void TerminalItem::paint(QPainter* painter)
             if (first.flags & FlagWide) {
                 painter->setFont(cellFont(first.flags, firstFamily));
                 painter->setPen(colour(first.fg));
-                painter->drawText(QRectF(column * m_cellWidth, y, m_cellWidth * 2.0, m_cellHeight),
-                                  Qt::TextSingleLine | Qt::AlignLeft | Qt::AlignVCenter,
-                                  character(first.ch));
+                drawCellText(painter,
+                             QRectF(column * m_cellWidth, y, m_cellWidth * 2.0, m_cellHeight),
+                             character(first.ch));
                 column += 2;
                 continue;
             }
@@ -401,9 +439,9 @@ void TerminalItem::paint(QPainter* painter)
             }
             painter->setFont(cellFont(style, firstFamily));
             painter->setPen(colour(foreground));
-            painter->drawText(QRectF(start * m_cellWidth, y, (column - start) * m_cellWidth,
-                                     m_cellHeight),
-                              Qt::TextSingleLine | Qt::AlignLeft | Qt::AlignVCenter, text);
+            drawCellText(painter,
+                         QRectF(start * m_cellWidth, y, (column - start) * m_cellWidth, m_cellHeight),
+                         text);
         }
     }
 
@@ -933,10 +971,15 @@ QFont TerminalItem::cellFont(quint8 flags, const QString& family) const
 QFont TerminalItem::styleFont(quint8 flags) const
 {
     QFont font = m_font;
-    font.setBold((flags & FlagBold) != 0);
+    const bool bold = (flags & FlagBold) != 0;
+    font.setBold(bold);
     font.setItalic((flags & FlagItalic) != 0);
     font.setUnderline((flags & FlagUnderline) != 0);
     font.setStrikeOut((flags & FlagStrikeout) != 0);
+    // The bundled face is a variable font: `wght` is where its real Bold
+    // instance lives, and QFont::setBold only decides which instance a
+    // non-variable custom family synthesises from.
+    font.setVariableAxis(QFont::Tag("wght"), bold ? 700.0f : 400.0f);
     return font;
 }
 

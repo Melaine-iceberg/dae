@@ -1158,10 +1158,13 @@ inline void dae_qt_enable_alpha()
     QQuickWindow::setTextRenderType(QQuickWindow::QtTextRendering);
 }
 
-/// The platform faces behind the bundled UI family. macOS and Linux name
-/// their CJK families directly; Windows resolves through the UI language id,
-/// which is more authoritative than the locale because Windows 11 reports
-/// plain "Segoe UI" as its non-client font even on a Chinese system.
+/// The platform faces behind the bundled UI family. Mona Sans VF is Latin
+/// only — no CJK, no icon block — so every Chinese glyph, and anything else
+/// the bundled face lacks, resolves here: the system face, per glyph. macOS
+/// and Linux name their CJK families directly; Windows resolves through the
+/// UI language id, which is more authoritative than the locale because
+/// Windows 11 reports plain "Segoe UI" as its non-client font even on a
+/// Chinese system.
 inline QStringList dae_qt_ui_fallback_families()
 {
     QStringList preferred;
@@ -1216,7 +1219,7 @@ inline QStringList dae_qt_ui_fallback_families()
     return preferred;
 }
 
-/// The families registered from the bundled Noto Sans SC file. Filled once by
+/// The families registered from the bundled Mona Sans VF file. Filled once by
 /// `dae_qt_apply_fonts`; a missing resource leaves it empty and the platform
 /// list takes over.
 inline QStringList& dae_qt_bundled_ui_families()
@@ -1226,7 +1229,7 @@ inline QStringList& dae_qt_bundled_ui_families()
 }
 
 /// Selects the application font. `custom` is the family from settings.toml;
-/// empty keeps the bundled Noto Sans SC. The platform faces stay after it, so
+/// empty keeps the bundled Mona Sans VF. The platform faces stay after it, so
 /// a custom Latin-only face gets CJK glyphs per glyph instead of a row of
 /// boxes.
 inline void dae_qt_set_ui_font(const QString& custom)
@@ -1244,14 +1247,20 @@ inline void dae_qt_set_ui_font(const QString& custom)
             families << family;
     }
     if (families.isEmpty())
-        families << QStringLiteral("Noto Sans SC");
+        families << QStringLiteral("Mona Sans VF");
 
     QFont font = QGuiApplication::font();
     font.setFamilies(families);
-    // Noto Sans SC's variable default instance is Thin (wght=100), and Qt does
-    // not translate QFont::weight into the axis for an inherited font. Pin the
-    // text weight, or every label renders with the thin face and reads blurry.
+    // Mona Sans VF's variable defaults are ExtraLight (wght=200) and opsz=0 —
+    // the display end of the optical-size axis. Qt maps QFont::weight onto
+    // `wght` by itself, but nothing ever sets `opsz`, so every label would be
+    // set in display tracking. Pin both to the font's own "Regular" text
+    // instance (wght 400, opsz 20) — measured, not assumed: at 13 px the
+    // pinned face advances 11.11 px for an `M` where the default advances
+    // 10.67. Writing the weight as well also keeps the intent readable to
+    // anyone who does not know Qt's weight mapping.
     font.setVariableAxis(QFont::Tag("wght"), 400.0f);
+    font.setVariableAxis(QFont::Tag("opsz"), 20.0f);
     QGuiApplication::setFont(font);
     // The family list is in the startup line on purpose: a Qt upgrade that
     // renames a bundled family would otherwise show up only as text that
@@ -1261,14 +1270,16 @@ inline void dae_qt_set_ui_font(const QString& custom)
 
 /// Loads the bundled faces and selects the default application font.
 ///
-/// Noto Sans SC is the UI face and GoogleSansCode NFM (Nerd Font Mono) the
-/// fixed-pitch one (proposal §6.2.1, §9.2). One Noto file covers Latin and
-/// Simplified Chinese, so a label that mixes both scripts keeps one baseline,
-/// one weight and one line height. A custom UI family from settings is applied
-/// by `dae_qt_set_ui_font` before the first QML document exists.
+/// Mona Sans VF is the UI face and Mona Sans Mono VF its fixed-pitch sibling
+/// (proposal §6.2.1, §9.2); Symbols Nerd Font Mono supplies the private-use
+/// icon glyphs a shell prompt draws and takes part in no other run. Mona Sans
+/// carries no CJK, so Chinese is meant to fall through the platform list below
+/// — one face per script is the shell's own decision now, not the font file's.
+/// A custom UI family from settings is applied by `dae_qt_set_ui_font` before
+/// the first QML document exists.
 ///
 /// `addApplicationFont` is what makes the families visible to QML's
-/// `Qt.fontFamilies()` and to `Theme.uiFamily`; both fonts are mounted under
+/// `Qt.fontFamilies()` and to `Theme.uiFamily`; the faces are mounted under
 /// `:/fonts` by `apps/dae/build.rs`.
 ///
 /// Deliberately no `QFontDatabase::families()` here: the first font-database
@@ -1279,9 +1290,9 @@ inline void dae_qt_set_ui_font(const QString& custom)
 inline void dae_qt_apply_fonts()
 {
     static const char* faces[] = {
-        ":/fonts/NotoSansSC.ttf",
-        ":/fonts/GoogleSansCodeNerdFontMono-Regular.ttf",
-        ":/fonts/GoogleSansCodeNerdFontMono-Bold.ttf",
+        ":/fonts/MonaSansVF.ttf",
+        ":/fonts/MonaSansMonoVF.ttf",
+        ":/fonts/SymbolsNerdFontMono-Regular.ttf",
     };
 
     QStringList uiFamilies;
@@ -1292,20 +1303,39 @@ inline void dae_qt_apply_fonts()
             qWarning("dae: bundled font not loaded: %s", qUtf8Printable(path));
             continue;
         }
-        if (path.contains(QLatin1String("NotoSans"))) {
-            for (const QString& family : QFontDatabase::applicationFontFamilies(id))
-                if (!uiFamilies.contains(family))
-                    uiFamilies << family;
+        // Only the UI face feeds the application font. Registering the other
+        // two is still the point of the loop: it is what puts Mona Sans Mono
+        // and the icon face in front of QML and of the terminal's own fallback
+        // scan.
+        if (!path.contains(QLatin1String("MonaSansVF")))
+            continue;
+        // Qt registers every named instance of a variable font as a family of
+        // its own — this file alone yields seventy-odd names ("Mona Sans VF
+        // Condensed Display", "Mona Sans VF Expanded Medium", …). Only the
+        // base family belongs in the application font: the rest are Latin-only
+        // variants that would otherwise queue in front of the platform's CJK
+        // faces and make the startup line unreadable.
+        const QStringList registered = QFontDatabase::applicationFontFamilies(id);
+        const QString canonical = QStringLiteral("Mona Sans VF");
+        if (registered.contains(canonical)) {
+            uiFamilies << canonical;
+        } else {
+            QString shortest;
+            for (const QString& family : registered)
+                if (shortest.isEmpty() || family.size() < shortest.size())
+                    shortest = family;
+            if (!shortest.isEmpty())
+                uiFamilies << shortest;
         }
     }
     // A missing resource is a packaging defect, not a reason to paint in the
     // platform face: the canonical name falls through to the system font.
     if (uiFamilies.isEmpty())
-        uiFamilies << QStringLiteral("Noto Sans SC");
+        uiFamilies << QStringLiteral("Mona Sans VF");
     // Put the canonical name first so a Text that names `Theme.uiFamily` and
     // a Text that inherits `Qt.application.font` resolve to the same face.
-    if (uiFamilies.removeAll(QStringLiteral("Noto Sans SC")) > 0)
-        uiFamilies.prepend(QStringLiteral("Noto Sans SC"));
+    if (uiFamilies.removeAll(QStringLiteral("Mona Sans VF")) > 0)
+        uiFamilies.prepend(QStringLiteral("Mona Sans VF"));
     dae_qt_bundled_ui_families() = uiFamilies;
     dae_qt_set_ui_font(QString());
 }

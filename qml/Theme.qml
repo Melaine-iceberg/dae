@@ -348,8 +348,28 @@ QtObject {
     /// document is created, so this sees them.
     readonly property var installedFamilies: Qt.fontFamilies()
 
-    /// The UI face (proposal §6.2.1): bundled Noto Sans SC, one variable file
-    /// for every weight the type scale uses and for both Latin and Chinese.
+    /// The filled-in face the native side registered for a bundled file, found
+    /// by prefix because Qt names a variable font after the family in its
+    /// name table and a future Qt could add the instance to that name
+    /// ("Mona Sans Mono VF ExtraLight"). The exact names are tried first.
+    function bundledFace(names, prefix) {
+        for (let index = 0; index < names.length; index += 1) {
+            if (theme.installedFamilies.indexOf(names[index]) >= 0)
+                return names[index]
+        }
+        for (let index = 0; index < theme.installedFamilies.length; index += 1) {
+            const family = String(theme.installedFamilies[index])
+            if (family.indexOf(prefix) === 0)
+                return family
+        }
+        return ""
+    }
+
+    /// The UI face (proposal §6.2.1): bundled Mona Sans VF, one variable file
+    /// covering every weight and width the type scale uses. It is Latin only —
+    /// Chinese resolves per glyph through the application font's platform
+    /// fallbacks (Microsoft YaHei UI, PingFang, Noto Sans CJK), which is why
+    /// a `Text` that names this property still gets system CJK.
     /// `Appearance.appliedUiFont` is the custom family this process started
     /// with; `uiFontFamily` is the setting for the next launch, because a
     /// `Text` copies the application font when it is created.
@@ -357,30 +377,28 @@ QtObject {
         const custom = String(Appearance.appliedUiFont || "").trim()
         if (custom !== "" && theme.installedFamilies.indexOf(custom) >= 0)
             return custom
-        const names = ["Noto Sans SC", "Noto Sans"]
-        for (let index = 0; index < names.length; index += 1) {
-            if (theme.installedFamilies.indexOf(names[index]) >= 0)
-                return names[index]
-        }
+        const bundled = theme.bundledFace(["Mona Sans VF", "Mona Sans"], "Mona Sans VF")
+        if (bundled !== "")
+            return bundled
         return Qt.platform.os === "osx" ? "Helvetica Neue"
             : Qt.platform.os === "windows" ? "Segoe UI"
             : "Noto Sans"
     }
 
-    /// Fixed-pitch for terminals, diffs, sizes and rates: bundled
-    /// GoogleSansCode NFM (the Nerd Font Mono patch), the same family on all
-    /// three platforms. A custom family from settings binds live here. QML
-    /// cannot express a fallback list on `font.family`, so the platform face
-    /// is chosen only when the bundled one is missing.
+    /// Fixed-pitch for terminals, diffs, sizes and rates: bundled Mona Sans
+    /// Mono VF, the same family on all three platforms. A custom family from
+    /// settings binds live here. QML cannot express a fallback list on
+    /// `font.family`, so the platform face is chosen only when the bundled one
+    /// is missing; the terminal itself names the icon and CJK fallbacks on the
+    /// native side, where a list is possible.
     readonly property string monoFamily: {
         const custom = String(Appearance.monoFontFamily || "").trim()
         if (custom !== "" && theme.installedFamilies.indexOf(custom) >= 0)
             return custom
-        const names = ["GoogleSansCode NFM", "Google Sans Code"]
-        for (let index = 0; index < names.length; index += 1) {
-            if (theme.installedFamilies.indexOf(names[index]) >= 0)
-                return names[index]
-        }
+        const bundled = theme.bundledFace(
+            ["Mona Sans Mono VF", "Mona Sans Mono"], "Mona Sans Mono VF")
+        if (bundled !== "")
+            return bundled
         return Qt.platform.os === "osx" ? "SF Mono"
             : Qt.platform.os === "windows" ? "Consolas"
             : "DejaVu Sans Mono"

@@ -35,7 +35,7 @@
 | 主色           | 朱红 `#ff4d1f`                           | 青蓝 `#007a7b` / `#6bcac9`                 | 与系统蓝、AI 紫、警告橙都错开 |
 | 选中           | 整行墨色反白                             | 10–13% 强调色蒙版 + 连续行合并             | 视觉重心留在文件名上          |
 | 文件图标       | 全部同一张黑纸卡                         | 轮廓 + 族色标记（15 族）                   | 图标开始承担分类信息          |
-| 字体           | 衬线 + 等宽 + 系统 sans 三套             | Noto Sans SC + GoogleSansCode NFM         | 三平台字形一致                |
+| 字体           | 衬线 + 等宽 + 系统 sans 三套             | Mona Sans VF + Mona Sans Mono VF，中文回落系统 | 三平台拉丁一致，中文随系统    |
 | 层次           | 25 个文件用了硬投影 + 纸纹 + 点阵 + 虚线 | 一级明度差 + 一条发丝线；阴影只属于浮层    | 安静、可长期使用              |
 | 动作入口       | 全在右键与快捷键里                       | 状态条原地变成**动作条**                   | 鼠标用户有下一步              |
 | 路径条         | 面包屑 + 独立搜索框 + 命令浮层           | 一个控件三种模式                           | 少一个入口，不少能力          |
@@ -343,13 +343,16 @@
 
 | 用途                               | 字体                                   | 许可 / 体积 | 来源                         |
 | ---------------------------------- | -------------------------------------- | ----------- | ---------------------------- |
-| UI 拉丁、数字与简体中文            | **Noto Sans SC**（可变字重）           | OFL 1.1 · 17 MB | `googlefonts/noto-cjk`   |
-| 等宽（哈希、路径、终端、代码预览） | **GoogleSansCode NFM**（Nerd Font Mono） | OFL 1.1 · 2.5 MB | `ryanoasis/nerd-fonts`   |
-| 繁体中文                           | 系统回退，或在设置里改用 Noto Sans TC  | —           | 系统 / 用户自选              |
+| UI 拉丁、数字                      | **Mona Sans VF**（可变 wdth/wght/opsz） | OFL 1.1 · 1.3 MB | `github/mona-sans`      |
+| 中文（简/繁）                      | 系统回退：微软雅黑 UI / 苹方 / Noto Sans CJK | —      | 系统 / 用户自选              |
+| 等宽（哈希、路径、终端、代码预览） | **Mona Sans Mono VF**（可变字重）      | OFL 1.1 · 96 KB | `github/mona-sans`       |
+| 终端图标字形                       | **Symbols Nerd Font Mono**（仅私有区） | MIT · 2.5 MB | `ryanoasis/nerd-fonts`   |
 
-**为什么是 Noto Sans SC。** 一个可变文件同时覆盖拉丁与简体中文，中英混排的字面大小、基线与字重不再由两套字形拼接；OFL 允许随应用再分发。界面字体和等宽字体都可以在设置里覆盖：等宽立即生效，界面字体重启后生效。
+**为什么是 Mona Sans。** GitHub 的品牌字体，一个可变文件覆盖 wdth 75–125、wght 200–900 与 opsz 0–100，字重和字宽都按轴取，不必为每个字重各带一份文件。它只含拉丁、希腊、西里尔，不含中日韩：中文逐字回落到系统字体（Windows 微软雅黑 UI、macOS 苹方、Linux Noto Sans CJK），跟随系统的中文字形与缩放偏好，安装体积也从 17 MB 降到 1.3 MB。
 
-**为什么等宽换成 GoogleSansCode NFM。** 它是 Google Sans Code 的 Nerd Font Mono 补丁：单个字宽、带终端图标字形，一套文件覆盖三平台的终端、路径、大小与代码预览。
+**为什么终端是 Mona Sans Mono。** 同族单字宽版本，终端、路径、大小与代码预览跟界面同一套字形语言。图标字形不在等宽字体里，由 Symbols Nerd Font Mono 单独兜底——它只含私有区字形，不参与任何正文排版。代价是图标是整 1 em 宽、而 Mona 的格子只有 0.618 em（实测 13 px 下格宽 8.03 px、图标 13 px），所以终端在绘制时把比格子宽的字形横向压进格子（`drawCellText`），高度与基线不动；普通等宽文本量出来刚好等于格宽，是空操作。
+
+**两条轴必须钉死。** 这个 VF 的默认实例是 ExtraLight（wght=200）且停在光学尺寸的显示端（opsz=0）。Qt 会把 `QFont::weight` 映射到 `wght`，但不会去动 `opsz`，所以不钉的话每个标签都用的是 Display 的字距（实测 13 px 下 `M` 宽 10.67 px，钉 `opsz=20` 后 11.11 px）。`dae_qt_set_ui_font` 明写 `wght=400` + `opsz=20`（字体自带的 Regular 文本实例）；终端的 `wght` 同样钉 400、粗体单元格抬到 700。
 
 加载方式：字体打进 qrc（`QFontDatabase::addApplicationFont`），由 `crates/dae-qt` 暴露 `Theme.uiFamily` / `Theme.monoFamily`。注意 QML 的 `font` 分组没有 `families` 列表（Qt 6.12 文档核实），回退链要么在 C++ 侧用 `QFont::setFamilies()` 下发给 `Qt.application.font`，要么在 QML 里用 `Qt.fontFamilies()` 选已安装族名。
 
@@ -733,7 +736,7 @@ Git 状态作为一个字母（`M`/`A`/`D`/`?`）紧挨类型列右侧，颜色�
 
 | 项           | 做法                                                                                                                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 字体         | 自带 Noto Sans SC / GoogleSansCode NFM（§6.2）                                                                                                                                                                                       |
+| 字体         | 自带 Mona Sans VF / Mona Sans Mono VF，中文回落系统（§6.2）                                                                                                                                                                            |
 | 文本渲染方式 | 显式 `QQuickWindow::setTextRenderType(QQuickWindow::NativeRendering)`，让 Windows 走 DirectWrite、Linux 走 FreeType；辅以 `font.hintingPreference: PreferVerticalHinting`（**只在 NativeRendering 下有效**，Qt 文档核实） |
 | 文字大小     | 三档 11/12/13 + 标题 15，纯整数像素                                                                                                                                                                                       |
 | 线条         | 1 设备像素（§6.4.3）                                                                                                                                                                                                      |
@@ -1098,7 +1101,7 @@ Git 状态作为一个字母（`M`/`A`/`D`/`?`）紧挨类型列右侧，颜色�
 | `link`                       | 删除                                             | 用 `accent`                 |
 | `folderTab` / `folderBody`   | 删除                                             | 由文件字形的族色取代        |
 | `serifFamily`                | 删除                                             | —                           |
-| `monoFamily`                 | `GoogleSansCode NFM`（三平台一致，设置可覆盖）   | 自带字体                    |
+| `monoFamily`                 | `Mona Sans Mono VF`（三平台一致，设置可覆盖）    | 自带字体                    |
 | `radiusXs…Lg`                | 3 / 6 / 8 / 12                                   | 恢复圆角                    |
 | `edgeWidth`                  | 1 设备像素                                       | 语义从 dp 改为设备像素      |
 

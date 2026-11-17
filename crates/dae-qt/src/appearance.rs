@@ -205,12 +205,12 @@ pub struct Appearance {
     /// tree is still being built (`docs/qml-aot.md` §16). Read by `main`
     /// before the engine exists, so it cannot live in QML state.
     shell_first: bool,
-    /// The UI family chosen in settings. Empty keeps the bundled Noto Sans SC.
+    /// The UI family chosen in settings. Empty keeps the bundled Mona Sans VF.
     /// This is the saved preference, not necessarily the family this process
     /// started with.
     ui_font_family: String,
     /// The fixed-pitch family chosen in settings. Empty keeps the bundled
-    /// GoogleSansCode NFM. QML binds this live, so no restart is needed.
+    /// Mona Sans Mono VF. QML binds this live, so no restart is needed.
     mono_font_family: String,
     /// The UI family this process applied before QML started. `Theme` reads
     /// this instead of `ui_font_family`: `QQuickText` copies the application
