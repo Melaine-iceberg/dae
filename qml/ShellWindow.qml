@@ -3108,7 +3108,10 @@ Window {
         }
         if (items.length === 0 && openWithApps.loading)
             items.push({ id: "openWithLoading", label: qsTr("正在查找应用…"), enabled: false })
-        items.push({ separator: true })
+        // No recommended apps: the dialog row stands alone, without a
+        // separator band above it.
+        if (items.length > 0)
+            items.push({ separator: true })
         items.push({ id: "openWithMore", label: qsTr("选择其他应用") })
         return items
     }
