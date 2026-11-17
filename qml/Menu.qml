@@ -40,6 +40,8 @@ Item {
     property Component footer: null
 
     property var submenuActions: []
+    /// The row whose submenu is open, so `replaceActions` can refresh it.
+    property int submenuIndex: -1
     property real submenuX: 0
     property real submenuY: 0
 
@@ -66,7 +68,7 @@ Item {
         ? root.rows : root.normalized(root.actions)
 
     function show() {
-        root.submenuActions = []
+        root.closeSubmenu()
         list.currentIndex = -1
         list.resetScroll()
         root.visible = true
@@ -100,11 +102,18 @@ Item {
 
     /// Swaps the rows without moving the panel: the installed apps' commands
     /// arrive asynchronously, and the menu they belong to is already open.
+    /// An open submenu is a snapshot of its parent row, so it is re-read from
+    /// the new rows too — the answer may be what it was waiting for.
     function replaceActions(items) {
         root.actions = items
+        // Re-anchored, not just refilled: the fresh rows may be wider, and the
+        // flip decision was made for the old ones.
+        if (root.submenuIndex >= 0)
+            root.submenuFor(root.submenuIndex)
     }
 
     function closeSubmenu() {
+        root.submenuIndex = -1
         root.submenuActions = []
         if (root.visible)
             list.takeFocus()
@@ -158,6 +167,7 @@ Item {
         const flip = right + submenuWidth > root.width - 8
         root.submenuX = flip ? point.x - submenuWidth + 4 : right - 4
         root.submenuY = point.y - 5
+        root.submenuIndex = index
         root.submenuActions = entry.submenu
     }
 

@@ -109,6 +109,11 @@ pub(crate) fn source_for(path: &str, is_dir: bool, version: &str) -> String {
     }
 }
 
+/// The `image://fileicon/name/...` URL for a launcher's icon name.
+pub(crate) fn named_source(names: &str) -> String {
+    format!("image://fileicon/name/{}?size={DEFAULT_EDGE}", encode(names))
+}
+
 /// The `image://thumbnail/...` URL for a listing row's first frame.
 ///
 /// The provider caches by the revision it is given, so the listing's

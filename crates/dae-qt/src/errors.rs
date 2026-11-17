@@ -102,6 +102,12 @@ fn friendly_code(code: &str) -> Option<&'static str> {
         Some("This item no longer exists")
     } else if code.starts_with("fs.open_with_picker_unsupported") {
         Some("Open With is not supported on this system")
+    } else if code.starts_with("fs.open_with_app_missing") {
+        Some("This application is no longer available")
+    } else if code.starts_with("fs.open_with_launch_failed") {
+        Some("Could not open the file with this application")
+    } else if code.starts_with("fs.open_with_default_unsupported") {
+        Some("Use the system dialog to change the default app")
     } else if code.starts_with("fs.trash_entries_missing") {
         Some("The selected items are no longer in Trash")
     } else if code.starts_with("fs.trash_restore_no_origin") {

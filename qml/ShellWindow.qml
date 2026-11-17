@@ -2833,6 +2833,9 @@ Window {
         // drawn at once, and `onShellCommandRevisionChanged` swaps in the fresh
         // answer without moving the panel.
         shellCommands.load(root.currentSelection(), path)
+        if (Qt.platform.os === "windows" && path !== "" && !isDir
+                && !root.rowMenuRemote())
+            openWithApps.load(path)
         menu.openAt(x, y, root.rowMenuItems())
     }
 
@@ -2863,9 +2866,16 @@ Window {
             { id: "openTab", glyph: "plus", label: qsTr("在新标签页打开"),
               enabled: hasPath && isDir },
             { id: "openWindow", glyph: "window", label: qsTr("在新窗口打开"),
-              enabled: hasPath && isDir },
-            { id: "openWith", glyph: "exe", label: qsTr("选择打开方式…"),
-              enabled: hasPath && !remote },
+              enabled: hasPath && isDir }
+        ]
+        // Folders have no "open with": like Explorer, only files offer it.
+        if (!isDir)
+            items.push(Qt.platform.os === "windows"
+                ? { id: "openWith", glyph: "exe", label: qsTr("打开方式"),
+                    enabled: hasPath && !remote, submenu: root.openWithSubmenu() }
+                : { id: "openWith", glyph: "exe", label: qsTr("选择打开方式…"),
+                    enabled: hasPath && !remote })
+        items.push(
             { separator: true },
             { id: "cut", glyph: "cut", label: qsTr("剪切"),
               shortcut: root.shortcutDisplay("explorer.cut"), enabled: hasPath },
@@ -2904,7 +2914,7 @@ Window {
             { id: "properties", glyph: "info", label: qsTr("属性"),
               shortcut: root.shortcutDisplay("explorer.properties"),
               enabled: hasPath && !many }
-        ]
+        )
         if (shellCommands.length > 0)
             items.push({ id: "shellCommands", glyph: "external",
                          label: qsTr("应用扩展"), submenu: shellCommands })
@@ -3077,6 +3087,29 @@ Window {
                 enabled: !shellCommands.disabledAt(index)
             })
         }
+        return items
+    }
+
+    /// Windows' Explorer-style "Open with" submenu: the shell's recommended
+    /// handlers, then the native dialog behind "choose another app". The rows
+    /// arrive off the Qt thread; `onOpenWithAppsLoadedChanged` rebuilds the
+    /// menu in place when they land.
+    function openWithSubmenu() {
+        const items = []
+        for (let index = 0; index < openWithApps.count; index += 1) {
+            const appId = openWithApps.appIdAt(index)
+            if (appId === "")
+                continue
+            items.push({
+                id: "openWithApp:" + appId,
+                label: openWithApps.labelAt(index),
+                icon: openWithApps.iconAt(index)
+            })
+        }
+        if (items.length === 0 && openWithApps.loading)
+            items.push({ id: "openWithLoading", label: qsTr("正在查找应用…"), enabled: false })
+        items.push({ separator: true })
+        items.push({ id: "openWithMore", label: qsTr("选择其他应用") })
         return items
     }
 
@@ -3657,6 +3690,13 @@ Window {
             root.clearContext()
             return
         }
+        // The open-with submenu carries the handler's executable path in the
+        // id; the menu has no per-row state once it is open.
+        if (id.indexOf("openWithApp:") === 0) {
+            Workspace.openWithApp(path, id.substring("openWithApp:".length), false)
+            root.clearContext()
+            return
+        }
         // The row menu's second page: the same panel, different rows, at the
         // coordinates it already occupies.
         if (id === "moreMenu") {
@@ -3697,6 +3737,9 @@ Window {
                 // Windows: the native dialog also owns the association UI.
                 Workspace.openWith(path)
             }
+            break
+        case "openWithMore":
+            Workspace.openWith(path)
             break
         case "terminal":
             Workspace.openTerminal(path !== "" ? path : root.contextDirectory())
@@ -6280,6 +6323,18 @@ Window {
                 ? root.rowMoreMenuItems() : root.rowMenuItems())
     }
 
+    /// The open-with handlers land the same way: the submenu already shows
+    /// "choose another app", and the applications' rows join it in place.
+    Connections {
+        target: openWithApps
+        function onLoadedChanged() {
+            if (openWithApps.loaded && menu.visible
+                    && root.contextKind === "row" && root.contextPath !== "")
+                menu.replaceActions(root.rowMenuMore
+                    ? root.rowMoreMenuItems() : root.rowMenuItems())
+        }
+    }
+
     Connections {
         target: TagStore
         function onTagsChanged(paths) {
@@ -6309,6 +6364,11 @@ Window {
     /// rows follow this window's selection, and a second window has its own.
     ShellCommandModel {
         id: shellCommands
+    }
+
+    /// The recommended handlers behind the Windows "Open with" submenu.
+    OpenWithModel {
+        id: openWithApps
     }
 
     LazySurface {

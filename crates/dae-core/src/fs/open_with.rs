@@ -1,13 +1,14 @@
-//! Cross-platform "Open With" application picker for macOS and Linux.
+//! Cross-platform "Open With" application lists.
 //!
-//! Windows keeps its native `SHOpenWithDialog` flow (`open_with` in
-//! `commands`): since Windows 10 that dialog ignores the registration flags
-//! and can no longer set default associations, and the OS offers no supported
-//! programmatic replacement, so no custom picker is provided there. macOS and
-//! Linux expose no system picker at all, so these commands ask the platform's
-//! own database what can open the item — LaunchServices on macOS, glib's
-//! application registry on Linux — and hand the answer to the in-app picker,
-//! which opens the item once or registers it as the new default handler.
+//! Every platform asks its own database what can open the item: LaunchServices
+//! on macOS, glib's application registry on Linux, the shell's association
+//! handlers (`SHAssocEnumHandlers`) on Windows. macOS and Linux hand the answer
+//! to the in-app picker dialog, which can also register a new default handler.
+//! Windows shows the recommended handlers as an Explorer-style context submenu
+//! and keeps the native `SHOpenWithDialog` (`open_with` in `commands`) behind
+//! "choose another app"; setting a default there stays with the OS dialog,
+//! because `UserChoice` is hash-protected and offers no supported programmatic
+//! replacement.
 
 use super::error::FileSystemError;
 use super::vfs;
@@ -18,8 +19,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenWithApp {
-    /// Platform identifier: the `.desktop` file id (Linux) or the application
-    /// bundle path (macOS).
+    /// Platform identifier: the `.desktop` file id (Linux), the application
+    /// bundle path (macOS), or the handler's executable path (Windows).
     pub id: String,
     /// Display name.
     pub name: String,
@@ -101,7 +102,10 @@ fn list_apps(path: &Path) -> Result<OpenWithChoices, FileSystemError> {
     #[cfg(target_os = "linux")]
     return linux::list_apps(path);
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    return windows::list_apps(path);
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = path;
         Err(FileSystemError::Unsupported(
@@ -117,7 +121,10 @@ fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSyst
     #[cfg(target_os = "linux")]
     return linux::open_app(path, app_id, set_default);
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    return windows::open_app(path, app_id, set_default);
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = (path, app_id, set_default);
         Err(FileSystemError::Unsupported(
@@ -521,6 +528,378 @@ mod linux {
             let kind = content_type(&probe);
             let _ = std::fs::remove_file(&probe);
             assert_eq!(kind, "text/plain");
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows {
+    use super::{FileSystemError, OpenWithApp, OpenWithChoices};
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
+        CoUninitialize,
+    };
+    use windows::Win32::System::Registry::{HKEY_CLASSES_ROOT, RRF_RT_REG_SZ, RegGetValueW};
+    use windows::Win32::UI::Shell::{
+        AO_NONE, ASSOC_FILTER_RECOMMENDED, IApplicationActivationManager, IAssocHandler,
+        SHAssocEnumHandlers,
+    };
+    use windows::core::{GUID, HRESULT, PCWSTR, PWSTR};
+
+    const ACTIVATION_MANAGER_CLSID: GUID =
+        GUID::from_u128(0x45BA127D_10A8_46EA_8AB7_56EA9078943C);
+
+    /// RAII COM 套间；S_FALSE (0x1) 表示线程已有套间，此时不能反初始化。
+    struct CoApartment {
+        owned: bool,
+    }
+
+    impl CoApartment {
+        fn enter() -> Result<Self, FileSystemError> {
+            let result: HRESULT =
+                unsafe { CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) };
+            match result.0 {
+                0 => Ok(Self { owned: true }),
+                1 => Ok(Self { owned: false }),
+                _ => Err(FileSystemError::Internal(format!(
+                    "CoInitializeEx failed with HRESULT {:#010x}",
+                    result.0
+                ))),
+            }
+        }
+    }
+
+    impl Drop for CoApartment {
+        fn drop(&mut self) {
+            if self.owned {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// Reads a shell-allocated string and releases it with the allocator that
+    /// produced it (`CoTaskMemFree`, not Rust's drop).
+    fn take_string(raw: PWSTR) -> String {
+        if raw.is_null() {
+            return String::new();
+        }
+        let text = unsafe { raw.to_string() }.unwrap_or_default();
+        unsafe { CoTaskMemFree(Some(raw.0.cast())) };
+        text
+    }
+
+    fn handler_exe(handler: &IAssocHandler) -> String {
+        match unsafe { handler.GetName() } {
+            Ok(raw) => take_string(raw),
+            Err(_) => String::new(),
+        }
+    }
+
+    /// The shell's recommended handlers for an extension, in shell order —
+    /// the same list Explorer's "Open with" submenu draws.
+    fn handlers(extension: &str) -> Result<Vec<IAssocHandler>, FileSystemError> {
+        let wide_ext = wide(&format!(".{extension}"));
+        let enumerator =
+            unsafe { SHAssocEnumHandlers(PCWSTR(wide_ext.as_ptr()), ASSOC_FILTER_RECOMMENDED) }
+                .map_err(|error| {
+                    FileSystemError::Internal(format!("fs.open_with_list_failed: {error}"))
+                })?;
+        let mut out = Vec::new();
+        loop {
+            let mut batch: [Option<IAssocHandler>; 8] = Default::default();
+            let mut fetched = 0u32;
+            let failed = unsafe { enumerator.Next(&mut batch, Some(&mut fetched)) }.is_err();
+            out.extend(batch[..fetched as usize].iter().flatten().cloned());
+            if failed || fetched < batch.len() as u32 {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn list_apps(path: &Path) -> Result<OpenWithChoices, FileSystemError> {
+        let _apartment = CoApartment::enter()?;
+        let mut apps = Vec::new();
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+        // Directories and extensionless files have no recommended-handler
+        // answer; the submenu still offers the native dialog.
+        if !path.is_dir() && !extension.is_empty() {
+            let mut seen = HashSet::new();
+            for handler in handlers(extension)? {
+                let exe = handler_exe(&handler);
+                let name = match unsafe { handler.GetUIName() } {
+                    Ok(raw) => take_string(raw),
+                    Err(_) => String::new(),
+                };
+                if exe.is_empty() || name.is_empty() || !seen.insert(exe.to_lowercase()) {
+                    continue;
+                }
+                apps.push(OpenWithApp {
+                    id: exe.clone(),
+                    name,
+                    icon_name: Some(exe),
+                });
+            }
+        }
+        // One flat group: the submenu mirrors Explorer's recommended list, and
+        // the native dialog behind "choose another app" owns the full one.
+        Ok(OpenWithChoices {
+            recommended: apps,
+            ..Default::default()
+        })
+    }
+
+    pub fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSystemError> {
+        if set_default {
+            // `UserChoice` is hash-protected; only the system dialog may write it.
+            return Err(FileSystemError::Unsupported(
+                "fs.open_with_default_unsupported".into(),
+            ));
+        }
+        let _apartment = CoApartment::enter()?;
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+        // Matched against the handlers the shell itself offered, so the id from
+        // the menu can only name an application this list actually showed.
+        let handler = handlers(extension)?
+            .into_iter()
+            .find(|handler| handler_exe(handler).eq_ignore_ascii_case(app_id))
+            .ok_or_else(|| FileSystemError::NotFound("fs.open_with_app_missing".into()))?;
+        let exe = handler_exe(&handler);
+        let exe_path = Path::new(&exe);
+        // `IAssocHandler::Invoke` is not usable here: with no default association
+        // for the extension it falls back to the system "choose an app" dialog
+        // instead of launching the handler it was given.
+        if package_root(exe_path).is_some() {
+            activate_packaged(exe_path, path)
+        } else {
+            launch_command(&exe, path)
+        }
+    }
+
+    /// The package directory an executable lives in, when it is a packaged
+    /// (Microsoft Store) app: the ancestor whose parent is `WindowsApps`.
+    fn package_root(exe: &Path) -> Option<&Path> {
+        exe.ancestors().find(|ancestor| {
+            ancestor
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .is_some_and(|name| name.eq_ignore_ascii_case("WindowsApps"))
+        })
+    }
+
+    /// `Name_publisherhash` from a package directory like
+    /// `Microsoft.WindowsNotepad_11.2609.11.0_x64__8wekyb3d8bbwe`.
+    fn package_family_name(directory: &str) -> Option<String> {
+        let (name, rest) = directory.split_once('_')?;
+        let (_, publisher) = rest.rsplit_once("__")?;
+        Some(format!("{name}_{publisher}"))
+    }
+
+    /// The `Id` of the manifest application whose `Executable` is `relative`,
+    /// or the first application when none matches.
+    fn application_id(manifest: &str, relative: &str) -> Option<String> {
+        let mut first = None;
+        let mut rest = manifest;
+        while let Some(start) = rest.find("<Application ") {
+            let tag = &rest[start..];
+            let end = tag.find('>')?;
+            let tag = &tag[..end];
+            rest = &rest[start + end..];
+            let id = attribute(tag, "Id")?;
+            if first.is_none() {
+                first = Some(id.clone());
+            }
+            if attribute(tag, "Executable")
+                .is_some_and(|executable| executable.eq_ignore_ascii_case(relative))
+            {
+                return Some(id);
+            }
+        }
+        first
+    }
+
+    fn attribute(tag: &str, name: &str) -> Option<String> {
+        let start = tag.find(&format!("{name}=\""))? + name.len() + 2;
+        let rest = &tag[start..];
+        let end = rest.find('"')?;
+        Some(rest[..end].to_owned())
+    }
+
+    fn read_manifest(root: &Path) -> Option<String> {
+        let bytes = std::fs::read(root.join("AppxManifest.xml")).ok()?;
+        if bytes.starts_with(&[0xFF, 0xFE]) {
+            let units: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect();
+            Some(String::from_utf16_lossy(&units))
+        } else {
+            String::from_utf8(bytes).ok()
+        }
+    }
+
+    /// Packaged apps cannot be spawned by exe path; the activation manager
+    /// launches them by app-user-model id with the file as a command line.
+    fn activate_packaged(exe: &Path, file: &Path) -> Result<(), FileSystemError> {
+        let failed = || FileSystemError::Internal("fs.open_with_launch_failed".into());
+        let root = package_root(exe).ok_or_else(failed)?;
+        let family = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(package_family_name)
+            .ok_or_else(failed)?;
+        let relative = exe
+            .strip_prefix(root)
+            .ok()
+            .and_then(|path| path.to_str())
+            .map(|path| path.replace('/', "\\"))
+            .ok_or_else(failed)?;
+        let id = read_manifest(root)
+            .and_then(|manifest| application_id(&manifest, &relative))
+            .ok_or_else(failed)?;
+        let manager: IApplicationActivationManager = unsafe {
+            CoCreateInstance(&ACTIVATION_MANAGER_CLSID, None, CLSCTX_ALL)
+        }
+        .map_err(|error| {
+            FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
+        })?;
+        let aumid = wide(&format!("{family}!{id}"));
+        let arguments = wide(&format!("\"{}\"", file.to_string_lossy()));
+        unsafe {
+            manager.ActivateApplication(
+                PCWSTR(aumid.as_ptr()),
+                PCWSTR(arguments.as_ptr()),
+                AO_NONE,
+            )
+        }
+        .map_err(|error| {
+            FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
+        })?;
+        Ok(())
+    }
+
+    /// The registered `open` verb command for a Win32 handler, with `%1`
+    /// replaced by the quoted file; falls back to running the exe directly.
+    fn launch_command(exe: &str, file: &Path) -> Result<(), FileSystemError> {
+        let quoted = format!("\"{}\"", file.to_string_lossy());
+        let template = registry_command(exe).unwrap_or_else(|| format!("\"{exe}\" \"%1\""));
+        let command = template
+            .replace("\"%1\"", &quoted)
+            .replace("\"%L\"", &quoted)
+            .replace("%1", &quoted)
+            .replace("%L", &quoted);
+        let argv = split_command(&command);
+        let (program, arguments) = argv
+            .split_first()
+            .ok_or_else(|| FileSystemError::Internal("fs.open_with_launch_failed".into()))?;
+        std::process::Command::new(program)
+            .args(arguments)
+            .spawn()
+            .map_err(|error| {
+                FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
+            })?;
+        Ok(())
+    }
+
+    fn registry_command(exe: &str) -> Option<String> {
+        let name = Path::new(exe).file_name()?.to_str()?;
+        let subkey = wide(&format!("Applications\\{name}\\shell\\open\\command"));
+        let mut buffer = [0u16; 1024];
+        let mut size = (buffer.len() * 2) as u32;
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CLASSES_ROOT,
+                PCWSTR(subkey.as_ptr()),
+                PCWSTR::null(),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buffer.as_mut_ptr().cast()),
+                Some(&mut size),
+            )
+        };
+        if !status.is_ok() {
+            return None;
+        }
+        let units = (size as usize) / 2;
+        let end = buffer[..units]
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(units);
+        Some(String::from_utf16_lossy(&buffer[..end]))
+    }
+
+    /// Splits a Windows command line on unquoted whitespace, keeping quoted
+    /// spans (including empty ones) as single arguments.
+    fn split_command(command: &str) -> Vec<String> {
+        let mut argv = Vec::new();
+        let mut current = String::new();
+        let mut quoted = false;
+        let mut started = false;
+        for character in command.chars() {
+            match character {
+                '"' => {
+                    quoted = !quoted;
+                    started = true;
+                }
+                whitespace if whitespace.is_whitespace() && !quoted => {
+                    if started {
+                        argv.push(std::mem::take(&mut current));
+                        started = false;
+                    }
+                }
+                _ => {
+                    current.push(character);
+                    started = true;
+                }
+            }
+        }
+        if started {
+            argv.push(current);
+        }
+        argv
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{application_id, package_family_name, split_command};
+
+        #[test]
+        fn command_lines_split_on_unquoted_whitespace_only() {
+            assert_eq!(
+                split_command("\"C:\\Program Files\\App\\app.exe\" \"C:\\a b\\c.ini\""),
+                ["C:\\Program Files\\App\\app.exe", "C:\\a b\\c.ini"]
+            );
+            assert_eq!(split_command("app.exe -f \"\" x"), ["app.exe", "-f", "", "x"]);
+        }
+
+        #[test]
+        fn package_family_name_drops_version_and_architecture() {
+            assert_eq!(
+                package_family_name("Microsoft.WindowsNotepad_11.2609.11.0_x64__8wekyb3d8bbwe")
+                    .as_deref(),
+                Some("Microsoft.WindowsNotepad_8wekyb3d8bbwe")
+            );
+            assert_eq!(package_family_name("plain"), None);
+        }
+
+        #[test]
+        fn application_id_matches_the_executable_and_falls_back_to_the_first() {
+            let manifest = "<Package><Applications>\
+                <Application Id=\"Other\" Executable=\"Other\\other.exe\" />\
+                <Application Id=\"App\" Executable=\"Notepad\\Notepad.exe\" />\
+                </Applications></Package>";
+            assert_eq!(
+                application_id(manifest, "Notepad\\Notepad.exe").as_deref(),
+                Some("App")
+            );
+            assert_eq!(application_id(manifest, "missing.exe").as_deref(), Some("Other"));
         }
     }
 }

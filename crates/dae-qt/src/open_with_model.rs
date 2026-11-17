@@ -6,10 +6,10 @@
 //! recommended, other) into one list with section headers, and applies the
 //! filter in Rust so headers never survive when their section is empty.
 //!
-//! Windows has no custom picker: `SHOpenWithDialog` already provides one and
-//! also owns the association UI, so QML keeps the native command there. The
-//! model still compiles on Windows and reports the core's unsupported error,
-//! which keeps the dialog itself platform-neutral.
+//! On Windows the same model feeds the context menu's Explorer-style "Open
+//! with" submenu (recommended handlers only); the picker dialog itself stays
+//! macOS/Linux, because the native `SHOpenWithDialog` owns the association UI
+//! on Windows.
 
 use core::pin::Pin;
 
@@ -62,6 +62,9 @@ pub mod qobject {
         #[qproperty(bool, has_other, cxx_name = "hasOther")]
         #[qproperty(i32, total_count, cxx_name = "totalCount")]
         #[qproperty(bool, empty)]
+        /// The painted row count, headers included, for callers that read the
+        /// model row by row instead of through a view (the context submenu).
+        #[qproperty(i32, count)]
         type OpenWithModel = super::OpenWithModelRust;
 
         #[cxx_override]
@@ -96,6 +99,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "appIdAt"]
         fn app_id_at(&self, row: i32) -> QString;
+
+        /// The display name of `row`, for callers that read the model row by
+        /// row instead of through a view (the context submenu).
+        #[qinvokable]
+        #[cxx_name = "labelAt"]
+        fn label_at(&self, row: i32) -> QString;
+
+        /// The `image://` URL of `row`'s icon, or empty when the entry names
+        /// none. Windows keys icons on the handler's executable; the other
+        /// shells on a launcher's icon name.
+        #[qinvokable]
+        #[cxx_name = "iconAt"]
+        fn icon_at(&self, row: i32) -> QString;
 
         #[inherit]
         #[rust_name = "begin_reset_model"]
@@ -144,6 +160,7 @@ pub struct OpenWithModelRust {
     has_other: bool,
     total_count: i32,
     empty: bool,
+    count: i32,
     generation: u64,
 }
 
@@ -162,6 +179,7 @@ impl Default for OpenWithModelRust {
             has_other: false,
             total_count: 0,
             empty: true,
+            count: 0,
             generation: 0,
         }
     }
@@ -253,6 +271,28 @@ impl qobject::OpenWithModel {
             .unwrap_or_default()
     }
 
+    fn label_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|row| QString::from(row.label.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn icon_at(&self, row: i32) -> QString {
+        let Some(row) = self.rows.get(row as usize) else {
+            return QString::default();
+        };
+        if row.kind != RowKind::App || row.icon_name.is_empty() {
+            return QString::default();
+        }
+        let source = if cfg!(target_os = "windows") {
+            crate::icons::source_for(&row.icon_name, false, "")
+        } else {
+            crate::icons::named_source(&row.icon_name)
+        };
+        QString::from(source.as_str())
+    }
+
     fn set_filter(mut self: Pin<&mut Self>, text: &QString) {
         let filter = text.to_string();
         if self.filter == filter {
@@ -272,9 +312,6 @@ impl qobject::OpenWithModel {
             return;
         }
 
-        self.as_mut().set_loading(false);
-        self.as_mut().set_loaded(true);
-
         match result {
             Ok(choices) => {
                 self.as_mut().set_error(QString::default());
@@ -285,14 +322,17 @@ impl qobject::OpenWithModel {
             Err(error) => {
                 let message = friendly_error(&error.to_string());
                 self.as_mut().apply_error(message);
+                return;
             }
         }
+        // Published last: `loadedChanged` handlers read the rows synchronously,
+        // so the answer has to be in the model before the flag flips.
+        self.as_mut().set_loading(false);
+        self.as_mut().set_loaded(true);
     }
 
     fn apply_error(mut self: Pin<&mut Self>, message: String) {
         self.as_mut().rust_mut().choices = OpenWithChoices::default();
-        self.as_mut().set_loading(false);
-        self.as_mut().set_loaded(true);
         self.as_mut().set_error(QString::from(message.as_str()));
         self.as_mut().set_suggested_app_id(QString::default());
         self.as_mut().set_needs_filter(false);
@@ -300,6 +340,8 @@ impl qobject::OpenWithModel {
         self.as_mut().set_total_count(0);
         self.as_mut().set_empty(true);
         self.as_mut().replace_rows(Vec::new());
+        self.as_mut().set_loading(false);
+        self.as_mut().set_loaded(true);
     }
 
     fn apply_prepared(mut self: Pin<&mut Self>, prepared: PreparedRows) {
@@ -313,11 +355,13 @@ impl qobject::OpenWithModel {
     }
 
     fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<OpenWithRow>) {
+        let count = rows.len().min(i32::MAX as usize) as i32;
         unsafe {
             self.as_mut().begin_reset_model();
             self.as_mut().rust_mut().rows = rows;
             self.as_mut().end_reset_model();
         }
+        self.as_mut().set_count(count);
     }
 }
 
