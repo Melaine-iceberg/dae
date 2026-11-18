@@ -1268,6 +1268,13 @@ mod sys {
     /// `None` for "the attribute does not exist"; `Err` for anything else.
     pub fn get(path: &CString, name: &CString) -> std::io::Result<Option<Vec<u8>>> {
         loop {
+            // Apple's libc takes the resource-fork position and the options
+            // word; Linux takes neither. The two calls must stay separate.
+            #[cfg(target_os = "macos")]
+            let size = unsafe {
+                libc::getxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0, 0, 0)
+            };
+            #[cfg(not(target_os = "macos"))]
             let size =
                 unsafe { libc::getxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0) };
             if size < 0 {
@@ -1278,6 +1285,18 @@ mod sys {
                 };
             }
             let mut buffer = vec![0u8; size as usize];
+            #[cfg(target_os = "macos")]
+            let read = unsafe {
+                libc::getxattr(
+                    path.as_ptr(),
+                    name.as_ptr(),
+                    buffer.as_mut_ptr().cast(),
+                    buffer.len(),
+                    0,
+                    0,
+                )
+            };
+            #[cfg(not(target_os = "macos"))]
             let read = unsafe {
                 libc::getxattr(
                     path.as_ptr(),
@@ -1303,6 +1322,18 @@ mod sys {
     }
 
     pub fn set(path: &CString, name: &CString, value: &[u8]) -> std::io::Result<()> {
+        #[cfg(target_os = "macos")]
+        let result = unsafe {
+            libc::setxattr(
+                path.as_ptr(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
         let result = unsafe {
             libc::setxattr(
                 path.as_ptr(),
@@ -1319,6 +1350,9 @@ mod sys {
     }
 
     pub fn remove(path: &CString, name: &CString) -> std::io::Result<()> {
+        #[cfg(target_os = "macos")]
+        let result = unsafe { libc::removexattr(path.as_ptr(), name.as_ptr(), 0) };
+        #[cfg(not(target_os = "macos"))]
         let result = unsafe { libc::removexattr(path.as_ptr(), name.as_ptr()) };
         if result < 0 {
             let error = std::io::Error::last_os_error();
