@@ -73,6 +73,10 @@ pub enum Event {
         /// True on the final batch: the listing is complete.
         done: bool,
     },
+    /// A transfer job moved through its lifecycle: slot taken, conflicts to
+    /// answer, batch started, batch reported back. The state machine lives in
+    /// `fs::jobs`; the shell only renders what these events say.
+    TransferJob(crate::fs::jobs::JobEvent),
     /// The undo/redo stacks moved, so shortcut availability did too.
     UndoRedoChanged { can_undo: bool, can_redo: bool },
     /// A running total for one directory of a size scan.

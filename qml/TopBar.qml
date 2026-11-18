@@ -60,6 +60,10 @@ Item {
     property var hostWindow: null
     property color accent: Theme.accent
 
+    /// The accepted transfers, parsed once per change so every tab chip can
+    /// ask whether one of them lands in its directory.
+    readonly property var transferRows: JSON.parse(Workspace.transfersJson)
+
     /// A pressed tab that could still become a drag. Cleared before the native
     /// loop starts, so a stray move after the loop cannot begin a second one.
     property bool dragArmed: false
@@ -617,14 +621,35 @@ Item {
 
                     /// §7.3.1: a transfer belongs to the tab it lands in, so
                     /// this chip carries the queue's progress as a 2 dp bar
-                    /// along its bottom edge.
-                    readonly property bool receiving: tabItem.modelData !== null
-                        && Workspace.busy
-                        && Workspace.transferDestination !== ""
-                        && Workspace.transferDestination === tabItem.modelData.title
-                    readonly property real progress: Workspace.progressTotal > 0
-                        ? Math.max(0, Math.min(1,
-                            Workspace.progressDone / Workspace.progressTotal))
+                    /// along its bottom edge. Several transfers may land in
+                    /// the same directory; the bar is their byte-weighted sum.
+                    readonly property real incomingTotal: {
+                        let total = 0
+                        for (const row of root.transferRows)
+                            if (row.running && tabItem.modelData !== null
+                                    && row.target === tabItem.modelData.title)
+                                total += row.total
+                        return total
+                    }
+                    readonly property real incomingDone: {
+                        let done = 0
+                        for (const row of root.transferRows)
+                            if (row.running && tabItem.modelData !== null
+                                    && row.target === tabItem.modelData.title)
+                                done += row.done
+                        return done
+                    }
+                    readonly property int incomingCount: {
+                        let count = 0
+                        for (const row of root.transferRows)
+                            if (row.running && tabItem.modelData !== null
+                                    && row.target === tabItem.modelData.title)
+                                count += 1
+                        return count
+                    }
+                    readonly property bool receiving: incomingCount > 0
+                    readonly property real progress: incomingTotal > 0
+                        ? Math.max(0, Math.min(1, incomingDone / incomingTotal))
                         : 0
 
                     Rectangle {

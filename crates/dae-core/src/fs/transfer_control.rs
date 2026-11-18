@@ -141,6 +141,10 @@ struct Inner {
 /// Pause / cancellation / rate-limit state for one long operation.
 pub struct TransferControl {
     inner: Mutex<Inner>,
+    /// One chunk is paid for at a time. Without this, N workers each sleep
+    /// only their own share of the same bucket and the operation runs at N×
+    /// the configured rate — measured at ~16× on a 40-file tree.
+    throttle: Mutex<()>,
     wake: Condvar,
 }
 
@@ -148,6 +152,7 @@ impl TransferControl {
     pub fn new(rate: Option<u64>) -> Self {
         let rate = rate.filter(|rate| *rate > 0);
         Self {
+            throttle: Mutex::new(()),
             inner: Mutex::new(Inner {
                 paused: false,
                 cancelled: false,
@@ -241,6 +246,10 @@ impl TransferControl {
     /// for yet. Returns early — with an error — when the operation is cancelled
     /// while it waits.
     pub fn advance(&self, bytes: u64) -> Result<(), FileSystemError> {
+        let _serial = self
+            .throttle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         self.gate()?;
 
         let delay = {
@@ -382,6 +391,29 @@ mod tests {
         assert!(
             elapsed >= Duration::from_millis(350),
             "two 512 KiB chunks at 1 MB/s finished in {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn concurrent_chunks_share_one_budget_instead_of_one_each() {
+        // Four workers, 256 KiB each, at 512 KiB/s: the whole batch owes about
+        // two seconds. Without serialization every worker sleeps only its own
+        // share and the batch lands in about half a second.
+        let control = Arc::new(TransferControl::new(Some(512 * 1024)));
+        let start = Instant::now();
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let control = Arc::clone(&control);
+                std::thread::spawn(move || control.advance(256 * 1024))
+            })
+            .collect();
+        for worker in workers {
+            worker.join().expect("worker").expect("advance");
+        }
+        let elapsed = elapsed_since(start);
+        assert!(
+            elapsed >= Duration::from_millis(1200),
+            "four 256 KiB chunks at 512 KiB/s finished in {elapsed:?}"
         );
     }
 

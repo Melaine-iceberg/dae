@@ -30,6 +30,7 @@ pub mod ftp;
 pub mod git;
 pub mod hashing;
 pub mod icons;
+pub mod jobs;
 pub mod known_hosts;
 pub mod listing;
 pub mod local;

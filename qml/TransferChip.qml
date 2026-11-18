@@ -26,11 +26,26 @@ Rectangle {
     // QStringList exposes `.length` to QML; qmllint's type model
     // does not (same caveat in SpaceView/TransferQueue).
     // qmllint disable missing-property
-    readonly property int count: Workspace.queuedTransfers.length
-        + (Workspace.busy ? 1 : 0)
-    readonly property real percent: Workspace.progressTotal > 0
-        ? Math.round(Workspace.progressDone * 100 / Workspace.progressTotal)
-        : (Workspace.busy ? 0 : 100)
+    readonly property int count: Workspace.queuedTransfers.length + transferRows.length
+    // qmllint enable missing-property
+
+    /// The accepted jobs, parsed once per change; the percent below is the
+    /// byte-weighted aggregate of the running ones, so two copies at once
+    /// read as one honest number rather than whichever started last.
+    readonly property var transferRows: JSON.parse(Workspace.transfersJson)
+    readonly property real percent: {
+        let done = 0
+        let total = 0
+        for (const row of transferRows) {
+            if (row.running) {
+                done += row.done
+                total += row.total
+            }
+        }
+        if (total > 0)
+            return Math.max(0, Math.min(100, Math.round(done * 100 / total)))
+        return chip.count > 0 ? 0 : 100
+    }
 
     function openPanel() {
         const point = chip.mapToItem(null, 0, 0)

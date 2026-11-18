@@ -484,9 +484,10 @@ Item {
             set[paths[index]] = true
         return set
     }
-    /// Destinations of queued transfers. A row that is being written shows a
-    /// cloud mark, which is the same signal a cloud provider's sync state would
-    /// use; the queue is the only live source this shell has today.
+    /// Destinations of queued and accepted transfers. A row that is being
+    /// written shows a cloud mark, which is the same signal a cloud provider's
+    /// sync state would use; the queue and the scheduler's rows are the live
+    /// sources this shell has today.
     readonly property var transferSet: {
         // qmllint disable missing-property
         const paths = Workspace.queuedTransferPaths
@@ -494,10 +495,12 @@ Item {
         const set = ({})
         for (let index = 0; index < paths.length; index += 1)
             set[paths[index]] = true
-        // The job on the wire is no longer in the waiting queue; its
-        // destination is published separately.
-        if (Workspace.transferDestination !== "")
-            set[Workspace.transferDestination] = true
+        // Accepted jobs (running or awaiting a conflict answer) are no longer
+        // in the waiting queue; their destinations come from the rows.
+        const rows = JSON.parse(Workspace.transfersJson)
+        for (const row of rows)
+            if (row.target !== "")
+                set[row.target] = true
         return set
     }
     /// A folder already has a size while the shell is measuring the selection,

@@ -282,9 +282,11 @@ pub struct RenameRequest {
 
 /// One executed (source, destination) pair from a copy or move batch, as
 /// reported by the transfer engines' journal. Destinations reflect what
-/// actually landed on disk, "副本" auto-renames included. Internal to the
-/// backend: the undo/redo history is built from these pairs.
-#[derive(Debug, Clone)]
+/// actually landed on disk, "副本" auto-renames included. The undo/redo
+/// history is built from these pairs; an elevated child serializes them back
+/// to the parent, which records the undo the child could not.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransferPair {
     pub source: String,
     pub destination: String,
@@ -292,7 +294,7 @@ pub struct TransferPair {
 
 /// A name collision detected before a transfer runs, with both sides'
 /// metadata so the conflict dialog can compare them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferConflict {
     pub source_path: String,

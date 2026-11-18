@@ -3,17 +3,19 @@ import QtQuick
 import dae 1.0
 import "Localize.js" as Localize
 
-// What is waiting behind the transfer that owns the status bar's progress row.
+// Every transfer the scheduler has accepted, running or waiting on a conflict
+// answer, one row each; behind them the jobs still in the waiting queue.
 //
-// The running job leads the list because it is the one the user is watching.
-// It now carries a transport — pause, resume and cancel — because the core
+// Running rows carry a transport — pause, resume and cancel — because the core
 // holds a `TransferControl` per operation; cancelling removes the file it was
 // writing and keeps the entries that already landed, which is what lets the
-// status center offer "continue" instead of "start over". Every row behind it
-// carries a ✕ as well, and that one simply means "drop it from the queue".
+// status center offer "continue" instead of "start over". A row still waiting
+// on the conflict dialog carries a ✕ that dismisses the dialog instead. Every
+// queued row carries a ✕ as well, and that one simply means "drop it from the
+// queue".
 //
 // The header's rate menu is the only place the transfer limit is set: one
-// process-wide value, obeyed by the running transfer on its next chunk.
+// process-wide value, obeyed by every running transfer on its next chunk.
 //
 // A 326 px plate over the bottom of the window, the way the prototype stacks
 // it: it is a read-out on the status bar, not a dialog.
@@ -42,10 +44,38 @@ Item {
     readonly property color faintColor: Theme.inkTertiary
     // qmllint disable missing-property
     readonly property int queuedCount: Workspace.queuedTransfers.length
-    readonly property int runningCount: Workspace.busy ? 1 : 0
-    readonly property real percent: Workspace.progressTotal > 0
-        ? Math.max(0, Math.min(100, Math.round(Workspace.progressDone * 100 / Workspace.progressTotal)))
-        : (Workspace.busy ? 0 : 100)
+
+    /// The accepted jobs, mirrored into a ListModel so a progress tick updates
+    /// the row in place instead of rebuilding it (a rebuilt row would drop the
+    /// hover state of the very button the pointer is resting on). Rows keep
+    /// their arrival order: the shell only ever appends and removes.
+    ListModel { id: transferModel }
+
+    readonly property string transfersJson: Workspace.transfersJson
+    onTransfersJsonChanged: root.syncTransfers()
+    Component.onCompleted: root.syncTransfers()
+
+    function syncTransfers() {
+        const rows = JSON.parse(root.transfersJson)
+        for (let i = transferModel.count - 1; i >= 0; i -= 1) {
+            const id = transferModel.get(i).jobId
+            if (!rows.some(row => row.jobId === id))
+                transferModel.remove(i)
+        }
+        for (const row of rows) {
+            let index = -1
+            for (let i = 0; i < transferModel.count; i += 1) {
+                if (transferModel.get(i).jobId === row.jobId) {
+                    index = i
+                    break
+                }
+            }
+            if (index >= 0)
+                transferModel.set(index, row)
+            else
+                transferModel.append(row)
+        }
+    }
 
     /// The rate menu's presets, in KiB/s; `0` is "no limit". The value the core
     /// holds is what the button prints, so a limit set in `settings.toml` shows
@@ -311,42 +341,45 @@ Item {
                 id: body
                 width: scroller.width
 
-                // The job that is running. It can be paused and cancelled now:
-                // the core holds a control for every operation, so the row is a
-                // real transport rather than a read-out.
-                TransferRow {
-                    width: parent.width
-                    visible: Workspace.busy
-                    name: Localize.message(Workspace.progressLabel)
-                    target: Workspace.transferDestination
-                    status: {
-                        // qmllint disable missing-property
-                        if (Workspace.transferPaused)
-                            return qsTr("已暂停")
-                        if (Workspace.progressTotal > 0)
-                            return Workspace.transferSpeed !== ""
-                                ? root.percent + "% · " + Workspace.transferSpeed
-                                : root.percent + "%"
-                        return Workspace.transferSpeed
-                    }
-                    progress: root.percent / 100
-                    // The transport belongs to the transfer that owns the slot,
-                    // and `transferDestination` is non-empty exactly while one
-                    // does. A rename, a trash or a size walk shares this
-                    // progress row but has no control behind it, so offering a
-                    // pause there would be a button that does nothing.
-                    // qmllint disable missing-property
-                    cancellable: Workspace.transferDestination !== ""
-                    pausable: Workspace.transferDestination !== ""
-                    // qmllint disable missing-property
-                    paused: Workspace.transferPaused
-                    onCancelRequested: Workspace.cancelTransfer()
-                    onPauseToggled: {
-                        // qmllint disable missing-property
-                        if (Workspace.transferPaused)
-                            Workspace.resumeTransfer()
-                        else
-                            Workspace.pauseTransfer()
+                // The accepted jobs, in arrival order. Each running row is a
+                // real transport: the core holds a control per operation, so
+                // pause and cancel address this row's job and no other.
+                Repeater {
+                    model: transferModel
+
+                    TransferRow {
+                        required property var model
+
+                        width: body.width
+                        name: Localize.message(model.name)
+                        target: model.target
+                        status: {
+                            if (model.paused)
+                                return qsTr("已暂停")
+                            if (!model.running)
+                                return qsTr("准备中")
+                            if (model.total > 0)
+                                return model.speed !== ""
+                                    ? model.percent + "% · " + model.speed
+                                    : model.percent + "%"
+                            return model.speed
+                        }
+                        progress: model.percent / 100
+                        cancellable: true
+                        pausable: model.running
+                        paused: model.paused
+                        onCancelRequested: {
+                            if (model.running)
+                                Workspace.cancelTransfer(model.jobId)
+                            else
+                                Workspace.cancelConflict()
+                        }
+                        onPauseToggled: {
+                            if (model.paused)
+                                Workspace.resumeTransfer(model.jobId)
+                            else
+                                Workspace.pauseTransfer(model.jobId)
+                        }
                     }
                 }
 
@@ -372,7 +405,7 @@ Item {
                 Item {
                     width: parent.width
                     height: Theme.controlXl
-                    visible: !Workspace.busy && root.queuedCount === 0
+                    visible: transferModel.count === 0 && root.queuedCount === 0
 
                     Text {
                         anchors.centerIn: parent

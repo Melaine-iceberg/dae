@@ -33,6 +33,7 @@ use dae_core::fs::connections::{self, Protocol, SaveConnectionInput};
 use dae_core::fs::directory_size;
 use dae_core::fs::drives;
 use dae_core::fs::hashing;
+use dae_core::fs::jobs::{JobEvent, JobScheduler, TransferRequest};
 use dae_core::fs::open_with;
 use dae_core::fs::occupancy;
 use dae_core::fs::recents::RecentSource;
@@ -42,7 +43,7 @@ use dae_core::fs::smb;
 use dae_core::fs::templates;
 use dae_core::fs::trash_view;
 use dae_core::fs::types::{
-    ConflictAction, EntryKind, NewEntryKind, TransferConflict, TransferItem, display_name_from_path,
+    ConflictAction, EntryKind, NewEntryKind, TransferItem, display_name_from_path,
 };
 use dae_core::fs::vfs;
 use dae_core::host::{Event, Host};
@@ -144,26 +145,28 @@ pub mod qobject {
         #[qproperty(QString, conflict_source_detail, cxx_name = "conflictSourceDetail")]
         #[qproperty(QString, conflict_target_category, cxx_name = "conflictTargetCategory")]
         #[qproperty(QString, conflict_target_detail, cxx_name = "conflictTargetDetail")]
-        /// Transfers waiting for the slot the running copy or move holds, one
-        /// finished display line each (`复制 3 项 → dae`). The running one is
-        /// not in the list: the progress row is where it shows.
+        /// Transfers waiting for a free slot, one finished display line each
+        /// (`Copy 3 items → dae`). Accepted jobs — checking, answering
+        /// conflicts or running — are not in this list; they live in
+        /// `transfersJson`.
         #[qproperty(QStringList, queued_transfers, cxx_name = "queuedTransfers")]
         /// Where each queued job is going, in the same order as
         /// `queuedTransfers`. The panel prints it under the name: the row's
         /// title says what is moving, this says where to.
         #[qproperty(QStringList, queued_transfer_paths, cxx_name = "queuedTransferPaths")]
-        /// Where the running transfer is going. Empty when the slot is free.
-        #[qproperty(QString, transfer_destination, cxx_name = "transferDestination")]
-        /// True while the running transfer is holding at a checkpoint. The
-        /// queue's row swaps Pause for Resume on it, and the progress row says
-        /// "paused" instead of a percentage that has stopped moving.
-        #[qproperty(bool, transfer_paused, cxx_name = "transferPaused")]
+        /// The accepted transfers as a JSON array, one object per row:
+        /// `{jobId, operationId, name, target, running, paused, done, total,
+        /// percent, speed, current}`. Several run at once, so the panel reads
+        /// this list rather than a single progress row; `jobId` addresses a
+        /// row's pause/cancel, `operationId` is empty until the job runs.
+        /// A JSON string because cxx-qt cannot export a `QVariantList`
+        /// property (the same seam `operationsJson` uses).
+        #[qproperty(QString, transfers_json, cxx_name = "transfersJson")]
         /// The process-wide transfer limit in KiB per second; `0` is
         /// unlimited. Persisted under `[transfer] speedLimitKib`.
         #[qproperty(i32, transfer_speed_limit, cxx_name = "transferSpeedLimit")]
-        /// The running transfer's throughput, already formatted
-        /// (`"12.4 MB/s"`). Empty when nothing is moving or the last sample is
-        /// stale.
+        /// The running transfers' combined throughput, already formatted
+        /// (`"12.4 MB/s"`). Empty when nothing is moving.
         #[qproperty(QString, transfer_speed, cxx_name = "transferSpeed")]
         #[qproperty(QString, clipboard_mode, cxx_name = "clipboardMode")]
         #[qproperty(QStringList, clipboard_paths, cxx_name = "clipboardPaths")]
@@ -460,23 +463,23 @@ pub mod qobject {
         #[cxx_name = "cancelQueuedTransfer"]
         fn cancel_queued_transfer(self: Pin<&mut Workspace>, index: i32);
 
-        /// Holds the running transfer at its next checkpoint. The bytes already
-        /// written stay; nothing is undone.
+        /// Holds the transfer named by `jobId` (a `transfersJson` row) at its
+        /// next checkpoint. The bytes already written stay; nothing is undone.
         #[qinvokable]
         #[cxx_name = "pauseTransfer"]
-        fn pause_transfer(self: Pin<&mut Workspace>);
+        fn pause_transfer(self: Pin<&mut Workspace>, job_id: i64);
 
         /// Lets a paused transfer continue from where it stopped.
         #[qinvokable]
         #[cxx_name = "resumeTransfer"]
-        fn resume_transfer(self: Pin<&mut Workspace>);
+        fn resume_transfer(self: Pin<&mut Workspace>, job_id: i64);
 
-        /// Stops the running transfer. The file it was writing is removed and
-        /// the entries already copied stay; the status center then offers to
-        /// continue, which skips exactly those entries.
+        /// Stops the transfer named by `jobId`. The file it was writing is
+        /// removed and the entries already copied stay; the status center then
+        /// offers to continue, which skips exactly those entries.
         #[qinvokable]
         #[cxx_name = "cancelTransfer"]
-        fn cancel_transfer(self: Pin<&mut Workspace>);
+        fn cancel_transfer(self: Pin<&mut Workspace>, job_id: i64);
 
         /// Sets the process-wide limit in KiB per second (`0` clears it) and
         /// persists it. Running transfers adopt it on their next chunk.
@@ -908,23 +911,20 @@ pub struct WorkspaceRust {
     conflict_target_detail: QString,
     queued_transfers: QStringList,
     queued_transfer_paths: QStringList,
-    transfer_destination: QString,
-    transfer_paused: bool,
+    transfers_json: QString,
     transfer_speed_limit: i32,
     transfer_speed: QString,
-    /// The id of the transfer holding the slot. Pause, cancel and "elevate"
-    /// all address the core by it; `None` means the slot is free.
-    active_operation_id: Option<String>,
-    /// Last progress sample, for the throughput readout: when it arrived and
-    /// how many bytes the operation had reported by then.
-    speed_sample: Option<(Instant, u64)>,
-    /// Smoothed throughput in bytes per second. Smoothed because a 60 ms event
-    /// on a network share reports wildly different deltas one tick to the next,
-    /// and a number that jumps between 2 and 40 MB/s is worse than none.
-    speed_bytes_per_second: f64,
-    /// Copies and moves waiting for the operation slot, oldest first. The one
-    /// that owns the slot is not in here.
-    queue: Vec<TransferJob>,
+    /// One row per accepted transfer — checking, answering conflicts or
+    /// running. The scheduler addresses them by job id; an elevated retry
+    /// owns a row too, under a local id the scheduler never mints.
+    transfer_rows: Vec<TransferRow>,
+    /// Ids for rows the shell creates itself (elevated retries). Starts far
+    /// above the scheduler's counter so the two never collide.
+    next_local_job: u64,
+    /// Copies and moves are queued and answered by the core's job scheduler;
+    /// this shell only submits requests and renders its events. Created on
+    /// first use, when a Qt thread exists to route the events back through.
+    transfer_scheduler: Option<Arc<JobScheduler>>,
     /// Cancellation flag of the running "calculate size" pass, if any.
     size_scan: Option<Arc<AtomicBool>>,
     /// Status-center history, oldest first.
@@ -942,9 +942,6 @@ pub struct WorkspaceRust {
     /// and a transfer set it immediately after `beginOperation`; finishing the
     /// operation consumes it.
     retry_hint: Option<String>,
-    /// The transfer holding the slot, from its conflict check until its
-    /// copy/move reports back. `None` is what lets a new request start at once.
-    active_transfer: Option<ActiveTransfer>,
     clipboard_mode: QString,
     clipboard_paths: QStringList,
     /// The exact paths this shell last put on the system clipboard. A paste
@@ -1011,14 +1008,12 @@ impl Default for WorkspaceRust {
             conflict_target_detail: QString::default(),
             queued_transfers: QStringList::default(),
             queued_transfer_paths: QStringList::default(),
-            transfer_destination: QString::default(),
-            transfer_paused: false,
+            transfers_json: QString::from("[]"),
             transfer_speed_limit,
             transfer_speed: QString::default(),
-            active_operation_id: None,
-            speed_sample: None,
-            speed_bytes_per_second: 0.0,
-            queue: Vec::new(),
+            transfer_rows: Vec::new(),
+            next_local_job: 1_000_000_000,
+            transfer_scheduler: None,
             custom_actions_json: QString::from(custom_actions_json().as_str()),
             drive_capabilities: QString::from(drive_capabilities_json().as_str()),
             external_archive_formats: QString::from(external_archive_formats_json().as_str()),
@@ -1028,7 +1023,6 @@ impl Default for WorkspaceRust {
             operations,
             operation_starts: Vec::new(),
             retry_hint: None,
-            active_transfer: None,
             clipboard_mode: QString::default(),
             clipboard_paths: QStringList::default(),
             system_clipboard_paths: Vec::new(),
@@ -1081,6 +1075,81 @@ fn host_for(thread: &cxx_qt::CxxQtThread<qobject::Workspace>) -> Arc<dyn Host> {
 }
 
 /// The outcome an async command reports back on the Qt thread.
+/// One accepted transfer's presentation state. The rules live in the core's
+/// job scheduler; this is what the panel's row reads and what the status
+/// center's record is written from when the job reports back.
+struct TransferRow {
+    job_id: u64,
+    /// Minted by the scheduler at `Started`; `None` while the job is still
+    /// checking or answering conflicts. Pause and cancel address the core
+    /// by it.
+    operation_id: Option<String>,
+    request: TransferRequest,
+    running: bool,
+    done: u64,
+    total: u64,
+    /// Display name of the file on the wire, for the row's title.
+    current: String,
+    paused: bool,
+    speed: String,
+    /// Last progress sample for this row's throughput readout.
+    speed_sample: Option<(Instant, u64)>,
+    /// Smoothed bytes per second. Smoothed because a 60 ms event on a network
+    /// share reports wildly different deltas one tick to the next.
+    speed_bps: f64,
+    started_at: u64,
+    label: String,
+    retry: String,
+}
+
+impl TransferRow {
+    fn new(job_id: u64, request: TransferRequest) -> Self {
+        let label = if request.cut { "Moving…" } else { "Copying…" }.to_owned();
+        Self {
+            job_id,
+            operation_id: None,
+            request,
+            running: false,
+            done: 0,
+            total: 0,
+            current: String::new(),
+            paused: false,
+            speed: String::new(),
+            speed_sample: None,
+            speed_bps: 0.0,
+            started_at: now_millis(),
+            label,
+            retry: String::new(),
+        }
+    }
+
+    /// Turns the byte deltas between progress events into a throughput figure.
+    ///
+    /// Nothing here reads a clock outside the events themselves: the reporter
+    /// already throttles to one event per 60 ms, so the interval between two
+    /// events is the measurement window. Smoothed with a 0.6/0.4 split because
+    /// a single SMB round trip can halve one interval and double the next, and
+    /// a readout that oscillates is worse than one that lags.
+    fn sample_speed(&mut self, completed: u64) {
+        let now = Instant::now();
+        let previous = self.speed_sample.replace((now, completed));
+        let Some((last_time, last_done)) = previous else {
+            return;
+        };
+        let elapsed = now.duration_since(last_time).as_secs_f64();
+        if elapsed < 0.05 || completed <= last_done {
+            return;
+        }
+        let instant = (completed - last_done) as f64 / elapsed;
+        self.speed_bps = if self.speed_bps <= 0.0 {
+            instant
+        } else {
+            self.speed_bps * 0.6 + instant * 0.4
+        };
+        self.speed = format_speed(self.speed_bps);
+    }
+}
+
 struct Outcome {
     focus: String,
     error: Option<String>,
@@ -1130,137 +1199,6 @@ where
             }
         });
     });
-}
-
-/// [`dispatch`] for a copy or a move: the job holds the operation slot until it
-/// reports back, so the queue is advanced here and nowhere else.
-fn dispatch_transfer<F>(
-    thread: cxx_qt::CxxQtThread<qobject::Workspace>,
-    kind: &'static str,
-    future: F,
-) where
-    F: std::future::Future<Output = Outcome> + Send + 'static,
-{
-    runtime::spawn(async move {
-        let outcome = future.await;
-        let _ = thread.queue(move |mut workspace| {
-            if outcome.cancelled {
-                workspace.as_mut().finish_cancelled_operation(kind);
-            } else {
-                workspace.as_mut().finish_operation(
-                    kind,
-                    outcome.focus.as_str(),
-                    outcome.error,
-                );
-            }
-            workspace.as_mut().end_transfer();
-        });
-    });
-}
-
-/// One copy or move, on its way through the queue.
-struct TransferJob {
-    sources: Vec<String>,
-    destination: String,
-    cut: bool,
-    /// This job spends the in-app cut clipboard, so it is cleared when the
-    /// transfer actually runs — not when it is requested. A conflict the user
-    /// cancels must leave the cut on the clipboard for another try.
-    clears_clipboard: bool,
-    /// Continue an interrupted copy: every source is merged into the
-    /// destination, and no conflict dialog is shown.
-    resume: bool,
-    /// The line the queue panel prints, built once when the job is accepted so
-    /// the panel formats nothing itself.
-    label: String,
-}
-
-impl TransferJob {
-    fn new(sources: Vec<String>, destination: String, cut: bool) -> Self {
-        let label = format!(
-            "{} {} {} → {}",
-            if cut { "Move" } else { "Copy" },
-            sources.len(),
-            if sources.len() == 1 { "item" } else { "items" },
-            display_name_from_path(&destination)
-        );
-        Self {
-            sources,
-            destination,
-            cut,
-            clears_clipboard: false,
-            resume: false,
-            label,
-        }
-    }
-
-    /// Marks this job as the one that spends the cut clipboard.
-    fn spending_clipboard(mut self) -> Self {
-        self.clears_clipboard = true;
-        self
-    }
-
-    /// Marks this job as continuing a cancelled copy of the same selection.
-    fn resuming(mut self) -> Self {
-        self.resume = true;
-        self
-    }
-}
-
-/// The transfer that owns the operation slot.
-struct ActiveTransfer {
-    job: TransferJob,
-    /// Collisions found before transferring. Empty while the copy runs.
-    conflicts: Vec<TransferConflict>,
-    /// The conflict the dialog is showing; `conflicts.len()` means every
-    /// decision is in.
-    index: usize,
-    /// Source path → resolution. A source the check found nothing for keeps
-    /// `Fail`, which is the Tauri shell's rule as well: the dialog answers
-    /// collisions that were on disk when the batch was checked, and one that
-    /// appears between the check and the copy is a race, not a choice.
-    decisions: HashMap<String, ConflictAction>,
-}
-
-impl ActiveTransfer {
-    /// Records `action` for the conflict on screen and steps to the next one.
-    /// Returns true when every conflict has an answer, which is the moment the
-    /// batch can finally run.
-    ///
-    /// Kept apart from the Qt object so the decision rules — one at a time,
-    /// "apply to all", the last answer — are testable without a QObject.
-    fn answer(&mut self, action: ConflictAction, apply_to_all: bool) -> bool {
-        let Some(conflict) = self.conflicts.get(self.index) else {
-            return true;
-        };
-        self.decisions.insert(conflict.source_path.clone(), action);
-        if apply_to_all {
-            for rest in &self.conflicts[self.index + 1..] {
-                self.decisions.insert(rest.source_path.clone(), action);
-            }
-            self.index = self.conflicts.len();
-        } else {
-            self.index += 1;
-        }
-        self.index >= self.conflicts.len()
-    }
-}
-
-/// Drops the job waiting at `index`. Out-of-range is a no-op: the panel can be
-/// one frame behind a queue that already moved on.
-fn drop_queued(queue: &mut Vec<TransferJob>, index: usize) {
-    if index < queue.len() {
-        queue.remove(index);
-    }
-}
-
-/// Removes and returns the oldest waiting job.
-fn take_next_queued(queue: &mut Vec<TransferJob>) -> Option<TransferJob> {
-    if queue.is_empty() {
-        None
-    } else {
-        Some(queue.remove(0))
-    }
 }
 
 impl qobject::Workspace {
@@ -1373,11 +1311,28 @@ impl qobject::Workspace {
             .retry_hint
             .take()
             .unwrap_or_default();
+        self.as_mut()
+            .record_operation_row(kind, error, cancelled, started, label, retry);
+    }
+
+    /// Writes one status-center row from explicit provenance. Transfers call
+    /// this with their own row's start, label and retry payload: several run
+    /// at once, so the shared `operation_starts` stack — newest start finishes
+    /// next — cannot be theirs.
+    fn record_operation_row(
+        mut self: Pin<&mut Self>,
+        kind: &str,
+        error: Option<&str>,
+        cancelled: bool,
+        started: u64,
+        label: String,
+        retry: String,
+    ) {
         let retryable = !retry.is_empty() && matches!(kind, "copy" | "move" | "extract");
 
         // A cancelled *copy* is continued, not repeated: the retry payload
-        // gains `resume`, which makes `start_transfer` skip the conflict check
-        // and merge into what already landed. A cancelled move cannot be
+        // gains `resume`, which makes the job scheduler skip the conflict
+        // check and merge into what already landed. A cancelled move cannot be
         // continued — the entries it finished are no longer at the source — so
         // it keeps the ordinary retry.
         let retry = if cancelled && kind == "copy" && retryable {
@@ -1392,10 +1347,15 @@ impl qobject::Workspace {
             retry
         };
 
-        let status = match (error.is_some(), cancelled) {
-            (false, _) => "ok",
-            (true, true) => "cancelled",
-            (true, false) => "failed",
+        // Cancellation outranks the error slot: `finish_cancelled_operation`
+        // passes no error, and a control that failed while being cancelled is
+        // still a cancellation to the status center, not a failure to retry.
+        let status = if cancelled {
+            "cancelled"
+        } else if error.is_some() {
+            "failed"
+        } else {
+            "ok"
         };
 
         let record = OperationRecord {
@@ -1736,13 +1696,48 @@ impl qobject::Workspace {
     fn apply_event(mut self: Pin<&mut Self>, event: Event) {
         match event {
             Event::FileOperationProgress {
+                operation_id,
                 operation,
                 phase,
                 completed,
                 total,
                 current_path,
-                ..
             } => {
+                // A transfer's ticks belong to its row; everything else (a
+                // rename, a trash run, a size walk) keeps the shared progress
+                // row in the status strip.
+                let is_transfer = self
+                    .transfer_rows
+                    .iter()
+                    .any(|row| row.operation_id.as_deref() == Some(operation_id.as_str()));
+                if is_transfer {
+                    let mut rust = self.as_mut().rust_mut();
+                    let row = rust
+                        .transfer_rows
+                        .iter_mut()
+                        .find(|row| row.operation_id.as_deref() == Some(operation_id.as_str()))
+                        .expect("row just found");
+                    row.done = completed;
+                    if let Some(total) = total {
+                        row.total = total;
+                    }
+                    row.current = current_path
+                        .as_deref()
+                        .map(display_name_from_path)
+                        .unwrap_or_default();
+                    // Only a copy or a move counts bytes: a delete reports
+                    // entries, and calling that a rate would be a lie.
+                    if matches!(
+                        operation,
+                        dae_core::progress::FileOperationKind::Copy
+                            | dae_core::progress::FileOperationKind::Move
+                    ) {
+                        row.sample_speed(completed);
+                    }
+                    self.as_mut().publish_transfers();
+                    return;
+                }
+
                 let label = current_path
                     .as_deref()
                     .map(display_name_from_path)
@@ -1754,20 +1749,11 @@ impl qobject::Workspace {
                 let total = total.unwrap_or(0).min(i32::MAX as u64) as i32;
                 self.as_mut().set_progress_total(total);
 
-                // Only a copy or a move counts bytes: a delete and a size walk
-                // report entries, and calling that a rate would be a lie.
-                if matches!(
-                    operation,
-                    dae_core::progress::FileOperationKind::Copy
-                        | dae_core::progress::FileOperationKind::Move
-                ) {
-                    self.as_mut().update_transfer_speed(completed);
-                }
-
                 if matches!(phase, dae_core::progress::FileOperationPhase::Preparing) {
                     self.as_mut().set_busy(true);
                 }
             }
+            Event::TransferJob(event) => self.as_mut().apply_job_event(event),
             Event::UndoRedoChanged { can_undo, can_redo } => {
                 self.as_mut().set_can_undo(can_undo);
                 self.as_mut().set_can_redo(can_redo);
@@ -2307,25 +2293,30 @@ impl qobject::Workspace {
         let clears_clipboard = cut
             && self.clipboard_mode.to_string() == "cut"
             && strings(&self.clipboard_paths) == sources;
-        let mut job = TransferJob::new(sources, destination, cut);
-        if clears_clipboard {
-            job = job.spending_clipboard();
-        }
-        self.as_mut().enqueue_transfer(job);
+        let request = TransferRequest {
+            sources,
+            destination,
+            cut,
+            resume: false,
+            spends_clipboard: clears_clipboard,
+        };
+        self.as_mut().scheduler().submit(request);
+        self.as_mut().publish_queue();
     }
 
-    /// Takes a transfer into the queue, or starts it when the slot is free.
-    ///
-    /// The queue is serial because the shell reports one operation at a time on
-    /// one progress row: two copies running at once would make that row show
-    /// whichever event arrived last and neither job's total.
-    fn enqueue_transfer(mut self: Pin<&mut Self>, job: TransferJob) {
-        if self.active_transfer.is_some() {
-            self.as_mut().rust_mut().queue.push(job);
-            self.as_mut().publish_queue();
-            return;
+    /// The core's job scheduler, created on first use: it needs a Qt thread
+    /// to route its events back through, which only exists once QML calls in.
+    fn scheduler(mut self: Pin<&mut Self>) -> Arc<JobScheduler> {
+        if let Some(scheduler) = &self.transfer_scheduler {
+            return Arc::clone(scheduler);
         }
-        self.as_mut().start_transfer(job);
+        let thread = self.as_mut().qt_thread();
+        let scheduler = JobScheduler::new(
+            runtime::runtime().handle().clone(),
+            host_for(&thread),
+        );
+        self.as_mut().rust_mut().transfer_scheduler = Some(Arc::clone(&scheduler));
+        scheduler
     }
 
     /// Queues the "continue" of a cancelled copy: the same sources into the
@@ -2340,109 +2331,209 @@ impl qobject::Workspace {
             return;
         }
 
-        let job = TransferJob::new(sources, destination, cut).resuming();
-        self.as_mut().enqueue_transfer(job);
+        let request = TransferRequest {
+            sources,
+            destination,
+            cut,
+            resume: true,
+            spends_clipboard: false,
+        };
+        self.as_mut().scheduler().submit(request);
+        self.as_mut().publish_queue();
     }
 
     fn publish_queue(mut self: Pin<&mut Self>) {
-        let labels: Vec<String> = self.queue.iter().map(|job| job.label.clone()).collect();
-        let paths: Vec<String> = self
-            .queue
-            .iter()
-            .map(|job| job.destination.clone())
-            .collect();
+        let queued = self
+            .transfer_scheduler
+            .as_ref()
+            .map(|scheduler| scheduler.queued())
+            .unwrap_or_default();
+        let labels: Vec<String> = queued.iter().map(transfer_label).collect();
+        let paths: Vec<String> = queued.iter().map(|job| job.destination.clone()).collect();
         self.as_mut().set_queued_transfers(string_list(&labels));
         self.as_mut().set_queued_transfer_paths(string_list(&paths));
     }
 
-    /// The queue panel's ✕. Only a waiting job can be dropped: the core has no
-    /// cancellation seam for one already running, and pretending otherwise
-    /// would leave a half-copied folder behind.
+    /// The queue panel's ✕. Only a waiting job can be dropped: a running one
+    /// is cancelled through its operation id, which keeps the half-copied
+    /// tree and the "continue" offer honest.
     fn cancel_queued_transfer(mut self: Pin<&mut Self>, index: i32) {
-        let mut queue = std::mem::take(&mut self.as_mut().rust_mut().queue);
-        if index >= 0 {
-            drop_queued(&mut queue, index as usize);
+        if index >= 0
+            && let Some(scheduler) = &self.transfer_scheduler
+        {
+            scheduler.drop_queued(index as usize);
         }
-        self.as_mut().rust_mut().queue = queue;
         self.as_mut().publish_queue();
     }
 
     fn cancel_queued_transfers(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().queue.clear();
+        if let Some(scheduler) = &self.transfer_scheduler {
+            scheduler.clear_queued();
+        }
         self.as_mut().publish_queue();
     }
 
-    /// Turns the byte deltas between progress events into a throughput figure.
-    ///
-    /// Nothing here reads a clock outside the events themselves: the reporter
-    /// already throttles to one event per 60 ms, so the interval between two
-    /// events is the measurement window. Smoothed with a 0.6/0.4 split because
-    /// a single SMB round trip can halve one interval and double the next, and
-    /// a readout that oscillates is worse than one that lags.
-    fn update_transfer_speed(mut self: Pin<&mut Self>, completed: u64) {
-        let now = Instant::now();
-        let previous = self
-            .as_mut()
-            .rust_mut()
-            .speed_sample
-            .replace((now, completed));
-
-        let Some((last_time, last_done)) = previous else {
-            return;
-        };
-
-        let elapsed = now.duration_since(last_time).as_secs_f64();
-        if elapsed < 0.05 || completed <= last_done {
-            return;
+    /// Publishes the rows as the JSON list the panel reads, plus the combined
+    /// throughput the chip prints. Called whenever a row appears, moves or
+    /// goes away.
+    fn publish_transfers(mut self: Pin<&mut Self>) {
+        let mut list = Vec::new();
+        let mut combined_bps = 0.0;
+        for row in &self.transfer_rows {
+            if row.running {
+                combined_bps += row.speed_bps;
+            }
+            let percent = (row.done.min(row.total) * 100)
+                .checked_div(row.total)
+                .unwrap_or(0) as i32;
+            list.push(serde_json::json!({
+                "jobId": row.job_id,
+                "operationId": row.operation_id.clone().unwrap_or_default(),
+                "name": transfer_label(&row.request),
+                "target": row.request.destination,
+                "running": row.running,
+                "paused": row.paused,
+                "done": row.done,
+                "total": row.total,
+                "percent": percent,
+                "speed": row.speed,
+                "current": row.current,
+            }));
         }
-
-        let instant = (completed - last_done) as f64 / elapsed;
-        let smoothed = {
-            let mut rust = self.as_mut().rust_mut();
-            let previous = rust.speed_bytes_per_second;
-            let value = if previous <= 0.0 {
-                instant
-            } else {
-                previous * 0.6 + instant * 0.4
-            };
-            rust.speed_bytes_per_second = value;
-            value
+        let json = serde_json::Value::Array(list).to_string();
+        let speed = if combined_bps > 0.0 {
+            format_speed(combined_bps)
+        } else {
+            String::new()
         };
-
         self.as_mut()
-            .set_transfer_speed(QString::from(format_speed(smoothed).as_str()));
+            .set_transfers_json(QString::from(json.as_str()));
+        self.as_mut()
+            .set_transfer_speed(QString::from(speed.as_str()));
     }
 
-    fn pause_transfer(mut self: Pin<&mut Self>) {
-        let Some(operation) = self.as_mut().rust_mut().active_operation_id.clone() else {
+    /// One running transfer reported back: write its status-center row from
+    /// the row's own provenance, free the busy count and drop the row. The
+    /// global progress row belongs to the non-transfer operations, so it is
+    /// left alone here.
+    fn finish_transfer_row(
+        mut self: Pin<&mut Self>,
+        job_id: u64,
+        error: Option<String>,
+        cancelled: bool,
+    ) {
+        let Some(position) = self
+            .transfer_rows
+            .iter()
+            .position(|row| row.job_id == job_id)
+        else {
             return;
         };
+        let row = self.as_mut().rust_mut().transfer_rows.remove(position);
+        let kind = if row.request.cut { "move" } else { "copy" };
 
-        // `false` means the transfer returned between the click and here; the
-        // row is about to disappear with the progress row anyway.
-        if service::pause_transfer(&operation) {
-            self.as_mut().set_transfer_paused(true);
-            self.as_mut().set_transfer_speed(QString::default());
+        let active = (self.active_operations - 1).max(0);
+        self.as_mut().rust_mut().active_operations = active;
+        self.as_mut().set_busy(active > 0);
+
+        self.as_mut().record_operation_row(
+            kind,
+            error.as_deref(),
+            cancelled,
+            row.started_at,
+            row.label.clone(),
+            row.retry.clone(),
+        );
+
+        let kind_value = QString::from(kind);
+        if cancelled {
+            self.as_mut()
+                .set_status(QString::from("Transfer cancelled"));
+            self.as_mut()
+                .operation_finished(&kind_value, &QString::default());
+        } else if let Some(message) = error {
+            self.as_mut()
+                .set_last_error(QString::from(message.as_str()));
+            let message_value = QString::from(message.as_str());
+            self.as_mut().operation_failed(&kind_value, &message_value);
+        } else {
+            self.as_mut()
+                .set_status(QString::from(success_message(kind)));
+            self.as_mut()
+                .operation_finished(&kind_value, &QString::default());
+        }
+        self.as_mut().publish_transfers();
+    }
+
+    fn pause_transfer(mut self: Pin<&mut Self>, job_id: i64) {
+        let changed = {
+            let mut rust = self.as_mut().rust_mut();
+            let Some(row) = rust
+                .transfer_rows
+                .iter_mut()
+                .find(|row| row.job_id == job_id as u64)
+            else {
+                return;
+            };
+            let Some(operation) = row.operation_id.clone() else {
+                return;
+            };
+            // `false` means the transfer returned between the click and here;
+            // its row is about to disappear with the Finished event anyway.
+            if service::pause_transfer(&operation) {
+                row.paused = true;
+                row.speed = String::new();
+                row.speed_bps = 0.0;
+                row.speed_sample = None;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.as_mut().publish_transfers();
         }
     }
 
-    fn resume_transfer(mut self: Pin<&mut Self>) {
-        let Some(operation) = self.as_mut().rust_mut().active_operation_id.clone() else {
-            return;
+    fn resume_transfer(mut self: Pin<&mut Self>, job_id: i64) {
+        let changed = {
+            let mut rust = self.as_mut().rust_mut();
+            let Some(row) = rust
+                .transfer_rows
+                .iter_mut()
+                .find(|row| row.job_id == job_id as u64)
+            else {
+                return;
+            };
+            let Some(operation) = row.operation_id.clone() else {
+                return;
+            };
+            if service::resume_transfer(&operation) {
+                row.paused = false;
+                true
+            } else {
+                false
+            }
         };
-
-        if service::resume_transfer(&operation) {
-            self.as_mut().set_transfer_paused(false);
+        if changed {
+            self.as_mut().publish_transfers();
         }
     }
 
-    fn cancel_transfer(mut self: Pin<&mut Self>) {
-        let Some(operation) = self.as_mut().rust_mut().active_operation_id.clone() else {
+    fn cancel_transfer(mut self: Pin<&mut Self>, job_id: i64) {
+        let rust = self.as_mut().rust_mut();
+        let Some(row) = rust
+            .transfer_rows
+            .iter()
+            .find(|row| row.job_id == job_id as u64)
+        else {
             return;
         };
-
+        let Some(operation) = row.operation_id.clone() else {
+            return;
+        };
         // The engine notices at its next checkpoint and returns `Cancelled`,
-        // which `finish_operation` reports as neither success nor failure.
+        // whose Finished event reports it as neither success nor failure.
         service::cancel_transfer(&operation);
     }
 
@@ -2500,11 +2591,19 @@ impl qobject::Workspace {
             .unwrap_or_default();
         let destination = payload["destination"].as_str().unwrap_or_default().to_owned();
         let cut = payload["cut"].as_bool().unwrap_or(false);
+        let retry = record.retry.clone();
 
         if paths.is_empty() || destination.is_empty() {
             return;
         }
 
+        let request = TransferRequest {
+            sources: paths.clone(),
+            destination: destination.clone(),
+            cut,
+            resume: false,
+            spends_clipboard: false,
+        };
         let job = dae_core::fs::elevated::ElevatedJob {
             kind: if cut { "move" } else { "copy" }.to_owned(),
             sources: paths
@@ -2515,141 +2614,188 @@ impl qobject::Workspace {
                 })
                 .collect(),
             destination: Some(destination),
+            rate_limit: service::transfer_speed_limit(),
         };
 
-        let kind = if cut { "move" } else { "copy" };
-        self.as_mut()
-            .begin_operation(if cut { "Moving as administrator…" } else { "Copying as administrator…" });
+        // The elevated child reports progress and answers pause/cancel under
+        // this id, exactly like an in-process transfer, so the same row and
+        // its buttons work. `run_elevated` registers the control under it.
+        let operation = operation_id();
+        let job_id = {
+            let mut rust = self.as_mut().rust_mut();
+            rust.next_local_job += 1;
+            rust.next_local_job
+        };
+        {
+            let mut rust = self.as_mut().rust_mut();
+            let mut row = TransferRow::new(job_id, request);
+            row.running = true;
+            row.operation_id = Some(operation.clone());
+            row.label = if cut {
+                "Moving as administrator…"
+            } else {
+                "Copying as administrator…"
+            }
+            .to_owned();
+            // The same payload can be retried again if this attempt fails.
+            row.retry = retry;
+            rust.transfer_rows.push(row);
+            rust.active_operations += 1;
+        }
+        self.as_mut().set_busy(true);
+        self.as_mut().publish_transfers();
 
         let thread = self.as_mut().qt_thread();
-        dispatch(thread, kind, async move {
-            match service::run_elevated(job).await {
+        let host = host_for(&thread);
+        // Not `dispatch`: an elevated transfer owns its row directly (it never
+        // went through the scheduler), so its completion settles the row too.
+        runtime::spawn(async move {
+            let outcome = match service::run_elevated(job, host, operation).await {
                 Ok(()) => Outcome::empty(),
                 Err(error) => Outcome::failed(error),
+            };
+            let _ = thread.queue(move |mut workspace| {
+                workspace
+                    .as_mut()
+                    .finish_transfer_row(job_id, outcome.error, outcome.cancelled);
+            });
+        });
+    }
+
+    /// Renders one lifecycle event from the core's job scheduler. The rules
+    /// (queue order, conflict answers, resume) live in `fs::jobs`; everything
+    /// here is presentation plus the shell-owned clipboard and retry payload.
+    /// Every event names its job, so several transfers can be on screen at
+    /// once without their rows crossing.
+    fn apply_job_event(mut self: Pin<&mut Self>, event: JobEvent) {
+        match event {
+            JobEvent::Accepted { job_id, request } => {
+                self.as_mut()
+                    .rust_mut()
+                    .transfer_rows
+                    .push(TransferRow::new(job_id, request));
+                self.as_mut().publish_transfers();
+                self.as_mut().publish_queue();
             }
-        });
-    }
-
-    /// Gives `job` the operation slot and asks the core what would collide.
-    fn start_transfer(mut self: Pin<&mut Self>, job: TransferJob) {
-        let resume = job.resume;
-        let sources = job.sources.clone();
-        let destination = job.destination.clone();
-        self.as_mut().rust_mut().active_transfer = Some(ActiveTransfer {
-            job,
-            conflicts: Vec::new(),
-            index: 0,
-            decisions: HashMap::new(),
-        });
-        self.as_mut()
-            .set_transfer_destination(QString::from(destination.as_str()));
-        self.as_mut().set_transfer_paused(false);
-        self.as_mut().set_transfer_speed(QString::default());
-
-        // Continuing a cancelled copy has nothing to ask: every source merges
-        // into the destination by definition, so the check — and the dialog it
-        // would open for each file that already landed — is skipped entirely.
-        if resume {
-            self.as_mut().run_transfer();
-            return;
-        }
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = service::check_transfer_conflicts(sources, destination).await;
-            let _ = thread.queue(move |mut workspace| workspace.as_mut().adopt_conflicts(result));
-        });
-    }
-
-    /// Decides what the check found: copy straight away, or hand the collisions
-    /// to the dialog.
-    fn adopt_conflicts(
-        mut self: Pin<&mut Self>,
-        result: Result<Vec<TransferConflict>, FileSystemError>,
-    ) {
-        if self.active_transfer.is_none() {
-            return;
-        }
-        match result {
-            Ok(conflicts) if conflicts.is_empty() => self.as_mut().run_transfer(),
-            Ok(conflicts) => {
-                if let Some(active) = self.as_mut().rust_mut().active_transfer.as_mut() {
-                    active.conflicts = conflicts;
-                    active.index = 0;
+            JobEvent::ConflictPrompt {
+                conflict,
+                index,
+                total,
+                cut,
+                ..
+            } => {
+                let source_category = glyph_category(conflict.source_kind).to_owned();
+                let source_detail = conflict_detail(
+                    conflict.source_kind,
+                    &conflict.name,
+                    conflict.source_size,
+                    conflict.source_modified_at,
+                );
+                let target_category = glyph_category(conflict.target_kind).to_owned();
+                let target_detail = conflict_detail(
+                    conflict.target_kind,
+                    &conflict.name,
+                    conflict.target_size,
+                    conflict.target_modified_at,
+                );
+                self.as_mut().set_conflict_total(total as i32);
+                self.as_mut().set_conflict_index(index as i32 + 1);
+                self.as_mut()
+                    .set_conflict_name(QString::from(conflict.name.as_str()));
+                self.as_mut().set_conflict_cut(cut);
+                self.as_mut()
+                    .set_conflict_source_category(QString::from(source_category.as_str()));
+                self.as_mut()
+                    .set_conflict_source_detail(QString::from(source_detail.as_str()));
+                self.as_mut()
+                    .set_conflict_target_category(QString::from(target_category.as_str()));
+                self.as_mut()
+                    .set_conflict_target_detail(QString::from(target_detail.as_str()));
+            }
+            JobEvent::Started {
+                job_id,
+                operation_id,
+                request,
+            } => {
+                self.as_mut().clear_conflict();
+                // A copy clipboard stays available so the same selection can
+                // be pasted into several directories; a cut is spent here,
+                // once, as the move it was waiting for finally starts.
+                if request.spends_clipboard {
+                    self.as_mut().clear_clipboard();
                 }
-                self.as_mut().publish_conflict();
+                let retry = serde_json::json!({
+                    "kind": "transfer",
+                    "paths": &request.sources,
+                    "destination": &request.destination,
+                    "cut": request.cut,
+                    "resume": request.resume,
+                })
+                .to_string();
+                {
+                    let mut rust = self.as_mut().rust_mut();
+                    if !rust.transfer_rows.iter().any(|row| row.job_id == job_id) {
+                        rust.transfer_rows
+                            .push(TransferRow::new(job_id, request.clone()));
+                    }
+                    let row = rust
+                        .transfer_rows
+                        .iter_mut()
+                        .find(|row| row.job_id == job_id)
+                        .expect("row just ensured");
+                    row.running = true;
+                    // One id for the whole transfer: the core registers a
+                    // control under it so pause, cancel and the limit all
+                    // reach the running operation.
+                    row.operation_id = Some(operation_id);
+                    row.started_at = now_millis();
+                    row.label = if request.cut { "Moving…" } else { "Copying…" }.to_owned();
+                    row.retry = retry;
+                }
+                let active = self.active_operations + 1;
+                self.as_mut().rust_mut().active_operations = active;
+                self.as_mut().set_busy(true);
+                self.as_mut().publish_transfers();
             }
-            Err(error) => {
-                // Nothing was copied: report the failure the way a copy would
-                // have, but without `settle_operation` — this transfer never
-                // began one, and decrementing there would clear the progress
-                // row of whatever else is running.
-                let kind = self.as_mut().transfer_kind();
-                let message = friendly_error(&error.to_string());
-                self.as_mut().rust_mut().active_transfer = None;
+            JobEvent::Finished {
+                job_id,
+                error,
+                cancelled,
+                ..
+            } => {
+                self.as_mut().finish_transfer_row(
+                    job_id,
+                    error.map(|error| friendly_error(&error)),
+                    cancelled,
+                );
+                self.as_mut().publish_queue();
+            }
+            JobEvent::CheckFailed { job_id, cut, error } => {
+                // Nothing was copied and no busy count was taken: drop the
+                // row and report the failure the way a copy would have, but
+                // without `settle_operation` — decrementing there would clear
+                // the progress row of whatever else is running.
+                {
+                    let mut rust = self.as_mut().rust_mut();
+                    if let Some(position) = rust
+                        .transfer_rows
+                        .iter()
+                        .position(|row| row.job_id == job_id)
+                    {
+                        rust.transfer_rows.remove(position);
+                    }
+                }
+                let message = friendly_error(&error);
                 self.as_mut().clear_conflict();
                 self.as_mut()
                     .set_last_error(QString::from(message.as_str()));
-                let kind_value = QString::from(kind);
+                let kind_value = QString::from(if cut { "move" } else { "copy" });
                 let message_value = QString::from(message.as_str());
                 self.as_mut().operation_failed(&kind_value, &message_value);
-                self.as_mut().start_next_queued();
+                self.as_mut().publish_transfers();
+                self.as_mut().publish_queue();
             }
         }
-    }
-
-    fn transfer_kind(&self) -> &'static str {
-        match self.active_transfer.as_ref() {
-            Some(active) if active.job.cut => "move",
-            _ => "copy",
-        }
-    }
-
-    /// Publishes the conflict the dialog is on. Called whenever the index moves
-    /// and by nothing else, so the dialog's eight properties always describe
-    /// one conflict.
-    fn publish_conflict(mut self: Pin<&mut Self>) {
-        let Some(active) = self.active_transfer.as_ref() else {
-            self.as_mut().clear_conflict();
-            return;
-        };
-        let total = active.conflicts.len();
-        let Some(conflict) = active.conflicts.get(active.index) else {
-            self.as_mut().clear_conflict();
-            return;
-        };
-        // Copied out before the setters run: they borrow `self` mutably.
-        let index = active.index as i32 + 1;
-        let cut = active.job.cut;
-        let name = conflict.name.clone();
-        let source_category = glyph_category(conflict.source_kind).to_owned();
-        let source_detail = conflict_detail(
-            conflict.source_kind,
-            &conflict.name,
-            conflict.source_size,
-            conflict.source_modified_at,
-        );
-        let target_category = glyph_category(conflict.target_kind).to_owned();
-        let target_detail = conflict_detail(
-            conflict.target_kind,
-            &conflict.name,
-            conflict.target_size,
-            conflict.target_modified_at,
-        );
-
-        self.as_mut().set_conflict_total(total as i32);
-        self.as_mut().set_conflict_index(index);
-        self.as_mut()
-            .set_conflict_name(QString::from(name.as_str()));
-        self.as_mut().set_conflict_cut(cut);
-        self.as_mut()
-            .set_conflict_source_category(QString::from(source_category.as_str()));
-        self.as_mut()
-            .set_conflict_source_detail(QString::from(source_detail.as_str()));
-        self.as_mut()
-            .set_conflict_target_category(QString::from(target_category.as_str()));
-        self.as_mut()
-            .set_conflict_target_detail(QString::from(target_detail.as_str()));
     }
 
     fn clear_conflict(mut self: Pin<&mut Self>) {
@@ -2665,140 +2811,29 @@ impl qobject::Workspace {
         self.as_mut().set_conflict_target_detail(QString::default());
     }
 
-    /// Records the answer for the conflict on screen and either moves to the
+    /// Records the answer for the conflict on screen; the core moves to the
     /// next one or runs the batch.
     fn resolve_conflict(mut self: Pin<&mut Self>, action: &QString, apply_to_all: bool) {
         let Some(action) = conflict_action(&action.to_string()) else {
             return;
         };
-        let Some(mut active) = self.as_mut().rust_mut().active_transfer.take() else {
-            return;
-        };
-        let answered = active.answer(action, apply_to_all);
-        self.as_mut().rust_mut().active_transfer = Some(active);
-        if answered {
-            self.as_mut().run_transfer();
-        } else {
-            self.as_mut().publish_conflict();
-        }
+        self.as_mut().scheduler().answer(action, apply_to_all);
     }
 
-    /// Closes the dialog and transfers nothing: the Tauri shell's cancel did
-    /// the same, leaving the destination untouched.
+    /// Closes the dialog and transfers nothing: the destination stays
+    /// untouched and the queue advances. The pending row (the one job still
+    /// in its pre-run phase) goes with the dialog; running rows are untouched.
     fn cancel_conflict(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().active_transfer = None;
-        self.as_mut().set_transfer_destination(QString::default());
         self.as_mut().clear_conflict();
-        self.as_mut().start_next_queued();
-    }
-
-    /// Runs the batch that holds the slot with the decisions collected so far.
-    fn run_transfer(mut self: Pin<&mut Self>) {
-        let Some(active) = self.as_mut().rust_mut().active_transfer.take() else {
-            return;
-        };
-        self.as_mut().clear_conflict();
-
-        let items = active
-            .job
-            .sources
-            .iter()
-            .map(|path| TransferItem {
-                path: path.clone(),
-                on_conflict: active
-                    .decisions
-                    .get(path)
-                    .copied()
-                    .unwrap_or(if active.job.resume {
-                        ConflictAction::Merge
-                    } else {
-                        ConflictAction::Fail
-                    }),
-            })
-            .collect::<Vec<_>>();
-        let cut = active.job.cut;
-        let destination = active.job.destination.clone();
-        let kind = if cut { "move" } else { "copy" };
-        let resume = active.job.resume;
-
-        // A copy clipboard stays available so the same selection can be pasted
-        // into several directories; a cut is spent here, once, as the move it
-        // was waiting for finally starts.
-        if active.job.clears_clipboard {
-            self.as_mut().clear_clipboard();
-        }
-
-        // Kept for the status center's retry: the job itself is about to move
-        // into `active_transfer`, and `destination` is about to move into the
-        // future.
-        let retry_paths: Vec<String> = items.iter().map(|item| item.path.clone()).collect();
-        let retry_destination = destination.clone();
-
-        // The job keeps the slot while the copy runs, so a transfer asked for
-        // now queues behind it instead of sharing the progress row.
-        self.as_mut().rust_mut().active_transfer = Some(ActiveTransfer {
-            job: active.job,
-            conflicts: Vec::new(),
-            index: 0,
-            decisions: HashMap::new(),
-        });
-        self.as_mut()
-            .begin_operation(if cut { "Moving…" } else { "Copying…" });
-        let retry = serde_json::json!({
-            "kind": "transfer",
-            "paths": retry_paths,
-            "destination": retry_destination,
-            "cut": cut,
-            "resume": resume,
-        });
-        self.as_mut().rust_mut().retry_hint = Some(retry.to_string());
-        self.as_mut().set_transfer_paused(false);
-        self.as_mut().set_transfer_speed(QString::default());
-
-        // One id for the whole transfer: the core registers a control under it
-        // so pause, cancel and the limit all reach the running operation, and
-        // the shell keeps the same id to address them.
-        let operation = operation_id();
-        self.as_mut().rust_mut().active_operation_id = Some(operation.clone());
-
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch_transfer(thread, kind, async move {
-            let result = if cut {
-                service::move_entries(items, destination, operation, host).await
-            } else {
-                service::copy_entries(items, destination, operation, host).await
-            };
-            match result {
-                Ok(()) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    /// Frees the slot and starts whatever was waiting behind it.
-    fn end_transfer(mut self: Pin<&mut Self>) {
         {
             let mut rust = self.as_mut().rust_mut();
-            rust.active_transfer = None;
-            rust.active_operation_id = None;
-            rust.speed_sample = None;
-            rust.speed_bytes_per_second = 0.0;
+            if let Some(position) = rust.transfer_rows.iter().position(|row| !row.running) {
+                rust.transfer_rows.remove(position);
+            }
         }
-        self.as_mut().set_transfer_destination(QString::default());
-        self.as_mut().set_transfer_paused(false);
-        self.as_mut().set_transfer_speed(QString::default());
-        self.as_mut().start_next_queued();
-    }
-
-    fn start_next_queued(mut self: Pin<&mut Self>) {
-        let mut queue = std::mem::take(&mut self.as_mut().rust_mut().queue);
-        let next = take_next_queued(&mut queue);
-        self.as_mut().rust_mut().queue = queue;
+        self.as_mut().scheduler().cancel_pending();
+        self.as_mut().publish_transfers();
         self.as_mut().publish_queue();
-        if let Some(job) = next {
-            self.as_mut().start_transfer(job);
-        }
     }
 
     fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString,
@@ -4149,7 +4184,19 @@ fn load_operations() -> Vec<OperationRecord> {
         return Vec::new();
     };
     let mut records: Vec<OperationRecord> = serde_json::from_str(&text).unwrap_or_default();
-    records.truncate(OPERATION_HISTORY_LIMIT);
+    // Older builds restarted the counter every launch, so a loaded row could
+    // share its id with a newer one and the newer silently answered both.
+    // Suffix the collisions in place: the panel and `retry_operation` read the
+    // same list, so the row that was clicked is the row that is retried.
+    let mut seen = std::collections::HashSet::new();
+    for (index, record) in records.iter_mut().enumerate() {
+        if !seen.insert(record.id.clone()) {
+            record.id = format!("{}-{index}", record.id);
+        }
+    }
+    // The file is oldest first; keep the tail, not the head.
+    let excess = records.len().saturating_sub(OPERATION_HISTORY_LIMIT);
+    records.drain(0..excess);
     records
 }
 
@@ -4214,9 +4261,27 @@ fn action_args(text: &str) -> Vec<String> {
 }
 
 fn operation_id() -> String {
+    use std::sync::OnceLock;
     use std::sync::atomic::{AtomicU64, Ordering};
+    // The counter alone restarts at 1 on every launch, and the status center
+    // loads yesterday's rows: `retry_operation` then found the oldest row with
+    // today's id and did nothing. The launch time keeps ids unique across
+    // sessions; the counter keeps them unique inside one.
+    static LAUNCH: OnceLock<u64> = OnceLock::new();
     static NEXT: AtomicU64 = AtomicU64::new(1);
-    format!("qt-op-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+    let launch = *LAUNCH.get_or_init(now_millis);
+    format!("qt-op-{launch}-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+/// The line the queue panel prints for a waiting job.
+fn transfer_label(request: &TransferRequest) -> String {
+    format!(
+        "{} {} {} → {}",
+        if request.cut { "Move" } else { "Copy" },
+        request.sources.len(),
+        if request.sources.len() == 1 { "item" } else { "items" },
+        display_name_from_path(&request.destination)
+    )
 }
 
 /// `12.4 MB/s`, `812 KB/s`, `940 B/s`.
@@ -4336,20 +4401,6 @@ mod tests {
 
     /// A transfer conflict for `path`, with both sides looking like plain
     /// files: the decision rules do not read the metadata.
-    fn conflict(path: &str) -> TransferConflict {
-        TransferConflict {
-            source_path: path.to_owned(),
-            target_path: path.to_owned(),
-            name: display_name_from_path(path),
-            source_kind: EntryKind::File,
-            source_size: Some(1),
-            source_modified_at: Some(1_000),
-            target_kind: EntryKind::File,
-            target_size: Some(2),
-            target_modified_at: Some(2_000),
-        }
-    }
-
     #[test]
     fn paste_prefers_files_another_app_copied() {
         let external = SystemClipboardFiles {
@@ -4419,93 +4470,21 @@ mod tests {
     }
 
     #[test]
-    fn a_conflict_batch_waits_for_every_answer_unless_applied_to_all() {
-        let mut active = ActiveTransfer {
-            job: TransferJob::new(
-                vec!["C:/a".into(), "C:/b".into(), "C:/c".into()],
-                "C:/dst".into(),
-                false,
-            ),
-            conflicts: vec![conflict("C:/a"), conflict("C:/b"), conflict("C:/c")],
-            index: 0,
-            decisions: HashMap::new(),
-        };
-
-        // One answer at a time: the batch runs only after the third.
-        assert!(!active.answer(ConflictAction::Skip, false));
-        assert_eq!(active.index, 1);
-        assert_eq!(active.decisions.get("C:/a"), Some(&ConflictAction::Skip));
-        assert!(!active.answer(ConflictAction::KeepBoth, false));
-        assert!(active.answer(ConflictAction::Replace, false));
-        assert_eq!(active.decisions.len(), 3);
-        assert_eq!(active.decisions.get("C:/c"), Some(&ConflictAction::Replace));
-    }
-
-    #[test]
-    fn apply_to_all_answers_the_rest_with_the_same_action() {
-        let mut active = ActiveTransfer {
-            job: TransferJob::new(vec!["C:/a".into(), "C:/b".into()], "C:/dst".into(), false),
-            conflicts: vec![conflict("C:/a"), conflict("C:/b"), conflict("C:/c")],
-            index: 1,
-            decisions: HashMap::new(),
-        };
-        active.decisions.insert("C:/a".into(), ConflictAction::Skip);
-
-        assert!(active.answer(ConflictAction::Replace, true));
-        assert_eq!(active.decisions.get("C:/b"), Some(&ConflictAction::Replace));
-        assert_eq!(active.decisions.get("C:/c"), Some(&ConflictAction::Replace));
-        // The one already answered keeps its own answer.
-        assert_eq!(active.decisions.get("C:/a"), Some(&ConflictAction::Skip));
-    }
-
-    #[test]
-    fn a_queued_transfer_waits_its_turn_in_order() {
-        let mut queue = Vec::new();
-        queue.push(TransferJob::new(
-            vec!["C:/a".into()],
-            "C:/one".into(),
-            false,
-        ));
-        queue.push(TransferJob::new(vec!["C:/b".into()], "C:/two".into(), true));
-
-        assert_eq!(
-            take_next_queued(&mut queue).map(|job| job.destination),
-            Some("C:/one".to_string())
-        );
-        assert_eq!(
-            take_next_queued(&mut queue).map(|job| job.destination),
-            Some("C:/two".to_string())
-        );
-        assert!(take_next_queued(&mut queue).is_none());
-    }
-
-    #[test]
-    fn dropping_a_queued_transfer_leaves_the_rest_and_ignores_a_stale_index() {
-        let mut queue = Vec::new();
-        queue.push(TransferJob::new(
-            vec!["C:/a".into()],
-            "C:/one".into(),
-            false,
-        ));
-        queue.push(TransferJob::new(
-            vec!["C:/b".into()],
-            "C:/two".into(),
-            false,
-        ));
-
-        drop_queued(&mut queue, 7);
-        assert_eq!(queue.len(), 2);
-        drop_queued(&mut queue, 0);
-        assert_eq!(queue.len(), 1);
-        assert_eq!(queue[0].destination, "C:/two");
-    }
-
-    #[test]
     fn a_queued_transfer_names_its_operation_and_target() {
-        let copy = TransferJob::new(vec!["C:/a".into(), "C:/b".into()], "C:/dst".into(), false);
-        assert_eq!(copy.label, "Copy 2 items → dst");
-        let cut = TransferJob::new(vec!["C:/a".into()], "C:/dst".into(), true);
-        assert_eq!(cut.label, "Move 1 item → dst");
+        let copy = TransferRequest {
+            sources: vec!["C:/a".into(), "C:/b".into()],
+            destination: "C:/dst".into(),
+            cut: false,
+            resume: false,
+            spends_clipboard: false,
+        };
+        assert_eq!(transfer_label(&copy), "Copy 2 items → dst");
+        let cut = TransferRequest {
+            sources: vec!["C:/a".into()],
+            cut: true,
+            ..copy
+        };
+        assert_eq!(transfer_label(&cut), "Move 1 item → dst");
     }
 
     #[test]

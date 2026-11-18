@@ -160,7 +160,7 @@ impl FileOperationProgressReporterTrait for FileOperationProgressReporter {
     }
 }
 
-fn emit_file_operation_progress(
+pub fn emit_file_operation_progress(
     host: &dyn Host,
     operation_id: &str,
     operation: FileOperationKind,

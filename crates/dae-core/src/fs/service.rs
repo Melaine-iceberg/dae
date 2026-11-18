@@ -311,9 +311,6 @@ pub async fn copy_entries(
         // find a control that already exists, and a transfer that started
         // without one would ignore the first click.
         let (_registration, control) = ControlRegistration::new(&operation_id);
-
-        let sources = resolve_transfer_items(items)?;
-        let destination_backend = vfs::resolve(&destination)?;
         let progress = FileOperationProgressReporter::with_control(
             Arc::clone(&host),
             operation_id,
@@ -321,30 +318,10 @@ pub async fn copy_entries(
             control,
         );
 
+        let (result, journal) = execute_copy(items, &destination, &progress);
+
         // The journal records every entry that actually landed on disk, so a
         // partially failed copy still gets an undo record for its successes.
-        let mut journal: Vec<TransferPair> = Vec::new();
-        let result = if is_pure_local(&sources, &destination) {
-            let paths = sources
-                .iter()
-                .map(|source| (PathBuf::from(&source.path), source.on_conflict))
-                .collect::<Vec<_>>();
-            local::copy_entries_with_progress(
-                paths,
-                PathBuf::from(&destination),
-                &progress,
-                &mut journal,
-            )
-        } else {
-            transfer::copy_entries(
-                sources,
-                &destination,
-                &destination_backend,
-                &progress,
-                &mut journal,
-            )
-        };
-
         let (recorded_sources, created): (Vec<String>, Vec<String>) = journal
             .into_iter()
             .map(|pair| (pair.source, pair.destination))
@@ -364,6 +341,45 @@ pub async fn copy_entries(
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
+/// The copy itself: backends resolved, local fast path or the generic engine,
+/// and the journal of what landed — kept even when the batch fails partway.
+///
+/// No control registration and no undo record: the caller owns those. That is
+/// what lets an elevated child run this exact function with a silent reporter
+/// and hand its journal back to the parent, whose undo stack the child cannot
+/// reach.
+pub fn execute_copy(
+    items: Vec<TransferItem>,
+    destination: &str,
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> (Result<(), FileSystemError>, Vec<TransferPair>) {
+    let mut journal: Vec<TransferPair> = Vec::new();
+    let result = resolve_transfer_items(items).and_then(|sources| {
+        let destination_backend = vfs::resolve(destination)?;
+        if is_pure_local(&sources, destination) {
+            let paths = sources
+                .iter()
+                .map(|source| (PathBuf::from(&source.path), source.on_conflict))
+                .collect::<Vec<_>>();
+            local::copy_entries_with_progress(
+                paths,
+                PathBuf::from(destination),
+                progress,
+                &mut journal,
+            )
+        } else {
+            transfer::copy_entries(
+                sources,
+                destination,
+                &destination_backend,
+                progress,
+                &mut journal,
+            )
+        }
+    });
+    (result, journal)
+}
+
 /// See `commands::move_entries` for the contract; this half is engine-free.
 pub async fn move_entries(
     items: Vec<TransferItem>,
@@ -375,9 +391,6 @@ pub async fn move_entries(
 
     tokio::task::spawn_blocking(move || {
         let (_registration, control) = ControlRegistration::new(&operation_id);
-
-        let sources = resolve_transfer_items(items)?;
-        let destination_backend = vfs::resolve(&destination)?;
         let progress = FileOperationProgressReporter::with_control(
             Arc::clone(&host),
             operation_id,
@@ -385,36 +398,49 @@ pub async fn move_entries(
             control,
         );
 
+        let (result, journal) = execute_move(items, &destination, &progress);
+
         // The journal records every entry that actually moved, so a partially
         // failed move still gets an undo record for its successes.
-        let mut journal: Vec<TransferPair> = Vec::new();
-        let result = if is_pure_local(&sources, &destination) {
-            let paths = sources
-                .iter()
-                .map(|source| (PathBuf::from(&source.path), source.on_conflict))
-                .collect::<Vec<_>>();
-            local::move_entries_with_progress(
-                paths,
-                PathBuf::from(&destination),
-                &progress,
-                &mut journal,
-            )
-        } else {
-            transfer::move_entries(
-                sources,
-                &destination,
-                &destination_backend,
-                &progress,
-                &mut journal,
-            )
-        };
-
         undo::state().record(host.as_ref(), Operation::Move { transfers: journal });
 
         result
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// The move itself; the shared seam [`execute_copy`] documents.
+pub fn execute_move(
+    items: Vec<TransferItem>,
+    destination: &str,
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> (Result<(), FileSystemError>, Vec<TransferPair>) {
+    let mut journal: Vec<TransferPair> = Vec::new();
+    let result = resolve_transfer_items(items).and_then(|sources| {
+        let destination_backend = vfs::resolve(destination)?;
+        if is_pure_local(&sources, destination) {
+            let paths = sources
+                .iter()
+                .map(|source| (PathBuf::from(&source.path), source.on_conflict))
+                .collect::<Vec<_>>();
+            local::move_entries_with_progress(
+                paths,
+                PathBuf::from(destination),
+                progress,
+                &mut journal,
+            )
+        } else {
+            transfer::move_entries(
+                sources,
+                destination,
+                &destination_backend,
+                progress,
+                &mut journal,
+            )
+        }
+    });
+    (result, journal)
 }
 
 /// See `commands::check_transfer_conflicts` for the contract; this half is engine-free.
@@ -532,14 +558,46 @@ pub fn transfer_speed_limit() -> Option<u64> {
 /// Runs one file operation with administrator rights in a separate process.
 ///
 /// See [`super::elevated`] for why the operation and not the app is elevated.
-/// The caller shows an indeterminate row: the elevated child reports its
-/// outcome through a file, not through this process's event loop.
+/// Progress and pause/cancel cross the process boundary as files, addressed
+/// by the same `operation_id` the shell's transfer row already uses.
 pub async fn run_elevated(
     job: super::elevated::ElevatedJob,
+    host: Arc<dyn Host>,
+    operation_id: String,
 ) -> Result<(), FileSystemError> {
-    tokio::task::spawn_blocking(move || super::elevated::run(job))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    let kind = job.kind.clone();
+    let destination = job.destination.clone();
+    tokio::task::spawn_blocking(move || {
+        let report = super::elevated::run(job, host.as_ref(), &operation_id)?;
+
+        // The child ran the same engine but cannot reach this process's undo
+        // stack; its journal is the record. Kept even on partial failure, so
+        // the entries that did land stay undoable — exactly what an ordinary
+        // transfer's journal does.
+        let operation = match kind.as_str() {
+            "move" => Operation::Move {
+                transfers: report.journal,
+            },
+            "copy" => {
+                let (sources, created): (Vec<String>, Vec<String>) = report
+                    .journal
+                    .into_iter()
+                    .map(|pair| (pair.source, pair.destination))
+                    .unzip();
+                Operation::Copy {
+                    sources,
+                    destination: destination.unwrap_or_default(),
+                    created,
+                }
+            }
+            _ => return report.outcome,
+        };
+        undo::state().record(host.as_ref(), operation);
+
+        report.outcome
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystemError> {

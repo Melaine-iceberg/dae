@@ -18,6 +18,12 @@ use std::sync::OnceLock;
 /// `fs::copy`. Same 256 KiB the cross-backend stream uses.
 const THROTTLED_CHUNK_BYTES: usize = 256 * 1024;
 
+/// Files at least this large report progress by polling the destination while
+/// `fs::copy` runs. Smaller files finish between two frames, so an extra
+/// thread per file would buy nothing; a large one is where the bar is watched.
+const PROGRESS_POLL_MIN_BYTES: u64 = 16 * 1024 * 1024;
+const PROGRESS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+
 /// Pool the bulk local tree operations run on.
 ///
 /// `par_iter` would otherwise use rayon's *global* pool — the pool directory
@@ -106,14 +112,26 @@ pub fn copy_entries_with_progress(
             if let Some(control) = progress.control() {
                 control.gate()?;
             }
-            if entry.replacement_units > 0 {
-                delete_entry(&entry.destination, progress)?;
-            }
-            copy_entry(&entry.source, &entry.destination, progress, entry.merge)?;
-            journal.push(TransferPair {
+            let pair = TransferPair {
                 source: path_to_string(&entry.source),
                 destination: path_to_string(&entry.destination),
-            });
+            };
+            let outcome = (|| {
+                if entry.replacement_units > 0 {
+                    delete_entry(&entry.destination, progress)?;
+                }
+                copy_entry(&entry.source, &entry.destination, progress, entry.merge)
+            })();
+            match &outcome {
+                Ok(()) => journal.push(pair),
+                // Cancelled or failed halfway through a newly created tree:
+                // the top-level entry never "finished", but the directory and
+                // the files that did land are on disk. Naming the root is what
+                // makes Ctrl+Z remove exactly those.
+                Err(_) if entry.created && entry.destination.exists() => journal.push(pair),
+                Err(_) => {}
+            }
+            outcome?;
         }
 
         progress.finish();
@@ -201,6 +219,11 @@ struct TransferPlanEntry {
     replacement_units: u64,
     /// Continue into an existing destination tree instead of replacing it.
     merge: bool,
+    /// The destination did not exist before this operation (or was removed by
+    /// a Replace), so whatever is under it when a cancel lands came from this
+    /// copy. The journal then names the root even though no top-level entry
+    /// finished: that is what lets Ctrl+Z remove a partially copied folder.
+    created: bool,
 }
 
 fn build_transfer_plan(
@@ -245,8 +268,8 @@ fn build_transfer_plan(
             )));
         }
 
-        let (target, replacement_units) = match fs::symlink_metadata(&target) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => (target, 0),
+        let (target, replacement_units, created) = match fs::symlink_metadata(&target) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (target, 0, true),
             Err(error) => return Err(error.into()),
             Ok(_) if paths_refer_to_same_entry(&source, &target) => {
                 // Transferring an entry onto itself is a no-op, not a conflict.
@@ -257,14 +280,14 @@ fn build_transfer_plan(
                     return Err(FileSystemError::AlreadyExists(path_to_string(&target)));
                 }
                 ConflictAction::Skip => continue,
-                ConflictAction::Replace => (target.clone(), count_entry_units(&target)?),
+                ConflictAction::Replace => (target.clone(), count_entry_units(&target)?, true),
                 // Merging writes into the existing entry; nothing gets deleted
                 // up front, and `copy_entry` decides per file.
-                ConflictAction::Merge => (target.clone(), 0),
+                ConflictAction::Merge => (target.clone(), 0, false),
                 ConflictAction::KeepBoth => {
                     let kept = unique_sibling_path(&destination, name, &planned_destinations)?;
                     planned_destinations.insert(kept.clone());
-                    (kept, 0)
+                    (kept, 0, true)
                 }
             },
         };
@@ -284,13 +307,14 @@ fn build_transfer_plan(
             }
         }
 
-        let source_units = count_entry_units(&source)?;
+        let source_units = count_transfer_units(&source)?;
         plan.push(TransferPlanEntry {
             source,
             destination: target,
             source_units,
             replacement_units,
             merge: on_conflict == ConflictAction::Merge,
+            created,
         });
     }
 
@@ -377,6 +401,31 @@ fn ensure_path_is_available(path: &Path) -> Result<(), FileSystemError> {
     Ok(())
 }
 
+/// Units a copy of `path` advances: file bytes, one per directory or symlink.
+///
+/// Progress used to count entries, which made a single 100 MiB file sit at 0%
+/// until it finished. Bytes are what the limit is expressed in and what the
+/// speed readout divides by, so a throttled copy now moves the bar per chunk.
+/// An empty file still costs one unit so a batch of them can reach 100%.
+fn count_transfer_units(path: &Path) -> Result<u64, FileSystemError> {
+    let metadata = fs::symlink_metadata(path)?;
+
+    if !metadata.is_dir() {
+        if metadata.file_type().is_symlink() {
+            return Ok(1);
+        }
+        return Ok(metadata.len().max(1));
+    }
+
+    let children = read_child_paths(path)?;
+    let child_units: Vec<u64> = children
+        .par_iter()
+        .map(|(child, _)| count_transfer_units(child))
+        .collect::<Result<_, _>>()?;
+
+    Ok(1 + child_units.iter().sum::<u64>())
+}
+
 fn count_entry_units(path: &Path) -> Result<u64, FileSystemError> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir() {
@@ -418,7 +467,7 @@ fn copy_entry(
         // The resume path counts a file it already wrote as done, so a
         // cancelled 90%-complete tree costs only the rest on the next run.
         if merge && destination_holds_copy(source, destination) {
-            progress.advance(source);
+            progress.advance_by(metadata.len().max(1), source);
             return Ok(());
         }
 
@@ -431,10 +480,14 @@ fn copy_entry(
                 copy_file_throttled(source, destination, control, progress)?;
             }
             _ => {
-                fs::copy(source, destination)?;
+                if metadata.len() >= PROGRESS_POLL_MIN_BYTES {
+                    copy_file_with_progress(source, destination, progress)?;
+                } else {
+                    fs::copy(source, destination)?;
+                    progress.advance_by(metadata.len().max(1), source);
+                }
             }
         }
-        progress.advance(source);
         return Ok(());
     }
 
@@ -477,6 +530,56 @@ pub(crate) fn copy_entry_unreported(
     transfer_pool().install(|| copy_entry(source, destination, &UnreportedCopy, false))
 }
 
+/// `fs::copy` with a progress estimate for the files a user actually watches.
+///
+/// The OS copy is still the one that runs — server-side and reflink semantics
+/// survive. A scoped thread reads the growing destination and reports the
+/// delta, which is all a percentage needs; the final size is reported once
+/// after the copy returns so a poll that missed the last chunk cannot leave
+/// the bar short.
+fn copy_file_with_progress(
+    source: &Path,
+    destination: &Path,
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> Result<(), FileSystemError> {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+    let expected = fs::metadata(source)?.len();
+    // Truncate before the poller looks: a `Merge` resume may land on an older,
+    // larger destination, and reading that size would report 100% before the
+    // first byte of this attempt was written.
+    fs::File::create(destination)?;
+    let reported = AtomicU64::new(0);
+    let stop = AtomicBool::new(false);
+
+    std::thread::scope(|scope| {
+        let poller = scope.spawn(|| {
+            while !stop.load(Ordering::Relaxed) {
+                if let Ok(metadata) = fs::metadata(destination) {
+                    let size = metadata.len().min(expected);
+                    let previous = reported.swap(size, Ordering::Relaxed);
+                    if size > previous {
+                        progress.advance_by(size - previous, source);
+                    }
+                }
+                std::thread::sleep(PROGRESS_POLL_INTERVAL);
+            }
+        });
+
+        let result = fs::copy(source, destination);
+        stop.store(true, Ordering::Relaxed);
+        poller.join().ok();
+
+        if result.is_ok() {
+            let done = reported.load(Ordering::Relaxed);
+            if expected > done {
+                progress.advance_by(expected - done, source);
+            }
+        }
+        result.map(|_| ()).map_err(FileSystemError::from)
+    })
+}
+
 /// Copies one file through this process so the rate limit can see the bytes.
 ///
 /// Only used when a limit is set: without one the OS copy above is faster and
@@ -487,7 +590,7 @@ fn copy_file_throttled(
     source: &Path,
     destination: &Path,
     control: &TransferControl,
-    _progress: &dyn FileOperationProgressReporterTrait,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let mut reader = fs::File::open(source)?;
     let mut writer = fs::File::create(destination)?;
@@ -502,8 +605,12 @@ fn copy_file_throttled(
                 return Ok(());
             }
 
-            writer.write_all(&buffer[..read])?;
+            // Pay before writing: otherwise every parallel worker gets one
+            // chunk through before its first sleep, and a 256 KiB/s copy
+            // starts with an N-chunk burst.
             control.advance(read as u64)?;
+            writer.write_all(&buffer[..read])?;
+            progress.advance_by(read as u64, source);
         }
     })();
 
@@ -673,7 +780,7 @@ mod tests {
     use std::sync::atomic::Ordering as AtomicOrdering;
 
     #[test]
-    fn performs_file_operations_and_reports_entry_progress() {
+    fn performs_file_operations_and_reports_transfer_progress() {
         let directory =
             std::env::temp_dir().join(format!("dae-file-operation-test-{}", std::process::id()));
         let source = directory.join("source");
@@ -692,8 +799,9 @@ mod tests {
             &mut Vec::new(),
         )
         .expect("copy directory");
-        assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 2);
-        assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 2);
+        // "copied content" is 14 bytes, plus the directory's own unit.
+        assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 15);
+        assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 15);
 
         let copied_directory = destination.join("source");
         assert_eq!(
@@ -737,8 +845,8 @@ mod tests {
         let moved_file = destination.join("renamed.txt");
         assert!(moved_file.exists());
         assert!(!renamed_file.exists());
-        assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), 1);
-        assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 1);
+        assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), 14);
+        assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 14);
 
         let delete_progress = TestProgress::new();
         delete_entries_with_progress(vec![moved_file.clone()], &delete_progress)
@@ -746,6 +854,126 @@ mod tests {
         assert!(!moved_file.exists());
         assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
         assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    /// A cancelled folder copy used to journal nothing: the one plan entry was
+    /// the folder, and it never returned Ok, so Ctrl+Z had no root to remove
+    /// even though half the tree had landed.
+    #[test]
+    fn a_cancelled_new_tree_still_journals_its_root() {
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        struct Controlled {
+            inner: TestProgress,
+            control: Arc<TransferControl>,
+        }
+
+        impl FileOperationProgressReporterTrait for Controlled {
+            fn start(&self, total: u64) {
+                self.inner.start(total);
+            }
+            fn begin_entry(&self, path: &Path) {
+                self.inner.begin_entry(path);
+            }
+            fn advance_by(&self, units: u64, path: &Path) {
+                self.inner.advance_by(units, path);
+            }
+            fn finish(&self) {
+                self.inner.finish();
+            }
+            fn control(&self) -> Option<&TransferControl> {
+                Some(self.control.as_ref())
+            }
+        }
+
+        let directory =
+            std::env::temp_dir().join(format!("dae-cancel-journal-{}", std::process::id()));
+        let source = directory.join("tree");
+        let destination = directory.join("destination");
+        fs::create_dir_all(&source).expect("create source");
+        fs::create_dir_all(&destination).expect("create destination");
+        for index in 0..4 {
+            fs::write(source.join(format!("f{index}.bin")), vec![0_u8; 4096]).expect("write file");
+        }
+
+        // One byte per second: the first chunk is written and then the copy
+        // sleeps, which leaves the cancel plenty of room to land.
+        let control = Arc::new(TransferControl::new(Some(1)));
+        let progress = Controlled {
+            inner: TestProgress::new(),
+            control: Arc::clone(&control),
+        };
+        let worker = {
+            let source = source.clone();
+            let destination = destination.clone();
+            std::thread::spawn(move || {
+                let mut journal = Vec::new();
+                let outcome = copy_entries_with_progress(
+                    vec![(source, ConflictAction::Fail)],
+                    destination,
+                    &progress,
+                    &mut journal,
+                );
+                (outcome, journal)
+            })
+        };
+
+        std::thread::sleep(Duration::from_millis(100));
+        control.cancel();
+        let (outcome, journal) = worker.join().expect("copy thread");
+        assert!(matches!(outcome, Err(FileSystemError::Cancelled(_))));
+        assert!(
+            journal
+                .iter()
+                .any(|pair| pair.destination == path_to_string(&destination.join("tree"))),
+            "the partially copied root is missing from the journal: {journal:?}"
+        );
+        assert!(destination.join("tree").exists());
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    /// The bug that made a throttled single-file copy sit at 0%: the chunk
+    /// loop wrote the bytes but only the caller advanced, once, after the
+    /// whole file. Progress must move while the copy is still running.
+    #[test]
+    fn a_throttled_copy_reports_bytes_while_it_runs() {
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let directory =
+            std::env::temp_dir().join(format!("dae-throttled-progress-{}", std::process::id()));
+        let source = directory.join("source.bin");
+        let destination = directory.join("destination.bin");
+        fs::create_dir_all(&directory).expect("create test directory");
+        fs::write(&source, vec![0_u8; THROTTLED_CHUNK_BYTES * 2]).expect("write source");
+
+        let total = (THROTTLED_CHUNK_BYTES * 2) as u64;
+        let progress = Arc::new(TestProgress::new());
+        progress.start(total);
+        let control = TransferControl::new(Some(THROTTLED_CHUNK_BYTES as u64));
+
+        let worker = {
+            let progress = Arc::clone(&progress);
+            let source = source.clone();
+            let destination = destination.clone();
+            std::thread::spawn(move || {
+                copy_file_throttled(&source, &destination, &control, progress.as_ref())
+            })
+        };
+
+        // The first chunk pays the limit before it is written, so give the
+        // copy a full budget window before sampling.
+        std::thread::sleep(Duration::from_millis(1200));
+        let midway = progress.completed.load(AtomicOrdering::Relaxed);
+        assert!(midway > 0, "no progress before the copy finished");
+        assert!(midway < total, "the whole file was reported at once");
+
+        worker.join().expect("copy thread").expect("throttled copy");
+        assert_eq!(progress.completed.load(AtomicOrdering::Relaxed), total);
 
         fs::remove_dir_all(directory).expect("remove test directory");
     }
@@ -772,8 +1000,10 @@ mod tests {
             &mut Vec::new(),
         )
         .expect("copy nested tree");
-        assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 7);
-        assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 7);
+        // Four directories (the source plus three nested) and three 8-byte
+        // files: units are bytes for files and one per directory.
+        assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 28);
+        assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 28);
 
         let copied_root = destination.join("source");
         for index in 0..3 {
@@ -856,7 +1086,8 @@ mod tests {
             replace_progress.completed.load(AtomicOrdering::Relaxed),
             replace_progress.total.load(AtomicOrdering::Relaxed)
         );
-        assert_eq!(replace_progress.total.load(AtomicOrdering::Relaxed), 2);
+        // "new content" is 11 bytes; replacing adds the old entry's deletion.
+        assert_eq!(replace_progress.total.load(AtomicOrdering::Relaxed), 12);
 
         // Skip: the destination stays untouched and the source survives.
         let skip_progress = TestProgress::new();
