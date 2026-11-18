@@ -40,6 +40,7 @@ use super::error::FileSystemError;
 use super::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, entry_sort_key,
 };
+use super::url::{EntryUrl, Scheme};
 use super::vfs::{FileSystemBackend, SharedBackend};
 use std::io::{self, Read, Write};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
@@ -71,152 +72,77 @@ pub struct WebDavBackend {
     password: Option<String>,
 }
 
-/// The pieces of a `webdav[s]://host[:port]/abs/path` URL after the scheme.
-/// There is no share segment (unlike SMB): an empty `sub_path` is the server
-/// root, which is the collection the server exposes as its entry point.
-struct WebDavPath {
-    /// `webdavs://` — TLS, so requests go out over `https://`.
-    tls: bool,
-    host: String,
-    port: Option<u16>,
-    /// Path beneath the server root, "" at the root, "/"-separated.
-    sub_path: String,
-}
-
-impl WebDavPath {
-    fn scheme(&self) -> &'static str {
-        if self.tls { "webdavs" } else { "webdav" }
-    }
-
-    fn authority(&self) -> String {
-        match self.port {
-            Some(port) => format!("{}:{}", self.host, port),
-            None => self.host.clone(),
-        }
-    }
-
-    /// The canonical explorer path, normalizing away trailing separators.
-    fn url(&self) -> String {
-        if self.sub_path.is_empty() {
-            format!("{}://{}", self.scheme(), self.authority())
-        } else {
-            format!("{}://{}/{}", self.scheme(), self.authority(), self.sub_path)
-        }
-    }
-
-    /// The absolute URL sent on the wire. `reqwest` speaks HTTP, so the scheme
-    /// is `http`/`https` rather than `webdav`/`webdavs`, and each segment is
-    /// percent-encoded.
-    fn request_url(&self) -> String {
-        let origin = format!(
-            "{}://{}",
-            if self.tls { "https" } else { "http" },
-            self.authority()
-        );
-        if self.sub_path.is_empty() {
-            format!("{origin}/")
-        } else {
-            format!("{origin}/{}", encode_path(&self.sub_path))
-        }
-    }
-
-    /// The decoded absolute path on the server, used to recognize the
-    /// directory's own `href` in a Depth 1 listing.
-    fn remote(&self) -> String {
-        if self.sub_path.is_empty() {
-            "/".to_owned()
-        } else {
-            format!("/{}", self.sub_path)
-        }
-    }
-
-    fn join(&self, name: &str) -> String {
-        if self.sub_path.is_empty() {
-            format!("{}://{}/{}", self.scheme(), self.authority(), name)
-        } else {
-            format!(
-                "{}://{}/{}/{}",
-                self.scheme(),
-                self.authority(),
-                self.sub_path,
-                name
-            )
-        }
-    }
-
-    fn parent_and_name(&self) -> Result<(String, String), FileSystemError> {
-        if self.sub_path.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "The server root cannot be renamed".into(),
-            ));
-        }
-
-        let name = self.sub_path.rsplit('/').next().unwrap_or_default();
-        let parent_sub = match self.sub_path.rfind('/') {
-            Some(index) => &self.sub_path[..index],
-            None => "",
-        };
-        let parent = if parent_sub.is_empty() {
-            format!("{}://{}", self.scheme(), self.authority())
-        } else {
-            format!("{}://{}/{}", self.scheme(), self.authority(), parent_sub)
-        };
-        Ok((parent, name.to_owned()))
-    }
-}
-
-fn parse_webdav_path(rest: &str, tls: bool) -> Result<WebDavPath, FileSystemError> {
-    let (authority, remainder) = super::smb::split_authority(rest);
-    let (host, port) = super::smb::parse_authority(authority)?;
-
-    let sub_path = remainder
-        .unwrap_or("")
-        .replace('\\', "/")
-        .trim_matches('/')
-        .split('/')
-        .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
-        .collect::<Vec<_>>()
-        .join("/");
-
-    Ok(WebDavPath {
-        tls,
-        host,
-        port,
-        sub_path,
-    })
-}
-
 /// Parses a full explorer path, keeping the `webdavs`/`webdav` distinction
-/// that [`super::vfs::split_scheme`] folds into one scheme.
-fn parse_dir(path: &str) -> Result<WebDavPath, FileSystemError> {
-    let (scheme, rest) = super::vfs::split_scheme(path)?;
-    if scheme != super::vfs::Scheme::WebDav {
+/// the canonical text round-trips. There is no share segment (unlike SMB):
+/// no segments at all is the server root, which is the collection the
+/// server exposes as its entry point.
+fn parse_dir(path: &str) -> Result<EntryUrl, FileSystemError> {
+    let url = EntryUrl::parse(path)?;
+    if !url.scheme().is_webdav() {
         return Err(FileSystemError::InvalidInput(format!(
             "Not a WebDAV path: {path}"
         )));
     }
-
-    let tls = path
-        .split_once("://")
-        .is_some_and(|(prefix, _)| prefix.eq_ignore_ascii_case("webdavs"));
-    parse_webdav_path(rest, tls)
+    Ok(url)
 }
 
-/// Opens (or reuses) the backend for `webdav://...` URL text and returns it as
-/// a backend. Called by `vfs::resolve`.
+/// The absolute URL sent on the wire. `reqwest` speaks HTTP, so the scheme
+/// is `http`/`https` rather than `webdav`/`webdavs`, and each segment is
+/// percent-encoded. The server root is the origin itself.
+fn request_url(url: &EntryUrl) -> String {
+    let origin = format!(
+        "{}://{}",
+        if url.scheme() == Scheme::WebDavS { "https" } else { "http" },
+        url.server()
+            .expect("a WebDAV path names a server")
+            .authority_text()
+    );
+    let encoded = url
+        .segments()
+        .iter()
+        .map(|segment| encode_segment(segment))
+        .collect::<Vec<_>>()
+        .join("/");
+    if encoded.is_empty() {
+        format!("{origin}/")
+    } else {
+        format!("{origin}/{encoded}")
+    }
+}
+
+/// The decoded absolute path on the server, used to recognize the
+/// directory's own `href` in a Depth 1 listing.
+fn remote(url: &EntryUrl) -> String {
+    if url.segments().is_empty() {
+        "/".to_owned()
+    } else {
+        format!("/{}", url.segments().join("/"))
+    }
+}
+
+/// The canonical parent and the entry's own name; the server root has
+/// neither, which renames are the only caller that needs to know.
+fn parent_and_name(url: &EntryUrl) -> Result<(EntryUrl, String), FileSystemError> {
+    url.pop()
+        .ok_or_else(|| FileSystemError::InvalidInput("The server root cannot be renamed".into()))
+}
+
+/// Opens (or reuses) the backend for a parsed `webdav://…` path and returns it
+/// as a backend. Called by `vfs::resolve`.
 ///
 /// No request is made here: a WebDAV backend holds no connection, and the
 /// path's TLS choice is only known once an operation names its own path.
-pub fn open_backend(rest: &str) -> Result<SharedBackend, FileSystemError> {
-    let (authority, _) = super::smb::split_authority(rest);
-    let (host, port) = super::smb::parse_authority(authority)?;
+pub fn open_backend(url: &EntryUrl) -> Result<SharedBackend, FileSystemError> {
+    let server = url
+        .server()
+        .expect("a WebDAV path names a server");
 
-    if let Some(existing) = connections::session_for(Protocol::WebDav, &host, port) {
+    if let Some(existing) = connections::session_for(Protocol::WebDav, &server.host, server.port) {
         return Ok(existing);
     }
 
-    let backend: SharedBackend = Arc::new(WebDavBackend::connect(&host, port)?);
-    connections::store_session(Protocol::WebDav, &host, port, Arc::clone(&backend));
+    let backend: SharedBackend = Arc::new(WebDavBackend::connect(&server.host, server.port)?);
+    connections::store_session(Protocol::WebDav, &server.host, server.port, Arc::clone(&backend));
     Ok(backend)
 }
 
@@ -316,17 +242,17 @@ impl WebDavBackend {
     /// server reported, in its own order.
     fn propfind(
         &self,
-        path: &WebDavPath,
+        path: &EntryUrl,
         depth: &'static str,
     ) -> Result<Vec<DavResource>, FileSystemError> {
         let request = self
-            .authenticated(http_client()?.request(custom_method("PROPFIND")?, path.request_url()))
+            .authenticated(http_client()?.request(custom_method("PROPFIND")?, request_url(path)))
             .header("Depth", depth)
             .header("Content-Type", "application/xml; charset=utf-8")
             .body(PROPFIND_BODY);
 
         let response = self.send(request)?;
-        let response = self.expect_success(response, &path.url())?;
+        let response = self.expect_success(response, &path.to_string())?;
         let body = self.runtime.block_on(async {
             response.text().await.map_err(|error| {
                 FileSystemError::Io(format!("Could not read the WebDAV response: {error}"))
@@ -353,19 +279,19 @@ impl WebDavBackend {
     fn move_entry(&self, source: &str, destination: &str) -> Result<(), FileSystemError> {
         let from = parse_dir(source)?;
         let to = parse_dir(destination)?;
-        if from.sub_path.is_empty() {
+        if from.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(
                 "The server root cannot be moved".into(),
             ));
         }
 
         let request = self
-            .authenticated(http_client()?.request(custom_method("MOVE")?, from.request_url()))
-            .header("Destination", to.request_url())
+            .authenticated(http_client()?.request(custom_method("MOVE")?, request_url(&from)))
+            .header("Destination", request_url(&to))
             .header("Overwrite", "F");
 
         let response = self.send(request)?;
-        self.expect_success(response, &from.url()).map(|_| ())
+        self.expect_success(response, &from.to_string()).map(|_| ())
     }
 }
 
@@ -373,7 +299,7 @@ impl FileSystemBackend for WebDavBackend {
     fn read_dir(&self, path: &str) -> Result<DirectoryView, FileSystemError> {
         let parsed = parse_dir(path)?;
         // Depth 1 reports the collection itself first; it is not an entry.
-        let requested = parsed.remote();
+        let requested = remote(&parsed);
         let requested = requested.trim_end_matches('/');
 
         let mut entries = Vec::new();
@@ -390,7 +316,7 @@ impl FileSystemBackend for WebDavBackend {
                 EntryKind::File
             };
             entries.push(DirectoryEntry {
-                path: parsed.join(&name),
+                path: parsed.join(&name).to_string(),
                 name,
                 kind,
                 modified_at: resource.last_modified,
@@ -412,7 +338,7 @@ impl FileSystemBackend for WebDavBackend {
         entries.sort_by_cached_key(entry_sort_key);
 
         Ok(DirectoryView {
-            path: parsed.url(),
+            path: parsed.to_string(),
             breadcrumbs: webdav_breadcrumbs(&parsed),
             entries,
             // Remote backends list in one piece; only local reads stream.
@@ -428,7 +354,7 @@ impl FileSystemBackend for WebDavBackend {
     ) -> Result<String, FileSystemError> {
         validate_entry_name(name)?;
         let parsed = parse_dir(directory)?;
-        let target = parsed.join(name);
+        let target = parsed.join(name).to_string();
 
         // PUT truncates and MKCOL answers 405 on an existing collection, so
         // the absence check has to come first to keep the never-overwrite
@@ -442,7 +368,7 @@ impl FileSystemBackend for WebDavBackend {
                 let request = self
                     .authenticated(
                         http_client()?
-                            .request(reqwest::Method::PUT, parse_dir(&target)?.request_url()),
+                            .request(reqwest::Method::PUT, request_url(&parse_dir(&target)?)),
                     )
                     .body(Vec::<u8>::new());
                 let response = self.send(request)?;
@@ -457,8 +383,8 @@ impl FileSystemBackend for WebDavBackend {
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError> {
         validate_entry_name(new_name)?;
         let parsed = parse_dir(path)?;
-        let (parent, _old_name) = parsed.parent_and_name()?;
-        let destination = parse_dir(&parent)?.join(new_name);
+        let (parent, _old_name) = parent_and_name(&parsed)?;
+        let destination = parent.join(new_name).to_string();
         self.move_entry(path, &destination)
     }
 
@@ -468,10 +394,10 @@ impl FileSystemBackend for WebDavBackend {
             .propfind(&parsed, "0")?
             .into_iter()
             .next()
-            .ok_or_else(|| FileSystemError::NotFound(parsed.url()))?;
+            .ok_or_else(|| FileSystemError::NotFound(parsed.to_string()))?;
 
         // The root is a collection even when a server omits `resourcetype`.
-        let kind = if resource.is_collection || parsed.sub_path.is_empty() {
+        let kind = if resource.is_collection || parsed.segments().is_empty() {
             EntryKind::Directory
         } else {
             EntryKind::File
@@ -489,24 +415,24 @@ impl FileSystemBackend for WebDavBackend {
 
     fn mkdir(&self, path: &str) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(
                 "The server root already exists".into(),
             ));
         }
 
-        let request = self
-            .authenticated(http_client()?.request(custom_method("MKCOL")?, parsed.request_url()));
+        let request =
+            self.authenticated(http_client()?.request(custom_method("MKCOL")?, request_url(&parsed)));
         let response = self.send(request)?;
-        self.expect_success(response, &parsed.url()).map(|_| ())
+        self.expect_success(response, &parsed.to_string()).map(|_| ())
     }
 
     fn open_read(&self, path: &str) -> Result<Box<dyn Read + Send>, FileSystemError> {
         let parsed = parse_dir(path)?;
         let request =
-            self.authenticated(http_client()?.request(reqwest::Method::GET, parsed.request_url()));
+            self.authenticated(http_client()?.request(reqwest::Method::GET, request_url(&parsed)));
         let response = self.send(request)?;
-        let response = self.expect_success(response, &parsed.url())?;
+        let response = self.expect_success(response, &parsed.to_string())?;
 
         Ok(Box::new(WebDavReadAdapter {
             runtime: Arc::clone(&self.runtime),
@@ -518,8 +444,8 @@ impl FileSystemBackend for WebDavBackend {
 
     fn open_write(&self, path: &str) -> Result<Box<dyn Write + Send>, FileSystemError> {
         let parsed = parse_dir(path)?;
-        let url = parsed.request_url();
-        let display = parsed.url();
+        let url = request_url(&parsed);
+        let display = parsed.to_string();
         let username = self.username.clone();
         let password = self.password.clone();
 
@@ -554,16 +480,16 @@ impl FileSystemBackend for WebDavBackend {
 
     fn remove(&self, path: &str) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(
                 "The server root cannot be deleted".into(),
             ));
         }
 
         let request = self
-            .authenticated(http_client()?.request(reqwest::Method::DELETE, parsed.request_url()));
+            .authenticated(http_client()?.request(reqwest::Method::DELETE, request_url(&parsed)));
         let response = self.send(request)?;
-        self.expect_success(response, &parsed.url()).map(|_| ())
+        self.expect_success(response, &parsed.to_string()).map(|_| ())
     }
 
     fn rename_to(&self, source: &str, destination: &str) -> Result<(), FileSystemError> {
@@ -812,18 +738,17 @@ fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
     Ok(())
 }
 
-fn webdav_breadcrumbs(path: &WebDavPath) -> Vec<Breadcrumb> {
+fn webdav_breadcrumbs(url: &EntryUrl) -> Vec<Breadcrumb> {
+    let server = url
+        .server()
+        .expect("a WebDAV path names a server");
     let mut breadcrumbs = vec![Breadcrumb {
-        name: path.host.clone(),
-        path: format!("{}://{}", path.scheme(), path.authority()),
+        name: server.host.clone(),
+        path: format!("{}://{}", url.scheme().as_str(), server.authority_text()),
     }];
 
     let mut accumulated = breadcrumbs[0].path.clone();
-    for segment in path
-        .sub_path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-    {
+    for segment in url.segments() {
         accumulated.push('/');
         accumulated.push_str(segment);
         breadcrumbs.push(Breadcrumb {
@@ -1073,14 +998,6 @@ fn encode_segment(segment: &str) -> String {
         }
     }
     encoded
-}
-
-fn encode_path(sub_path: &str) -> String {
-    sub_path
-        .split('/')
-        .map(encode_segment)
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 /// Decodes `%XX` escapes into UTF-8. `+` is a literal plus in a path, so it is
@@ -1370,22 +1287,22 @@ mod webdav_tests {
     #[test]
     fn builds_request_urls_from_explorer_paths() {
         let parsed = parse_dir("webdavs://nas:8443/dav/My Files").expect("tls path");
-        assert_eq!(parsed.url(), "webdavs://nas:8443/dav/My Files");
-        assert_eq!(parsed.request_url(), "https://nas:8443/dav/My%20Files");
-        assert_eq!(parsed.remote(), "/dav/My Files");
+        assert_eq!(parsed.to_string(), "webdavs://nas:8443/dav/My Files");
+        assert_eq!(request_url(&parsed), "https://nas:8443/dav/My%20Files");
+        assert_eq!(remote(&parsed), "/dav/My Files");
         assert_eq!(
-            parsed.join("a?b.txt"),
+            parsed.join("a?b.txt").to_string(),
             "webdavs://nas:8443/dav/My Files/a?b.txt"
         );
 
         let parsed = parse_dir("webdav://nas/dav/").expect("plain path");
-        assert_eq!(parsed.url(), "webdav://nas/dav");
-        assert_eq!(parsed.request_url(), "http://nas/dav");
+        assert_eq!(parsed.to_string(), "webdav://nas/dav");
+        assert_eq!(request_url(&parsed), "http://nas/dav");
 
         let parsed = parse_dir("webdav://nas").expect("server root");
-        assert_eq!(parsed.url(), "webdav://nas");
-        assert_eq!(parsed.request_url(), "http://nas/");
-        assert_eq!(parsed.remote(), "/");
+        assert_eq!(parsed.to_string(), "webdav://nas");
+        assert_eq!(request_url(&parsed), "http://nas/");
+        assert_eq!(remote(&parsed), "/");
         assert_eq!(
             crumb_tuples(&parsed),
             vec![("nas".to_owned(), "webdav://nas".to_owned())]
@@ -1409,7 +1326,7 @@ mod webdav_tests {
     }
 
     /// `Breadcrumb` carries no equality of its own; compare its two fields.
-    fn crumb_tuples(path: &WebDavPath) -> Vec<(String, String)> {
+    fn crumb_tuples(path: &EntryUrl) -> Vec<(String, String)> {
         webdav_breadcrumbs(path)
             .into_iter()
             .map(|crumb| (crumb.name, crumb.path))

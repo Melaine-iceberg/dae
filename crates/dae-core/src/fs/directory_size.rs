@@ -7,7 +7,8 @@
 
 use super::error::FileSystemError;
 use super::types::path_to_string;
-use super::vfs::{self, Scheme};
+use super::url::Scheme;
+use super::vfs;
 use ignore::{WalkBuilder, WalkState};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

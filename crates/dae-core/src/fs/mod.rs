@@ -61,11 +61,11 @@ pub mod transfer;
 pub mod transfer_control;
 pub mod trash_view;
 pub mod undo;
+pub mod url;
 pub mod vfs;
 pub mod watch;
 pub mod webdav;
 #[cfg(windows)]
 pub mod windows_image;
-
 #[cfg(test)]
 pub(crate) mod test_support;

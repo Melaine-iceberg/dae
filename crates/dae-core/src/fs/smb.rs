@@ -8,6 +8,7 @@ use super::error::FileSystemError;
 use super::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, entry_sort_key,
 };
+use super::url::{EntryUrl, Scheme};
 use super::vfs::{FileSystemBackend, SharedBackend};
 use smb2::{ErrorKind as SmbErrorKind, FileReader, FileWriter, SmbClient, Tree};
 use std::collections::HashMap;
@@ -228,176 +229,37 @@ impl<C> Drop for Checkout<'_, C> {
     }
 }
 
-/// The pieces of an `smb://host[:port]/share/path` URL after the scheme.
-struct SmbPath {
-    host: String,
-    port: Option<u16>,
-    /// Empty at the server root, where `read_dir` lists the available shares.
-    share: String,
-    /// Path beneath the share root, "" at the share root, "/"-separated.
-    sub_path: String,
-}
-
-impl SmbPath {
-    fn authority(&self) -> String {
-        match self.port {
-            Some(port) => format!("{}:{}", self.host, port),
-            None => self.host.clone(),
-        }
-    }
-
-    /// The canonical URL, normalizing away trailing separators.
-    fn url(&self) -> String {
-        if self.share.is_empty() {
-            format!("smb://{}", self.authority())
-        } else if self.sub_path.is_empty() {
-            format!("smb://{}/{}", self.authority(), self.share)
-        } else {
-            format!(
-                "smb://{}/{}/{}",
-                self.authority(),
-                self.share,
-                self.sub_path
-            )
-        }
-    }
-
-    fn join(&self, name: &str) -> String {
-        let joined_sub = if self.sub_path.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{}/{}", self.sub_path, name)
-        };
-
-        format!("smb://{}/{}/{}", self.authority(), self.share, joined_sub)
-    }
-
-    fn parent_and_name(&self) -> Result<(String, String), FileSystemError> {
-        // Shares are server-side configuration; only entries inside a share
-        // can be renamed.
-        if self.sub_path.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "Shares cannot be renamed".into(),
-            ));
-        }
-
-        let name = self
-            .sub_path
-            .rsplit('/')
-            .next()
-            .filter(|name| !name.is_empty())
-            .ok_or_else(|| {
-                FileSystemError::InvalidInput("The share root cannot be renamed".into())
-            })?;
-        let parent = match self.sub_path.rfind('/') {
-            Some(index) => self.join_parent(&self.sub_path[..index]),
-            None => self.join_parent(""),
-        };
-        Ok((parent, name.to_owned()))
-    }
-
-    fn join_parent(&self, parent_sub: &str) -> String {
-        if parent_sub.is_empty() {
-            format!("smb://{}/{}", self.authority(), self.share)
-        } else {
-            format!("smb://{}/{}/{}", self.authority(), self.share, parent_sub)
-        }
-    }
-}
-
-fn parse_smb_path(rest: &str) -> Result<SmbPath, FileSystemError> {
-    let (authority, remainder) = split_authority(rest);
-    let (host, port) = parse_authority(authority)?;
-
-    let (share, sub_path) = match remainder {
-        Some(remainder) => match remainder.split_once('/') {
-            Some((share, sub)) => (share.to_owned(), sub.replace('\\', "/")),
-            None => (remainder.to_owned(), String::new()),
-        },
-        None => (String::new(), String::new()),
-    };
-
-    Ok(SmbPath {
-        host,
-        port,
-        share,
-        sub_path: sub_path
-            .trim_matches('/')
-            .split('/')
-            .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
-            .collect::<Vec<_>>()
-            .join("/"),
-    })
-}
-
-/// Splits `host[:port]/rest` into the authority and the rest. Shared with the
-/// SFTP backend, whose URLs share the `scheme://authority/path` shape.
-pub(crate) fn split_authority(rest: &str) -> (&str, Option<&str>) {
-    if let Some(stripped) = rest.strip_prefix('[')
-        && let Some(end) = stripped.find(']')
-    {
-        // `[::1]:2121/pub`: the port belongs to the authority, so the split is
-        // at the first '/', not at the closing bracket. Splitting at the
-        // bracket would hand ":2121/pub" to the path parser and lose the port.
-        let after = &rest[end + 2..];
-        return match after.find('/') {
-            Some(slash) => (&rest[..end + 2 + slash], Some(&rest[end + 3 + slash..])),
-            None => (rest, None),
-        };
-    }
-
-    match rest.split_once('/') {
-        Some((authority, remainder)) => (authority, Some(remainder)),
-        None => (rest, None),
-    }
-}
-
-/// Parses the `[host]:port` authority, accepting bracketed IPv6 addresses.
-/// Shared with the SFTP backend.
-pub(crate) fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemError> {
-    let (host, port) = if authority.starts_with('[') {
-        let end = authority
-            .find(']')
-            .ok_or_else(|| FileSystemError::InvalidInput("Unbalanced IPv6 address".into()))?;
-        let host = &authority[..=end];
-        let port = authority[end + 1..].strip_prefix(':');
-        (host, port)
-    } else {
-        match authority.rsplit_once(':') {
-            Some((host, port)) => (host, Some(port)),
-            None => (authority, None),
-        }
-    };
-
-    if host.is_empty() {
+/// Splits off the parent URL and the entry name for a rename. Shares are
+/// server-side configuration, so only entries inside a share can be renamed;
+/// the server root, where `read_dir` lists the shares, is not an entry at all.
+fn parent_and_name(url: &EntryUrl) -> Result<(EntryUrl, String), FileSystemError> {
+    let Some((parent, name)) = url.pop() else {
         return Err(FileSystemError::InvalidInput(
-            "A server host is required".into(),
+            "The share root cannot be renamed".into(),
+        ));
+    };
+
+    // A parent with no segments means the entry being renamed is a share.
+    if parent.segments().is_empty() {
+        return Err(FileSystemError::InvalidInput(
+            "Shares cannot be renamed".into(),
         ));
     }
 
-    let port = match port {
-        None => None,
-        Some("") => None,
-        Some(port) => Some(
-            port.parse::<u16>()
-                .map_err(|_| FileSystemError::InvalidInput(format!("Invalid port: {port}")))?,
-        ),
-    };
-
-    Ok((host.to_owned(), port))
+    Ok((parent, name))
 }
 
-/// Opens (or reuses) the session for `smb://...` URL text and returns it as a
-/// backend. Called by `vfs::resolve`.
-pub fn open_backend(rest: &str) -> Result<SharedBackend, FileSystemError> {
-    let path = parse_smb_path(rest)?;
+/// Opens (or reuses) the session for the server an `smb://…` URL points at
+/// and returns it as a backend. Called by `vfs::resolve`.
+pub fn open_backend(url: &EntryUrl) -> Result<SharedBackend, FileSystemError> {
+    let server = url.server().expect("server");
 
-    if let Some(existing) = connections::session_for(Protocol::Smb, &path.host, path.port) {
+    if let Some(existing) = connections::session_for(Protocol::Smb, &server.host, server.port) {
         return Ok(existing);
     }
 
-    let backend: SharedBackend = Arc::new(SmbBackend::connect(&path.host, path.port)?);
-    connections::store_session(Protocol::Smb, &path.host, path.port, backend.clone());
+    let backend: SharedBackend = Arc::new(SmbBackend::connect(&server.host, server.port)?);
+    connections::store_session(Protocol::Smb, &server.host, server.port, backend.clone());
     Ok(backend)
 }
 
@@ -546,16 +408,17 @@ fn session_survives(error: &smb2::Error) -> bool {
 
 impl FileSystemBackend for SmbBackend {
     fn read_dir(&self, path: &str) -> Result<DirectoryView, FileSystemError> {
-        let (scheme, rest) = super::vfs::split_scheme(path)?;
-        debug_assert_eq!(scheme, super::vfs::Scheme::Smb);
-        let parsed = parse_smb_path(rest)?;
+        let url = parse_dir(path)?;
+        let segments = url.segments();
 
-        let entries = if parsed.share.is_empty() {
-            self.share_names()?
+        let entries = match segments.first() {
+            // The server root lists the shares themselves.
+            None => self
+                .share_names()?
                 .into_iter()
                 .filter(|name| !name.ends_with('$'))
                 .map(|name| DirectoryEntry {
-                    path: format!("smb://{}/{}", parsed.authority(), name),
+                    path: url.join(&name).to_string(),
                     name,
                     kind: EntryKind::Directory,
                     modified_at: None,
@@ -566,43 +429,45 @@ impl FileSystemBackend for SmbBackend {
                     hidden: false,
                     read_only: false,
                 })
-                .collect::<Vec<_>>()
-        } else {
-            let listed = smb_tree_op!(self, &parsed.share, (_client, tree) => {
-                tree_client_list(_client, tree, &parsed.sub_path).await
-            })?;
-            listed
-                .into_iter()
-                .filter(|entry| entry.name != "." && entry.name != "..")
-                .map(|entry| DirectoryEntry {
-                    path: parsed.join(&entry.name),
-                    name: entry.name,
-                    kind: if entry.is_directory {
-                        EntryKind::Directory
-                    } else {
-                        EntryKind::File
-                    },
-                    modified_at: modified_millis(entry.modified),
-                    // SMB carries no creation time through this client.
-                    created_at: None,
-                    created_fallback: false,
-                    size: if entry.is_directory {
-                        None
-                    } else {
-                        Some(entry.size)
-                    },
-                    hidden: false,
-                    read_only: false,
-                })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            Some(share) => {
+                let sub_path = segments[1..].join("/");
+                let listed = smb_tree_op!(self, share.as_str(), (_client, tree) => {
+                    tree_client_list(_client, tree, &sub_path).await
+                })?;
+                listed
+                    .into_iter()
+                    .filter(|entry| entry.name != "." && entry.name != "..")
+                    .map(|entry| DirectoryEntry {
+                        path: url.join(&entry.name).to_string(),
+                        name: entry.name,
+                        kind: if entry.is_directory {
+                            EntryKind::Directory
+                        } else {
+                            EntryKind::File
+                        },
+                        modified_at: modified_millis(entry.modified),
+                        // SMB carries no creation time through this client.
+                        created_at: None,
+                        created_fallback: false,
+                        size: if entry.is_directory {
+                            None
+                        } else {
+                            Some(entry.size)
+                        },
+                        hidden: false,
+                        read_only: false,
+                    })
+                    .collect::<Vec<_>>()
+            }
         };
 
         let mut entries = entries;
         entries.sort_by_cached_key(entry_sort_key);
 
         Ok(DirectoryView {
-            path: parsed.url(),
-            breadcrumbs: smb_breadcrumbs(&parsed),
+            path: url.to_string(),
+            breadcrumbs: smb_breadcrumbs(&url),
             entries,
             // Remote backends list in one piece; only local reads stream.
             stream_id: None,
@@ -616,75 +481,81 @@ impl FileSystemBackend for SmbBackend {
         kind: NewEntryKind,
     ) -> Result<String, FileSystemError> {
         validate_entry_name(name)?;
-        let parsed = parse_dir(directory)?;
-
-        if parsed.share.is_empty() {
+        let url = parse_dir(directory)?;
+        let segments = url.segments();
+        let Some(share) = segments.first() else {
             return Err(FileSystemError::InvalidInput(
                 "Choose a share before creating entries".into(),
             ));
-        }
+        };
 
-        let target = if parsed.sub_path.is_empty() {
+        let target = if segments.len() == 1 {
             name.to_owned()
         } else {
-            format!("{}/{}", parsed.sub_path, name)
+            format!("{}/{}", segments[1..].join("/"), name)
         };
 
         match kind {
             NewEntryKind::File => {
                 // create_file_writer truncates, so the absence check must
                 // come first to preserve the never-overwrite contract.
-                let existing = smb_tree_op!(self, &parsed.share, (client, tree) => {
+                let existing = smb_tree_op!(self, share.as_str(), (client, tree) => {
                     client.stat(tree, &target).await
                 });
                 match existing {
                     Ok(_) => {
-                        return Err(FileSystemError::AlreadyExists(parsed.join(name)));
+                        return Err(FileSystemError::AlreadyExists(url.join(name).to_string()));
                     }
                     Err(FileSystemError::NotFound(_)) => {}
                     Err(error) => return Err(error),
                 }
 
-                smb_tree_op!(self, &parsed.share, (client, tree) => {
+                smb_tree_op!(self, share.as_str(), (client, tree) => {
                     let writer = client.create_file_writer(tree, &target).await?;
                     writer.finish().await.map(|_| ())
                 })?;
             }
             NewEntryKind::Directory => {
-                smb_tree_op!(self, &parsed.share, (client, tree) => {
+                smb_tree_op!(self, share.as_str(), (client, tree) => {
                     client.create_directory(tree, &target).await
                 })?;
             }
         }
 
-        Ok(parsed.join(name))
+        Ok(url.join(name).to_string())
     }
 
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError> {
         validate_entry_name(new_name)?;
-        let parsed = parse_dir(path)?;
-        let (parent, _old_name) = parsed.parent_and_name()?;
-        let destination_sub = parse_dir(&parent)?.join(new_name);
-        let to_sub = parse_dir(&destination_sub)?.sub_path;
+        let url = parse_dir(path)?;
+        let (parent, _old_name) = parent_and_name(&url)?;
+        let destination = parent.join(new_name);
 
-        smb_tree_op!(self, &parsed.share, (client, tree) => {
-            client.rename(tree, &parsed.sub_path, &to_sub).await
+        let share = url.segments().first().map(String::as_str).unwrap_or("");
+        let from_sub = url.segments()[1..].join("/");
+        let to_sub = destination.segments()[1..].join("/");
+
+        smb_tree_op!(self, share, (client, tree) => {
+            client.rename(tree, &from_sub, &to_sub).await
         })
     }
 
     fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {
-        let parsed = parse_dir(path)?;
+        let url = parse_dir(path)?;
+        let segments = url.segments();
 
-        if parsed.share.is_empty() {
+        // The server root is the share list, which is always a directory.
+        let Some(share) = segments.first() else {
             return Ok(EntryStat {
                 kind: EntryKind::Directory,
                 size: 0,
                 modified_at: None,
             });
-        }
+        };
 
-        let info = smb_tree_op!(self, &parsed.share, (client, tree) => {
-            client.stat(tree, &parsed.sub_path).await
+        let sub_path = segments[1..].join("/");
+        let info = smb_tree_op!(self, share.as_str(), (client, tree) => {
+            client.stat(tree, &sub_path).await
         })?;
 
         Ok(EntryStat {
@@ -699,29 +570,34 @@ impl FileSystemBackend for SmbBackend {
     }
 
     fn mkdir(&self, path: &str) -> Result<(), FileSystemError> {
-        let parsed = parse_dir(path)?;
-        if parsed.share.is_empty() {
+        let url = parse_dir(path)?;
+        let segments = url.segments();
+        let Some(share) = segments.first() else {
             return Err(FileSystemError::InvalidInput(
                 "Choose a share before creating folders".into(),
             ));
-        }
-        if parsed.sub_path.is_empty() {
+        };
+
+        // The share root exists by definition; creating it is a no-op.
+        let sub_path = segments[1..].join("/");
+        if sub_path.is_empty() {
             return Ok(());
         }
 
-        smb_tree_op!(self, &parsed.share, (client, tree) => {
-            client.create_directory(tree, &parsed.sub_path).await
+        smb_tree_op!(self, share.as_str(), (client, tree) => {
+            client.create_directory(tree, &sub_path).await
         })
     }
 
     fn open_read(&self, path: &str) -> Result<Box<dyn Read + Send>, FileSystemError> {
-        let parsed = parse_dir(path)?;
-        if parsed.share.is_empty() || parsed.sub_path.is_empty() {
-            return Err(FileSystemError::NotDirectory(path.to_owned()));
-        }
+        let url = parse_dir(path)?;
+        let (share, sub_path) = match url.segments() {
+            [share, rest @ ..] if !rest.is_empty() => (share.as_str(), rest.join("/")),
+            _ => return Err(FileSystemError::NotDirectory(path.to_owned())),
+        };
 
-        let reader = smb_tree_op!(self, &parsed.share, (client, tree) => {
-            client.open_file_reader(tree, &parsed.sub_path).await
+        let reader = smb_tree_op!(self, share, (client, tree) => {
+            client.open_file_reader(tree, &sub_path).await
         })?;
 
         Ok(Box::new(SmbReadAdapter {
@@ -734,15 +610,18 @@ impl FileSystemBackend for SmbBackend {
     }
 
     fn open_write(&self, path: &str) -> Result<Box<dyn Write + Send>, FileSystemError> {
-        let parsed = parse_dir(path)?;
-        if parsed.share.is_empty() || parsed.sub_path.is_empty() {
-            return Err(FileSystemError::InvalidInput(format!(
-                "Not a file path: {path}"
-            )));
-        }
+        let url = parse_dir(path)?;
+        let (share, sub_path) = match url.segments() {
+            [share, rest @ ..] if !rest.is_empty() => (share.as_str(), rest.join("/")),
+            _ => {
+                return Err(FileSystemError::InvalidInput(format!(
+                    "Not a file path: {path}"
+                )));
+            }
+        };
 
-        let writer = smb_tree_op!(self, &parsed.share, (client, tree) => {
-            client.create_file_writer(tree, &parsed.sub_path).await
+        let writer = smb_tree_op!(self, share, (client, tree) => {
+            client.create_file_writer(tree, &sub_path).await
         })?;
 
         Ok(Box::new(SmbWriteAdapter {
@@ -752,24 +631,27 @@ impl FileSystemBackend for SmbBackend {
     }
 
     fn remove(&self, path: &str) -> Result<(), FileSystemError> {
-        let parsed = parse_dir(path)?;
-        if parsed.share.is_empty() || parsed.sub_path.is_empty() {
-            return Err(FileSystemError::InvalidInput(format!(
-                "Refusing to delete a share root: {path}"
-            )));
-        }
+        let url = parse_dir(path)?;
+        let (share, sub_path) = match url.segments() {
+            [share, rest @ ..] if !rest.is_empty() => (share.as_str(), rest.join("/")),
+            _ => {
+                return Err(FileSystemError::InvalidInput(format!(
+                    "Refusing to delete a share root: {path}"
+                )));
+            }
+        };
 
-        let info = smb_tree_op!(self, &parsed.share, (client, tree) => {
-            client.stat(tree, &parsed.sub_path).await
+        let info = smb_tree_op!(self, share, (client, tree) => {
+            client.stat(tree, &sub_path).await
         })?;
 
         if info.is_directory {
-            smb_tree_op!(self, &parsed.share, (client, tree) => {
-                client.delete_directory(tree, &parsed.sub_path).await
+            smb_tree_op!(self, share, (client, tree) => {
+                client.delete_directory(tree, &sub_path).await
             })
         } else {
-            smb_tree_op!(self, &parsed.share, (client, tree) => {
-                client.delete_file(tree, &parsed.sub_path).await
+            smb_tree_op!(self, share, (client, tree) => {
+                client.delete_file(tree, &sub_path).await
             })
         }
     }
@@ -780,26 +662,30 @@ impl FileSystemBackend for SmbBackend {
 
         // The SMB protocol cannot rename across share boundaries; the
         // transfer engine falls back to copy + delete on error.
-        if from.share != to.share {
+        if from.segments().first() != to.segments().first() {
             return Err(FileSystemError::InvalidInput(
                 "Cannot rename across shares".into(),
             ));
         }
 
-        smb_tree_op!(self, &from.share, (client, tree) => {
-            client.rename(tree, &from.sub_path, &to.sub_path).await
+        let share = from.segments().first().map(String::as_str).unwrap_or("");
+        let from_sub = from.segments()[1..].join("/");
+        let to_sub = to.segments()[1..].join("/");
+        smb_tree_op!(self, share, (client, tree) => {
+            client.rename(tree, &from_sub, &to_sub).await
         })
     }
 }
 
-fn parse_dir(path: &str) -> Result<SmbPath, FileSystemError> {
-    let (scheme, rest) = super::vfs::split_scheme(path)?;
-    if scheme != super::vfs::Scheme::Smb {
+/// Parses one SMB URL, rejecting the paths of every other scheme.
+fn parse_dir(path: &str) -> Result<EntryUrl, FileSystemError> {
+    let url = EntryUrl::parse(path)?;
+    if url.scheme() != Scheme::Smb {
         return Err(FileSystemError::InvalidInput(format!(
             "Not an SMB path: {path}"
         )));
     }
-    parse_smb_path(rest)
+    Ok(url)
 }
 
 /// `list_directory` lives on the client, not the tree, so the macro's closure
@@ -830,32 +716,21 @@ fn modified_millis(time: smb2::pack::FileTime) -> Option<u64> {
         .map(|duration| duration.as_millis() as u64)
 }
 
-fn smb_breadcrumbs(path: &SmbPath) -> Vec<Breadcrumb> {
+/// Breadcrumbs from the server root down, one per segment: the host, the
+/// share, then every directory beneath it.
+fn smb_breadcrumbs(url: &EntryUrl) -> Vec<Breadcrumb> {
+    let server = url.server().expect("server");
     let mut breadcrumbs = vec![Breadcrumb {
-        name: path.host.clone(),
-        path: format!("smb://{}", path.authority()),
+        name: server.host.clone(),
+        path: url.with_segments(Vec::new()).to_string(),
     }];
 
-    if path.share.is_empty() {
-        return breadcrumbs;
-    }
-
-    breadcrumbs.push(Breadcrumb {
-        name: path.share.clone(),
-        path: format!("smb://{}/{}", path.authority(), path.share),
-    });
-
-    let mut accumulated = format!("smb://{}/{}", path.authority(), path.share);
-    for segment in path
-        .sub_path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-    {
-        accumulated.push('/');
-        accumulated.push_str(segment);
+    let mut segments = Vec::new();
+    for segment in url.segments() {
+        segments.push(segment.clone());
         breadcrumbs.push(Breadcrumb {
-            name: segment.to_owned(),
-            path: accumulated.clone(),
+            name: segment.clone(),
+            path: url.with_segments(segments.clone()).to_string(),
         });
     }
 
@@ -1014,56 +889,70 @@ mod smb_tests {
 
     #[test]
     fn parses_smb_urls() {
-        let path = parse_smb_path("nas.local:445/media/movies/2024").unwrap();
-        assert_eq!(path.host, "nas.local");
-        assert_eq!(path.port, Some(445));
-        assert_eq!(path.share, "media");
-        assert_eq!(path.sub_path, "movies/2024");
-        assert_eq!(path.url(), "smb://nas.local:445/media/movies/2024");
+        let path = EntryUrl::parse("smb://nas.local:445/media/movies/2024").unwrap();
+        let server = path.server().expect("server");
+        assert_eq!(server.host, "nas.local");
+        assert_eq!(server.port, Some(445));
+        assert_eq!(path.segments(), ["media", "movies", "2024"]);
+        assert_eq!(path.to_string(), "smb://nas.local:445/media/movies/2024");
 
-        let root = parse_smb_path("nas.local").unwrap();
-        assert_eq!(root.share, "");
-        assert_eq!(root.url(), "smb://nas.local");
+        let root = EntryUrl::parse("smb://nas.local").unwrap();
+        assert!(root.segments().is_empty());
+        assert_eq!(root.to_string(), "smb://nas.local");
 
-        let share_root = parse_smb_path("nas.local/media/").unwrap();
-        assert_eq!(share_root.share, "media");
-        assert_eq!(share_root.sub_path, "");
-        assert_eq!(share_root.url(), "smb://nas.local/media");
+        let share_root = EntryUrl::parse("smb://nas.local/media/").unwrap();
+        assert_eq!(share_root.segments(), ["media"]);
+        assert_eq!(share_root.to_string(), "smb://nas.local/media");
 
-        let dotted = parse_smb_path("nas.local/media/../public/./docs").unwrap();
-        assert_eq!(dotted.sub_path, "public/docs");
+        let dotted = EntryUrl::parse("smb://nas.local/media/../public/./docs").unwrap();
+        assert_eq!(dotted.segments(), ["media", "public", "docs"]);
 
-        let ipv6 = parse_smb_path("[::1]/media").unwrap();
-        assert_eq!(ipv6.host, "[::1]");
-        assert_eq!(ipv6.share, "media");
+        let ipv6 = EntryUrl::parse("smb://[::1]/media").unwrap();
+        assert_eq!(ipv6.server().expect("server").host, "[::1]");
+        assert_eq!(ipv6.segments(), ["media"]);
     }
 
     #[test]
     fn joins_child_paths_and_resolves_parents() {
-        let path = parse_smb_path("nas.local/media/movies").unwrap();
-        assert_eq!(path.join("new.txt"), "smb://nas.local/media/movies/new.txt");
+        let path = EntryUrl::parse("smb://nas.local/media/movies").unwrap();
+        assert_eq!(
+            path.join("new.txt").to_string(),
+            "smb://nas.local/media/movies/new.txt"
+        );
 
-        let (parent, name) = path.parent_and_name().unwrap();
-        assert_eq!(parent, "smb://nas.local/media");
+        let (parent, name) = parent_and_name(&path).unwrap();
+        assert_eq!(parent.to_string(), "smb://nas.local/media");
         assert_eq!(name, "movies");
 
-        let share_root = parse_smb_path("nas.local/media").unwrap();
-        assert!(matches!(
-            share_root.parent_and_name(),
-            Err(FileSystemError::InvalidInput(_))
-        ));
+        // Shares are server-side configuration, and the server root is not
+        // an entry at all; neither can be renamed.
+        let share_root = EntryUrl::parse("smb://nas.local/media").unwrap();
+        match parent_and_name(&share_root) {
+            Err(FileSystemError::InvalidInput(message)) => {
+                assert_eq!(message, "Shares cannot be renamed");
+            }
+            other => panic!("renaming a share must be refused: {other:?}"),
+        }
+
+        let server_root = EntryUrl::parse("smb://nas.local").unwrap();
+        match parent_and_name(&server_root) {
+            Err(FileSystemError::InvalidInput(message)) => {
+                assert_eq!(message, "The share root cannot be renamed");
+            }
+            other => panic!("renaming the server root must be refused: {other:?}"),
+        }
     }
 
     #[test]
     fn rejects_malformed_hosts_and_ports() {
-        assert!(parse_smb_path(":445/media").is_err());
-        let bad_port = parse_smb_path("nas.local:99999/media");
+        assert!(EntryUrl::parse("smb://:445/media").is_err());
+        let bad_port = EntryUrl::parse("smb://nas.local:99999/media");
         assert!(matches!(bad_port, Err(FileSystemError::InvalidInput(_))));
     }
 
     #[test]
     fn builds_share_aware_breadcrumbs() {
-        let path = parse_smb_path("nas.local/media/movies/2024").unwrap();
+        let path = EntryUrl::parse("smb://nas.local/media/movies/2024").unwrap();
         let breadcrumbs = smb_breadcrumbs(&path);
 
         let names: Vec<_> = breadcrumbs
@@ -1075,7 +964,7 @@ mod smb_tests {
         assert_eq!(breadcrumbs[1].path, "smb://nas.local/media");
         assert_eq!(breadcrumbs[3].path, "smb://nas.local/media/movies/2024");
 
-        let root = parse_smb_path("nas.local").unwrap();
+        let root = EntryUrl::parse("smb://nas.local").unwrap();
         assert_eq!(smb_breadcrumbs(&root).len(), 1);
     }
 

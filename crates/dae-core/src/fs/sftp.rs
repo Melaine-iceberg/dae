@@ -11,11 +11,11 @@
 use super::connections::{self, Protocol};
 use super::error::FileSystemError;
 use super::known_hosts::{HostKeyVerdict, verify_host_key};
-use super::smb::{parse_authority, split_authority};
 use super::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, FileProperties, NewEntryKind,
     PlatformProperties, PropertyChanges, UnixProperties, entry_sort_key,
 };
+use super::url::{EntryUrl, Scheme, Server};
 use super::vfs::{FileSystemBackend, SharedBackend};
 use russh_sftp::client::SftpSession;
 use russh_sftp::client::error::Error as SftpError;
@@ -126,111 +126,53 @@ impl russh::client::Handler for KnownHostsHandler {
     }
 }
 
-/// The pieces of an `sftp://host[:port]/abs/path` URL after the scheme.
-/// There is no share segment (unlike SMB): an empty `sub_path` is the
-/// server root `/`, which is the user's home on chrooted servers.
-struct SftpPath {
-    host: String,
-    port: Option<u16>,
-    /// Path beneath the server root, "" at the root, "/"-separated.
-    sub_path: String,
-}
-
-impl SftpPath {
-    fn authority(&self) -> String {
-        match self.port {
-            Some(port) => format!("{}:{}", self.host, port),
-            None => self.host.clone(),
-        }
-    }
-
-    /// The canonical URL, normalizing away trailing separators.
-    fn url(&self) -> String {
-        if self.sub_path.is_empty() {
-            format!("sftp://{}", self.authority())
-        } else {
-            format!("sftp://{}/{}", self.authority(), self.sub_path)
-        }
-    }
-
-    /// The absolute path on the remote server.
-    fn remote(&self) -> String {
-        if self.sub_path.is_empty() {
-            "/".to_owned()
-        } else {
-            format!("/{}", self.sub_path)
-        }
-    }
-
-    fn join(&self, name: &str) -> String {
-        if self.sub_path.is_empty() {
-            format!("sftp://{}/{}", self.authority(), name)
-        } else {
-            format!("sftp://{}/{}/{}", self.authority(), self.sub_path, name)
-        }
-    }
-
-    fn parent_and_name(&self) -> Result<(String, String), FileSystemError> {
-        if self.sub_path.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "The server root cannot be renamed".into(),
-            ));
-        }
-
-        let name = self.sub_path.rsplit('/').next().unwrap_or_default();
-        let parent_sub = match self.sub_path.rfind('/') {
-            Some(index) => &self.sub_path[..index],
-            None => "",
-        };
-        let parent = if parent_sub.is_empty() {
-            format!("sftp://{}", self.authority())
-        } else {
-            format!("sftp://{}/{}", self.authority(), parent_sub)
-        };
-        Ok((parent, name.to_owned()))
+/// The absolute path on the remote server: `/` at the server root, `/`
+/// followed by the joined segments beneath it. An empty segment list is
+/// the server root, which is the user's home on chrooted servers.
+fn remote(url: &EntryUrl) -> String {
+    if url.segments().is_empty() {
+        "/".to_owned()
+    } else {
+        format!("/{}", url.segments().join("/"))
     }
 }
 
-fn parse_sftp_path(rest: &str) -> Result<SftpPath, FileSystemError> {
-    let (authority, remainder) = split_authority(rest);
-    let (host, port) = parse_authority(authority)?;
+/// Opens (or reuses) the session for a parsed `sftp://…` URL and returns it
+/// as a backend. Called by `vfs::resolve`.
+pub fn open_backend(url: &EntryUrl) -> Result<SharedBackend, FileSystemError> {
+    if url.scheme() != Scheme::Sftp {
+        return Err(FileSystemError::InvalidInput(format!(
+            "Not an SFTP path: {url}"
+        )));
+    }
+    let Some(server) = url.server() else {
+        return Err(FileSystemError::InvalidInput(format!(
+            "Not an SFTP path: {url}"
+        )));
+    };
 
-    let sub_path = remainder
-        .unwrap_or("")
-        .replace('\\', "/")
-        .trim_matches('/')
-        .split('/')
-        .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
-        .collect::<Vec<_>>()
-        .join("/");
-
-    Ok(SftpPath {
-        host,
-        port,
-        sub_path,
-    })
-}
-
-/// Opens (or reuses) the session for `sftp://...` URL text and returns it as
-/// a backend. Called by `vfs::resolve`.
-pub fn open_backend(rest: &str) -> Result<SharedBackend, FileSystemError> {
-    let path = parse_sftp_path(rest)?;
-
-    if let Some(existing) = connections::session_for(Protocol::Sftp, &path.host, path.port) {
+    if let Some(existing) = connections::session_for(Protocol::Sftp, &server.host, server.port) {
         return Ok(existing);
     }
 
-    let backend: SharedBackend = Arc::new(SftpBackend::connect(&path.host, path.port)?);
-    connections::store_session(Protocol::Sftp, &path.host, path.port, backend.clone());
+    let backend: SharedBackend = Arc::new(SftpBackend::connect(server)?);
+    connections::store_session(Protocol::Sftp, &server.host, server.port, backend.clone());
     Ok(backend)
 }
 
 impl SftpBackend {
-    /// Connects using credentials from the connection store; SFTP has no
-    /// anonymous mode, so the username falls back to the local account name.
-    pub fn connect(host: &str, port: Option<u16>) -> Result<Self, FileSystemError> {
-        let (username, password) = connections::resolve_credentials(Protocol::Sftp, host, port);
-        Self::connect_with(host, port, username.as_deref(), password.as_deref())
+    /// Connects using the URL's username hint when it has one, then the
+    /// connection store; SFTP has no anonymous mode, so the username falls
+    /// back to the local account name.
+    pub fn connect(server: &Server) -> Result<Self, FileSystemError> {
+        let (stored_user, password) =
+            connections::resolve_credentials(Protocol::Sftp, &server.host, server.port);
+        Self::connect_with(
+            &server.host,
+            server.port,
+            server.username.as_deref().or(stored_user.as_deref()),
+            password.as_deref(),
+        )
     }
 
     pub fn connect_with(
@@ -268,10 +210,10 @@ impl SftpBackend {
         Ok(Self { runtime, sftp })
     }
 
-    fn read_dir_entries(&self, parsed: &SftpPath) -> Result<Vec<DirectoryEntry>, FileSystemError> {
+    fn read_dir_entries(&self, parsed: &EntryUrl) -> Result<Vec<DirectoryEntry>, FileSystemError> {
         let read_dir = self
             .runtime
-            .block_on(self.sftp.read_dir(parsed.remote()))
+            .block_on(self.sftp.read_dir(remote(parsed)))
             .map_err(map_sftp_error)?;
 
         let entries = read_dir
@@ -285,7 +227,7 @@ impl SftpBackend {
                 let name = entry.file_name();
                 DirectoryEntry {
                     name: name.clone(),
-                    path: parsed.join(&name),
+                    path: parsed.join(&name).to_string(),
                     kind,
                     modified_at: modified_millis(&attrs),
                     // SFTP v3 exposes no birth time.
@@ -377,7 +319,7 @@ impl FileSystemBackend for SftpBackend {
         entries.sort_by_cached_key(entry_sort_key);
 
         Ok(DirectoryView {
-            path: parsed.url(),
+            path: parsed.to_string(),
             breadcrumbs: sftp_breadcrumbs(&parsed),
             entries,
             // Remote backends list in one piece; only local reads stream.
@@ -393,7 +335,7 @@ impl FileSystemBackend for SftpBackend {
     ) -> Result<String, FileSystemError> {
         validate_entry_name(name)?;
         let parsed = parse_dir(directory)?;
-        let target = parse_dir(&parsed.join(name))?;
+        let target = parsed.join(name);
 
         match kind {
             NewEntryKind::File => {
@@ -401,15 +343,15 @@ impl FileSystemBackend for SftpBackend {
                 // to preserve the never-overwrite contract.
                 let exists = self
                     .runtime
-                    .block_on(self.sftp.try_exists(target.remote()))
+                    .block_on(self.sftp.try_exists(remote(&target)))
                     .map_err(map_sftp_error)?;
                 if exists {
-                    return Err(FileSystemError::AlreadyExists(parsed.join(name)));
+                    return Err(FileSystemError::AlreadyExists(target.to_string()));
                 }
 
                 let file = self
                     .runtime
-                    .block_on(self.sftp.create(target.remote()))
+                    .block_on(self.sftp.create(remote(&target)))
                     .map_err(map_sftp_error)?;
                 self.runtime
                     .block_on(file.close())
@@ -417,22 +359,26 @@ impl FileSystemBackend for SftpBackend {
             }
             NewEntryKind::Directory => {
                 self.runtime
-                    .block_on(self.sftp.create_dir(target.remote()))
+                    .block_on(self.sftp.create_dir(remote(&target)))
                     .map_err(map_sftp_error)?;
             }
         }
 
-        Ok(parsed.join(name))
+        Ok(target.to_string())
     }
 
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError> {
         validate_entry_name(new_name)?;
         let parsed = parse_dir(path)?;
-        let (parent, _old_name) = parsed.parent_and_name()?;
-        let destination = parse_dir(&parse_dir(&parent)?.join(new_name))?;
+        let Some((parent, _old_name)) = parsed.pop() else {
+            return Err(FileSystemError::InvalidInput(
+                "The server root cannot be renamed".into(),
+            ));
+        };
+        let destination = parent.join(new_name);
 
         self.runtime
-            .block_on(self.sftp.rename(parsed.remote(), destination.remote()))
+            .block_on(self.sftp.rename(remote(&parsed), remote(&destination)))
             .map_err(map_sftp_error)
     }
 
@@ -440,7 +386,7 @@ impl FileSystemBackend for SftpBackend {
         let parsed = parse_dir(path)?;
         let attrs = self
             .runtime
-            .block_on(self.sftp.metadata(parsed.remote()))
+            .block_on(self.sftp.metadata(remote(&parsed)))
             .map_err(map_sftp_error)?;
 
         Ok(EntryStat {
@@ -452,24 +398,24 @@ impl FileSystemBackend for SftpBackend {
 
     fn mkdir(&self, path: &str) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Ok(());
         }
 
         self.runtime
-            .block_on(self.sftp.create_dir(parsed.remote()))
+            .block_on(self.sftp.create_dir(remote(&parsed)))
             .map_err(map_sftp_error)
     }
 
     fn open_read(&self, path: &str) -> Result<Box<dyn Read + Send>, FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::NotDirectory(path.to_owned()));
         }
 
         let file = self
             .runtime
-            .block_on(self.sftp.open(parsed.remote()))
+            .block_on(self.sftp.open(remote(&parsed)))
             .map_err(map_sftp_error)?;
 
         Ok(Box::new(SftpReadAdapter {
@@ -483,7 +429,7 @@ impl FileSystemBackend for SftpBackend {
 
     fn open_write(&self, path: &str) -> Result<Box<dyn Write + Send>, FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(format!(
                 "Not a file path: {path}"
             )));
@@ -491,7 +437,7 @@ impl FileSystemBackend for SftpBackend {
 
         let file = self
             .runtime
-            .block_on(self.sftp.create(parsed.remote()))
+            .block_on(self.sftp.create(remote(&parsed)))
             .map_err(map_sftp_error)?;
 
         Ok(Box::new(SftpWriteAdapter {
@@ -502,7 +448,7 @@ impl FileSystemBackend for SftpBackend {
 
     fn remove(&self, path: &str) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(format!(
                 "Refusing to delete the server root: {path}"
             )));
@@ -511,15 +457,15 @@ impl FileSystemBackend for SftpBackend {
         // Symlinks are removed as files even when they point at directories.
         let attrs = self
             .runtime
-            .block_on(self.sftp.symlink_metadata(parsed.remote()))
+            .block_on(self.sftp.symlink_metadata(remote(&parsed)))
             .map_err(map_sftp_error)?;
 
         self.runtime
             .block_on(async {
                 if attrs.is_dir() && !attrs.is_symlink() {
-                    self.sftp.remove_dir(parsed.remote()).await
+                    self.sftp.remove_dir(remote(&parsed)).await
                 } else {
-                    self.sftp.remove_file(parsed.remote()).await
+                    self.sftp.remove_file(remote(&parsed)).await
                 }
             })
             .map_err(map_sftp_error)
@@ -531,14 +477,14 @@ impl FileSystemBackend for SftpBackend {
 
         // SFTP cannot rename across servers; the transfer engine falls back
         // to copy + delete on error.
-        if from.authority() != to.authority() {
+        if from.server().map(Server::authority_text) != to.server().map(Server::authority_text) {
             return Err(FileSystemError::InvalidInput(
                 "Cannot rename across SFTP servers".into(),
             ));
         }
 
         self.runtime
-            .block_on(self.sftp.rename(from.remote(), to.remote()))
+            .block_on(self.sftp.rename(remote(&from), remote(&to)))
             .map_err(map_sftp_error)
     }
 
@@ -546,13 +492,13 @@ impl FileSystemBackend for SftpBackend {
         let parsed = parse_dir(path)?;
         let attrs = self
             .runtime
-            .block_on(self.sftp.symlink_metadata(parsed.remote()))
+            .block_on(self.sftp.symlink_metadata(remote(&parsed)))
             .map_err(map_sftp_error)?;
 
         let kind = kind_of(&attrs);
         let target = if kind == EntryKind::Symlink {
             self.runtime
-                .block_on(self.sftp.read_link(parsed.remote()))
+                .block_on(self.sftp.read_link(remote(&parsed)))
                 .ok()
         } else {
             None
@@ -572,15 +518,12 @@ impl FileSystemBackend for SftpBackend {
         };
 
         let name = parsed
-            .sub_path
-            .rsplit('/')
-            .next()
-            .filter(|name| !name.is_empty())
+            .file_name()
             .map(str::to_owned)
-            .unwrap_or_else(|| parsed.host.clone());
+            .unwrap_or_else(|| parsed.server().expect("checked by parse_dir").host.clone());
 
         Ok(FileProperties {
-            path: parsed.url(),
+            path: parsed.to_string(),
             name,
             kind,
             size: attrs.size,
@@ -598,7 +541,7 @@ impl FileSystemBackend for SftpBackend {
         changes: &PropertyChanges,
     ) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        let remote = parsed.remote();
+        let remote_path = remote(&parsed);
         let mut attrs = FileAttributes::empty();
         let mut has_change = false;
 
@@ -626,7 +569,7 @@ impl FileSystemBackend for SftpBackend {
 
         if has_change {
             self.runtime
-                .block_on(self.sftp.set_metadata(remote, attrs))
+                .block_on(self.sftp.set_metadata(remote_path, attrs))
                 .map_err(map_sftp_error)?;
         }
 
@@ -634,14 +577,14 @@ impl FileSystemBackend for SftpBackend {
     }
 }
 
-fn parse_dir(path: &str) -> Result<SftpPath, FileSystemError> {
-    let (scheme, rest) = super::vfs::split_scheme(path)?;
-    if scheme != super::vfs::Scheme::Sftp {
+fn parse_dir(path: &str) -> Result<EntryUrl, FileSystemError> {
+    let url = EntryUrl::parse(path)?;
+    if url.scheme() != Scheme::Sftp {
         return Err(FileSystemError::InvalidInput(format!(
             "Not an SFTP path: {path}"
         )));
     }
-    parse_sftp_path(rest)
+    Ok(url)
 }
 
 fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
@@ -719,23 +662,19 @@ fn map_sftp_error(error: SftpError) -> FileSystemError {
     }
 }
 
-fn sftp_breadcrumbs(path: &SftpPath) -> Vec<Breadcrumb> {
+fn sftp_breadcrumbs(path: &EntryUrl) -> Vec<Breadcrumb> {
+    let server = path.server().expect("checked by parse_dir");
+    let mut accumulated = path.with_segments(Vec::new());
     let mut breadcrumbs = vec![Breadcrumb {
-        name: path.host.clone(),
-        path: format!("sftp://{}", path.authority()),
+        name: server.host.clone(),
+        path: accumulated.to_string(),
     }];
 
-    let mut accumulated = format!("sftp://{}", path.authority());
-    for segment in path
-        .sub_path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-    {
-        accumulated.push('/');
-        accumulated.push_str(segment);
+    for segment in path.segments() {
+        accumulated = accumulated.join(segment);
         breadcrumbs.push(Breadcrumb {
-            name: segment.to_owned(),
-            path: accumulated.clone(),
+            name: segment.clone(),
+            path: accumulated.to_string(),
         });
     }
 
@@ -907,60 +846,76 @@ mod sftp_tests {
 
     #[test]
     fn parses_sftp_urls() {
-        let path = parse_sftp_path("nas.local:2222/home/user/docs").unwrap();
-        assert_eq!(path.host, "nas.local");
-        assert_eq!(path.port, Some(2222));
-        assert_eq!(path.sub_path, "home/user/docs");
-        assert_eq!(path.url(), "sftp://nas.local:2222/home/user/docs");
-        assert_eq!(path.remote(), "/home/user/docs");
+        let path = parse_dir("sftp://nas.local:2222/home/user/docs").unwrap();
+        let server = path.server().unwrap();
+        assert_eq!(server.host, "nas.local");
+        assert_eq!(server.port, Some(2222));
+        assert_eq!(path.segments(), ["home", "user", "docs"]);
+        assert_eq!(path.to_string(), "sftp://nas.local:2222/home/user/docs");
+        assert_eq!(remote(&path), "/home/user/docs");
 
-        let root = parse_sftp_path("nas.local").unwrap();
-        assert_eq!(root.sub_path, "");
-        assert_eq!(root.url(), "sftp://nas.local");
-        assert_eq!(root.remote(), "/");
+        let root = parse_dir("sftp://nas.local").unwrap();
+        assert!(root.segments().is_empty());
+        assert_eq!(root.to_string(), "sftp://nas.local");
+        assert_eq!(remote(&root), "/");
 
-        let trailing = parse_sftp_path("nas.local/home/user/").unwrap();
-        assert_eq!(trailing.sub_path, "home/user");
+        let trailing = parse_dir("sftp://nas.local/home/user/").unwrap();
+        assert_eq!(trailing.segments(), ["home", "user"]);
 
-        let dotted = parse_sftp_path("nas.local/home/../user/./docs").unwrap();
-        assert_eq!(dotted.sub_path, "home/user/docs");
+        let dotted = parse_dir("sftp://nas.local/home/../user/./docs").unwrap();
+        assert_eq!(dotted.segments(), ["home", "user", "docs"]);
 
-        let ipv6 = parse_sftp_path("[::1]/home").unwrap();
-        assert_eq!(ipv6.host, "[::1]");
-        assert_eq!(ipv6.sub_path, "home");
+        let ipv6 = parse_dir("sftp://[::1]/home").unwrap();
+        assert_eq!(ipv6.server().unwrap().host, "[::1]");
+        assert_eq!(ipv6.segments(), ["home"]);
+    }
+
+    #[test]
+    fn a_username_hint_never_leaks_into_the_host() {
+        let path = parse_dir("sftp://user@nas:22/home").unwrap();
+        let server = path.server().unwrap();
+        assert_eq!(server.host, "nas");
+        assert_eq!(server.username.as_deref(), Some("user"));
+        assert_eq!(server.authority_text(), "nas:22");
+        assert_eq!(path.to_string(), "sftp://nas:22/home");
     }
 
     #[test]
     fn joins_child_paths_and_resolves_parents() {
-        let path = parse_sftp_path("nas.local/home/user").unwrap();
-        assert_eq!(path.join("new.txt"), "sftp://nas.local/home/user/new.txt");
+        let path = parse_dir("sftp://nas.local/home/user").unwrap();
+        assert_eq!(
+            path.join("new.txt").to_string(),
+            "sftp://nas.local/home/user/new.txt"
+        );
 
-        let (parent, name) = path.parent_and_name().unwrap();
-        assert_eq!(parent, "sftp://nas.local/home");
+        let (parent, name) = path.pop().unwrap();
+        assert_eq!(parent.to_string(), "sftp://nas.local/home");
         assert_eq!(name, "user");
 
-        let child = parse_sftp_path("nas.local/home").unwrap();
-        let (root_parent, child_name) = child.parent_and_name().unwrap();
-        assert_eq!(root_parent, "sftp://nas.local");
+        let child = parse_dir("sftp://nas.local/home").unwrap();
+        let (root_parent, child_name) = child.pop().unwrap();
+        assert_eq!(root_parent.to_string(), "sftp://nas.local");
         assert_eq!(child_name, "home");
 
-        let root = parse_sftp_path("nas.local").unwrap();
-        assert!(matches!(
-            root.parent_and_name(),
-            Err(FileSystemError::InvalidInput(_))
-        ));
+        // `rename_entry` turns this `None` into "The server root cannot be
+        // renamed", so a root that pops is a root that can be renamed.
+        let root = parse_dir("sftp://nas.local").unwrap();
+        assert!(root.pop().is_none());
     }
 
     #[test]
     fn rejects_malformed_hosts_and_ports() {
-        assert!(parse_sftp_path(":22/home").is_err());
-        let bad_port = parse_sftp_path("nas.local:99999/home");
-        assert!(matches!(bad_port, Err(FileSystemError::InvalidInput(_))));
+        assert!(parse_dir("sftp://:22/home").is_err());
+        let bad_port = parse_dir("sftp://nas.local:99999/home").unwrap_err();
+        assert!(matches!(bad_port, FileSystemError::InvalidInput(_)));
+
+        let not_sftp = parse_dir("smb://nas.local/share").unwrap_err();
+        assert!(matches!(not_sftp, FileSystemError::InvalidInput(_)));
     }
 
     #[test]
     fn builds_breadcrumbs() {
-        let path = parse_sftp_path("nas.local:2222/home/user/docs").unwrap();
+        let path = parse_dir("sftp://nas.local:2222/home/user/docs").unwrap();
         let breadcrumbs = sftp_breadcrumbs(&path);
 
         let names: Vec<_> = breadcrumbs
@@ -971,7 +926,7 @@ mod sftp_tests {
         assert_eq!(breadcrumbs[0].path, "sftp://nas.local:2222");
         assert_eq!(breadcrumbs[3].path, "sftp://nas.local:2222/home/user/docs");
 
-        let root = parse_sftp_path("nas.local").unwrap();
+        let root = parse_dir("sftp://nas.local").unwrap();
         assert_eq!(sftp_breadcrumbs(&root).len(), 1);
     }
 

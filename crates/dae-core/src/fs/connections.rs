@@ -10,7 +10,7 @@ const CONNECTIONS_FILE_NAME: &str = "connections.json";
 const KEYRING_SERVICE: &str = "dae";
 
 /// Storage protocols a user can connect to. Mirrors the network variants of
-/// [`super::vfs::Scheme`] without the local case.
+/// [`crate::fs::url::Scheme`] without the local case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {

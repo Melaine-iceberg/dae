@@ -4,6 +4,7 @@ use super::progress::{
     emit_preparing,
 };
 use super::types::{EntryKind, display_name_from_path, path_to_string};
+use super::url::Scheme;
 use super::vfs::{self, FileSystemBackend};
 use flate2::Compression;
 use flate2::read::GzDecoder;
@@ -178,7 +179,7 @@ pub(super) fn compress_sync(
     password: Option<&str>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<String, FileSystemError> {
-    if vfs::scheme_of(destination_dir)? != vfs::Scheme::Local {
+    if vfs::scheme_of(destination_dir)? != Scheme::Local {
         return Err(FileSystemError::InvalidInput(
             "Archives can only be created in local folders".into(),
         ));
@@ -232,7 +233,7 @@ pub(super) fn extract_sync(
     password: Option<&str>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<String, FileSystemError> {
-    if vfs::scheme_of(archive_path)? != vfs::Scheme::Local {
+    if vfs::scheme_of(archive_path)? != Scheme::Local {
         return Err(FileSystemError::InvalidInput(
             "Archives can only be extracted from local folders".into(),
         ));
@@ -261,7 +262,7 @@ pub(super) fn extract_sync(
     if format.needs_external_tool() {
         let destination_root = match destination_dir {
             Some(directory) => {
-                if vfs::scheme_of(directory)? != vfs::Scheme::Local {
+                if vfs::scheme_of(directory)? != Scheme::Local {
                     return Err(FileSystemError::InvalidInput(
                         "Archives can only be extracted into local folders".into(),
                     ));
@@ -303,7 +304,7 @@ pub(super) fn extract_sync(
 
     let destination_root = match destination_dir {
         Some(directory) => {
-            if vfs::scheme_of(directory)? != vfs::Scheme::Local {
+            if vfs::scheme_of(directory)? != Scheme::Local {
                 return Err(FileSystemError::InvalidInput(
                     "Archives can only be extracted into local folders".into(),
                 ));

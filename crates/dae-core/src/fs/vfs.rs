@@ -1,3 +1,4 @@
+use super::cloud;
 use super::error::FileSystemError;
 use super::ftp;
 use super::local::LocalBackend;
@@ -8,6 +9,7 @@ use super::types::{
     DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges,
     RecursivePropertyUpdateOutcome, SearchResponse,
 };
+use super::url::{EntryUrl, Scheme};
 use super::webdav;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -17,96 +19,33 @@ use std::sync::LazyLock;
 /// and per-connection session caches.
 pub type SharedBackend = Arc<dyn FileSystemBackend>;
 
-/// Storage protocols addressable through a scheme prefix on explorer paths.
-///
-/// Paths without a scheme (drive letters, POSIX paths, UNC shares) are local.
-/// Network schemes parse today but fail at [`resolve`] until a backend is
-/// registered for them, which keeps the path contract forward compatible.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Scheme {
-    Local,
-    Smb,
-    Sftp,
-    Ftp,
-    WebDav,
-    Cloud,
-}
-
-/// Parses the `scheme://` prefix of an explorer path, returning the scheme and
-/// the remainder. `file://` and scheme-less paths resolve to [`Scheme::Local`].
-pub fn split_scheme(path: &str) -> Result<(Scheme, &str), FileSystemError> {
-    let Some((scheme, rest)) = path.split_once("://") else {
-        return Ok((Scheme::Local, path));
-    };
-
-    // A separator before "://" means this is a regular path that merely
-    // contains a "://" segment, not a scheme prefix.
-    if scheme.contains(['/', '\\']) || scheme.is_empty() {
-        return Ok((Scheme::Local, path));
-    }
-
-    let scheme = match scheme.to_ascii_lowercase().as_str() {
-        "file" => Scheme::Local,
-        "smb" => Scheme::Smb,
-        "sftp" => Scheme::Sftp,
-        "ftp" => Scheme::Ftp,
-        // Explicit FTPS: the same scheme, with `AUTH TLS` before the login.
-        "ftps" => Scheme::Ftp,
-        "webdav" | "webdavs" => Scheme::WebDav,
-        "cloud" => Scheme::Cloud,
-        other => {
-            return Err(FileSystemError::InvalidInput(format!(
-                "Unsupported storage protocol: {other}"
-            )));
-        }
-    };
-
-    Ok((scheme, rest))
-}
-
-/// Returns the backend that serves `path`.
-// The local backend is static; network schemes consult the connection
-// registry once the first protocol lands.
+/// Returns the backend that serves `path`, parsed once into an
+/// [`EntryUrl`]: the local backend is static, network schemes open (or
+/// reuse) a session through their backend module.
 pub fn resolve(path: &str) -> Result<SharedBackend, FileSystemError> {
     static LOCAL: LazyLock<SharedBackend> = LazyLock::new(|| Arc::new(LocalBackend));
 
-    match split_scheme(path)?.0 {
+    let url = EntryUrl::parse(path)?;
+    match url.scheme() {
         Scheme::Local => Ok(Arc::clone(&LOCAL)),
-        Scheme::Smb => {
-            let (_, rest) = split_scheme(path)?;
-            smb::open_backend(rest)
-        }
-        Scheme::Sftp => {
-            let (_, rest) = split_scheme(path)?;
-            sftp::open_backend(rest)
-        }
-        Scheme::Ftp => {
-            let (_, rest) = split_scheme(path)?;
-            // `split_scheme` folds `ftp` and `ftps` into one scheme, so the
-            // spelling is what decides explicit TLS.
-            if path.len() >= 5 && path[..5].eq_ignore_ascii_case("ftps:") {
-                ftp::open_backend_with_tls(rest, ftp::TlsMode::Explicit)
-            } else {
-                ftp::open_backend(rest)
-            }
-        }
-        Scheme::WebDav => {
-            let (_, rest) = split_scheme(path)?;
-            webdav::open_backend(rest)
-        }
-        Scheme::Cloud => {
-            let (_, rest) = split_scheme(path)?;
-            super::cloud::open_backend(rest)
-        }
+        Scheme::Smb => smb::open_backend(&url),
+        Scheme::Sftp => sftp::open_backend(&url),
+        // Both spellings reach the FTP backend; `ftps` is the one that
+        // negotiates TLS, decided by the scheme the URL spelled.
+        Scheme::Ftp | Scheme::Ftps => ftp::open_backend(&url),
+        Scheme::WebDav | Scheme::WebDavS => webdav::open_backend(&url),
+        Scheme::Cloud => cloud::open_backend(&url),
     }
 }
 
-/// The scheme serving `path`, without the remainder.
+/// The scheme serving `path`, without parsing anything else.
 pub fn scheme_of(path: &str) -> Result<Scheme, FileSystemError> {
-    Ok(split_scheme(path)?.0)
+    EntryUrl::parse(path).map(|url| url.scheme())
 }
 
 /// True when `path` addresses the local disk rather than a remote scheme.
+/// A path that does not parse is not local — an unknown scheme is the
+/// usual cause, and the caller will hear the error at `resolve`.
 pub fn is_local_path(path: &str) -> bool {
     scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
 }
@@ -221,27 +160,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_scheme_prefixes() {
-        let (scheme, rest) = split_scheme("smb://nas/media").expect("smb scheme");
-        assert_eq!(scheme, Scheme::Smb);
-        assert_eq!(rest, "nas/media");
-
-        let (scheme, rest) = split_scheme("sftp://user@nas:22/home").expect("sftp scheme");
-        assert_eq!(scheme, Scheme::Sftp);
-        assert_eq!(rest, "user@nas:22/home");
-
-        let (scheme, rest) = split_scheme("webdavs://cloud.example/dav").expect("webdav scheme");
-        assert_eq!(scheme, Scheme::WebDav);
-        assert_eq!(rest, "cloud.example/dav");
-
-        let (scheme, rest) =
-            split_scheme("cloud://google_drive:user@example.com/folder-id").expect("cloud scheme");
-        assert_eq!(scheme, Scheme::Cloud);
-        assert_eq!(rest, "google_drive:user@example.com/folder-id");
-
-        let (scheme, rest) = split_scheme("file:///home").expect("file maps to local");
-        assert_eq!(scheme, Scheme::Local);
-        assert_eq!(rest, "/home");
+    fn reports_the_scheme_of_a_path() {
+        assert_eq!(scheme_of("smb://nas/media").expect("smb"), Scheme::Smb);
+        assert_eq!(
+            scheme_of("sftp://user@nas:22/home").expect("sftp"),
+            Scheme::Sftp
+        );
+        // The TLS spellings stay distinct; the FTP backend picks its mode
+        // off the scheme, not off a re-sniffed string.
+        assert_eq!(scheme_of("ftps://nas/pub").expect("ftps"), Scheme::Ftps);
+        assert_eq!(
+            scheme_of("webdavs://cloud.example/dav").expect("webdavs"),
+            Scheme::WebDavS
+        );
+        assert_eq!(
+            scheme_of("cloud://google_drive:user@example.com/folder-id").expect("cloud"),
+            Scheme::Cloud
+        );
+        // `file://` is local, in URI clothing.
+        assert_eq!(scheme_of("file:///home").expect("local"), Scheme::Local);
     }
 
     #[test]
@@ -252,10 +189,9 @@ mod tests {
             r"\\nas\share\folder",
             r"relative\nested://segment",
         ] {
-            let (scheme, rest) = split_scheme(path).expect("scheme-less path");
-            assert_eq!(scheme, Scheme::Local, "path should stay local: {path}");
-            assert_eq!(rest, path);
+            assert!(is_local_path(path), "path should stay local: {path}");
         }
+        assert!(!is_local_path("smb://nas/share"), "a remote scheme is not local");
     }
 
     #[test]

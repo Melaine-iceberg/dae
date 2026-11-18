@@ -14,18 +14,15 @@
 //!
 //! # TLS
 //!
-//! Plain FTP is the default. FTPS is selected three ways:
+//! The URL's scheme picks the mode: `ftp://` is plain FTP, `ftps://` is
+//! explicit TLS. Explicit TLS issues `AUTH TLS` before the login; implicit
+//! TLS, wrapped from the first byte, only ever comes out of the connect
+//! dialog's probe ([`test_backend`]), which selects it on port 990.
 //!
-//! - implicit TLS on port 990 (`ftp://host:990/...`),
-//! - an `ftps://` URL, which [`open_backend`] also accepts with its scheme
-//!   prefix still attached, and
-//! - [`open_backend_with_tls`], for a caller that parses `ftps://` itself.
-//!
-//! Explicit TLS issues `AUTH TLS` before the login; implicit TLS wraps the
-//! control connection from the first byte. Certificates are verified against
-//! the OS trust store (`rustls-native-certs`); there is no trust-on-first-use
-//! fallback, so a server with a self-signed certificate cannot be reached
-//! through this backend yet.
+//! Certificates are verified against the OS trust store
+//! (`rustls-native-certs`); there is no trust-on-first-use fallback, so a
+//! server with a self-signed certificate cannot be reached through this
+//! backend yet.
 //!
 //! This module needs suppaftp's sync rustls backend:
 //!
@@ -64,7 +61,7 @@
 
 use super::connections::{self, Protocol};
 use super::error::FileSystemError;
-use super::smb::{parse_authority, split_authority};
+use super::url::{EntryUrl, Scheme, Server};
 use super::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, entry_sort_key,
 };
@@ -146,20 +143,21 @@ struct ServerConfig {
     tls_config: Option<Arc<ClientConfig>>,
 }
 
-/// Opens (or reuses) the session for `ftp://...` URL text and returns it as a
-/// backend. Called by `vfs::resolve`.
-///
-/// `rest` is the URL without its scheme prefix. A caller that passes the whole
-/// URL (`ftps://host/path`) is understood too, which keeps the `ftps` scheme
-/// working without a second entry point.
-pub fn open_backend(rest: &str) -> Result<SharedBackend, FileSystemError> {
-    let (rest, requested) = split_scheme_prefix(rest);
-    let path = parse_ftp_path(rest)?;
-    let tls = requested.unwrap_or(match path.port {
-        Some(IMPLICIT_TLS_PORT) => TlsMode::Implicit,
-        _ => TlsMode::Plain,
-    });
-    open_with(&path, tls)
+/// Opens (or reuses) the session an `ftp://` or `ftps://` URL addresses and
+/// returns it as a backend. Called by `vfs::resolve`. The scheme picks the
+/// TLS mode; `vfs::resolve` has already routed by scheme, so a non-FTP URL is
+/// a caller bug and reported as such.
+pub fn open_backend(url: &EntryUrl) -> Result<SharedBackend, FileSystemError> {
+    let tls = match url.scheme() {
+        Scheme::Ftp => TlsMode::Plain,
+        Scheme::Ftps => TlsMode::Explicit,
+        _ => {
+            return Err(FileSystemError::InvalidInput(format!(
+                "Not an FTP path: {url}"
+            )))
+        }
+    };
+    open_with(url, tls)
 }
 
 /// Probes a server with the credentials the connect dialog holds, before they
@@ -206,27 +204,21 @@ pub fn test_backend(
     Ok(())
 }
 
-/// Opens (or reuses) the session for `rest` with an explicit TLS choice, for a
-/// caller that parses the scheme itself.
-pub fn open_backend_with_tls(rest: &str, tls: TlsMode) -> Result<SharedBackend, FileSystemError> {
-    let (rest, _) = split_scheme_prefix(rest);
-    open_with(&parse_ftp_path(rest)?, tls)
-}
-
-fn open_with(path: &FtpPath, tls: TlsMode) -> Result<SharedBackend, FileSystemError> {
-    if let Some(existing) = connections::session_for(Protocol::Ftp, &path.host, path.port) {
+fn open_with(url: &EntryUrl, tls: TlsMode) -> Result<SharedBackend, FileSystemError> {
+    let server = server_of(url);
+    if let Some(existing) = connections::session_for(Protocol::Ftp, &server.host, server.port) {
         return Ok(existing);
     }
 
-    let port = path.port.unwrap_or(match tls {
+    let port = server.port.unwrap_or(match tls {
         TlsMode::Implicit => IMPLICIT_TLS_PORT,
         TlsMode::Plain | TlsMode::Explicit => DEFAULT_PORT,
     });
     // A username in the URL is an explicit choice; otherwise the connection
     // store supplies one, and nothing at all means anonymous.
     let (stored_user, stored_password) =
-        connections::resolve_credentials(Protocol::Ftp, &path.host, path.port);
-    let username = path
+        connections::resolve_credentials(Protocol::Ftp, &server.host, server.port);
+    let username = server
         .username
         .clone()
         .or(stored_user)
@@ -238,7 +230,7 @@ fn open_with(path: &FtpPath, tls: TlsMode) -> Result<SharedBackend, FileSystemEr
     };
 
     let mut config = ServerConfig {
-        host: path.host.clone(),
+        host: server.host.clone(),
         port,
         tls,
         username,
@@ -270,7 +262,7 @@ fn open_with(path: &FtpPath, tls: TlsMode) -> Result<SharedBackend, FileSystemEr
         pool,
         mlsd: AtomicU8::new(MLSD_UNKNOWN),
     });
-    connections::store_session(Protocol::Ftp, &path.host, path.port, backend.clone());
+    connections::store_session(Protocol::Ftp, &server.host, server.port, backend.clone());
     Ok(backend)
 }
 
@@ -844,11 +836,13 @@ fn begin_write(
 }
 
 impl FtpBackend {
-    /// The absolute path on the server that a URL sub-path names.
-    fn remote(&self, sub_path: &str) -> String {
-        if sub_path.is_empty() {
+    /// The absolute path on the server that a URL's segments name.
+    fn remote(&self, url: &EntryUrl) -> String {
+        let segments = url.segments();
+        if segments.is_empty() {
             return self.config.base.clone();
         }
+        let sub_path = segments.join("/");
         if self.config.base == "/" {
             format!("/{sub_path}")
         } else {
@@ -857,13 +851,10 @@ impl FtpBackend {
     }
 
     /// The absolute containing directory and the entry name within it.
-    fn split_remote(&self, sub_path: &str) -> (String, String) {
-        match sub_path.rfind('/') {
-            Some(index) => (
-                self.remote(&sub_path[..index]),
-                sub_path[index + 1..].to_owned(),
-            ),
-            None => (self.config.base.clone(), sub_path.to_owned()),
+    fn split_remote(&self, url: &EntryUrl) -> (String, String) {
+        match url.pop() {
+            Some((parent, name)) => (self.remote(&parent), name),
+            None => (self.config.base.clone(), String::new()),
         }
     }
 
@@ -964,7 +955,7 @@ impl FtpBackend {
 impl FileSystemBackend for FtpBackend {
     fn read_dir(&self, path: &str) -> Result<DirectoryView, FileSystemError> {
         let parsed = parse_dir(path)?;
-        let remote_dir = self.remote(&parsed.sub_path);
+        let remote_dir = self.remote(&parsed);
         let use_mlsd = self.mlsd_supported();
 
         let (used_mlsd, lines) = self.run_in(&remote_dir, |client| {
@@ -998,7 +989,7 @@ impl FileSystemBackend for FtpBackend {
 
             entries.push(DirectoryEntry {
                 name: entry.name.clone(),
-                path: parsed.join(&entry.name),
+                path: parsed.join(&entry.name).to_string(),
                 kind: entry.kind,
                 modified_at: entry.modified_at,
                 // FTP reports no birth time.
@@ -1019,7 +1010,7 @@ impl FileSystemBackend for FtpBackend {
         entries.sort_by_cached_key(entry_sort_key);
 
         Ok(DirectoryView {
-            path: parsed.url(),
+            path: parsed.to_string(),
             breadcrumbs: ftp_breadcrumbs(&parsed),
             entries,
             // Remote backends list in one piece; only local reads stream.
@@ -1035,8 +1026,8 @@ impl FileSystemBackend for FtpBackend {
     ) -> Result<String, FileSystemError> {
         validate_entry_name(name)?;
         let parsed = parse_dir(directory)?;
-        let remote_dir = self.remote(&parsed.sub_path);
-        let target = parsed.join(name);
+        let remote_dir = self.remote(&parsed);
+        let target = parsed.join(name).to_string();
 
         // `STOR` truncates, so the absence check has to come first to keep the
         // never-overwrite contract.
@@ -1056,19 +1047,19 @@ impl FileSystemBackend for FtpBackend {
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError> {
         validate_entry_name(new_name)?;
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(
                 "The server root cannot be renamed".into(),
             ));
         }
 
-        let (directory, name) = self.split_remote(&parsed.sub_path);
+        let (directory, name) = self.split_remote(&parsed);
         self.run_in(&directory, |client| client.rename(&name, new_name))
     }
 
     fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Ok(EntryStat {
                 kind: EntryKind::Directory,
                 size: 0,
@@ -1076,7 +1067,7 @@ impl FileSystemBackend for FtpBackend {
             });
         }
 
-        let (directory, name) = self.split_remote(&parsed.sub_path);
+        let (directory, name) = self.split_remote(&parsed);
         let use_mlst = self.mlsd_supported();
 
         self.run_in(&directory, |client| {
@@ -1119,14 +1110,14 @@ impl FileSystemBackend for FtpBackend {
 
     fn mkdir(&self, path: &str) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Ok(());
         }
 
-        let (directory, name) = self.split_remote(&parsed.sub_path);
+        let (directory, name) = self.split_remote(&parsed);
         let exists = self.run_in(&directory, |client| Ok(probe_exists(client, &name)))?;
         if exists {
-            return Err(FileSystemError::AlreadyExists(parsed.url()));
+            return Err(FileSystemError::AlreadyExists(parsed.to_string()));
         }
 
         self.run_in(&directory, |client| client.mkdir(&name))
@@ -1134,31 +1125,31 @@ impl FileSystemBackend for FtpBackend {
 
     fn open_read(&self, path: &str) -> Result<Box<dyn Read + Send>, FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::NotDirectory(path.to_owned()));
         }
 
-        let (directory, name) = self.split_remote(&parsed.sub_path);
+        let (directory, name) = self.split_remote(&parsed);
         let (client, pool) = self.lease_in(&directory)?.detach();
         begin_read(client, pool, &directory, &name)
     }
 
     fn open_write(&self, path: &str) -> Result<Box<dyn Write + Send>, FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(format!(
                 "Not a file path: {path}"
             )));
         }
 
-        let (directory, name) = self.split_remote(&parsed.sub_path);
+        let (directory, name) = self.split_remote(&parsed);
         let (client, pool) = self.lease_in(&directory)?.detach();
         begin_write(client, pool, &directory, &name)
     }
 
     fn remove(&self, path: &str) -> Result<(), FileSystemError> {
         let parsed = parse_dir(path)?;
-        if parsed.sub_path.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(format!(
                 "Refusing to delete the server root: {path}"
             )));
@@ -1167,7 +1158,7 @@ impl FileSystemBackend for FtpBackend {
         // `DELE` on a directory is refused by every server worth talking to,
         // so the kind decides the command.
         let kind = self.stat(path)?.kind;
-        let (directory, name) = self.split_remote(&parsed.sub_path);
+        let (directory, name) = self.split_remote(&parsed);
         self.run_in(&directory, |client| {
             if kind == EntryKind::Directory {
                 client.rmdir(&name)
@@ -1183,14 +1174,15 @@ impl FileSystemBackend for FtpBackend {
 
         // FTP cannot rename across servers; the transfer engine falls back to
         // copy + delete on error.
-        if from.authority() != to.authority() {
+        let from_server = server_of(&from);
+        if from_server.authority_text() != server_of(&to).authority_text() {
             return Err(FileSystemError::InvalidInput(
                 "Cannot rename across FTP servers".into(),
             ));
         }
 
-        let (directory, name) = self.split_remote(&from.sub_path);
-        let target = self.remote(&to.sub_path);
+        let (directory, name) = self.split_remote(&from);
+        let target = self.remote(&to);
         self.run_in(&directory, |client| client.rename(&name, &target))
     }
 }
@@ -1214,87 +1206,21 @@ fn probe_exists(client: &mut FtpClient, name: &str) -> bool {
     client.cwd(name).is_ok()
 }
 
-/// The pieces of an `ftp://[user@]host[:port]/path` URL after the scheme.
-struct FtpPath {
-    /// Only ever set when the URL named an account; the backend keeps it, the
-    /// canonical URL does not.
-    username: Option<String>,
-    host: String,
-    port: Option<u16>,
-    /// Path beneath the login directory, "" at the root, "/"-separated.
-    sub_path: String,
+/// The server an FTP path addresses. [`parse_dir`] has already checked the
+/// scheme, so every FTP URL has one.
+fn server_of(url: &EntryUrl) -> &Server {
+    url.server()
+        .expect("parse_dir guarantees an FTP path addresses a server")
 }
 
-impl FtpPath {
-    fn authority(&self) -> String {
-        match self.port {
-            Some(port) => format!("{}:{}", self.host, port),
-            None => self.host.clone(),
-        }
-    }
-
-    /// The canonical URL, normalizing away trailing separators.
-    fn url(&self) -> String {
-        if self.sub_path.is_empty() {
-            format!("ftp://{}", self.authority())
-        } else {
-            format!("ftp://{}/{}", self.authority(), self.sub_path)
-        }
-    }
-
-    fn join(&self, name: &str) -> String {
-        if self.sub_path.is_empty() {
-            format!("ftp://{}/{}", self.authority(), name)
-        } else {
-            format!("ftp://{}/{}/{}", self.authority(), self.sub_path, name)
-        }
-    }
-}
-
-/// Splits a leading scheme off `rest`, for callers that pass the whole URL.
-fn split_scheme_prefix(rest: &str) -> (&str, Option<TlsMode>) {
-    if let Some(rest) = rest.strip_prefix("ftps://") {
-        (rest, Some(TlsMode::Explicit))
-    } else if let Some(rest) = rest.strip_prefix("ftp://") {
-        (rest, Some(TlsMode::Plain))
-    } else {
-        (rest, None)
-    }
-}
-
-fn parse_ftp_path(rest: &str) -> Result<FtpPath, FileSystemError> {
-    let (authority, remainder) = split_authority(rest);
-    let (username, host_port) = match authority.rsplit_once('@') {
-        Some((user, host)) if !user.is_empty() => (Some(user.to_owned()), host),
-        _ => (None, authority),
-    };
-    let (host, port) = parse_authority(host_port)?;
-
-    let sub_path = remainder
-        .unwrap_or("")
-        .replace('\\', "/")
-        .trim_matches('/')
-        .split('/')
-        .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
-        .collect::<Vec<_>>()
-        .join("/");
-
-    Ok(FtpPath {
-        username,
-        host,
-        port,
-        sub_path,
-    })
-}
-
-fn parse_dir(path: &str) -> Result<FtpPath, FileSystemError> {
-    let (scheme, rest) = super::vfs::split_scheme(path)?;
-    if scheme != super::vfs::Scheme::Ftp {
+fn parse_dir(path: &str) -> Result<EntryUrl, FileSystemError> {
+    let url = EntryUrl::parse(path)?;
+    if !url.scheme().is_ftp() {
         return Err(FileSystemError::InvalidInput(format!(
             "Not an FTP path: {path}"
         )));
     }
-    parse_ftp_path(rest)
+    Ok(url)
 }
 
 fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
@@ -1306,22 +1232,20 @@ fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
     Ok(())
 }
 
-fn ftp_breadcrumbs(path: &FtpPath) -> Vec<Breadcrumb> {
+fn ftp_breadcrumbs(url: &EntryUrl) -> Vec<Breadcrumb> {
+    let server = server_of(url);
+    let root = format!("{}://{}", url.scheme().as_str(), server.authority_text());
     let mut breadcrumbs = vec![Breadcrumb {
-        name: path.host.clone(),
-        path: format!("ftp://{}", path.authority()),
+        name: server.host.clone(),
+        path: root.clone(),
     }];
 
-    let mut accumulated = format!("ftp://{}", path.authority());
-    for segment in path
-        .sub_path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-    {
+    let mut accumulated = root;
+    for segment in url.segments() {
         accumulated.push('/');
         accumulated.push_str(segment);
         breadcrumbs.push(Breadcrumb {
-            name: segment.to_owned(),
+            name: segment.clone(),
             path: accumulated.clone(),
         });
     }
@@ -1785,52 +1709,40 @@ mod ftp_tests {
 
     #[test]
     fn parses_ftp_urls() {
-        let path = parse_ftp_path("user@nas.local:2121/pub/docs").expect("a URL with an account");
-        assert_eq!(path.username.as_deref(), Some("user"));
-        assert_eq!(path.host, "nas.local");
-        assert_eq!(path.port, Some(2121));
-        assert_eq!(path.sub_path, "pub/docs");
-        assert_eq!(path.url(), "ftp://nas.local:2121/pub/docs");
+        let path =
+            parse_dir("ftp://user@nas.local:2121/pub/docs").expect("a URL with an account");
+        let server = server_of(&path);
+        assert_eq!(server.username.as_deref(), Some("user"));
+        assert_eq!(server.host, "nas.local");
+        assert_eq!(server.port, Some(2121));
+        // The canonical URL never carries the username.
+        assert_eq!(path.to_string(), "ftp://nas.local:2121/pub/docs");
 
-        let root = parse_ftp_path("nas.local").expect("a bare authority");
-        assert_eq!(root.sub_path, "");
-        assert_eq!(root.url(), "ftp://nas.local");
+        let root = parse_dir("ftp://nas.local").expect("a bare authority");
+        assert!(root.segments().is_empty());
+        assert_eq!(root.to_string(), "ftp://nas.local");
 
-        let trailing = parse_ftp_path("nas.local/pub/docs/").expect("a trailing separator");
-        assert_eq!(trailing.sub_path, "pub/docs");
+        let trailing = parse_dir("ftp://nas.local/pub/docs/").expect("a trailing separator");
+        assert_eq!(trailing.segments().join("/"), "pub/docs");
 
-        let dotted = parse_ftp_path("nas.local/pub/../docs/./").expect("dot segments");
-        assert_eq!(dotted.sub_path, "pub/docs");
+        let dotted = parse_dir("ftp://nas.local/pub/../docs/./").expect("dot segments");
+        assert_eq!(dotted.segments().join("/"), "pub/docs");
 
-        let ipv6 = parse_ftp_path("[::1]:2121/pub").expect("an IPv6 literal");
-        assert_eq!(ipv6.host, "[::1]");
-        assert_eq!(ipv6.port, Some(2121));
-        assert_eq!(tls_domain(&ipv6.host), "::1");
+        let ftps = parse_dir("ftps://nas.local/pub").expect("an FTPS URL");
+        assert_eq!(ftps.to_string(), "ftps://nas.local/pub");
+
+        let ipv6 = parse_dir("ftp://[::1]:2121/pub").expect("an IPv6 literal");
+        let server = server_of(&ipv6);
+        assert_eq!(server.host, "[::1]");
+        assert_eq!(server.port, Some(2121));
+        assert_eq!(tls_domain(&server.host), "::1");
     }
 
     #[test]
-    fn rejects_malformed_hosts_and_ports() {
-        assert!(parse_ftp_path(":21/pub").is_err());
-        assert!(matches!(
-            parse_ftp_path("nas.local:99999/pub"),
-            Err(FileSystemError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
-    fn recognizes_the_ftps_scheme() {
-        assert_eq!(
-            split_scheme_prefix("ftps://nas.local/pub"),
-            ("nas.local/pub", Some(TlsMode::Explicit))
-        );
-        assert_eq!(
-            split_scheme_prefix("ftp://nas.local/pub"),
-            ("nas.local/pub", Some(TlsMode::Plain))
-        );
-        assert_eq!(
-            split_scheme_prefix("nas.local/pub"),
-            ("nas.local/pub", None)
-        );
+    fn rejects_malformed_and_foreign_paths() {
+        assert!(parse_dir("ftp://nas.local:99999/pub").is_err());
+        assert!(parse_dir("C:/notes").is_err());
+        assert!(parse_dir("smb://nas.local/pub").is_err());
     }
 
     #[test]
@@ -1844,8 +1756,11 @@ mod ftp_tests {
 
     #[test]
     fn joins_child_paths_and_builds_breadcrumbs() {
-        let path = parse_ftp_path("nas.local:2121/pub").expect("a URL");
-        assert_eq!(path.join("new.txt"), "ftp://nas.local:2121/pub/new.txt");
+        let path = parse_dir("ftp://nas.local:2121/pub").expect("a URL");
+        assert_eq!(
+            path.join("new.txt").to_string(),
+            "ftp://nas.local:2121/pub/new.txt"
+        );
 
         let breadcrumbs = ftp_breadcrumbs(&path);
         let names: Vec<_> = breadcrumbs
@@ -1856,7 +1771,7 @@ mod ftp_tests {
         assert_eq!(breadcrumbs[0].path, "ftp://nas.local:2121");
         assert_eq!(breadcrumbs[1].path, "ftp://nas.local:2121/pub");
 
-        let root = parse_ftp_path("nas.local").expect("a bare authority");
+        let root = parse_dir("ftp://nas.local").expect("a bare authority");
         assert_eq!(ftp_breadcrumbs(&root).len(), 1);
     }
 

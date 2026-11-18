@@ -13,8 +13,9 @@ use crate::fs::error::FileSystemError;
 use crate::fs::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, entry_sort_key,
 };
+use crate::fs::url::{EntryUrl, Scheme};
 use crate::fs::vfs::{FileSystemBackend, SharedBackend};
-use provider::{CloudMeta, CloudProviderKind};
+use provider::CloudMeta;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{self, Read, Write};
@@ -32,55 +33,9 @@ const MAX_BREADCRUMB_DEPTH: usize = 64;
 
 static STAGED_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// One parsed `cloud://provider:email/segment/...` path.
-struct CloudPath {
-    /// `cloud://provider:email` — the account root path and registry key.
-    account_id: String,
-    /// Entry ids below the account root (the last may be a display name in
-    /// engine-generated targets).
-    segments: Vec<String>,
-}
-
-/// Parses `provider:email[/id/...]` (the part after `cloud://`). The split
-/// is on the FIRST colon: emails never contain colons, while an rsplit would
-/// mistake a domain suffix for a port.
-fn parse_cloud_path(rest: &str) -> Result<CloudPath, FileSystemError> {
-    let (authority, tail) = match rest.split_once('/') {
-        Some((authority, tail)) => (authority, tail),
-        None => (rest, ""),
-    };
-    let (provider, email) = authority.split_once(':').ok_or_else(|| {
-        FileSystemError::InvalidInput(format!("Malformed cloud account path: cloud://{rest}"))
-    })?;
-    let kind = CloudProviderKind::parse(provider)?;
-    if email.is_empty() {
-        return Err(FileSystemError::InvalidInput(format!(
-            "The cloud account has no email: {authority}"
-        )));
-    }
-
-    Ok(CloudPath {
-        account_id: format!("cloud://{}:{email}", kind.as_str()),
-        segments: tail
-            .split('/')
-            .filter(|segment| !segment.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    })
-}
-
-fn canonical_path(parsed: &CloudPath) -> String {
-    if parsed.segments.is_empty() {
-        parsed.account_id.clone()
-    } else {
-        format!("{}/{}", parsed.account_id, parsed.segments.join("/"))
-    }
-}
-
 /// The id of the folder holding the path's last segment ("" = account root).
-fn parent_of(parsed: &CloudPath) -> String {
-    parsed
-        .segments
+fn parent_of(url: &EntryUrl) -> String {
+    url.segments()
         .iter()
         .rev()
         .nth(1)
@@ -88,25 +43,30 @@ fn parent_of(parsed: &CloudPath) -> String {
         .unwrap_or_default()
 }
 
-/// Opens (or reuses) the backend for `cloud://...` path text. Called by
-/// `vfs::resolve`.
-pub fn open_backend(rest: &str) -> Result<SharedBackend, FileSystemError> {
-    let parsed = parse_cloud_path(rest)?;
+/// Opens (or reuses) the backend for a parsed `cloud://` path. Called by
+/// `vfs::resolve`; the account root (`cloud://provider:email`, the url's
+/// canonical text) is the registry key.
+pub fn open_backend(url: &EntryUrl) -> Result<SharedBackend, FileSystemError> {
+    if url.cloud_account().is_none() {
+        return Err(FileSystemError::InvalidInput(format!(
+            "Not a cloud path: {url}"
+        )));
+    }
+    let account_id = url.with_segments(Vec::new()).to_string();
 
-    if let Some(existing) = accounts::session_for(&parsed.account_id) {
+    if let Some(existing) = accounts::session_for(&account_id) {
         return Ok(existing);
     }
 
-    let account = accounts::account_by_id(&parsed.account_id).ok_or_else(|| {
+    let account = accounts::account_by_id(&account_id).ok_or_else(|| {
         FileSystemError::NotFound(format!(
-            "No cloud account is connected for: {}",
-            parsed.account_id
+            "No cloud account is connected for: {account_id}"
         ))
     })?;
-    let material = accounts::token_material(&parsed.account_id)?;
+    let material = accounts::token_material(&account_id)?;
 
     let backend: SharedBackend = Arc::new(CloudBackend::connect(account, material)?);
-    accounts::store_session(&parsed.account_id, Arc::clone(&backend));
+    accounts::store_session(&account_id, Arc::clone(&backend));
     Ok(backend)
 }
 
@@ -168,14 +128,16 @@ impl CloudInner {
         self.state.lock().expect("cloud backend state poisoned")
     }
 
-    fn parse_and_verify(&self, path: &str) -> Result<CloudPath, FileSystemError> {
-        let parsed = parse_cloud_path(path)?;
-        if parsed.account_id != self.account.id {
+    fn parse_and_verify(&self, path: &str) -> Result<EntryUrl, FileSystemError> {
+        let url = EntryUrl::parse(path)?;
+        if url.scheme() != Scheme::Cloud
+            || url.with_segments(Vec::new()).to_string() != self.account.id
+        {
             return Err(FileSystemError::InvalidInput(format!(
                 "The path belongs to a different cloud account: {path}"
             )));
         }
-        Ok(parsed)
+        Ok(url)
     }
 
     /// A valid access token, refreshing (and persisting rotated refresh
@@ -300,7 +262,7 @@ impl CloudInner {
     /// builds cross-backend destinations as `destination/源文件名`.
     fn resolve_entry(&self, path: &str) -> Result<CloudMeta, FileSystemError> {
         let parsed = self.parse_and_verify(path)?;
-        let Some(last) = parsed.segments.last() else {
+        let Some(last) = parsed.segments().last() else {
             return Ok(self.root_meta());
         };
 
@@ -324,7 +286,7 @@ impl CloudInner {
     /// an id of an existing entry or a not-yet-created display name.
     fn split_target(&self, path: &str) -> Result<(String, String), FileSystemError> {
         let parsed = self.parse_and_verify(path)?;
-        let Some(last) = parsed.segments.last() else {
+        let Some(last) = parsed.segments().last() else {
             return Err(FileSystemError::InvalidInput(format!(
                 "Not an entry path: {path}"
             )));
@@ -339,14 +301,14 @@ impl CloudInner {
 
     /// Account root plus one crumb per path segment, each segment name from
     /// the (warm) metadata cache.
-    fn breadcrumbs(&self, parsed: &CloudPath) -> Result<Vec<Breadcrumb>, FileSystemError> {
+    fn breadcrumbs(&self, parsed: &EntryUrl) -> Result<Vec<Breadcrumb>, FileSystemError> {
         let mut crumbs = vec![Breadcrumb {
             name: self.account.display_name.clone(),
             path: self.account.id.clone(),
         }];
 
         let mut built = self.account.id.clone();
-        for (depth, segment) in parsed.segments.iter().enumerate() {
+        for (depth, segment) in parsed.segments().iter().enumerate() {
             if depth >= MAX_BREADCRUMB_DEPTH {
                 break;
             }
@@ -395,17 +357,17 @@ impl CloudInner {
 impl FileSystemBackend for CloudBackend {
     fn read_dir(&self, path: &str) -> Result<DirectoryView, FileSystemError> {
         let parsed = self.0.parse_and_verify(path)?;
-        let folder_id = parsed.segments.last().cloned().unwrap_or_default();
+        let folder_id = parsed.segments().last().cloned().unwrap_or_default();
 
         if !folder_id.is_empty() {
             let meta = self.0.metadata(&folder_id)?;
             if meta.kind != EntryKind::Directory {
-                return Err(FileSystemError::NotDirectory(canonical_path(&parsed)));
+                return Err(FileSystemError::NotDirectory(parsed.to_string()));
             }
         }
 
         let children = self.0.list_folder(&folder_id)?;
-        let base = canonical_path(&parsed);
+        let base = parsed.to_string();
         let mut entries: Vec<DirectoryEntry> = children
             .iter()
             .map(|child| DirectoryEntry {
@@ -437,7 +399,7 @@ impl FileSystemBackend for CloudBackend {
         // The default would return the opaque id segment; resolve the real
         // name so cross-backend transfers name files correctly.
         let parsed = self.0.parse_and_verify(path)?;
-        if parsed.segments.is_empty() {
+        if parsed.segments().is_empty() {
             return Err(FileSystemError::InvalidInput(format!(
                 "The root of a volume has no entry name: {path}"
             )));
@@ -453,7 +415,7 @@ impl FileSystemBackend for CloudBackend {
     ) -> Result<String, FileSystemError> {
         validate_entry_name(name)?;
         let parsed = self.0.parse_and_verify(directory)?;
-        let parent_id = parsed.segments.last().cloned().unwrap_or_default();
+        let parent_id = parsed.segments().last().cloned().unwrap_or_default();
 
         // Drive tolerates duplicate names, so enforce the never-overwrite
         // contract here instead of per provider.
@@ -464,7 +426,7 @@ impl FileSystemBackend for CloudBackend {
         {
             return Err(FileSystemError::AlreadyExists(format!(
                 "{}/{}",
-                canonical_path(&parsed),
+                parsed,
                 name
             )));
         }
@@ -498,7 +460,7 @@ impl FileSystemBackend for CloudBackend {
             }
         };
 
-        Ok(format!("{}/{}", canonical_path(&parsed), created.id))
+        Ok(format!("{}/{}", parsed, created.id))
     }
 
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError> {
@@ -642,7 +604,7 @@ impl FileSystemBackend for CloudBackend {
             ));
         }
 
-        let dest_last = to_parsed.segments.last().cloned().ok_or_else(|| {
+        let dest_last = to_parsed.segments().last().cloned().ok_or_else(|| {
             FileSystemError::InvalidInput(format!("Not an entry path: {destination}"))
         })?;
         let dest_name = match self.0.metadata(&dest_last) {
@@ -785,46 +747,54 @@ mod tests {
 
     #[test]
     fn parses_cloud_account_paths() {
-        let parsed = parse_cloud_path("google_drive:user@example.com").expect("account root");
-        assert_eq!(parsed.account_id, "cloud://google_drive:user@example.com");
-        assert!(parsed.segments.is_empty());
+        let parsed =
+            EntryUrl::parse("cloud://google_drive:user@example.com").expect("account root");
+        assert_eq!(
+            parsed.with_segments(Vec::new()).to_string(),
+            "cloud://google_drive:user@example.com"
+        );
+        assert!(parsed.segments().is_empty());
 
-        let parsed = parse_cloud_path("dropbox:a@b.io/folder-1/sub-folder").expect("nested path");
-        assert_eq!(parsed.account_id, "cloud://dropbox:a@b.io");
-        assert_eq!(parsed.segments, ["folder-1", "sub-folder"]);
+        let parsed = EntryUrl::parse("cloud://dropbox:a@b.io/folder-1/sub-folder")
+            .expect("nested path");
+        assert_eq!(
+            parsed.with_segments(Vec::new()).to_string(),
+            "cloud://dropbox:a@b.io"
+        );
+        assert_eq!(parsed.segments(), ["folder-1", "sub-folder"]);
 
         // Emails contain dots and at-signs but no colon; the split must use
         // the FIRST colon so a domain never parses as a port.
-        let parsed =
-            parse_cloud_path("onedrive:mail.user+tag@sub.domain.co.uk/id").expect("complex email");
+        let parsed = EntryUrl::parse("cloud://onedrive:mail.user+tag@sub.domain.co.uk/id")
+            .expect("complex email");
         assert_eq!(
-            parsed.account_id,
+            parsed.with_segments(Vec::new()).to_string(),
             "cloud://onedrive:mail.user+tag@sub.domain.co.uk"
         );
 
         // Trailing slashes do not produce empty segments.
-        let parsed = parse_cloud_path("google_drive:u@e.com/id/").expect("trailing slash");
-        assert_eq!(parsed.segments, ["id"]);
+        let parsed = EntryUrl::parse("cloud://google_drive:u@e.com/id/").expect("trailing slash");
+        assert_eq!(parsed.segments(), ["id"]);
     }
 
     #[test]
     fn rejects_malformed_cloud_paths() {
-        assert!(parse_cloud_path("no-colon").is_err());
-        assert!(parse_cloud_path("unknown_provider:u@e.com").is_err());
-        assert!(parse_cloud_path("google_drive:").is_err());
+        assert!(EntryUrl::parse("cloud://no-colon").is_err());
+        assert!(EntryUrl::parse("cloud://unknown_provider:u@e.com").is_err());
+        assert!(EntryUrl::parse("cloud://google_drive:").is_err());
     }
 
     #[test]
     fn rebuilds_canonical_paths() {
-        let parsed = parse_cloud_path("google_drive:u@e.com/a/b").expect("path");
-        assert_eq!(canonical_path(&parsed), "cloud://google_drive:u@e.com/a/b");
+        let parsed = EntryUrl::parse("cloud://google_drive:u@e.com/a/b").expect("path");
+        assert_eq!(parsed.to_string(), "cloud://google_drive:u@e.com/a/b");
         assert_eq!(parent_of(&parsed), "a");
 
-        let root = parse_cloud_path("google_drive:u@e.com").expect("root");
-        assert_eq!(canonical_path(&root), "cloud://google_drive:u@e.com");
+        let root = EntryUrl::parse("cloud://google_drive:u@e.com").expect("root");
+        assert_eq!(root.to_string(), "cloud://google_drive:u@e.com");
         assert_eq!(parent_of(&root), "");
 
-        let one = parse_cloud_path("google_drive:u@e.com/a").expect("one segment");
+        let one = EntryUrl::parse("cloud://google_drive:u@e.com/a").expect("one segment");
         assert_eq!(parent_of(&one), "");
     }
 }

@@ -30,6 +30,7 @@
 
 use crate::error::FileSystemError;
 use crate::fs::atomic::write_atomic;
+use crate::fs::url::{EntryUrl, Scheme};
 use crate::paths;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -1006,17 +1007,17 @@ fn index_key(path: &str) -> String {
 /// document never grows with the whole disk and a corrupt one loses one
 /// volume's tags rather than all of them.
 fn volume_key(path: &str) -> String {
-    if let Ok((scheme, _)) = crate::fs::vfs::split_scheme(path)
-        && scheme != crate::fs::vfs::Scheme::Local
+    if let Ok(url) = EntryUrl::parse(path)
+        && let Some(server) = url.server()
     {
-        let host = path
-            .split_once("://")
-            .map(|(_, rest)| rest)
-            .unwrap_or("")
-            .split('/')
-            .next()
-            .unwrap_or("");
-        return format!("{}://{host}", scheme_name(scheme));
+        return format!("{}://{}", url.scheme().as_str(), server.authority_text());
+    }
+    if let Ok(url) = EntryUrl::parse(path)
+        && url.scheme() == Scheme::Cloud
+    {
+        // One shard per cloud account, not per entry id tree.
+        let (provider, email) = url.cloud_account().expect("just checked");
+        return format!("cloud://{}:{email}", provider.as_str());
     }
 
     #[cfg(windows)]
@@ -1027,18 +1028,6 @@ fn volume_key(path: &str) -> String {
     #[cfg(not(windows))]
     {
         "/".to_owned()
-    }
-}
-
-fn scheme_name(scheme: crate::fs::vfs::Scheme) -> &'static str {
-    use crate::fs::vfs::Scheme;
-    match scheme {
-        Scheme::Local => "local",
-        Scheme::Smb => "smb",
-        Scheme::Sftp => "sftp",
-        Scheme::Ftp => "ftp",
-        Scheme::WebDav => "webdav",
-        Scheme::Cloud => "cloud",
     }
 }
 

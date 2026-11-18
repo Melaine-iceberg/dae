@@ -31,7 +31,8 @@ use cxx_qt_lib::{
 use dae_core::fs::entry_codec::{self, ListingRow};
 use dae_core::fs::git::{self, GitBranches, GitDirectoryStatus, GitEntryStatusKind};
 use dae_core::fs::listing::{self, Batch, BatchTarget};
-use dae_core::fs::vfs::{self, Scheme};
+use dae_core::fs::url::Scheme;
+use dae_core::fs::vfs;
 use dae_core::fs::watch;
 use dae_core::host::{Event, Host};
 use dae_core::types::{Breadcrumb, DirectoryEntry, EntryKind};
