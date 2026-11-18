@@ -89,12 +89,19 @@ tokio = { version = "1.53.1", features = [
 trash = "5"
 url = "2"
 zip = { version = "9", default-features = false, features = ["deflate", "aes-crypto"] }
+# `fs::file_index` persists the filename index (Everything-style name search)
+# in one SQLite state file; `bundled` keeps the build free of a system lib.
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
+  # `fs::file_index::usn` sweeps volumes with FSCTL_ENUM_USN_DATA and follows
+  # changes through ReadUsnJournal; both live in the installable-file-systems
+  # surface, the USN record types in Win32_Storage_FileSystem.
+  "Win32_Storage_InstallableFileSystems",
   # `package::is_packaged` asks the app model whether this process belongs to an
   # MSIX package, which decides whether the portable updater may run at all.
   "Win32_Storage_Packaging_Appx",
