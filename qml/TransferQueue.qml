@@ -9,10 +9,11 @@ import "Localize.js" as Localize
 // Running rows carry a transport — pause, resume and cancel — because the core
 // holds a `TransferControl` per operation; cancelling removes the file it was
 // writing and keeps the entries that already landed, which is what lets the
-// status center offer "continue" instead of "start over". A row still waiting
-// on the conflict dialog carries a ✕ that dismisses the dialog instead. Every
-// queued row carries a ✕ as well, and that one simply means "drop it from the
-// queue".
+// status center offer "continue" instead of "start over". A row still in its
+// pre-run phase — checking or awaiting answers — carries a ✕ that dismisses
+// that job alone: other jobs' questions and every running row are untouched.
+// Every queued row carries a ✕ as well, and that one simply means "drop it
+// from the queue".
 //
 // The header's rate menu is the only place the transfer limit is set: one
 // process-wide value, obeyed by every running transfer on its next chunk.
@@ -372,7 +373,7 @@ Item {
                             if (model.running)
                                 Workspace.cancelTransfer(model.jobId)
                             else
-                                Workspace.cancelConflict()
+                                Workspace.cancelConflict(model.jobId)
                         }
                         onPauseToggled: {
                             if (model.paused)

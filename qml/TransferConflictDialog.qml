@@ -6,21 +6,22 @@ import "Localize.js" as Localize
 // The transfer-conflict dialog: one collision at a time, with the Tauri shell's
 // three answers and its "apply to all" escape hatch.
 //
-// The pending batch, its decisions and the index live in `Workspace` — it owns
-// the transfer, so it owns the question — which makes this file a view: every
-// label binds to a property and the buttons call back into the command surface.
-// Two consequences worth knowing: the dialog appears and disappears on
-// `conflictIndex` alone (no `open()`/`close()` pair to keep in sync), and
-// answering advances the index, so the same dialog immediately shows the next
-// conflict.
+// Several jobs can be asking at once — the slots run whole jobs in parallel —
+// so `Workspace` queues their prompts and this file renders the front one.
+// The job on screen is `Workspace.conflictJobId`; every answer and dismissal
+// carries it, and when the front job resolves the next job's question repaints
+// this same dialog. `conflictIndex` alone still drives visibility (no
+// `open()`/`close()` pair to keep in sync): it advances within one job's
+// batch, and drops to 0 only when no prompt is left.
 FocusScope {
     id: root
 
     property bool dark: true
     property color accent: Theme.accent
 
-    /// The tick belongs to the question on screen, not to the transfer: it is
-    /// cleared whenever the dialog goes away, so a later batch starts fresh.
+    /// The tick belongs to the question on screen, not to the transfer: it
+    /// is cleared whenever the dialog goes away or the job on screen
+    /// changes, so a later job starts fresh.
     property bool applyToAll: false
 
     visible: Workspace.conflictIndex > 0
@@ -49,7 +50,7 @@ FocusScope {
 
     signal modalClosed()
 
-    Keys.onEscapePressed: Workspace.cancelConflict()
+    Keys.onEscapePressed: Workspace.cancelConflict(Workspace.conflictJobId)
     Keys.onTabPressed: function (event) {
         event.accepted = DialogFocus.cycle(root, true)
     }
@@ -57,8 +58,15 @@ FocusScope {
         event.accepted = DialogFocus.cycle(root, false)
     }
 
+    // A new job's question replacing this one is a new question; the tick
+    // never carries across jobs, only within one job's own batch.
+    Connections {
+        target: Workspace
+        function onConflictJobIdChanged() { root.applyToAll = false }
+    }
+
     function answer(action) {
-        Workspace.resolveConflict(action, root.applyToAll)
+        Workspace.resolveConflict(Workspace.conflictJobId, action, root.applyToAll)
     }
 
     Rectangle {
@@ -70,7 +78,7 @@ FocusScope {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.AllButtons
-            onClicked: Workspace.cancelConflict()
+            onClicked: Workspace.cancelConflict(Workspace.conflictJobId)
         }
     }
 
@@ -114,7 +122,19 @@ FocusScope {
                 // Dismissing cancels the batch — the same answer the scrim
                 // gives, because a half-answered transfer is not a state this
                 // dialog can leave behind.
-                onCloseRequested: Workspace.cancelConflict()
+                onCloseRequested: Workspace.cancelConflict(Workspace.conflictJobId)
+            }
+
+            // Other jobs may be asking behind this one; saying so is the
+            // difference between a queue and a surprise.
+            Text {
+                width: parent.width
+                visible: Workspace.conflictWaiting > 0
+                height: visible ? implicitHeight : 0
+                text: qsTr("回答后还有 %1 个传输等待确认").arg(Workspace.conflictWaiting)
+                color: root.mutedColor
+                font.pixelSize: Theme.typeCaption
+                wrapMode: Text.WordWrap
             }
 
             Column {
@@ -226,7 +246,7 @@ FocusScope {
 
                     Accessible.role: Accessible.Button
                     Accessible.name: cancelLabel.text
-                    Accessible.onPressAction: Workspace.cancelConflict()
+                    Accessible.onPressAction: Workspace.cancelConflict(Workspace.conflictJobId)
 
                     Text {
                         id: cancelLabel
@@ -240,7 +260,7 @@ FocusScope {
                         id: cancelMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: Workspace.cancelConflict()
+                        onClicked: Workspace.cancelConflict(Workspace.conflictJobId)
                     }
                 }
 

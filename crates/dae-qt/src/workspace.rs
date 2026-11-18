@@ -145,6 +145,15 @@ pub mod qobject {
         #[qproperty(QString, conflict_source_detail, cxx_name = "conflictSourceDetail")]
         #[qproperty(QString, conflict_target_category, cxx_name = "conflictTargetCategory")]
         #[qproperty(QString, conflict_target_detail, cxx_name = "conflictTargetDetail")]
+        /// The job the dialog is asking about, `0` when no dialog is up.
+        /// Several jobs can be asking at once — the prompts queue, the front
+        /// one is on screen — so answers and dismissals carry this id instead
+        /// of assuming the one pending job.
+        #[qproperty(i64, conflict_job_id, cxx_name = "conflictJobId")]
+        /// How many further jobs are waiting for their own conflict answer
+        /// behind the one on screen. The dialog prints it so a second
+        /// prompt arriving is not a surprise.
+        #[qproperty(i32, conflict_waiting, cxx_name = "conflictWaiting")]
         /// Transfers waiting for a free slot, one finished display line each
         /// (`Copy 3 items → dae`). Accepted jobs — checking, answering
         /// conflicts or running — are not in this list; they live in
@@ -445,18 +454,26 @@ pub mod qobject {
             cut: bool,
         );
 
-        /// Answers the conflict the dialog is showing. `action` is `"replace"`,
-        /// `"skip"` or `"keepBoth"`; `applyToAll` answers every conflict left in
-        /// the batch the same way.
+        /// Answers the conflict the dialog is showing for `jobId` (the
+        /// `conflictJobId` on screen). `action` is `"replace"`, `"skip"` or
+        /// `"keepBoth"`; `applyToAll` answers every conflict left in that
+        /// batch the same way. Other jobs' prompts are untouched.
         #[qinvokable]
         #[cxx_name = "resolveConflict"]
-        fn resolve_conflict(self: Pin<&mut Workspace>, action: &QString, apply_to_all: bool);
+        fn resolve_conflict(
+            self: Pin<&mut Workspace>,
+            job_id: i64,
+            action: &QString,
+            apply_to_all: bool,
+        );
 
-        /// Dismisses the conflict dialog and transfers nothing: not the item,
-        /// not the rest of the batch.
+        /// Dismisses the question for `jobId` — the dialog's scrim, its Esc,
+        /// or the row's ✕ — and transfers nothing of that job: not the
+        /// item, not the rest of the batch. A prompt waiting behind moves
+        /// onto the screen.
         #[qinvokable]
         #[cxx_name = "cancelConflict"]
-        fn cancel_conflict(self: Pin<&mut Workspace>);
+        fn cancel_conflict(self: Pin<&mut Workspace>, job_id: i64);
 
         /// Drops the transfer waiting at `index` of `queuedTransfers`.
         #[qinvokable]
@@ -909,6 +926,13 @@ pub struct WorkspaceRust {
     conflict_source_detail: QString,
     conflict_target_category: QString,
     conflict_target_detail: QString,
+    conflict_job_id: i64,
+    conflict_waiting: i32,
+    /// Each asking job's frozen conflict prompt, in the order their prompts
+    /// arrived. The head is the question on screen; the rest wait untouched
+    /// until their turn, so several jobs can ask at once without their
+    /// collisions interleaving on one dialog.
+    pending_conflicts: Vec<PendingPrompt>,
     queued_transfers: QStringList,
     queued_transfer_paths: QStringList,
     transfers_json: QString,
@@ -1006,6 +1030,9 @@ impl Default for WorkspaceRust {
             conflict_source_detail: QString::default(),
             conflict_target_category: QString::default(),
             conflict_target_detail: QString::default(),
+            conflict_job_id: 0,
+            conflict_waiting: 0,
+            pending_conflicts: Vec::new(),
             queued_transfers: QStringList::default(),
             queued_transfer_paths: QStringList::default(),
             transfers_json: QString::from("[]"),
@@ -1100,6 +1127,23 @@ struct TransferRow {
     started_at: u64,
     label: String,
     retry: String,
+}
+
+/// One asking job's conflict prompt, frozen until the dialog reaches it.
+/// The payload is rendered once, on arrival, so a prompt that waited
+/// behind another job repaints byte-identically when its turn comes.
+#[derive(Clone)]
+struct PendingPrompt {
+    job_id: u64,
+    /// 0-based within the job's own batch; the dialog prints `index + 1`.
+    index: usize,
+    total: usize,
+    cut: bool,
+    name: String,
+    source_category: String,
+    source_detail: String,
+    target_category: String,
+    target_detail: String,
 }
 
 impl TransferRow {
@@ -2678,46 +2722,56 @@ impl qobject::Workspace {
                 self.as_mut().publish_queue();
             }
             JobEvent::ConflictPrompt {
+                job_id,
                 conflict,
                 index,
                 total,
                 cut,
-                ..
             } => {
-                let source_category = glyph_category(conflict.source_kind).to_owned();
-                let source_detail = conflict_detail(
-                    conflict.source_kind,
-                    &conflict.name,
-                    conflict.source_size,
-                    conflict.source_modified_at,
-                );
-                let target_category = glyph_category(conflict.target_kind).to_owned();
-                let target_detail = conflict_detail(
-                    conflict.target_kind,
-                    &conflict.name,
-                    conflict.target_size,
-                    conflict.target_modified_at,
-                );
-                self.as_mut().set_conflict_total(total as i32);
-                self.as_mut().set_conflict_index(index as i32 + 1);
-                self.as_mut()
-                    .set_conflict_name(QString::from(conflict.name.as_str()));
-                self.as_mut().set_conflict_cut(cut);
-                self.as_mut()
-                    .set_conflict_source_category(QString::from(source_category.as_str()));
-                self.as_mut()
-                    .set_conflict_source_detail(QString::from(source_detail.as_str()));
-                self.as_mut()
-                    .set_conflict_target_category(QString::from(target_category.as_str()));
-                self.as_mut()
-                    .set_conflict_target_detail(QString::from(target_detail.as_str()));
+                // Render the payload once, on arrival; the prompt is frozen
+                // until the dialog reaches this job's turn.
+                let prompt = PendingPrompt {
+                    job_id,
+                    index,
+                    total,
+                    cut,
+                    name: conflict.name.clone(),
+                    source_category: glyph_category(conflict.source_kind).to_owned(),
+                    source_detail: conflict_detail(
+                        conflict.source_kind,
+                        &conflict.name,
+                        conflict.source_size,
+                        conflict.source_modified_at,
+                    ),
+                    target_category: glyph_category(conflict.target_kind).to_owned(),
+                    target_detail: conflict_detail(
+                        conflict.target_kind,
+                        &conflict.name,
+                        conflict.target_size,
+                        conflict.target_modified_at,
+                    ),
+                };
+                {
+                    let mut rust = self.as_mut().rust_mut();
+                    match rust
+                        .pending_conflicts
+                        .iter()
+                        .position(|prompt| prompt.job_id == job_id)
+                    {
+                        // The job on screen advanced to its next collision.
+                        Some(at) => rust.pending_conflicts[at] = prompt,
+                        // A new job's prompt waits behind the one on screen.
+                        None => rust.pending_conflicts.push(prompt),
+                    }
+                }
+                self.as_mut().show_conflict_head();
             }
             JobEvent::Started {
                 job_id,
                 operation_id,
                 request,
             } => {
-                self.as_mut().clear_conflict();
+                self.as_mut().forget_pending_conflict(job_id);
                 // A copy clipboard stays available so the same selection can
                 // be pasted into several directories; a cut is spent here,
                 // once, as the move it was waiting for finally starts.
@@ -2786,7 +2840,7 @@ impl qobject::Workspace {
                     }
                 }
                 let message = friendly_error(&error);
-                self.as_mut().clear_conflict();
+                self.as_mut().forget_pending_conflict(job_id);
                 self.as_mut()
                     .set_last_error(QString::from(message.as_str()));
                 let kind_value = QString::from(if cut { "move" } else { "copy" });
@@ -2799,6 +2853,8 @@ impl qobject::Workspace {
     }
 
     fn clear_conflict(mut self: Pin<&mut Self>) {
+        self.as_mut().set_conflict_job_id(0);
+        self.as_mut().set_conflict_waiting(0);
         self.as_mut().set_conflict_index(0);
         self.as_mut().set_conflict_total(0);
         self.as_mut().set_conflict_name(QString::default());
@@ -2811,27 +2867,88 @@ impl qobject::Workspace {
         self.as_mut().set_conflict_target_detail(QString::default());
     }
 
-    /// Records the answer for the conflict on screen; the core moves to the
-    /// next one or runs the batch.
-    fn resolve_conflict(mut self: Pin<&mut Self>, action: &QString, apply_to_all: bool) {
+    /// Drops the prompt `job_id` is waiting on and repaints the dialog from
+    /// the front of the list — the next job's question when one waits, an
+    /// empty dialog when none does.
+    fn forget_pending_conflict(mut self: Pin<&mut Self>, job_id: u64) {
+        self.as_mut()
+            .rust_mut()
+            .pending_conflicts
+            .retain(|prompt| prompt.job_id != job_id);
+        self.as_mut().show_conflict_head();
+    }
+
+    /// Paints the dialog from the front of the pending list. A prompt that
+    /// waited behind another job is already rendered; this only copies it
+    /// onto the properties.
+    fn show_conflict_head(mut self: Pin<&mut Self>) {
+        let (head, waiting) = {
+            let rust = self.as_mut().rust_mut();
+            let waiting = rust.pending_conflicts.len().saturating_sub(1) as i32;
+            (rust.pending_conflicts.first().cloned(), waiting)
+        };
+        let Some(head) = head else {
+            self.as_mut().clear_conflict();
+            return;
+        };
+        self.as_mut().set_conflict_waiting(waiting);
+        self.as_mut().set_conflict_job_id(head.job_id as i64);
+        self.as_mut().set_conflict_index(head.index as i32 + 1);
+        self.as_mut().set_conflict_total(head.total as i32);
+        self.as_mut()
+            .set_conflict_name(QString::from(head.name.as_str()));
+        self.as_mut().set_conflict_cut(head.cut);
+        self.as_mut()
+            .set_conflict_source_category(QString::from(head.source_category.as_str()));
+        self.as_mut()
+            .set_conflict_source_detail(QString::from(head.source_detail.as_str()));
+        self.as_mut()
+            .set_conflict_target_category(QString::from(head.target_category.as_str()));
+        self.as_mut()
+            .set_conflict_target_detail(QString::from(head.target_detail.as_str()));
+    }
+
+    /// Records the answer for the job's conflict on screen; the core moves
+    /// to its next one or runs the batch. Its reply — the next prompt or
+    /// `Started` — repaints the dialog, so nothing is removed here.
+    fn resolve_conflict(
+        mut self: Pin<&mut Self>,
+        job_id: i64,
+        action: &QString,
+        apply_to_all: bool,
+    ) {
         let Some(action) = conflict_action(&action.to_string()) else {
             return;
         };
-        self.as_mut().scheduler().answer(action, apply_to_all);
+        if job_id <= 0 {
+            return;
+        }
+        self.as_mut()
+            .scheduler()
+            .answer(job_id as u64, action, apply_to_all);
     }
 
-    /// Closes the dialog and transfers nothing: the destination stays
-    /// untouched and the queue advances. The pending row (the one job still
-    /// in its pre-run phase) goes with the dialog; running rows are untouched.
-    fn cancel_conflict(mut self: Pin<&mut Self>) {
-        self.as_mut().clear_conflict();
+    /// Closes the question for that job and transfers nothing: the
+    /// destination stays untouched, the job's row goes with it, and the
+    /// queue advances. A prompt waiting behind moves onto the screen;
+    /// running transfers are untouched — their cancel goes through the
+    /// operation's control.
+    fn cancel_conflict(mut self: Pin<&mut Self>, job_id: i64) {
+        if job_id <= 0 {
+            return;
+        }
+        let job_id = job_id as u64;
         {
             let mut rust = self.as_mut().rust_mut();
-            if let Some(position) = rust.transfer_rows.iter().position(|row| !row.running) {
-                rust.transfer_rows.remove(position);
-            }
+            // A job still in its pre-run phase — checking or asking — can
+            // be dismissed; a running row is not this command's to touch.
+            rust.transfer_rows
+                .retain(|row| row.running || row.job_id != job_id);
+            rust.pending_conflicts
+                .retain(|prompt| prompt.job_id != job_id);
         }
-        self.as_mut().scheduler().cancel_pending();
+        self.as_mut().scheduler().dismiss(job_id);
+        self.as_mut().show_conflict_head();
         self.as_mut().publish_transfers();
         self.as_mut().publish_queue();
     }
