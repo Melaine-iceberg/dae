@@ -2,6 +2,7 @@
 //! paths, and UNC shares. Sibling protocol backends (smb, sftp, ...) will live
 //! next to this module as they land.
 
+mod content_cache;
 mod content_search;
 mod directory;
 mod ignores;

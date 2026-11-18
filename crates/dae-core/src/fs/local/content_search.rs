@@ -1,3 +1,4 @@
+use super::content_cache;
 use super::ignores;
 use crate::fs::error::FileSystemError;
 use crate::fs::types::{
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::time::UNIX_EPOCH;
 
 /// Files larger than this are skipped so a single huge artifact cannot stall
 /// the traversal behind the UI's request.
@@ -21,6 +23,10 @@ const MAX_MATCHED_FILES: usize = 100;
 const MAX_MATCHES_PER_FILE: usize = 50;
 const MAX_RANGES_PER_LINE: usize = 20;
 const MAX_LINE_CHARS: usize = 320;
+/// Cap on the verdicts one walk buffers for the cache, so a tree of millions
+/// of files cannot turn the buffer into the search's memory bill. Beyond it
+/// the walk simply stops extending the cache.
+const MAX_PENDING_ROWS: usize = 250_000;
 
 pub struct ContentSearchParams<'a> {
     pub query: &'a str,
@@ -77,9 +83,19 @@ pub fn search_file_contents_sync(
 
     let shared = Arc::new(ContentSearchShared {
         files: Mutex::new(Vec::new()),
+        pending: Mutex::new(Vec::new()),
         truncated: AtomicBool::new(false),
         is_current,
     });
+
+    // The cache key is built from the trimmed query the matcher uses, so a
+    // cached verdict and a fresh search of the same bytes answer identically.
+    let cache_key = content_cache::QueryKey {
+        query: query.into(),
+        is_regex: params.is_regex,
+        case_sensitive: params.case_sensitive,
+        file_filter: params.file_filter.map(Into::into),
+    };
 
     let mut builder = WalkBuilder::new(&root);
     builder.standard_filters(true).follow_links(false);
@@ -92,11 +108,14 @@ pub fn search_file_contents_sync(
         let shared = Arc::clone(&shared);
         let root = Arc::new(root);
         let matcher = Arc::new(matcher);
+        let cache_key = cache_key.clone();
 
         move || {
             let shared = Arc::clone(&shared);
             let root = Arc::clone(&root);
             let matcher = Arc::clone(&matcher);
+            // Owned per thread so the boxed closure below is `'static`.
+            let cache_key = cache_key.clone();
 
             // One searcher per *thread*, built here rather than per file in the
             // loop below. Everything a `Searcher` owns is a buffer — the read
@@ -125,11 +144,36 @@ pub fn search_file_contents_sync(
                 {
                     return WalkState::Continue;
                 }
-                if entry
-                    .metadata()
-                    .is_ok_and(|metadata| metadata.len() > MAX_FILE_BYTES)
-                {
+                let Ok(metadata) = entry.metadata() else {
                     return WalkState::Continue;
+                };
+                let size = metadata.len();
+                if size > MAX_FILE_BYTES {
+                    return WalkState::Continue;
+                }
+                // A file whose mtime cannot be read cannot be keyed safely, so
+                // it is searched fresh every time and never cached.
+                let mtime_ms = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|mtime| mtime.duration_since(UNIX_EPOCH).ok())
+                    .map(|elapsed| elapsed.as_millis() as i64)
+                    .unwrap_or(-1);
+                let path = path_to_string(entry.path());
+
+                if mtime_ms >= 0 {
+                    // A hit replays exactly what a fresh search of these bytes
+                    // produced: same key, same file, no read.
+                    if let Some(matches) =
+                        content_cache::lookup(&path, mtime_ms, size, &cache_key)
+                    {
+                        if !matches.is_empty()
+                            && record_file(&shared, entry.path(), &root, path, matches)
+                        {
+                            return WalkState::Quit;
+                        }
+                        return WalkState::Continue;
+                    }
                 }
 
                 let mut matches = Vec::new();
@@ -143,41 +187,29 @@ pub fn search_file_contents_sync(
                 });
 
                 // Unreadable, binary, or non-UTF-8-heavy files are skipped quietly.
-                if searcher
-                    .search_path(matcher.as_ref(), entry.path(), sink)
-                    .is_err()
-                {
-                    return WalkState::Continue;
+                let _ = searcher.search_path(matcher.as_ref(), entry.path(), sink);
+
+                if mtime_ms >= 0 {
+                    let Ok(mut pending) = shared.pending.lock() else {
+                        return WalkState::Continue;
+                    };
+                    if pending.len() < MAX_PENDING_ROWS {
+                        pending.push(PendingRow {
+                            path: path.clone(),
+                            mtime_ms,
+                            size,
+                            matches: matches.clone(),
+                        });
+                    }
                 }
 
                 if matches.is_empty() {
                     return WalkState::Continue;
                 }
 
-                let relative_path = entry
-                    .path()
-                    .strip_prefix(root.as_path())
-                    .unwrap_or(entry.path());
-
-                let should_stop = {
-                    let mut files = shared.files.lock().expect("content search lock poisoned");
-                    if files.len() >= MAX_MATCHED_FILES {
-                        true
-                    } else {
-                        files.push(ContentSearchFile {
-                            path: path_to_string(entry.path()),
-                            relative_path: path_to_string(relative_path),
-                            matches,
-                        });
-                        false
-                    }
-                };
-
-                if should_stop {
-                    shared.truncated.store(true, AtomicOrdering::Relaxed);
+                if record_file(&shared, entry.path(), &root, path, matches) {
                     return WalkState::Quit;
                 }
-
                 WalkState::Continue
             })
         }
@@ -191,6 +223,28 @@ pub fn search_file_contents_sync(
         .collect::<Vec<_>>();
     files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
 
+    // The reads this walk actually performed become the next search's hits.
+    // One transaction: a killed dae either caches the whole batch or nothing.
+    let pending = shared
+        .pending
+        .lock()
+        .expect("content search pending lock poisoned")
+        .drain(..)
+        .collect::<Vec<_>>();
+    if !pending.is_empty() {
+        let rows: Vec<content_cache::CacheRow<'_>> = pending
+            .iter()
+            .map(|row| content_cache::CacheRow {
+                path: row.path.as_str(),
+                mtime_ms: row.mtime_ms,
+                size: row.size,
+                key: &cache_key,
+                matches: &row.matches,
+            })
+            .collect();
+        content_cache::store_rows(&rows);
+    }
+
     Ok(ContentSearchResponse {
         files,
         truncated: shared.truncated.load(AtomicOrdering::Relaxed),
@@ -199,8 +253,49 @@ pub fn search_file_contents_sync(
 
 struct ContentSearchShared<'a> {
     files: Mutex<Vec<ContentSearchFile>>,
+    /// Verdicts the walk actually read, buffered for one cache transaction.
+    pending: Mutex<Vec<PendingRow>>,
     truncated: AtomicBool,
     is_current: &'a (dyn Fn() -> bool + Send + Sync),
+}
+
+/// One read file's answer, waiting to become a cache row after the walk.
+struct PendingRow {
+    path: String,
+    mtime_ms: i64,
+    size: u64,
+    matches: Vec<ContentSearchMatch>,
+}
+
+/// Appends a matched file under the [`MAX_MATCHED_FILES`] cap, or flags the
+/// truncation when the cap is already full. Returns whether the walk should
+/// stop. Shared by the cached and the freshly searched paths so the two
+/// produce byte-identical responses.
+fn record_file(
+    shared: &ContentSearchShared<'_>,
+    entry_path: &std::path::Path,
+    root: &std::path::Path,
+    path: String,
+    matches: Vec<ContentSearchMatch>,
+) -> bool {
+    let relative_path = entry_path.strip_prefix(root).unwrap_or(entry_path);
+    let should_stop = {
+        let mut files = shared.files.lock().expect("content search lock poisoned");
+        if files.len() >= MAX_MATCHED_FILES {
+            true
+        } else {
+            files.push(ContentSearchFile {
+                path,
+                relative_path: path_to_string(relative_path),
+                matches,
+            });
+            false
+        }
+    };
+    if should_stop {
+        shared.truncated.store(true, AtomicOrdering::Relaxed);
+    }
+    should_stop
 }
 
 /// Builds one trimmed, length-capped match row with character-based ranges so
@@ -284,7 +379,18 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    /// Points the process's cache store at a throwaway dir, before any search
+    /// can open the real config-dir one. First caller wins and the dir is
+    /// shared; rows are keyed by absolute path, so distinct fixture roots
+    /// cannot see each other's rows.
+    fn isolate_cache() {
+        let dir = std::env::temp_dir().join(format!("dae-content-cache-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("cache test dir");
+        content_cache::use_test_dir(dir);
+    }
+
     fn write_content_search_fixture(root: &Path) {
+        isolate_cache();
         let src = root.join("src");
         fs::create_dir_all(src.join("nested")).expect("create src tree");
         fs::create_dir_all(root.join("node_modules")).expect("create node_modules");
@@ -410,6 +516,49 @@ mod tests {
         fs::remove_dir_all(root).expect("remove content search fixture");
     }
 
+    /// The repeat search must answer byte-identically (whether it replayed
+    /// the cache or re-read the tree), and a file that changed since must be
+    /// re-searched, not replayed: the cache key is (mtime, size), so the
+    /// rewritten notes.txt is a miss and its new line shows up.
+    #[test]
+    fn repeat_search_answers_identically_and_tracks_changes() {
+        let root = std::env::temp_dir().join(format!(
+            "dae-content-search-repeat-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_content_search_fixture(&root);
+
+        let params = ContentSearchParams {
+            query: "TODO",
+            is_regex: false,
+            case_sensitive: true,
+            file_filter: None,
+        };
+        let first = search_file_contents_sync(root.clone(), &params, &|| true)
+            .expect("first content search");
+        let second = search_file_contents_sync(root.clone(), &params, &|| true)
+            .expect("repeat content search");
+        assert_eq!(first, second, "a repeat search changed its answer");
+        assert_eq!(second.files.len(), 1);
+
+        fs::write(
+            root.join("src").join("notes.txt"),
+            "hello TODO world\ntodo again\nplain line\nanother TODO\n",
+        )
+        .expect("rewrite notes.txt");
+        let third = search_file_contents_sync(root.clone(), &params, &|| true)
+            .expect("search after an edit");
+        assert_eq!(third.files.len(), 1);
+        // Case-sensitive: line 2's lowercase "todo" never matched; the
+        // rewrite's contribution is the second hit, on line 4.
+        assert_eq!(third.files[0].matches.len(), 2);
+        assert_eq!(third.files[0].matches[1].line_number, 4);
+        assert_eq!(third.files[0].matches[1].line_text, "another TODO");
+
+        fs::remove_dir_all(root).expect("remove content search fixture");
+    }
+
     /// Counts the files a content search would visit, with the same walker and
     /// the same forced ignores, so a measurement can report the tree's size
     /// beside its cost.
@@ -440,8 +589,10 @@ mod tests {
     /// to report a truncated one. `files` is how many files the walk visits, so
     /// the per-file fixed cost is the total divided by it; a tree of empty files
     /// is the sharpest instrument for that, since nothing else is happening per
-    /// file. Compare this test against itself, before and after a change;
-    /// absolute milliseconds are per-machine.
+    /// file. With the result cache, `fresh` prices the first search and
+    /// `cached` the repeat, where every visited file is a hit; compare both
+    /// against the same test before and after a change. Absolute
+    /// milliseconds are per-machine.
     #[test]
     #[ignore = "prints measurements for the directory in DAE_CONTENT_SEARCH_BENCH"]
     fn reports_the_cost_of_a_content_search() {
@@ -458,10 +609,20 @@ mod tests {
             case_sensitive: true,
             file_filter: None,
         };
+        // The bench's cache is its own throwaway store, wiped at start, so a
+        // run measures a genuinely cold cache and never pollutes the real one.
+        let cache_dir =
+            std::env::temp_dir().join(format!("dae-content-cache-bench-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&cache_dir);
+        fs::create_dir_all(&cache_dir).expect("bench cache dir");
+        content_cache::use_test_dir(cache_dir);
+
         let search =
             || search_file_contents_sync(root.clone(), &params, &|| true).expect("content search");
 
+        let started = std::time::Instant::now();
         let response = search();
+        let fresh = started.elapsed().as_nanos();
         assert!(
             !response.truncated,
             "the query matched {MAX_MATCHED_FILES} files, so the walk stopped early; pick a rarer \
@@ -481,8 +642,11 @@ mod tests {
         println!("query     {query}");
         println!("files     {files}");
         println!("matched   {}", response.files.len());
+        println!("fresh     {:.2} ms  (cold cache: walk + read + one store transaction)",
+            fresh as f64 / 1_000_000.0
+        );
         println!(
-            "median    {:.2} ms",
+            "cached    {:.2} ms  (median of 7 repeats, every file a hit)",
             samples[samples.len() / 2] as f64 / 1_000_000.0
         );
         println!(
@@ -562,6 +726,7 @@ mod tests {
     fn a_content_search_reports_each_files_own_line_numbers() {
         let root =
             std::env::temp_dir().join(format!("dae-content-search-walk-{}", std::process::id()));
+        isolate_cache();
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture");
         fs::write(root.join("first.txt"), "plain\nTODO first\nplain\n").expect("write first.txt");

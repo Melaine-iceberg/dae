@@ -88,7 +88,7 @@ pub struct SearchResponse {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchMatch {
     pub line_number: u64,
@@ -97,7 +97,7 @@ pub struct ContentSearchMatch {
     pub ranges: Vec<(usize, usize)>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchFile {
     pub path: String,
@@ -105,7 +105,7 @@ pub struct ContentSearchFile {
     pub matches: Vec<ContentSearchMatch>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchResponse {
     pub files: Vec<ContentSearchFile>,
