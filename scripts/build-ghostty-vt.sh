@@ -18,6 +18,14 @@ repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 vendor="$repo/crates/dae-core/ghostty-vt"
 version=$(tr -d '[:space:]' < "$vendor/VERSION")
 work=${WORK:-${TMPDIR:-/tmp}/ghostty-vt}
+# macOS puts TMPDIR under /var/folders, but /var is a symlink to /private/var.
+# Zig 0.17 computes a build-step executable's path relative to the build root:
+# if the root and the global cache are spelled in different path spaces (one
+# /var, one /private/var), the relative path escapes one level too far and the
+# spawn fails with `uucode_generate: FileNotFound`. Resolve the directory once
+# so every path the build sees is physical, wherever the caller put it.
+mkdir -p "$work"
+work=$(cd -- "$work" && pwd -P)
 zig=${ZIG:-zig}
 
 rust_target=${RUST_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
@@ -75,7 +83,6 @@ fetch() { # url out expected
 }
 
 echo "libghostty-vt $version -> $rust_target"
-mkdir -p "$work"
 fetch "$source_url" "$work/libghostty-vt-$version.tar.gz" "$source_sha256"
 fetch "$deps_url" "$work/libghostty-vt-$version-deps.tar.gz" "$deps_sha256"
 
