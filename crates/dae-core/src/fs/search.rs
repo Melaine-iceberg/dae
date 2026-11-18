@@ -160,9 +160,38 @@ fn search_local(
         return tagged_search(&tag_ids, &request);
     }
 
+    /// How many paths an index-covered root contributes before the store's scan
+    /// stops. The same multiple the walk collects pre-ranking: the shown set is
+    /// cut from a ranked pool, not from whichever matches the table listed first.
+    const INDEX_QUERY_LIMIT: usize = 5 * MAX_RESULTS;
+
     let mut candidates: Vec<SearchEntry> = Vec::new();
     let mut truncated = false;
     for root in &request.roots {
+        // A root the file index covers answers from the table instead of the
+        // walk: instant on a disk that would take the walk minutes. The rows
+        // are held to exactly the walk's meaning — `index_entry` stats each
+        // one and applies the filters, the name test and the depth bound.
+        if super::file_index::covered(root) {
+            let paths = super::file_index::query(root, &text, INDEX_QUERY_LIMIT);
+            truncated |= paths.len() >= INDEX_QUERY_LIMIT;
+            for path in paths {
+                if !is_current() {
+                    return Ok(SearchResponse {
+                        entries: Vec::new(),
+                        truncated: false,
+                    });
+                }
+                if let Some(entry) = index_entry(&path, root, &text, &request.filters) {
+                    candidates.push(entry);
+                }
+            }
+            continue;
+        }
+
+        // Not covered yet: walk it today and warm the index for tomorrow's
+        // search. The walk stays the answer until the workers have finished.
+        super::file_index::ensure(root);
         let backend = vfs::resolve(root)?;
         let response = backend.search(root, &text, &request.filters, is_current)?;
         truncated |= response.truncated;
@@ -174,7 +203,6 @@ fn search_local(
             });
         }
     }
-
     // The platform index contributes paths the walk may not have reached (a
     // scope of several volumes), and it answers even while the walk is still
     // running. Its hits are held to the same meaning as the walk's: the file
@@ -566,5 +594,52 @@ mod tests {
         assert!(path_is_under(r"C:\code\dae\a.txt", r"C:\code\dae"));
         assert!(path_is_under("smb://nas/share/a.txt", "smb://nas/share"));
         assert!(!path_is_under(r"C:\code\dae-other\a.txt", r"C:\code\dae"));
+    }
+
+    #[tokio::test]
+    async fn covered_root_answers_from_the_index_not_the_walk() {
+        use super::super::file_index;
+        use crate::types::path_to_string;
+        let db = tempfile::tempdir().expect("create the index db dir");
+        let tree = tempfile::tempdir().expect("create the tree");
+        let root_path = dunce::canonicalize(tree.path()).expect("canonicalize the tree");
+        let root = path_to_string(&root_path);
+
+        // The match lives under `node_modules`: the walk skips that directory,
+        // so a result can only have come from the seeded index row.
+        std::fs::create_dir(root_path.join("node_modules")).expect("create node_modules");
+        let file_path = root_path
+            .join("node_modules")
+            .join("needle-in-haystack.txt");
+        std::fs::write(&file_path, b"").expect("write the file");
+        let file = path_to_string(&file_path);
+
+        file_index::use_test_dir(db.path().to_path_buf());
+        let store = file_index::store::Store::open(db.path()).expect("open the store");
+        store
+            .upsert(&[file_index::store::Entry {
+                path: file.clone(),
+                name: "needle-in-haystack.txt".to_owned(),
+                parent: root.clone(),
+                is_dir: false,
+            }])
+            .expect("seed the row");
+        store.mark_root(&root, true).expect("mark the root covered");
+        drop(store);
+        let response = search(SearchRequest {
+            // One character: the platform-index merge below the covered-root
+            // block needs two, and this test is about *dae's* index, not the
+            // Windows Search provider whose first-ever activation in the test
+            // process disturbs the shell concurrency of the icon tests.
+            text: "n".to_owned(),
+            roots: vec![root],
+            ..SearchRequest::default()
+        })
+        .await
+        .expect("search the covered root");
+        assert!(
+            response.entries.iter().any(|entry| entry.path == file),
+            "the index row must answer: {response:?}"
+        );
     }
 }

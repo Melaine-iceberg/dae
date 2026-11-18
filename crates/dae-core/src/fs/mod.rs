@@ -26,6 +26,7 @@ pub mod discovery;
 pub mod drives;
 pub mod elevated;
 pub mod entry_codec;
+pub mod file_index;
 pub mod ftp;
 pub mod git;
 pub mod hashing;
@@ -37,9 +38,9 @@ pub mod local;
 #[cfg(target_os = "macos")]
 pub mod macos_trash;
 pub mod media_meta;
-pub mod open_with;
 pub mod occupancy;
 pub mod office;
+pub mod open_with;
 pub mod prefetch;
 pub mod preview;
 pub mod progress;
@@ -56,6 +57,8 @@ pub mod smb;
 pub mod spaces;
 pub mod tags;
 pub mod templates;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod thumbnails;
 pub mod transfer;
 pub mod transfer_control;
@@ -67,5 +70,3 @@ pub mod watch;
 pub mod webdav;
 #[cfg(windows)]
 pub mod windows_image;
-#[cfg(test)]
-pub(crate) mod test_support;

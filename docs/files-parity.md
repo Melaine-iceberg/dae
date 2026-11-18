@@ -53,7 +53,7 @@ P0、P1 与 §12.1 的 R-1…R-6 落地后，上表四类只剩验证尾巴：�
 | 标签页 | 新建/关闭/拖动/跨窗口撕出 | `qml/TabStrip.qml`、`qml/Tab.qml` |
 | 文件操作 | 复制/剪切/粘贴、撤销/重做、回收站、永久删除、重命名（含正则批量）、副本、快捷方式、压缩/解压、移动到 | `crates/dae-core/src/fs/{undo,transfer,archive,shortcuts}.rs`、`workspace.rs` |
 | 后端 | 本地、SFTP、SMB、压缩包、WSL、回收站、云盘（Google Drive/OneDrive/Dropbox） | `crates/dae-core/src/fs/`、`fs/cloud/` |
-| 搜索 | 当前目录递归名称搜索、ripgrep 内容搜索、类型过滤 | `fs/search.rs`、`qml/SearchFilterBar.qml` |
+| 搜索 | 名称搜索（covered 根走增量索引即时应答，未覆盖根递归遍历并暖索引）、ripgrep 内容搜索、类型过滤 | `fs/search.rs`、`fs/file_index/`、`qml/SearchFilterBar.qml` |
 | 预览 | 文本/Markdown/图片/PDF/音视频、缩略图 | `crates/dae-qt/src/preview.rs`、`qml/PreviewPanel.qml` |
 | 属性 | 常规、POSIX 权限、DOS 属性、MD5/SHA1/SHA256 | `crates/dae-qt/src/properties.rs`、`qml/PropertiesDialog.qml` |
 | Git | 状态、分支、fetch/pull/push/sync | `fs/git.rs`、`qml/GitPanel.qml` |
@@ -122,7 +122,7 @@ macOS 列只是语义参考：该平台不发布、无设备，实现时只需�
 | 系统共享 | WinRT `DataTransferManager` | 无统一入口 | `NSSharingServicePicker` | Linux 隐藏 |
 | 文件签名 | `WinVerifyTrust` | 无系统级等价物 | `SecStaticCodeCheckValidity` | Linux 隐藏 |
 | ACL | 安全描述符 | POSIX ACL | NFSv4 ACL | 先保留现有 POSIX 模式编辑 |
-| 搜索索引 | Windows Search（`ISearchQueryHelper`，MSIX 形态需验证） | `tracker3`/`baloo` 可选 | Spotlight `mdfind` | 并行遍历 |
+| 搜索索引 | dae 自有索引（Windows 走 USN journal，其余平台 `notify` 喂 SQLite；卷无权限时降级遍历）+ Windows Search 补充 | 同左（无 USN，纯 `notify`）+ `tracker3`/`baloo` 可选 | 同左（无 USN，纯 `notify`）+ Spotlight `mdfind` | 并行遍历 |
 | 快速预览 | 应用内弹层 | 应用内弹层 | 应用内弹层；可选 `QLPreviewPanel` | 应用内 |
 | 文件标签 | ADS + 索引 | xattr + 索引 | xattr + 索引；可选 Finder 标签镜像 | 索引 |
 | 系统通知 | WinRT toast | D-Bus Notifications | `UNUserNotificationCenter` | 应用内状态中心 |

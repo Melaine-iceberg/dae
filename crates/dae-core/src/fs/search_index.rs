@@ -216,10 +216,9 @@ fn file_url_to_path(url: &str) -> Option<String> {
 #[cfg(windows)]
 mod windows_search {
     use super::*;
-    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
     use windows::Win32::System::Com::{
         CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, COINIT_MULTITHREADED, CoCreateInstance,
-        CoInitializeEx, CoTaskMemFree, CoUninitialize,
+        CoInitializeEx, CoTaskMemFree,
     };
     use windows::Win32::System::Search::{
         CSearchManager, DBACCESSOR_ROWDATA, DBBINDING, DBMEMOWNER_CLIENTOWNED, DBPARAMIO_NOTPARAM,
@@ -240,31 +239,24 @@ mod windows_search {
     const CONNECTION: &str =
         "provider=Search.CollatorDSO;EXTENDED PROPERTIES=\"Application=Windows\"";
 
-    /// Initialises COM for this thread and balances it on drop.
-    struct Com(Option<()>);
-
-    impl Com {
-        fn ensure() -> Self {
-            let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-            // Already initialised with another model is fine: the caller owns
-            // that lifetime and this guard must not uninitialise it.
-            if hr == RPC_E_CHANGED_MODE {
-                return Com(None);
-            }
-            Com(hr.is_ok().then_some(()))
-        }
-    }
-
-    impl Drop for Com {
-        fn drop(&mut self) {
-            if self.0.is_some() {
-                unsafe { CoUninitialize() };
-            }
-        }
+    /// Initialises COM for this thread, once, and never uninitialises it.
+    ///
+    /// The previous per-call `CoUninitialize` was a cross-thread landmine: it
+    /// tore down the process's MTA while other threads were mid-shell-call —
+    /// a name search runs concurrently with icon rendering in the app, and
+    /// free-threaded shell handlers live in that apartment, so the teardown
+    /// was measured to crash the process (`STATUS_ACCESS_VIOLATION` under the
+    /// test suite). `shell_commands` and `windows_image` already follow the
+    /// keep-it-for-the-thread's-lifetime rule; the apartment dies with its
+    /// (few, reused) blocking threads instead of with each query. A repeat
+    /// `CoInitializeEx` on an already-initialised thread is an S_FALSE no-op,
+    /// and RPC_E_CHANGED_MODE just means the caller's apartment already fits.
+    fn com() {
+        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
     }
 
     pub(super) fn probe() -> bool {
-        let _com = Com::ensure();
+        com();
         query_helper().is_ok()
     }
 
@@ -282,7 +274,7 @@ mod windows_search {
     }
 
     pub(super) fn query(text: &str, limit: usize) -> Result<Vec<String>, FileSystemError> {
-        let _com = Com::ensure();
+        com();
         let helper = query_helper().map_err(step_error("query helper"))?;
         unsafe {
             helper
