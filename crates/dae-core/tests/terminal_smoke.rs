@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dae_core::pty::{FLAG_SPACER, TerminalEvent, TerminalSession, TerminalSnapshot};
+use dae_core::pty::{
+    FLAG_SPACER, SnapshotKind, TerminalEvent, TerminalSession, TerminalSnapshot,
+};
 
 fn grid_text(snapshot: &TerminalSnapshot) -> String {
     let mut text = String::new();
@@ -131,6 +133,8 @@ fn snapshots_stay_consistent_while_output_streams() {
 
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut frames = 0usize;
+    let mut full = 0usize;
+    let mut shifted = 0usize;
     while Instant::now() < deadline {
         for line in 0..5 {
             session
@@ -138,10 +142,54 @@ fn snapshots_stay_consistent_while_output_streams() {
                 .expect("write");
         }
         if let Some(snapshot) = session.snapshot(true) {
-            assert_eq!(snapshot.cells.len(), snapshot.cols * snapshot.rows);
+            match snapshot.kind {
+                SnapshotKind::Full => {
+                    assert_eq!(snapshot.cells.len(), snapshot.cols * snapshot.rows);
+                    full += 1;
+                }
+                SnapshotKind::Shift(k) => {
+                    // Only the k lines the scroll brought in cross.
+                    assert!(k >= 1 && k < snapshot.rows, "shift {k}");
+                    assert_eq!(snapshot.cells.len(), k * snapshot.cols);
+                    shifted += 1;
+                }
+            }
             frames += 1;
         }
     }
     assert!(frames > 100, "took {frames} snapshots");
+    assert!(shifted > 0, "a streaming shell never sent a shift frame");
+    assert!(full > 0, "the first frame was never full");
     assert!(!events.lock().unwrap().is_empty());
+}
+
+#[test]
+fn search_finds_matches_and_steps_through_them() {
+    let (session, _events) = spawn_session();
+    answered(&session, "vt-search-ready");
+    for line in 0..3 {
+        session
+            .write(format!("echo vt-needle-{line}\r").as_bytes())
+            .expect("write");
+    }
+    // Give the shell a moment to print, then search for what it printed.
+    thread::sleep(Duration::from_millis(600));
+    session.set_search_needle(Some("vt-needle-"));
+
+    let (total, _) = session.search_step(true).expect("a match");
+    assert!(total >= 3, "found {total} matches for the echoed lines");
+
+    // Every step stays inside the match list and reports a consistent count.
+    let (total_again, _) = session.search_step(true).expect("another match");
+    assert_eq!(total_again, total);
+
+    // The echoed lines are on screen, so the viewport has rectangles.
+    let rects = session.search_viewport();
+    assert!(!rects.is_empty(), "no viewport rectangles for on-screen text");
+    assert!(rects.iter().all(|rect| rect.columns > 0));
+
+    // Clearing the needle clears the highlights.
+    session.set_search_needle(None);
+    assert!(session.search_viewport().is_empty());
+    assert!(session.search_step(true).is_none());
 }

@@ -39,10 +39,10 @@ QtObject {
     property DirectoryListModel listing: DirectoryListModel {}
     property SearchModel nameSearch: SearchModel {}
     property ContentSearchModel contentSearch: ContentSearchModel {}
-    /// The shell shown in this tab's terminal panel. One session per tab, so
-    /// hiding the panel or switching tabs keeps it running, and a torn-off tab
-    /// carries its shell along. `TerminalPanel` starts it on first use.
-    property TerminalSession terminal: TerminalSession {}
+    /// (The terminal session no longer lives here: the terminal panel owns
+    /// its sessions, and a tab only names the folder a new one starts in.
+    /// See docs/terminal-redesign.md §3.)
+
 
     /// The path the last plain or Ctrl click landed on, so Shift extends from
     /// it. The selection itself lives in the listing model — one role a
@@ -163,17 +163,6 @@ QtObject {
         spaceId = id
     }
 
-    /// Starts this tab's shell at its current folder. The panel calls this
-    /// instead of reaching through `terminal` itself: on a tab switch the
-    /// panel's derived `session` binding may not have re-evaluated yet, and
-    /// starting the previous tab's shell twice would leave this one dead.
-    function startTerminal(cols, rows) {
-        if (terminal.running)
-            return
-        terminal.start(folder ? listing.path : "", cols > 0 ? cols : 80,
-                       rows > 0 ? rows : 24, ExplorerPrefs.terminalShell)
-    }
-
     function cancelSearch() {
         nameSearch.cancel()
         contentSearch.cancel()
@@ -184,6 +173,5 @@ QtObject {
         listing.dispose()
         nameSearch.dispose()
         contentSearch.dispose()
-        terminal.kill()
     }
 }

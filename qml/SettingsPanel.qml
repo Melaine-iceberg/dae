@@ -2137,6 +2137,32 @@ FocusScope {
 
                 Text {
                     x: 24; y: 324
+                    text: qsTr("选中即复制")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                }
+
+                Row {
+                    x: 130; y: 316
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: false, label: qsTr("关闭") },
+                            { value: true, label: qsTr("开启") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: ExplorerPrefs.copyOnSelect === modelData.value
+                            onClicked: ExplorerPrefs.setBool("copyOnSelect",
+                                                             modelData.value)
+                        }
+                    }
+                }
+
+                Text {
+                    x: 24; y: 356
                     text: qsTr("字号与行高立即应用；Shell 在下次启动终端时生效。")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
@@ -2144,7 +2170,7 @@ FocusScope {
 
                 Text {
                     id: terminalErrorText
-                    x: 24; y: 356
+                    x: 24; y: 388
                     width: content.width - 48
                     visible: text !== ""
                     text: root.terminalError
@@ -2155,7 +2181,7 @@ FocusScope {
 
                 Row {
                     x: 24
-                    y: 384
+                    y: 416
                     spacing: 10
 
                     PrimaryButton {

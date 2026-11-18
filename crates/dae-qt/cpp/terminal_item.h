@@ -12,13 +12,11 @@
 #define NOMINMAX
 #endif
 
-#include <QByteArray>
-#include <QColor>
+#include <QRegularExpression>
+
 #include <QElapsedTimer>
 #include <QFont>
 #include <QFontMetricsF>
-#include <QHash>
-#include <QMetaObject>
 #include <QObject>
 #include <QPointer>
 #include <QQuickPaintedItem>
@@ -39,11 +37,24 @@ struct TerminalCell
     quint8 flags = 0;
 };
 
+/// One search-highlight rectangle in grid coordinates, decoded from the
+/// session's `searchRects` payload.
+struct SearchRect
+{
+    quint16 row = 0;
+    quint16 column = 0;
+    quint16 columns = 0;
+};
+
 class TerminalItem : public QQuickPaintedItem
 {
     Q_OBJECT
     Q_PROPERTY(QObject* session READ session WRITE setSession NOTIFY sessionChanged)
     Q_PROPERTY(bool dark READ dark WRITE setDark NOTIFY darkChanged)
+    /// Copy to the clipboard as soon as the mouse finishes a selection,
+    /// the way Windows Terminal's copyOnSelect does. The panel binds it
+    /// to the matching ExplorerPrefs entry.
+    Q_PROPERTY(bool copyOnSelect READ copyOnSelect WRITE setCopyOnSelect NOTIFY copyOnSelectChanged)
     Q_PROPERTY(int fontSize READ fontSize WRITE setFontSize NOTIFY fontChanged)
     Q_PROPERTY(qreal lineHeight READ lineHeight WRITE setLineHeight NOTIFY fontChanged)
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY fontChanged)
@@ -60,6 +71,9 @@ public:
 
     bool dark() const { return m_dark; }
     void setDark(bool dark);
+
+    bool copyOnSelect() const { return m_copyOnSelect; }
+    void setCopyOnSelect(bool value);
 
     int fontSize() const { return m_font.pixelSize(); }
     void setFontSize(int size);
@@ -87,6 +101,14 @@ signals:
     void darkChanged();
     void fontChanged();
     void gridSizeChanged();
+    /// Ctrl+F was pressed inside the terminal; the panel opens its find
+    /// bar. Emitted instead of sending the form-feed byte to the shell.
+    void searchRequested();
+    void copyOnSelectChanged();
+    /// Ctrl+Click landed on something that looks like a path or URL. The
+    /// panel resolves it against the session's directory and opens it;
+    /// `line`/`column` are the `:line:col` suffix when one was present.
+    void linkActivated(const QString& target, int line, int column);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -112,6 +134,12 @@ private:
     static constexpr quint8 FlagSpacer = 1 << 7;
 
     bool decodeFrame(const QByteArray& frame);
+    /// Pulls and decodes the session's `searchRects` payload so `paint`
+    /// can highlight the matches on screen.
+    void pullSearchRects();
+    /// Matches the clicked row against the path/URL patterns and emits
+    /// [`linkActivated`] on a hit.
+    void openLinkAt(const QPointF& position);
     void measureCells();
     void applySizeToSession();
     void sendBytes(const QByteArray& bytes);
@@ -161,6 +189,7 @@ private:
     int m_cursorCol = 0;
     int m_cursorRow = 0;
     bool m_cursorVisible = false;
+    bool m_copyOnSelect = false;
     quint8 m_cursorShape = 0;
     quint32 m_displayOffset = 0;
     quint32 m_historySize = 0;
@@ -173,6 +202,7 @@ private:
     bool m_scrollbarDrag = false;
     qreal m_scrollbarGrabOffset = 0.0;
     QVector<TerminalCell> m_cells;
+    QVector<SearchRect> m_searchRects;
     QString m_preedit;
     bool m_hasFrame = false;
     QTimer m_blink;

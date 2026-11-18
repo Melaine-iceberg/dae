@@ -105,6 +105,7 @@ struct StoredPrefs {
     preview_width: i32,
     sidebar_width: i32,
     terminal_shell: String,
+    copy_on_select: bool,
     toolbar_leading: String,
     toolbar_trailing: String,
     background_image: String,
@@ -151,6 +152,7 @@ impl Default for StoredPrefs {
             preview_width: 300,
             sidebar_width: 240,
             terminal_shell: String::new(),
+            copy_on_select: false,
             toolbar_leading: "back,forward,up".to_owned(),
             toolbar_trailing: "search,trash,view,more".to_owned(),
             background_image: String::new(),
@@ -254,6 +256,7 @@ impl StoredPrefs {
         if let Some(value) = fields.get("terminalShell") {
             self.terminal_shell = (*value).to_owned();
         }
+        boolean("copyOnSelect", &mut self.copy_on_select);
         // Free text: the shell's own model normalizes ids, and an image path
         // is whatever the file dialog handed over.
         if let Some(value) = fields.get("toolbarLeading") {
@@ -331,6 +334,7 @@ impl StoredPrefs {
         write(&mut out, "previewWidth", &self.preview_width.to_string());
         write(&mut out, "sidebarWidth", &self.sidebar_width.to_string());
         write(&mut out, "terminalShell", &self.terminal_shell);
+        write(&mut out, "copyOnSelect", bool_text(self.copy_on_select));
         write(&mut out, "toolbarLeading", &self.toolbar_leading);
         write(&mut out, "toolbarTrailing", &self.toolbar_trailing);
         write(&mut out, "backgroundImage", &self.background_image);
@@ -592,6 +596,7 @@ pub struct ExplorerPrefs {
     preview_width: i32,
     sidebar_width: i32,
     terminal_shell: String,
+    copy_on_select: bool,
     toolbar_leading: String,
     toolbar_trailing: String,
     background_image: String,
@@ -644,6 +649,7 @@ impl ExplorerPrefs {
             preview_width: prefs.preview_width,
             sidebar_width: prefs.sidebar_width,
             terminal_shell: String::from(prefs.terminal_shell.as_str()),
+            copy_on_select: prefs.copy_on_select,
             toolbar_leading: String::from(prefs.toolbar_leading.as_str()),
             toolbar_trailing: String::from(prefs.toolbar_trailing.as_str()),
             background_image: String::from(prefs.background_image.as_str()),
@@ -693,6 +699,7 @@ impl ExplorerPrefs {
             preview_width: self.preview_width,
             sidebar_width: self.sidebar_width,
             terminal_shell: self.terminal_shell.clone(),
+            copy_on_select: self.copy_on_select,
             toolbar_leading: self.toolbar_leading.clone(),
             toolbar_trailing: self.toolbar_trailing.clone(),
             background_image: self.background_image.clone(),
@@ -839,6 +846,7 @@ impl ExplorerPrefs {
         set_preview_width(i32) => preview_width, preview_width_changed;
         set_sidebar_width(i32) => sidebar_width, sidebar_width_changed;
         set_terminal_shell(String) => terminal_shell, terminal_shell_changed;
+        set_copy_on_select(bool) => copy_on_select, copy_on_select_changed;
         set_toolbar_leading(String) => toolbar_leading, toolbar_leading_changed;
         set_toolbar_trailing(String) => toolbar_trailing, toolbar_trailing_changed;
         set_background_image(String) => background_image, background_image_changed;
@@ -961,6 +969,11 @@ impl ExplorerPrefs {
         Notify = terminal_shell_changed
     );
     qproperty!(
+        "copyOnSelect",
+        Member = copy_on_select,
+        Notify = copy_on_select_changed
+    );
+    qproperty!(
         "toolbarLeading",
         Member = toolbar_leading,
         Notify = toolbar_leading_changed
@@ -1045,6 +1058,8 @@ impl ExplorerPrefs {
     fn sidebar_width_changed(&mut self);
     #[qsignal]
     fn terminal_shell_changed(&mut self);
+    #[qsignal]
+    fn copy_on_select_changed(&mut self);
     #[qsignal]
     fn toolbar_leading_changed(&mut self);
     #[qsignal]
@@ -1391,6 +1406,13 @@ impl ExplorerPrefs {
                     return;
                 }
                 self.set_row_thumbnails(value);
+                true
+            }
+            "copyOnSelect" => {
+                if self.copy_on_select == value {
+                    return;
+                }
+                self.set_copy_on_select(value);
                 true
             }
             "showExtensions" => {

@@ -4,39 +4,47 @@ import QtQuick.Window
 import dae 1.0
 import dae.terminal 1.0
 
-// The bottom terminal panel. The shell is started on first use and stays alive
-// while the panel is hidden, which is the behaviour the previous shell already
-// had: hiding a terminal is not closing it.
+// The bottom terminal panel. Sessions live here, not on tabs: the panel is
+// the terminal's home and a tab only says where a *new* session starts
+// (Zed's `current_project_directory` semantics). Hiding the panel keeps
+// every shell alive; switching or closing tabs touches none of them.
 //
-// 240 px high and embedded in the content column, so the listing above it keeps
-// its rows and the terminal never covers them. See
-// docs/ui-instrument-migration.md §7.2.
+// 240 px high and embedded in the content column, so the listing above it
+// keeps its rows and the terminal never covers them. See
+// docs/ui-instrument-migration.md §7.2 and docs/terminal-redesign.md §3.
 Item {
     id: root
 
-    /// The tab whose shell this panel shows. The session belongs to the tab,
-    /// so switching tabs swaps the whole shell instead of reusing one process.
+    /// The tab whose folder a *new* session starts in. Existing sessions
+    /// are never moved or restarted on a tab switch.
     property var tab: null
-    readonly property var session: tab !== null ? tab.terminal : null
+    property var sessions: []
+    property int activeIndex: 0
+    readonly property var session: activeIndex >= 0 && activeIndex < sessions.length
+        ? sessions[activeIndex] : null
     readonly property bool running: session !== null && session.running
     property bool dark: true
     property string material: "none"
     property bool active: false
     property int panelHeight: 240
-
-    /// §11.6's 跟随当前目录 switch. When it is on, a navigation in the tab's
-    /// listing sends the shell a `cd`, so the terminal is always standing in
-    /// the folder the user is looking at. Off is the default: a shell the user
-    /// has cd'd elsewhere must not be pulled back by a click in the listing.
-    property bool followDirectory: false
-    /// The directory this panel last put the shell in, as far as the shell can
-    /// know it. Empty before the first start; the header then names the tab's
-    /// path, which is where the shell will start.
+    /// The shell's OSC 0/2 title when it reports one; the panel names the
+    /// configured shell before the first report and after an integration-less
+    /// shell stays with the executable's name.
+    readonly property string sessionTitle: session !== null && session.windowTitle !== ""
+        ? session.windowTitle : root.shellName
+    /// The directory this panel last put the active shell in — the spawn
+    /// directory, used as a fallback while the shell has not yet reported
+    /// its own working directory through OSC 7/9/1337.
     property string shellDirectory: ""
 
-    readonly property string workingDirectory: root.shellDirectory !== ""
-        ? root.shellDirectory
-        : (root.tab !== null && root.tab.folder ? root.tab.listing.path : "")
+    /// OSC report when the shell has integration installed; the spawn
+    /// directory when it does not. The tooltip says which one it is.
+    readonly property string workingDirectory: session !== null && session.cwd !== ""
+        ? session.cwd
+        : (root.shellDirectory !== ""
+            ? root.shellDirectory
+            : (root.tab !== null && root.tab.folder ? root.tab.listing.path : ""))
+    readonly property bool directoryReported: session !== null && session.cwd !== ""
 
     signal exited()
 
@@ -56,9 +64,29 @@ Item {
     height: implicitHeight
     clip: true
 
+    /// The find bar Ctrl+F opens. It searches the active session's grid,
+    /// scrollback included; closing it clears the needle.
+    property bool searchOpen: false
+
+    function openSearch() {
+        root.searchOpen = true
+        Qt.callLater(() => searchField.forceActiveFocus())
+    }
+
+    function closeSearch() {
+        root.searchOpen = false
+        if (root.session !== null)
+            root.session.setSearch("")
+        view.focusTerminal()
+    }
+
     function start() {
-        if (tab === null || !root.active)
+        if (!root.active || session === null)
             return
+        if (session.running) {
+            view.focusTerminal()
+            return
+        }
         // Starting the shell before the item has its size would create the PTY
         // at the placeholder size; the resize that follows makes PowerShell
         // redraw its prompt further down and leaves blank rows above it.
@@ -70,37 +98,71 @@ Item {
             return
         }
         // qmllint disable missing-property
-        tab.startTerminal(view.columns, view.rows)
-        root.shellDirectory = tab.listing.path
-    }
-
-    /// `cd` spelled for the shell that is running. The panel names the shell
-    /// by its file name, so the same three branches cover Windows and POSIX.
-    function changeDirectoryCommand(path) {
-        const shell = root.shellName.toLowerCase()
-        if (shell.indexOf("powershell") >= 0 || shell === "pwsh")
-            return "Set-Location -LiteralPath '" + String(path).replace(/'/g, "''") + "'"
-        if (shell === "cmd")
-            return "cd /d \"" + path + "\""
-        return "cd '" + String(path).replace(/'/g, "'\\''") + "'"
-    }
-
-    /// Moves the live shell into `path`, if the panel is following the tab.
-    function syncDirectory() {
-        if (!root.followDirectory || !root.running || root.session === null)
-            return
         const path = root.tab !== null && root.tab.folder ? root.tab.listing.path : ""
-        if (path === "" || path === root.shellDirectory)
-            return
+        session.start(path, view.columns, view.rows, ExplorerPrefs.terminalShell)
         root.shellDirectory = path
-        root.session.write(root.changeDirectoryCommand(path) + "\r")
     }
 
-    function toggleFollowDirectory() {
-        root.followDirectory = !root.followDirectory
-        if (root.followDirectory)
-            root.syncDirectory()
+    /// Absolute stays absolute; a relative link resolves against the
+    /// session's OSC-reported directory, falling back to where the shell
+    /// started.
+    function openLink(target) {
+        if (/^https?:\/\//i.test(target)) {
+            Qt.openUrlExternally(target)
+            return
+        }
+        let path = String(target)
+        if (/^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\"))
+            ; // already absolute
+        else {
+            const reported = root.session !== null && root.session.cwd !== ""
+                ? String(root.session.cwd) : root.shellDirectory
+            path = reported !== ""
+                ? reported.replace(/[\\/]+$/, "") + "/" + target : target
+        }
+        Workspace.openPath(path)
     }
+
+    /// Opens a new session in the active tab's folder and focuses it.
+    function newSession() {
+        root.sessions = root.sessions.concat(sessionComponent.createObject(root))
+        root.activeIndex = root.sessions.length - 1
+        Qt.callLater(root.start)
+    }
+
+
+
+    /// The shell a session runs, by file name — the pills need it without
+    /// touching the panel's "which session is active" state.
+    function shellOf(named) {
+        const shell = String(named.shell).trim()
+        if (shell !== "")
+            return shell.split(/[\\/]/).pop().replace(/\.exe$/i, "")
+        return Qt.platform.os === "windows" ? "PowerShell"
+            : Qt.platform.os === "osx" ? "zsh" : "bash"
+    }
+
+    Component {
+        id: sessionComponent
+        TerminalSession {}
+    }
+
+    function closeSession(index) {
+        if (index < 0 || index >= root.sessions.length)
+            return
+        const victim = root.sessions[index]
+        root.sessions = root.sessions.filter((named, at) => at !== index)
+        victim.kill()
+        victim.destroy()
+        if (root.activeIndex >= root.sessions.length)
+            root.activeIndex = Math.max(0, root.sessions.length - 1)
+    }
+
+    /// The panel never injects `cd` into a running shell — that pollutes
+    /// the shell's own history (Zed's rule too). The shell's directory is
+    /// *reported* through OSC 7/9/1337 by the integration snippets in
+    /// Assets/terminal-integration, and new sessions simply start in the
+    /// active tab's folder.
 
     /// §11.6's 清屏: the shell's own clear command, so the scrollback that
     /// goes away is the one the shell owns.
@@ -114,7 +176,16 @@ Item {
     }
 
     function focusTerminal() {
-        start()
+        if (root.sessions.length === 0) {
+            newSession()
+            return
+        }
+        // A session that was created while the panel was hidden (session
+        // restore makes `active` true for a moment) has no shell behind it
+        // yet; opening the panel starts it in the tab the user is looking
+        // at now, not the one from when the ghost object appeared.
+        if (!root.running)
+            Qt.callLater(root.start)
         view.focusTerminal()
     }
 
@@ -124,20 +195,19 @@ Item {
     }
 
     onActiveChanged: {
-        if (active)
+        if (active) {
+            if (root.sessions.length === 0)
+                newSession()
+            else if (!root.running)
+                Qt.callLater(root.start)
             Qt.callLater(root.focusTerminal)
+        }
     }
 
-    // The panel stays open across folder tabs; the new tab's shell starts the
-    // first time it becomes visible, and an already running one is only
-    // re-bound.
+    // The sessions are the panel's, so the directory the panel names changes
+    // only when a session starts — never on a tab switch.
     onTabChanged: {
-        // The shell belongs to the tab, so the directory the panel names is
-        // the new tab's. It is set again when the shell starts.
-        root.shellDirectory = root.tab !== null && root.tab.folder
-            ? root.tab.listing.path : ""
-        if (active)
-            start()
+        root.shellDirectory = ""
     }
 
     Rectangle {
@@ -164,7 +234,7 @@ Item {
         Row {
             anchors.left: parent.left
             anchors.leftMargin: 12
-            anchors.right: clearButton.left
+            anchors.right: sessionStrip.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             spacing: 6
@@ -182,7 +252,7 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.running
-                    ? qsTr("终端 · %1").arg(root.shellName)
+                    ? qsTr("终端 · %1").arg(root.sessionTitle)
                     : (root.session !== null && root.session.title !== ""
                             && root.session.title !== "Terminal"
                         ? qsTr("终端 · %1").arg(root.session.title)
@@ -197,184 +267,415 @@ Item {
                 width: Math.min(implicitWidth, header.width * 0.4)
             }
 
-            /// §11.6's 工作目录: where this shell started, in the tab's own
-            /// path. The dim mono run says it without competing with the
-            /// session name; the full path is in the tooltip.
+            /// §11.6's 工作目录: the shell's OSC report when its integration
+            /// is installed, the spawn folder otherwise. The dim mono run says
+            /// it without competing with the session name; the tooltip says
+            /// which of the two it is.
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.max(0, parent.width - x - 24)
                 text: root.workingDirectory
                 color: Theme.terminalInk
-                opacity: 0.65
+                opacity: root.directoryReported ? 0.85 : 0.55
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeMicro
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText
 
-                ToolTip { text: root.workingDirectory }
+                ToolTip {
+                    text: root.directoryReported
+                        ? root.workingDirectory
+                        : qsTr("%1（shell 未上报目录；安装 Assets/terminal-integration 后跟随）")
+                            .arg(root.workingDirectory)
+                }
             }
         }
 
-        /// 清屏: one command, spelled for the shell that is running. It is a
-        /// shell command rather than a grid wipe, because the scrollback the
-        /// user can scroll back into is the shell's, not this panel's.
-        Rectangle {
-            id: clearButton
-            anchors.right: followButton.left
+        /// One pill per session: the running shell's name, or its exit
+        /// state. The number keeps pills distinguishable before the shell
+        /// has drawn a title.
+        Row {
+            id: sessionStrip
+            anchors.right: actionsRow.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: 44
-            height: Theme.controlXs
-            radius: Theme.radiusXs
-            visible: root.running
-            color: clearMouse.containsMouse ? Theme.hover : "transparent"
+            spacing: 4
 
-            Text {
-                anchors.centerIn: parent
-                text: qsTr("清屏")
-                color: clearMouse.containsMouse
-                    ? Theme.terminalInkStrong : Theme.terminalInk
-                font.pixelSize: Theme.typeMicro
-                textFormat: Text.PlainText
-            }
-
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("清屏")
-            Accessible.onPressAction: root.clearScreen()
-
-            MouseArea {
-                id: clearMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: root.clearScreen()
-            }
-        }
-
-        /// §11.6's 跟随当前目录 switch. On, a navigation in this tab's listing
-        /// sends the shell a `cd`; off, the shell keeps its own directory.
-        Rectangle {
-            id: followButton
-            anchors.right: restartButton.left
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            width: followRow.implicitWidth + 12
-            height: Theme.controlXs
-            radius: Theme.radiusXs
-            color: followMouse.containsMouse ? Theme.hover : "transparent"
-            border.width: 1
-            border.color: root.followDirectory
-                ? Theme.accent : Theme.terminalInk
-
-            Row {
-                id: followRow
-                anchors.centerIn: parent
-                spacing: 4
+            Repeater {
+                model: root.sessions.length
 
                 Rectangle {
-                    width: 6
-                    height: 6
-                    radius: 3
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: root.followDirectory ? Theme.accent : "transparent"
-                    border.width: 1
-                    border.color: Theme.terminalInk
+                    id: pill
+                    required property int modelData
+                    readonly property int index: pill.modelData
+                    readonly property var named: root.sessions[pill.index]
+                    readonly property bool current: pill.index === root.activeIndex
+                    width: pillRow.implicitWidth + 14
+                    height: Theme.controlXs
+                    color: pillMouse.containsMouse ? Theme.hover
+                        : (pill.current ? Theme.inset : "transparent")
+
+                    Row {
+                        id: pillRow
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: (pill.index + 1) + " "
+                                + (pill.named.running ? root.shellOf(pill.named) : qsTr("已退出"))
+                            color: pill.current ? Theme.terminalInkStrong : Theme.terminalInk
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.typeMicro
+                            textFormat: Text.PlainText
+                        }
+                    }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("终端 %1").arg(pill.index + 1)
+                    Accessible.onPressAction: root.activeIndex = pill.index
+
+                    MouseArea {
+                        id: pillMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            root.activeIndex = pill.index
+                            Qt.callLater(root.focusTerminal)
+                        }
+                    }
                 }
+            }
+
+            /// New session. Opens in the active tab's folder.
+            Rectangle {
+                width: 22
+                height: Theme.controlXs
+                radius: Theme.radiusXs
+                color: newMouse.containsMouse ? Theme.hover : "transparent"
 
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("跟随目录")
-                    color: root.followDirectory
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: newMouse.containsMouse
+                        ? Theme.terminalInkStrong : Theme.terminalInk
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    textFormat: Text.PlainText
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("新建终端")
+                Accessible.onPressAction: root.newSession()
+
+                MouseArea {
+                    id: newMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.newSession()
+                }
+            }
+
+            /// Closes the active session; the others keep running.
+            Rectangle {
+                width: 22
+                height: Theme.controlXs
+                radius: Theme.radiusXs
+                visible: root.sessions.length > 0
+                color: closeSessionMouse.containsMouse ? Theme.hover : "transparent"
+
+                Glyph {
+                    anchors.centerIn: parent
+                    width: 12
+                    height: 12
+                    kind: "close"
+                    tint: closeSessionMouse.containsMouse
+                        ? Theme.terminalInkStrong : Theme.terminalInk
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("关闭此终端")
+                Accessible.onPressAction: root.closeSession(root.activeIndex)
+
+                MouseArea {
+                    id: closeSessionMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.closeSession(root.activeIndex)
+                }
+            }
+        }
+
+        Row {
+            id: actionsRow
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            /// 清屏: one command, spelled for the shell that is running. It is a
+            /// shell command rather than a grid wipe, because the scrollback the
+            /// user can scroll back into is the shell's, not this panel's.
+            Rectangle {
+                width: 44
+                height: Theme.controlXs
+                radius: Theme.radiusXs
+                visible: root.running
+                color: clearMouse.containsMouse ? Theme.hover : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("清屏")
+                    color: clearMouse.containsMouse
                         ? Theme.terminalInkStrong : Theme.terminalInk
                     font.pixelSize: Theme.typeMicro
                     textFormat: Text.PlainText
                 }
-            }
 
-            Accessible.role: Accessible.CheckBox
-            Accessible.name: qsTr("跟随当前目录")
-            Accessible.checked: root.followDirectory
-            Accessible.onPressAction: root.toggleFollowDirectory()
-
-            ToolTip {
-                text: qsTr("导航后让终端切换到当前目录")
-            }
-
-            MouseArea {
-                id: followMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: root.toggleFollowDirectory()
-            }
-        }
-
-        Rectangle {
-            id: restartButton
-            anchors.right: closeButton.left
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            width: 56
-            height: Theme.controlXs
-            radius: Theme.radiusXs
-            visible: !root.running
-            color: restartMouse.containsMouse ? Theme.hover : "transparent"
-
-            Text {
-                anchors.centerIn: parent
-                text: qsTr("重新启动")
-                color: restartMouse.containsMouse ? Theme.terminalInkStrong : Theme.terminalInk
-                font.pixelSize: Theme.typeMicro
-                textFormat: Text.PlainText
-            }
-
-            MouseArea {
-                id: restartMouse
                 Accessible.role: Accessible.Button
-                Accessible.name: qsTr("重新启动终端")
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: {
-                    root.start()
-                    Qt.callLater(root.focusTerminal)
+                Accessible.name: qsTr("清屏")
+                Accessible.onPressAction: root.clearScreen()
+
+                MouseArea {
+                    id: clearMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.clearScreen()
+                }
+            }
+
+
+            /// 重新启动: the active session died; start it again in the
+            /// folder it was born in.
+            Rectangle {
+                width: 56
+                height: Theme.controlXs
+                radius: Theme.radiusXs
+                visible: root.sessions.length > 0 && !root.running
+                color: restartMouse.containsMouse ? Theme.hover : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("重新启动")
+                    color: restartMouse.containsMouse
+                        ? Theme.terminalInkStrong : Theme.terminalInk
+                    font.pixelSize: Theme.typeMicro
+                    textFormat: Text.PlainText
+                }
+
+                MouseArea {
+                    id: restartMouse
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("重新启动终端")
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        root.start()
+                        Qt.callLater(root.focusTerminal)
+                    }
+                }
+            }
+
+            /// Hides the panel; sessions keep running.
+            Item {
+                width: 20
+                height: Theme.controlXs
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("关闭终端")
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusXs
+                    color: closeMouse.containsMouse ? Theme.hover : "transparent"
+                }
+
+                Glyph {
+                    anchors.centerIn: parent
+                    width: 12
+                    height: 12
+                    kind: "close"
+                    tint: closeMouse.containsMouse ? Theme.terminalInkStrong : Theme.terminalInk
+                }
+
+                MouseArea {
+                    id: closeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.active = false
                 }
             }
         }
 
-        Item {
-            id: closeButton
+        /// The Ctrl+F find bar: typing sets the needle, Enter steps to the
+        /// next match, Esc closes and clears. It covers the right half of
+        /// the header while open; the sessions and actions stay one
+        /// key press away.
+        Rectangle {
+            visible: root.searchOpen
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: 20
+            width: barRow.implicitWidth + 16
             height: Theme.controlXs
+            radius: Theme.radiusXs
+            color: Theme.terminalHeader
+            border.width: 1
+            border.color: searchField.activeFocus ? Theme.accent : Theme.hairline
+            z: 1
 
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("关闭终端")
-
-            Rectangle {
-                anchors.fill: parent
-                radius: Theme.radiusXs
-                color: closeMouse.containsMouse ? Theme.hover : "transparent"
-            }
-
-            Glyph {
+            Row {
+                id: barRow
                 anchors.centerIn: parent
-                width: 12
-                height: 12
-                kind: "close"
-                tint: closeMouse.containsMouse ? Theme.terminalInkStrong : Theme.terminalInk
-            }
+                spacing: 6
 
-            MouseArea {
-                id: closeMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: root.active = false
+                TextInput {
+                    id: searchField
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 140
+                    color: Theme.terminalInk
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.terminalInkStrong
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    focus: root.searchOpen
+
+                    onAccepted: {
+                        if (root.session !== null && text !== "") {
+                            root.session.setSearch(text)
+                            root.session.searchNext()
+                        }
+                    }
+                    onTextChanged: {
+                        if (root.session !== null)
+                            root.session.setSearch(text)
+                    }
+                    Keys.onEscapePressed: root.closeSearch()
+
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("在终端中搜索")
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.session !== null && root.session.searchTotal > 0
+                    text: root.session.searchIndex + "/" + root.session.searchTotal
+                    color: Theme.terminalInk
+                    opacity: 0.7
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.session !== null && root.session.searchTotal === 0
+                        && searchField.text !== ""
+                    text: qsTr("无匹配")
+                    color: Theme.terminalInk
+                    opacity: 0.7
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    textFormat: Text.PlainText
+                }
+
+                Rectangle {
+                    width: 22
+                    height: Theme.controlXs
+                    radius: Theme.radiusXs
+                    color: prevMouse.containsMouse ? Theme.hover : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "↑"
+                        color: prevMouse.containsMouse
+                            ? Theme.terminalInkStrong : Theme.terminalInk
+                        font.pixelSize: Theme.typeMicro
+                    }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("上一个匹配")
+                    Accessible.onPressAction: if (root.session !== null) root.session.searchPrev()
+
+                    MouseArea {
+                        id: prevMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: if (root.session !== null) root.session.searchPrev()
+                    }
+                }
+
+                Rectangle {
+                    width: 22
+                    height: Theme.controlXs
+                    radius: Theme.radiusXs
+                    color: nextMouse.containsMouse ? Theme.hover : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "↓"
+                        color: nextMouse.containsMouse
+                            ? Theme.terminalInkStrong : Theme.terminalInk
+                        font.pixelSize: Theme.typeMicro
+                    }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("下一个匹配")
+                    Accessible.onPressAction: if (root.session !== null) root.session.searchNext()
+
+                    MouseArea {
+                        id: nextMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: if (root.session !== null) root.session.searchNext()
+                    }
+                }
+
+                Rectangle {
+                    width: 22
+                    height: Theme.controlXs
+                    radius: Theme.radiusXs
+                    color: barCloseMouse.containsMouse ? Theme.hover : "transparent"
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 12
+                        height: 12
+                        kind: "close"
+                        tint: barCloseMouse.containsMouse
+                            ? Theme.terminalInkStrong : Theme.terminalInk
+                    }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("关闭搜索")
+                    Accessible.onPressAction: root.closeSearch()
+
+                    MouseArea {
+                        id: barCloseMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: root.closeSearch()
+                    }
+                }
             }
         }
     }
 
     TerminalItem {
         id: view
+        // TerminalItem is a C++ type; qmllint's model of it stops at the
+        // registered metatypes, so its signals read as missing too.
+        // qmllint disable unqualified
+        onSearchRequested: root.openSearch()
+        /// Ctrl+Click on a path or URL. Resolved against the session's
+        /// reported directory and handed to the OS-open path the rest of
+        /// the shell uses; URLs go straight to the browser. The
+        /// `:line:col` suffix is parsed but not used — the OS handler
+        /// cannot jump to a line.
+        onLinkActivated: function (target) {
+            root.openLink(target)
+        }
+
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: header.bottom
@@ -389,7 +690,10 @@ Item {
         /// and leaves focus nowhere.
         activeFocusOnTab: root.active
         session: root.session
-        dark: root.dark
+        /// Selections copy themselves when the setting says so. A C++
+        /// property, so qmllint cannot see it.
+        // qmllint disable missing-property
+        copyOnSelect: ExplorerPrefs.copyOnSelect
         fontSize: Workspace.terminalFontSize
         lineHeight: Workspace.terminalLineHeight
         fontFamily: Workspace.terminalFontFamily !== ""
@@ -407,12 +711,4 @@ Item {
         }
     }
 
-    Connections {
-        target: root.tab !== null && root.tab.folder ? root.tab.listing : null
-
-        /// The tab navigated; with 跟随目录 on, the shell follows it.
-        function onPathChanged() {
-            root.syncDirectory()
-        }
-    }
 }

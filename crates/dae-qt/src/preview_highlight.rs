@@ -237,7 +237,11 @@ static CONFIGS: LazyLock<HashMap<&'static str, HighlightConfiguration>> = LazyLo
     map
 });
 
-/// Whether a language token or fence name has a working grammar.
+/// Whether a language token or fence name has a working grammar. The
+/// preview crate itself decides through `canonical` + `CONFIGS` inline;
+/// this predicate exists for the tests, which use it to assert that every
+/// token the markup side can emit actually has a grammar behind it.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn supports(language: &str) -> bool {
     canonical(language).is_some_and(|token| CONFIGS.contains_key(token))
 }

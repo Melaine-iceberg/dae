@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QString};
-use dae_core::pty::{TerminalEvent, TerminalSession as CoreSession, TerminalSnapshot};
+use dae_core::pty::{
+    SnapshotKind, TerminalEvent, TerminalSession as CoreSession, TerminalSnapshot,
+};
 
 /// Registers the C++ painter as the `dae.terminal/TerminalItem` QML type.
 /// Must run before the engine loads a file that imports it.
@@ -21,8 +23,10 @@ pub fn register_item() {
 }
 
 const FRAME_MAGIC: &[u8; 4] = b"DAET";
-const FRAME_VERSION: u8 = 2;
-const HEADER_LEN: usize = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4 + 4;
+const FRAME_VERSION: u8 = 3;
+/// magic | version | cols | rows | cursor col | cursor row | visible |
+/// shape | display offset | history size | kind | dirty-row count.
+const HEADER_LEN: usize = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4 + 4 + 1 + 2;
 const CELL_LEN: usize = 4 + 4 + 4 + 1;
 
 #[cxx_qt::bridge]
@@ -52,6 +56,17 @@ pub mod qobject {
         #[qproperty(bool, running)]
         #[qproperty(i32, exit_code, cxx_name = "exitCode")]
         #[qproperty(QString, title)]
+        /// Find-bar state: the selected match's 1-based position and the
+        /// total on the active screen, refreshed by `searchNext`/`searchPrev`.
+        #[qproperty(i32, search_index, cxx_name = "searchIndex")]
+        #[qproperty(i32, search_total, cxx_name = "searchTotal")]
+        /// The window title the shell last set with OSC 0/2; empty until
+        /// the shell reports one. Distinct from `title`, which carries the
+        /// start error when spawning failed.
+        #[qproperty(QString, window_title, cxx_name = "windowTitle")]
+        /// The working directory the shell last reported with OSC 7/9/1337;
+        /// empty until then, so the panel falls back to the spawn directory.
+        #[qproperty(QString, cwd)]
         /// The executable this session was started with; empty means the
         /// platform default. The panel names the running shell from this, not
         /// from the setting, which may have changed since the spawn.
@@ -74,6 +89,18 @@ pub mod qobject {
         #[qinvokable]
         fn write(self: Pin<&mut TerminalSession>, data: &QString) -> bool;
 
+        /// Pastes text the way the running program asked to receive it —
+        /// bracketed when it enabled mode 2004 — instead of raw keystrokes.
+        #[qinvokable]
+        #[cxx_name = "pasteText"]
+        fn paste_text(self: Pin<&mut TerminalSession>, data: &QString) -> bool;
+
+        /// Wheel scroll: arrow keys on the alternate screen, history
+        /// scrolling on the primary one.
+        #[qinvokable]
+        #[cxx_name = "wheelScroll"]
+        fn wheel_scroll(self: Pin<&mut TerminalSession>, lines: i32);
+
         #[qinvokable]
         #[rust_name = "write_bytes"]
         #[cxx_name = "writeBytes"]
@@ -92,6 +119,27 @@ pub mod qobject {
 
         #[qinvokable]
         fn kill(self: Pin<&mut TerminalSession>);
+
+        /// Sets what the terminal search looks for; an empty string clears
+        /// it (and with it every highlight).
+        #[qinvokable]
+        #[cxx_name = "setSearch"]
+        fn set_search(self: Pin<&mut TerminalSession>, needle: &QString);
+
+        /// Steps to the next (older) match and scrolls it into view. The
+        /// find bar reads `searchIndex`/`searchTotal` afterwards.
+        #[qinvokable]
+        fn searchNext(self: Pin<&mut TerminalSession>) -> bool;
+
+        /// Steps to the previous (newer) match.
+        #[qinvokable]
+        fn searchPrev(self: Pin<&mut TerminalSession>) -> bool;
+
+        /// The viewport's highlight rectangles (see `encode_search_rects`),
+        /// empty when no search is set.
+        #[qinvokable]
+        #[cxx_name = "searchRects"]
+        fn search_rects(self: Pin<&mut TerminalSession>) -> QByteArray;
 
         /// The whole visible grid as a compact frame (see `encode_frame`),
         /// resolved against the light or dark palette.
@@ -116,10 +164,15 @@ pub struct TerminalSessionRust {
     running: bool,
     exit_code: i32,
     title: QString,
+    search_index: i32,
+    search_total: i32,
+    window_title: QString,
+    cwd: QString,
     shell: QString,
 }
 
 impl qobject::TerminalSession {
+    /// Spawns the shell in `cwd`, or home when it is not a local directory.
     fn start(
         mut self: Pin<&mut Self>,
         cwd: &QString,
@@ -148,6 +201,10 @@ impl qobject::TerminalSession {
                     let pending = Arc::clone(&pending);
                     let _ = thread.queue(move |mut session| {
                         pending.store(false, Ordering::Release);
+                        // The shell's OSC reports (title, pwd) may have
+                        // changed with this burst; copy them before the
+                        // painter repaints so the header follows at once.
+                        session.as_mut().pull_reported_state();
                         session.as_mut().updated();
                     });
                 }
@@ -191,6 +248,23 @@ impl qobject::TerminalSession {
         session.write(data.to_string().as_bytes()).is_ok()
     }
 
+    fn paste_text(self: Pin<&mut Self>, data: &QString) -> bool {
+        let Some(session) = self.session.as_ref() else {
+            return false;
+        };
+        session.paste(&data.to_string()).is_ok()
+    }
+
+    fn wheel_scroll(mut self: Pin<&mut Self>, lines: i32) {
+        if let Some(session) = self.session.as_ref() {
+            // On the alternate screen the program took the wheel itself;
+            // otherwise the grid moved and must be repainted.
+            if !session.wheel_scroll(lines).unwrap_or(true) {
+                self.as_mut().updated();
+            }
+        }
+    }
+
     fn write_bytes(self: Pin<&mut Self>, data: &QByteArray) -> bool {
         let Some(session) = self.session.as_ref() else {
             return false;
@@ -226,6 +300,61 @@ impl qobject::TerminalSession {
         }
     }
 
+    fn set_search(mut self: Pin<&mut Self>, needle: &QString) {
+        let text = needle.to_string();
+        let stripped = text.trim().to_owned();
+        if let Some(session) = self.session.as_ref() {
+            session.set_search_needle(if stripped.is_empty() { None } else { Some(&stripped) });
+        }
+        self.as_mut().set_search_index(0);
+        self.as_mut().set_search_total(0);
+        self.as_mut().updated();
+    }
+
+    // The QML-side names; the bridge expects them verbatim.
+    #[allow(non_snake_case)]
+    fn searchNext(self: Pin<&mut Self>) -> bool {
+        self.search_step(true)
+    }
+
+    #[allow(non_snake_case)]
+    fn searchPrev(self: Pin<&mut Self>) -> bool {
+        self.search_step(false)
+    }
+
+    fn search_step(mut self: Pin<&mut Self>, forward: bool) -> bool {
+        let Some(session) = self.session.as_ref() else {
+            return false;
+        };
+        let Some((total, index)) = session.search_step(forward) else {
+            self.as_mut().set_search_index(0);
+            self.as_mut().set_search_total(0);
+            self.as_mut().updated();
+            return false;
+        };
+        self.as_mut().set_search_total(total.clamp(0, i32::MAX as usize) as i32);
+        self.as_mut().set_search_index((index + 1).clamp(1, total.max(1)) as i32);
+        self.as_mut().updated();
+        true
+    }
+
+    /// `count` as `u16`, then per rectangle `row`/`column`/`columns` as
+    /// `u16` each, little endian. The painter decodes exactly this.
+    fn search_rects(self: Pin<&mut Self>) -> QByteArray {
+        let Some(session) = self.session.as_ref() else {
+            return QByteArray::default();
+        };
+        let rects = session.search_viewport();
+        let mut out = Vec::with_capacity(2 + rects.len() * 6);
+        out.extend_from_slice(&(rects.len() as u16).to_le_bytes());
+        for rect in &rects {
+            out.extend_from_slice(&rect.row.to_le_bytes());
+            out.extend_from_slice(&rect.column.to_le_bytes());
+            out.extend_from_slice(&rect.columns.to_le_bytes());
+        }
+        QByteArray::from(out.as_slice())
+    }
+
     fn snapshot(&self, dark: bool) -> QByteArray {
         let Some(session) = self.session.as_ref() else {
             return QByteArray::default();
@@ -234,6 +363,24 @@ impl qobject::TerminalSession {
             return QByteArray::default();
         };
         QByteArray::from(encode_frame(&snapshot).as_slice())
+    }
+
+    /// Copies the OSC-reported title and working directory onto the QObject
+    /// so QML bindings can follow them. Runs on the Qt thread with every
+    /// output wake; the copies only allocate when a report actually changed.
+    fn pull_reported_state(mut self: Pin<&mut Self>) {
+        let title = self.session.as_ref().and_then(|s| s.window_title());
+        if let Some(title) = title.map(QString::from)
+            && title != self.window_title
+        {
+            self.as_mut().set_window_title(title);
+        }
+        let cwd = self.session.as_ref().and_then(|s| s.working_directory());
+        if let Some(cwd) = cwd.map(QString::from)
+            && cwd != self.cwd
+        {
+            self.as_mut().set_cwd(cwd);
+        }
     }
 
     fn mark_exited(mut self: Pin<&mut Self>, code: i32) {
@@ -247,13 +394,20 @@ impl qobject::TerminalSession {
     }
 }
 
-/// `DAET` | version | cols | rows | cursor col | cursor row | visible | shape |
-/// display offset | history size | cells.
+/// `DAET` | version 3 | cols | rows | cursor col | cursor row | visible |
+/// shape | display offset | history size | kind | count.
 ///
 /// Little endian, one 13-byte record per cell: Unicode scalar, fg ARGB, bg
-/// ARGB, attribute bits. The painter decodes exactly this; keeping the format
-/// next to the encoder is why it has no serde dependency.
+/// ARGB, attribute bits. A full frame (kind 0, count 0) carries every
+/// viewport cell. A shift frame (kind 1, count k) carries the k rows of new
+/// cells the scroll brought in at the bottom, top to bottom. The painter
+/// decodes exactly this; keeping the format next to the encoder is why it
+/// has no serde dependency.
 fn encode_frame(snapshot: &TerminalSnapshot) -> Vec<u8> {
+    let shifted = match &snapshot.kind {
+        SnapshotKind::Full => 0usize,
+        SnapshotKind::Shift(lines) => *lines,
+    };
     let mut frame = Vec::with_capacity(HEADER_LEN + snapshot.cells.len() * CELL_LEN);
     frame.extend_from_slice(FRAME_MAGIC);
     frame.push(FRAME_VERSION);
@@ -265,6 +419,11 @@ fn encode_frame(snapshot: &TerminalSnapshot) -> Vec<u8> {
     frame.push(snapshot.cursor_shape);
     frame.extend_from_slice(&(snapshot.display_offset as u32).to_le_bytes());
     frame.extend_from_slice(&(snapshot.history_size as u32).to_le_bytes());
+    frame.push(match &snapshot.kind {
+        SnapshotKind::Full => 0u8,
+        SnapshotKind::Shift(_) => 1u8,
+    });
+    frame.extend_from_slice(&(shifted as u16).to_le_bytes());
     for cell in &snapshot.cells {
         frame.extend_from_slice(&(cell.ch as u32).to_le_bytes());
         frame.extend_from_slice(&cell.fg.to_le_bytes());
@@ -283,6 +442,7 @@ mod tests {
         let snapshot = TerminalSnapshot {
             cols: 2,
             rows: 1,
+            kind: SnapshotKind::Full,
             cursor_col: 1,
             cursor_row: 0,
             cursor_visible: true,
@@ -294,6 +454,34 @@ mod tests {
         let frame = encode_frame(&snapshot);
         assert_eq!(&frame[..4], FRAME_MAGIC);
         assert_eq!(frame[4], FRAME_VERSION);
+        // Header: 25 bytes, kind 0 (full), shifted-line count 0.
+        assert_eq!(frame[23], 0);
+        assert_eq!(read_u16(&frame, 24), 0);
         assert_eq!(frame.len(), HEADER_LEN + 2 * CELL_LEN);
+    }
+
+    #[test]
+    fn a_shift_frame_carries_only_its_new_bottom_rows() {
+        let snapshot = TerminalSnapshot {
+            cols: 2,
+            rows: 3,
+            kind: SnapshotKind::Shift(1),
+            cursor_col: 0,
+            cursor_row: 2,
+            cursor_visible: true,
+            cursor_shape: 0,
+            display_offset: 0,
+            history_size: 0,
+            cells: vec![Default::default(); 2],
+        };
+        let frame = encode_frame(&snapshot);
+        assert_eq!(frame[23], 1);
+        assert_eq!(read_u16(&frame, 24), 1);
+        // One new row of two cells, and nothing else.
+        assert_eq!(frame.len(), HEADER_LEN + 2 * CELL_LEN);
+    }
+
+    fn read_u16(frame: &[u8], at: usize) -> u16 {
+        u16::from_le_bytes([frame[at], frame[at + 1]])
     }
 }

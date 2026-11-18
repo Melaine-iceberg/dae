@@ -21,7 +21,9 @@ use std::thread;
 
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
-use crate::ghostty_vt::{self, GhosttyStyle, GhosttyStyleColor, Vt};
+use crate::ghostty_vt::{
+    self, GhosttyRowId, GhosttyStyle, GhosttyStyleColor, Vt,
+};
 
 const SCROLLBACK_LINES: usize = 10_000;
 
@@ -68,10 +70,26 @@ impl CellSnapshot {
     }
 }
 
+/// What a snapshot carries. The vendored libghostty-vt marks every update
+/// fully dirty (a probe in `examples/dirty_probe.rs` showed `DIRTY_FULL`
+/// and all rows dirty even for a bare cursor move), so per-row patching is
+/// not available. What the library does expose is stable row identity: when
+/// the viewport scrolled by `k` lines, every row keeps the id of the row
+/// that moved there, so a shift frame sends only the `k` new bottom rows
+/// and the painter moves the rest in its shadow grid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SnapshotKind {
+    Full,
+    /// The viewport scrolled up by `k`; `cells` holds the `k` new bottom
+    /// rows, top to bottom.
+    Shift(usize),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TerminalSnapshot {
     pub cols: usize,
     pub rows: usize,
+    pub kind: SnapshotKind,
     pub cursor_col: usize,
     pub cursor_row: usize,
     pub cursor_visible: bool,
@@ -81,6 +99,8 @@ pub struct TerminalSnapshot {
     /// Lines kept above the viewport. Together with `rows` this is what the
     /// scrollbar needs to size its thumb; `display_offset` places it.
     pub history_size: usize,
+    /// For `Full`, the viewport top to bottom. For `Rows`, exactly the rows
+    /// named in `kind`, each `cols` long, in ascending row order.
     pub cells: Vec<CellSnapshot>,
 }
 
@@ -103,6 +123,10 @@ pub struct TerminalSession {
     notify: TerminalNotifier,
     exited: Arc<AtomicBool>,
     exit_code: Arc<AtomicI32>,
+    /// What the shell reported through OSC 7/9/1337 (decoded path) and
+    /// OSC 0/2, filled by the reader thread's callbacks.
+    reported_pwd: Arc<Mutex<Option<String>>>,
+    reported_title: Arc<Mutex<Option<String>>>,
 }
 
 /// Context for the library's write-pty callback. The callback fires inside
@@ -110,6 +134,8 @@ pub struct TerminalSession {
 /// ever taken in one order (session then writer).
 struct WritePtyUserdata {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    reported_pwd: Arc<Mutex<Option<String>>>,
+    reported_title: Arc<Mutex<Option<String>>>,
 }
 
 unsafe extern "C" fn write_pty_callback(
@@ -125,11 +151,96 @@ unsafe extern "C" fn write_pty_callback(
         let _ = writer.flush();
     }
 }
+/// The shell's OSC 7/9/1337 report. The value is stored verbatim except for
+/// OSC 7, where a `file://` URI is decoded into the path the panel shows.
+unsafe extern "C" fn pwd_changed_callback(
+    terminal: ghostty_vt::GhosttyTerminal,
+    userdata: *mut c_void,
+) {
+    let userdata = unsafe { &*(userdata as *const WritePtyUserdata) };
+    if let Some(raw) =
+        unsafe { ghostty_vt::terminal_string(terminal, ghostty_vt::TERMINAL_DATA_PWD) }
+        && let Ok(mut reported) = userdata.reported_pwd.lock()
+    {
+        *reported = Some(decode_pwd_report(&raw));
+    }
+}
+
+/// The shell's OSC 0/2 title report.
+unsafe extern "C" fn title_changed_callback(
+    terminal: ghostty_vt::GhosttyTerminal,
+    userdata: *mut c_void,
+) {
+    let userdata = unsafe { &*(userdata as *const WritePtyUserdata) };
+    if let Some(raw) =
+        unsafe { ghostty_vt::terminal_string(terminal, ghostty_vt::TERMINAL_DATA_TITLE) }
+        && let Ok(mut reported) = userdata.reported_title.lock()
+    {
+        *reported = Some(raw);
+    }
+}
+
+/// OSC 7 carries a `file://host/path` URI; OSC 9 (ConEmu) and OSC 1337
+/// (iTerm2) carry bare paths. A URI is percent-decoded and its host dropped
+/// (`file://localhost/K:/x` and `file:///K:/x` both mean `K:/x`); a bare
+/// value is kept as the path it already is.
+fn decode_pwd_report(raw: &str) -> String {
+    let Some(rest) = raw.strip_prefix("file://") else {
+        return raw.to_string();
+    };
+    // Skip the host component; the path is what follows it.
+    let after_host = match rest.find('/') {
+        Some(at) => &rest[at..],
+        None => rest,
+    };
+    let decoded = percent_decode(after_host);
+    // A Windows drive path arrives as `/K:/x`; a POSIX path as `/home/u`.
+    // Only the former loses its leading separator.
+    if let Some(path) = decoded.strip_prefix('/')
+        && let (Some(drive), Some(colon)) = (path.chars().next(), path.chars().nth(1))
+        && drive.is_ascii_alphabetic()
+        && colon == ':'
+    {
+        return path.to_string();
+    }
+    decoded
+}
+
+/// Minimal percent-decoding for the path component of a `file:` URI.
+/// A malformed escape is kept verbatim; the panel shows the bytes the
+/// shell sent rather than guessing.
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' && at + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[at + 1..at + 3]).unwrap_or("");
+            if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                out.push(byte);
+                at += 3;
+                continue;
+            }
+        }
+        out.push(bytes[at]);
+        at += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
 
 struct TerminalState {
+    /// Owned by the state and freed with it, *before* the terminal: the
+    /// search holds tracked state inside the terminal that must be
+    /// released first. Declared before `vt` so field-drop order frees it
+    /// first.
+    search: Option<ghostty_vt::Search>,
     vt: Vt<WritePtyUserdata>,
     cols: usize,
     rows: usize,
+    /// The row ids of the last frame the painter received, so the next
+    /// snapshot can collapse a scroll into a shift.
+    last_ids: Vec<GhosttyRowId>,
+    last_dark: Option<bool>,
 }
 
 impl TerminalSession {
@@ -156,6 +267,10 @@ impl TerminalSession {
         }
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
+        // Lets shell integration snippets (Assets/terminal-integration)
+        // detect that they are running under dae, the way Zed's ZED_TERM
+        // does; nothing else reads it.
+        command.env("DAE_TERM", "1");
 
         let pair = native_pty_system()
             .openpty(PtySize {
@@ -182,19 +297,28 @@ impl TerminalSession {
         // Dropping the slave keeps reads from hanging once the shell exits.
         drop(pair.slave);
 
+        let reported_pwd = Arc::new(Mutex::new(None));
+        let reported_title = Arc::new(Mutex::new(None));
         let vt = Vt::new(
             cols,
             rows,
             SCROLLBACK_LINES,
             write_pty_callback,
+            title_changed_callback,
+            pwd_changed_callback,
             Box::new(WritePtyUserdata {
                 writer: Arc::clone(&writer),
+                reported_pwd: Arc::clone(&reported_pwd),
+                reported_title: Arc::clone(&reported_title),
             }),
         )?;
         let inner = Arc::new(Mutex::new(TerminalState {
+            search: None,
             vt,
             cols: usize::from(cols),
             rows: usize::from(rows),
+            last_ids: Vec::new(),
+            last_dark: None,
         }));
         let exited = Arc::new(AtomicBool::new(false));
         let exit_code = Arc::new(AtomicI32::new(-1));
@@ -243,6 +367,8 @@ impl TerminalSession {
             notify,
             exited,
             exit_code,
+            reported_pwd,
+            reported_title,
         })
     }
 
@@ -259,6 +385,73 @@ impl TerminalSession {
             .map_err(|error| format!("term.write_failed: {error}"))
     }
 
+    /// Pastes `text` the way the running program asked to receive it: when
+    /// it enabled bracketed paste (mode 2004) the bytes are wrapped in the
+    /// 200/201 markers, so a vim or tmux sees one paste instead of a run
+    /// of Enters; without it the text is sent as keystrokes, newlines as
+    /// carriage returns. Unsafe control bytes are neutralised either way.
+    pub fn paste(&self, text: &str) -> Result<(), String> {
+        let bracketed = self
+            .inner
+            .lock()
+            .map(|mut state| state.vt.mode(ghostty_vt::MODE_BRACKETED_PASTE))
+            .unwrap_or(false);
+
+        // `ghostty_paste_encode` modifies the buffer in place; keep a copy.
+        let mut data = text.as_bytes().to_vec();
+        let mut needed: usize = 0;
+        let query = unsafe {
+            ghostty_vt::ghostty_paste_encode(
+                data.as_mut_ptr(),
+                data.len(),
+                bracketed,
+                std::ptr::null_mut(),
+                0,
+                &mut needed,
+            )
+        };
+        if query != ghostty_vt::GHOSTTY_OUT_OF_SPACE {
+            return Err("term.paste_encode_failed".to_string());
+        }
+        let mut encoded = vec![0u8; needed.max(1)];
+        let mut written: usize = 0;
+        let result = unsafe {
+            ghostty_vt::ghostty_paste_encode(
+                data.as_mut_ptr(),
+                data.len(),
+                bracketed,
+                encoded.as_mut_ptr(),
+                encoded.len(),
+                &mut written,
+            )
+        };
+        if result != ghostty_vt::GHOSTTY_SUCCESS {
+            return Err("term.paste_encode_failed".to_string());
+        }
+        self.write(&encoded[..written])
+    }
+
+    /// What the wheel does with `steps` (positive scrolls up): on the
+    /// alternate screen the program owns the viewport, so the wheel
+    /// becomes arrow keys; on the primary screen it walks the history.
+    /// Returns `true` when the alternate screen took the wheel.
+    pub fn wheel_scroll(&self, steps: i32) -> Result<bool, String> {
+        let alternate = self
+            .inner
+            .lock()
+            .map(|mut state| state.vt.alternate_screen())
+            .unwrap_or(false);
+        if !alternate {
+            self.scroll(steps);
+            return Ok(false);
+        }
+        let sequence: &[u8] = if steps >= 0 { b"\x1b[A" } else { b"\x1b[B" };
+        for _ in 0..steps.unsigned_abs() {
+            self.write(sequence)?;
+        }
+        Ok(true)
+    }
+
     /// Resizes both the emulator grid and the PTY. The shell learns the new
     /// size through `TIOCSWINSZ` / `ResizePseudoConsole`.
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
@@ -272,6 +465,9 @@ impl TerminalSession {
             state.vt.resize(cols, rows);
             state.cols = usize::from(cols);
             state.rows = usize::from(rows);
+            // The next frame has new dimensions; the painter's shadow grid
+            // and the remembered row ids cannot carry over.
+            state.last_ids.clear();
         }
         let master = self
             .master
@@ -311,6 +507,11 @@ impl TerminalSession {
     /// The grid as the painter consumes it. `dark` picks the palette the
     /// renderer is drawing against; the cells carry resolved colours, so a
     /// theme flip is a fresh snapshot rather than a repaint of stale ones.
+    ///
+    /// The first frame after a spawn or a resize, and every frame after a
+    /// theme flip, is full. A frame whose rows are all the previous frame's
+    /// rows moved up by `k`, plus `k` new ones, is a shift: only the new
+    /// rows cross the bridge.
     pub fn snapshot(&self, dark: bool) -> Option<TerminalSnapshot> {
         let mut state = self.inner.lock().ok()?;
         if !state.vt.update() {
@@ -329,11 +530,20 @@ impl TerminalSession {
             })
             .unwrap_or((0, 0));
 
+        let (cursor_col, cursor_row, cursor_shape, cursor_visible) = match state.vt.cursor() {
+            Some((x, y, shape)) if usize::from(x) < cols && usize::from(y) < rows => {
+                (usize::from(x), usize::from(y), shape, true)
+            }
+            _ => (0, 0, 0, false),
+        };
+
+        let mut ids = vec![GhosttyRowId { bits: [0; 2] }; rows];
         let mut cells = vec![CellSnapshot::blank(dark); cols.saturating_mul(rows)];
         state.vt.visit_rows(|y, mut row| {
             if y < 0 || y as usize >= rows {
                 return;
             }
+            ids[y as usize] = row.id();
             while let Some((x, raw, style)) = row.next_cell() {
                 if usize::from(x) >= cols {
                     break;
@@ -342,16 +552,30 @@ impl TerminalSession {
             }
         });
 
-        let (cursor_col, cursor_row, cursor_shape, cursor_visible) = match state.vt.cursor() {
-            Some((x, y, shape)) if usize::from(x) < cols && usize::from(y) < rows => {
-                (usize::from(x), usize::from(y), shape, true)
-            }
-            _ => (0, 0, 0, false),
+        // A theme flip recolours every cell, and a shadow grid from a
+        // different palette cannot be patched; those, and anything whose
+        // rows are not a pure scroll of the last frame, go out whole.
+        let pure_scroll = state.last_ids.len() == rows && state.last_dark == Some(dark);
+        let shift = pure_scroll
+            .then(|| {
+                (1..rows)
+                    .filter(|&k| (0..rows - k).all(|i| ids[i] == state.last_ids[i + k]))
+                    .max()
+            })
+            .flatten();
+
+        let (kind, cells) = match shift {
+            Some(k) => (SnapshotKind::Shift(k), cells.split_off((rows - k) * cols)),
+            None => (SnapshotKind::Full, cells),
         };
+
+        state.last_ids = ids;
+        state.last_dark = Some(dark);
 
         Some(TerminalSnapshot {
             cols,
             rows,
+            kind,
             cursor_col,
             cursor_row,
             cursor_visible,
@@ -364,6 +588,63 @@ impl TerminalSession {
 
     pub fn is_running(&self) -> bool {
         !self.exited.load(Ordering::Acquire)
+    }
+
+    /// The working directory the shell last reported (OSC 7/9/1337), as a
+    /// decoded path. `None` until the shell's integration sends its first
+    /// report; the UI falls back to the directory the shell spawned in.
+    pub fn working_directory(&self) -> Option<String> {
+        self.reported_pwd.lock().ok().and_then(|guard| guard.clone())
+    }
+
+    /// The window title the shell last set with OSC 0/2. `None` before the
+    /// first report.
+    pub fn window_title(&self) -> Option<String> {
+        self.reported_title.lock().ok().and_then(|guard| guard.clone())
+    }
+
+    /// Sets the search needle, or clears it with `None`. A cleared needle
+    /// drops the search handle so repaints stop drawing highlights.
+    pub fn set_search_needle(&self, needle: Option<&str>) {
+        if let Ok(mut state) = self.inner.lock() {
+            match (needle, state.search.as_mut()) {
+                (Some(needle), Some(search)) => {
+                    search.set_needle(Some(needle));
+                    search.run();
+                }
+                (Some(needle), None) => {
+                    if let Ok(mut search) = state.vt.create_search() {
+                        search.set_needle(Some(needle));
+                        search.run();
+                        state.search = Some(search);
+                    }
+                }
+                (None, _) => state.search = None,
+            }
+        }
+    }
+
+    /// Selects the next match toward older content (`forward`) or the
+    /// previous one, scrolling it into view, and reports `(total,
+    /// selected index)` for the find bar's "k of n".
+    pub fn search_step(&self, forward: bool) -> Option<(usize, usize)> {
+        self.inner.lock().ok().and_then(|mut state| {
+            let search = state.search.as_mut()?;
+            search.run();
+            search.step(forward)
+        })
+    }
+
+    /// The matches on the visible pages in viewport coordinates, for the
+    /// painter's highlight rectangles.
+    pub fn search_viewport(&self) -> Vec<ghostty_vt::SearchRect> {
+        if let Ok(mut state) = self.inner.lock() {
+            let (cols, rows) = (state.cols, state.rows);
+            if let Some(search) = state.search.as_mut() {
+                return search.viewport_matches(cols as u16, rows as u16);
+            }
+        }
+        Vec::new()
     }
 
     pub fn exit_code(&self) -> i32 {
@@ -612,6 +893,28 @@ fn default_shell_command() -> CommandBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn osc7_uris_decode_to_plain_paths() {
+        // Windows drive paths arrive with an empty host, so the path is
+        // `/K:/code` and the leading separator must go.
+        assert_eq!(decode_pwd_report("file:///K:/code"), "K:/code");
+        assert_eq!(decode_pwd_report("file://localhost/K:/code"), "K:/code");
+        // POSIX paths keep their leading separator.
+        assert_eq!(decode_pwd_report("file://localhost/home/u"), "/home/u");
+        assert_eq!(decode_pwd_report("file:///home/u"), "/home/u");
+        // Percent-encoded UTF-8 and spaces come back as the bytes the shell
+        // had; a malformed escape is kept verbatim rather than dropped.
+        assert_eq!(decode_pwd_report("file:///a%20b"), "/a b");
+        assert_eq!(decode_pwd_report("file:///%E4%B8%AD"), "/中");
+        // `%2b` is a complete escape (+); a truncated `%2` at the end of
+        // the value is kept verbatim rather than dropped.
+        assert_eq!(decode_pwd_report("file:///a%2b"), "/a+");
+        assert_eq!(decode_pwd_report("file:///a%2"), "/a%2");
+        // OSC 9 (ConEmu) and OSC 1337 (iTerm2) carry bare paths already.
+        assert_eq!(decode_pwd_report("K:\\code"), "K:\\code");
+        assert_eq!(decode_pwd_report(""), "");
+    }
 
     #[test]
     fn ansi_palette_covers_the_three_ranges() {

@@ -3,6 +3,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cxx_qt_build::{CxxQtBuilder, QResource, QResources};
+
+// Declared in Cargo.toml only to order this build script after `dae-qt`'s
+// (its build script exports the `plugin.qmltypes` this one reads; cargo
+// orders build scripts along `[build-dependencies]`). The underscore
+// import keeps cargo's unused-dependency lint quiet without generating
+// code — see the matching note in `apps/dae/Cargo.toml`.
+use dae_qt as _;
 use qt_build_utils::QResourceFile;
 
 /// Where the QML tree lives inside the binary. Every file below is mounted

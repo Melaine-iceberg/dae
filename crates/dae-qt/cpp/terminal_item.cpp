@@ -17,7 +17,7 @@ namespace dae_qt {
 
 namespace {
 
-constexpr int FrameHeader = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4 + 4;
+constexpr int FrameHeader = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4 + 4 + 1 + 2;
 constexpr int FrameCell = 4 + 4 + 4 + 1;
 constexpr qreal ScrollbarWidth = 6.0;
 constexpr qreal ScrollbarMargin = 3.0;
@@ -191,6 +191,14 @@ void TerminalItem::setDark(bool dark)
     refresh();
 }
 
+void TerminalItem::setCopyOnSelect(bool value)
+{
+    if (m_copyOnSelect == value)
+        return;
+    m_copyOnSelect = value;
+    emit copyOnSelectChanged();
+}
+
 void TerminalItem::setFontSize(int size)
 {
     const int clamped = qBound(6, size, 32);
@@ -292,10 +300,14 @@ void TerminalItem::refresh()
         m_rows = 0;
         m_historySize = 0;
         m_displayOffset = 0;
+        m_searchRects.clear();
         clearSelection();
         update();
         return;
     }
+
+    pullSearchRects();
+
     QByteArray frame;
     const bool pulled = QMetaObject::invokeMethod(m_session.data(), "snapshot",
                                                   Q_RETURN_ARG(QByteArray, frame),
@@ -310,8 +322,34 @@ void TerminalItem::refresh()
         m_historySize = 0;
         m_displayOffset = 0;
         m_cursorVisible = false;
+        clearSelection();
     }
+    // A full frame repaints everything; a shift frame moved every row, so it
+    // does too — its savings were on the bridge, not in the damage region.
     update();
+}
+
+/// The session's `searchRects` payload: `u16 count`, then per rectangle
+/// `row`/`column`/`columns` as `u16` each, little endian. An empty payload
+/// (no session, no search) clears the highlights.
+void TerminalItem::pullSearchRects()
+{
+    m_searchRects.clear();
+    QByteArray payload;
+    if (!QMetaObject::invokeMethod(m_session.data(), "searchRects",
+                                   Q_RETURN_ARG(QByteArray, payload))
+        || payload.size() < 2) {
+        return;
+    }
+    const auto* data = reinterpret_cast<const uchar*>(payload.constData());
+    const int count = readU16(data);
+    if (payload.size() < 2 + qsizetype(count) * 6)
+        return;
+    m_searchRects.reserve(count);
+    for (int index = 0; index < count; ++index) {
+        const uchar* rect = data + 2 + index * 6;
+        m_searchRects.append(SearchRect{ readU16(rect), readU16(rect + 2), readU16(rect + 4) });
+    }
 }
 
 bool TerminalItem::decodeFrame(const QByteArray& frame)
@@ -319,20 +357,59 @@ bool TerminalItem::decodeFrame(const QByteArray& frame)
     if (frame.size() < FrameHeader)
         return false;
     const auto* data = reinterpret_cast<const uchar*>(frame.constData());
-    if (std::memcmp(data, "DAET", 4) != 0 || data[4] != 2)
+    if (std::memcmp(data, "DAET", 4) != 0 || data[4] != 3)
         return false;
 
     const int cols = readU16(data + 5);
     const int rows = readU16(data + 7);
     if (cols <= 0 || rows <= 0 || cols > 4096 || rows > 4096)
         return false;
-    if (frame.size() < FrameHeader + cols * rows * FrameCell)
-        return false;
+    const int kind = data[23];
+    const int count = readU16(data + 24);
 
-    if (cols != m_cols || rows != m_rows)
+    if (kind == 1) {
+        // Shift frame: the viewport scrolled up `count` lines and the
+        // `count` rows that follow are the new bottom lines, top to bottom.
+        const qsizetype expected =
+            qsizetype(FrameHeader) + qsizetype(count) * cols * FrameCell;
+        if (count <= 0 || count >= rows || frame.size() < expected)
+            return false;
+        if (cols != m_cols || rows != m_rows || !m_hasFrame)
+            return false; // the shadow grid cannot be moved at new dimensions
+        const qsizetype grid = qsizetype(cols) * rows;
+        std::memmove(m_cells.data(), m_cells.data() + qsizetype(count) * cols,
+                     (grid - qsizetype(count) * cols) * sizeof(TerminalCell));
+        const uchar* cell = data + FrameHeader;
+        TerminalCell* target = m_cells.data() + grid - qsizetype(count) * cols;
+        for (int index = 0; index < count * cols; ++index) {
+            target[index].ch = readU32(cell);
+            target[index].fg = readU32(cell + 4);
+            target[index].bg = readU32(cell + 8);
+            target[index].flags = cell[12];
+            cell += FrameCell;
+        }
         clearSelection();
-    m_cols = cols;
-    m_rows = rows;
+    } else {
+        if (kind != 0 || count != 0)
+            return false;
+        if (frame.size() < FrameHeader + qsizetype(cols) * rows * FrameCell)
+            return false;
+        if (cols != m_cols || rows != m_rows)
+            clearSelection();
+        m_cols = cols;
+        m_rows = rows;
+        m_cells.resize(qsizetype(cols) * rows);
+        const uchar* cell = data + FrameHeader;
+        for (int index = 0; index < cols * rows; ++index) {
+            TerminalCell& target = m_cells[index];
+            target.ch = readU32(cell);
+            target.fg = readU32(cell + 4);
+            target.bg = readU32(cell + 8);
+            target.flags = cell[12];
+            cell += FrameCell;
+        }
+    }
+
     m_cursorCol = readU16(data + 9);
     m_cursorRow = readU16(data + 11);
     m_cursorVisible = data[13] != 0;
@@ -340,19 +417,10 @@ bool TerminalItem::decodeFrame(const QByteArray& frame)
     m_displayOffset = readU32(data + 15);
     m_historySize = readU32(data + 19);
 
-    m_cells.resize(cols * rows);
-    const uchar* cell = data + FrameHeader;
-    for (int index = 0; index < cols * rows; ++index) {
-        TerminalCell& target = m_cells[index];
-        target.ch = readU32(cell);
-        target.fg = readU32(cell + 4);
-        target.bg = readU32(cell + 8);
-        target.flags = cell[12];
-        cell += FrameCell;
-    }
     m_hasFrame = true;
     return true;
 }
+
 
 void TerminalItem::paint(QPainter* painter)
 {
@@ -393,6 +461,21 @@ void TerminalItem::paint(QPainter* painter)
             painter->fillRect(QRectF(start * m_cellWidth, row * m_cellHeight,
                                      (end - start + 1) * m_cellWidth, m_cellHeight),
                               highlight);
+        }
+    }
+
+    // Search highlights sit under the text as well, lighter than the
+    // selection so both remain readable when they overlap.
+    if (!m_searchRects.isEmpty()) {
+        QColor match = terminalAccent(m_dark);
+        match.setAlpha(40);
+        for (const SearchRect& rect : m_searchRects) {
+            if (rect.row >= m_rows || rect.column >= m_cols)
+                continue;
+            const int columns = qMin(int(rect.columns), m_cols - rect.column);
+            painter->fillRect(QRectF(rect.column * m_cellWidth, rect.row * m_cellHeight,
+                                     columns * m_cellWidth, m_cellHeight),
+                              match);
         }
     }
 
@@ -502,6 +585,14 @@ void TerminalItem::keyPressEvent(QKeyEvent* event)
     const bool meta = modifiers.testFlag(Qt::MetaModifier);
     const bool alt = modifiers.testFlag(Qt::AltModifier);
     const bool shift = modifiers.testFlag(Qt::ShiftModifier);
+
+    // The panel's find bar owns Ctrl+F; a terminal has no use for the
+    // form-feed byte the shell would otherwise see.
+    if (control && !alt && key == Qt::Key_F) {
+        emit searchRequested();
+        event->accept();
+        return;
+    }
 
     // A selection turns Ctrl+C into copy, the way Windows Terminal behaves;
     // without one it stays the interrupt byte below.
@@ -642,7 +733,10 @@ void TerminalItem::wheelEvent(QWheelEvent* event)
         event->ignore();
         return;
     }
-    QMetaObject::invokeMethod(m_session.data(), "scroll", Q_ARG(int, steps * 3));
+    // The session decides: on the alternate screen (vim, less) the wheel
+    // becomes arrow keys for the program; on the primary screen it walks
+    // the scrollback.
+    QMetaObject::invokeMethod(m_session.data(), "wheelScroll", Q_ARG(int, steps * 3));
     event->accept();
 }
 
@@ -654,6 +748,12 @@ void TerminalItem::mousePressEvent(QMouseEvent* event)
         return;
     }
 
+    // A Ctrl+Click opens the path under the pointer instead of selecting.
+    if (event->modifiers().testFlag(Qt::ControlModifier)) {
+        openLinkAt(event->position());
+        event->accept();
+        return;
+    }
     const QPointF position = event->position();
     if (scrollbarVisible()
         && scrollbarTrack().adjusted(-ScrollbarMargin, 0.0, ScrollbarMargin, 0.0)
@@ -666,7 +766,6 @@ void TerminalItem::mousePressEvent(QMouseEvent* event)
         event->accept();
         return;
     }
-
     m_selecting = true;
     m_hasSelection = false;
     m_selAnchorRow = qBound(0, int(position.y() / m_cellHeight), m_rows - 1);
@@ -675,6 +774,42 @@ void TerminalItem::mousePressEvent(QMouseEvent* event)
     m_selHeadColumn = m_selAnchorColumn;
     update();
     event->accept();
+}
+
+/// Ctrl+Click opens the path or URL under the pointer. The match happens
+/// on click, never per frame, so a pathological line costs nothing until
+/// the user actually points at it. `path:line:col`, `path:line` and
+/// `http(s)://` URLs are recognized; a relative path is resolved by the
+/// QML side against the session's reported directory.
+void TerminalItem::openLinkAt(const QPointF& position)
+{
+    const int row = qBound(0, int(position.y() / m_cellHeight), m_rows - 1);
+    const int column = qBound(0, int(position.x() / m_cellWidth), m_cols - 1);
+
+    QString text;
+    text.reserve(m_cols);
+    for (int x = 0; x < m_cols; ++x) {
+        const TerminalCell& cell = cellAt(row, x);
+        text.append(cell.ch == 0 ? QChar(u' ') : character(cell.ch));
+    }
+
+    static const QRegularExpression pattern(
+        QStringLiteral("\\b(?:https?://[^\\s]+"
+                       "|(?:[A-Za-z]:)?[\\w .~/\\\\-]*[\\w./\\\\-]+"
+                       "(?:\\.[A-Za-z0-9]{1,5}[/\\\\]?)?)"
+                       "(?::(\\d+)(?::(\\d+))?)?"),
+        QRegularExpression::UseUnicodePropertiesOption);
+
+    for (QRegularExpressionMatchIterator it = pattern.globalMatch(text); it.hasNext();) {
+        const QRegularExpressionMatch match = it.next();
+        if (column < match.capturedStart() || column > match.capturedEnd())
+            continue;
+        const QString target = match.captured(0).trimmed();
+        if (target.isEmpty())
+            return;
+        emit linkActivated(target, match.captured(1).toInt(), match.captured(2).toInt());
+        return;
+    }
 }
 
 void TerminalItem::mouseMoveEvent(QMouseEvent* event)
@@ -707,6 +842,10 @@ void TerminalItem::mouseReleaseEvent(QMouseEvent* event)
         // dismisses the previous one.
         if (m_selAnchorRow == m_selHeadRow && m_selAnchorColumn == m_selHeadColumn)
             clearSelection();
+        // copyOnSelect: the gesture that made the selection is the one
+        // that copies it, no Ctrl+C required.
+        if (m_copyOnSelect && hasSelection())
+            copySelection();
         update();
         event->accept();
         return;
@@ -765,13 +904,11 @@ void TerminalItem::paste()
     const QString text = QGuiApplication::clipboard()->text();
     if (text.isEmpty())
         return;
-    // A terminal treats a newline as "run", not "open a line": pasted line
-    // breaks must become carriage returns or a multi-line paste stalls in the
-    // shell's line editor.
-    QString normalized = text;
-    normalized.replace(QLatin1String("\r\n"), QLatin1String("\r"));
-    normalized.replace(QLatin1Char('\n'), QLatin1Char('\r'));
-    sendText(normalized);
+    // The session encodes the paste the way the running program asked for
+    // it: bracketed when it enabled mode 2004, so a vim or tmux sees one
+    // paste instead of a run of Enters; otherwise newlines become carriage
+    // returns.
+    QMetaObject::invokeMethod(m_session.data(), "pasteText", Q_ARG(QString, text));
 }
 
 void TerminalItem::selectionBounds(int& firstRow, int& firstColumn, int& lastRow,

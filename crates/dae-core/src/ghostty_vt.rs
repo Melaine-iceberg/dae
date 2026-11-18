@@ -17,7 +17,11 @@ use std::os::raw::c_int;
 
 pub type GhosttyResult = c_int;
 pub const GHOSTTY_SUCCESS: GhosttyResult = 0;
-
+/// Operation failed because the provided buffer was too small.
+pub const GHOSTTY_OUT_OF_SPACE: GhosttyResult = -3;
+/// "The requested value has no value" — no search matches, or a grid
+/// reference outside the requested coordinate system.
+pub const GHOSTTY_NO_VALUE: GhosttyResult = -4;
 pub type GhosttyTerminal = *mut c_void;
 pub type GhosttyRenderState = *mut c_void;
 pub type GhosttyRenderStateRowIterator = *mut c_void;
@@ -27,21 +31,50 @@ pub type GhosttyCell = u64;
 // ghostty_terminal_set options
 pub const TERMINAL_OPT_USERDATA: c_int = 1;
 pub const TERMINAL_OPT_WRITE_PTY: c_int = 2;
+/// `GhosttyTerminalTitleChangedFn` — read the new title inside the callback.
+pub const TERMINAL_OPT_TITLE_CHANGED: c_int = 6;
+/// `GhosttyTerminalPwdChangedFn` — read the new pwd inside the callback.
+pub const TERMINAL_OPT_PWD_CHANGED: c_int = 26;
 pub const TERMINAL_OPT_SCROLLBACK_MAX_BYTES: c_int = 28;
 pub const TERMINAL_OPT_SCROLLBACK_MAX_LINES: c_int = 29;
 
 // ghostty_terminal_get data kinds
 pub const TERMINAL_DATA_SCROLLBAR: c_int = 9;
+/// The active screen (`GhosttyTerminalScreen`): 0 primary, 1 alternate.
+pub const TERMINAL_DATA_ACTIVE_SCREEN: c_int = 6;
+/// The value of one mode (`GhosttyTerminalModeConfig`): initialize the
+/// `mode` word, receive the boolean.
+pub const TERMINAL_DATA_MODE: c_int = 37;
 
-// ghostty_render_state_get data kinds
+/// A DEC private mode number, as `ghostty_mode_new(value, false)` packs
+/// it: the bare number.
+pub const MODE_BRACKETED_PASTE: u16 = 2004;
+pub const MODE_ALT_SCREEN: u16 = 1047;
+
+/// The window title the shell last set with OSC 0/2 (`GhosttyString`).
+pub const TERMINAL_DATA_TITLE: c_int = 12;
+/// The working directory the shell last set with OSC 7/9/1337
+/// (`GhosttyString`). Empty when the shell never reported one.
+pub const TERMINAL_DATA_PWD: c_int = 13;
+
+// ghostty_search_set/get kinds and options
+pub const SEARCH_OPT_NEEDLE: c_int = 1;
+pub const SEARCH_DATA_TOTAL_MATCHES: c_int = 3;
+pub const SEARCH_DATA_SELECTED_INDEX: c_int = 4;
+pub const SEARCH_DATA_VIEWPORT_MATCHES: c_int = 7;
+
+// ghostty_terminal_point_from_grid_ref tags
+pub const POINT_TAG_VIEWPORT: c_int = 1;
+
 pub const RENDER_STATE_DATA_ROW_ITERATOR: c_int = 4;
 pub const RENDER_STATE_DATA_CURSOR: c_int = 18;
-
+/// `GhosttyRenderStateDirty`: 0 clean, 1 partial (some rows), 2 full.
+pub const RENDER_STATE_DATA_DIRTY: c_int = 3;
 // ghostty_render_state_row_get data kinds
 pub const ROW_DATA_CELLS: c_int = 3;
 pub const ROW_DATA_VIEWPORT_Y: c_int = 6;
-
-// ghostty_render_state_row_cells_get data kinds
+pub const ROW_DATA_DIRTY: c_int = 1;
+pub const ROW_DATA_ID: c_int = 7;
 pub const ROW_CELLS_DATA_RAW: c_int = 1;
 pub const ROW_CELLS_DATA_STYLE: c_int = 2;
 
@@ -129,6 +162,14 @@ pub struct GhosttyTerminalScrollbar {
     pub len: u64,
 }
 
+/// `GhosttyRenderStateRowId`: two opaque words; two ids are the same row
+/// contents when both words are equal; a zeroed id is never valid.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct GhosttyRowId {
+    pub bits: [u64; 2],
+}
+
 /// The scroll union is two `uint64_t` of padding; `delta` and `row` both fit
 /// in the first word, so the wrapper stores the raw word and casts per tag.
 #[repr(C)]
@@ -153,6 +194,85 @@ pub struct GhosttyRenderStateCursor {
 
 pub type GhosttyTerminalWritePtyFn =
     unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const u8, usize);
+
+/// A borrowed byte string: pointer valid until the next mutating call.
+#[repr(C)]
+pub struct GhosttyString {
+    pub ptr: *const u8,
+    pub len: usize,
+}
+
+/// `GhosttyTerminalTitleChangedFn` / `GhosttyTerminalPwdChangedFn`:
+/// called on the thread that runs `ghostty_terminal_vt_write`, with the
+/// `TERMINAL_OPT_USERDATA` pointer. Read the new value inside the callback
+/// via [`terminal_string`].
+pub type GhosttyTerminalStringChangedFn = unsafe extern "C" fn(GhosttyTerminal, *mut c_void);
+
+/// Reads a `GhosttyString` data kind (title, pwd) into an owned String.
+/// The library borrows the bytes, so this must run before the terminal is
+/// mutated again — inside a change callback or under the caller's lock.
+///
+/// # Safety
+/// `terminal` must be a live terminal handle.
+pub unsafe fn terminal_string(terminal: GhosttyTerminal, data: c_int) -> Option<String> {
+    let mut string = GhosttyString { ptr: std::ptr::null(), len: 0 };
+    if unsafe { ghostty_terminal_get(terminal, data, &mut string as *mut _ as *mut c_void) }
+        != GHOSTTY_SUCCESS
+        || string.ptr.is_null()
+    {
+        return None;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(string.ptr, string.len) };
+    Some(String::from_utf8_lossy(bytes).into_owned())
+}
+
+/// A cell in the terminal's internal storage. The fields are opaque;
+/// convert to screen coordinates with [`Search::viewport_matches`].
+/// Frozen ABI: 16 bytes on 64-bit.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyGridRef {
+    pub node: *mut c_void,
+    pub x: u16,
+    pub y: u16,
+}
+
+/// A selection between two cells, inclusive. Frozen ABI: 40 bytes on
+/// 64-bit.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttySelection {
+    pub start: GhosttyGridRef,
+    pub end: GhosttyGridRef,
+    pub rectangle: bool,
+}
+
+/// A caller-provided buffer of selections: NULL/0 queries the required
+/// capacity; `len` receives the count written or the capacity needed.
+#[repr(C)]
+pub struct GhosttySelectionBuffer {
+    pub ptr: *mut GhosttySelection,
+    pub cap: usize,
+    pub len: usize,
+}
+
+/// A coordinate in the terminal grid (viewport or history).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct GhosttyPointCoordinate {
+    pub x: u16,
+    pub y: u32,
+}
+
+/// A mode and its boolean, for `GHOSTTY_TERMINAL_DATA_MODE`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyTerminalModeConfig {
+    pub mode: u16,
+    pub value: bool,
+}
+
+pub type GhosttySearch = *mut c_void;
 
 unsafe extern "C" {
     pub fn ghostty_terminal_new(
@@ -225,6 +345,41 @@ unsafe extern "C" {
     ) -> GhosttyResult;
 
     pub fn ghostty_cell_get(cell: GhosttyCell, data: c_int, out: *mut c_void) -> GhosttyResult;
+
+    pub fn ghostty_search_new(
+        allocator: *const c_void,
+        out: *mut GhosttySearch,
+        terminal: GhosttyTerminal,
+    ) -> GhosttyResult;
+    pub fn ghostty_paste_encode(
+        data: *mut u8,
+        data_len: usize,
+        bracketed: bool,
+        buffer: *mut u8,
+        buffer_len: usize,
+        out_written: *mut usize,
+    ) -> GhosttyResult;
+    pub fn ghostty_search_free(search: GhosttySearch);
+    pub fn ghostty_search_set(
+        search: GhosttySearch,
+        option: c_int,
+        value: *const c_void,
+    ) -> GhosttyResult;
+    pub fn ghostty_search_get(
+        search: GhosttySearch,
+        data: c_int,
+        out: *mut c_void,
+    ) -> GhosttyResult;
+    pub fn ghostty_search_run(search: GhosttySearch) -> GhosttyResult;
+    pub fn ghostty_search_select_next(search: GhosttySearch) -> GhosttyResult;
+    pub fn ghostty_search_select_prev(search: GhosttySearch) -> GhosttyResult;
+
+    pub fn ghostty_terminal_point_from_grid_ref(
+        terminal: GhosttyTerminal,
+        reference: *const GhosttyGridRef,
+        tag: c_int,
+        out: *mut GhosttyPointCoordinate,
+    ) -> GhosttyResult;
 }
 
 /// One libghostty-vt terminal plus the render-state handles used to read it.
@@ -248,14 +403,18 @@ unsafe impl<U> Send for Vt<U> {}
 
 impl<U> Vt<U> {
     /// Creates a terminal whose escape-sequence replies (cursor position,
-    /// device attributes, size reports) are written back through `write_pty`.
-    /// The callback runs inside [`Self::write`] on the calling thread and
-    /// receives a pointer to the boxed `userdata`.
+    /// device attributes, size reports) are written back through `write_pty`,
+    /// and whose title (OSC 0/2) and working directory (OSC 7/9/1337) changes
+    /// are reported through `title_changed` / `pwd_changed`. All callbacks run
+    /// inside [`Self::write`] on the calling thread and receive a pointer to
+    /// the boxed `userdata`.
     pub fn new(
         cols: u16,
         rows: u16,
         scrollback_lines: usize,
         write_pty: GhosttyTerminalWritePtyFn,
+        title_changed: GhosttyTerminalStringChangedFn,
+        pwd_changed: GhosttyTerminalStringChangedFn,
         mut userdata: Box<U>,
     ) -> Result<Self, String> {
         let mut terminal: GhosttyTerminal = std::ptr::null_mut();
@@ -290,6 +449,19 @@ impl<U> Vt<U> {
                 vt.terminal,
                 TERMINAL_OPT_WRITE_PTY,
                 write_pty as *const c_void,
+            );
+            // The shell reports its title (OSC 0/2) and working directory
+            // (OSC 7/9/1337) through these; both read the value inside the
+            // callback via `terminal_string`.
+            ghostty_terminal_set(
+                vt.terminal,
+                TERMINAL_OPT_TITLE_CHANGED,
+                title_changed as *const c_void,
+            );
+            ghostty_terminal_set(
+                vt.terminal,
+                TERMINAL_OPT_PWD_CHANGED,
+                pwd_changed as *const c_void,
             );
             // The byte limit defaults to 10 KB, which would prune history
             // long before the line limit; let the line limit govern.
@@ -366,7 +538,8 @@ impl<U> Vt<U> {
 
     /// Visits every viewport row top to bottom. For each row, `visit_row`
     /// receives the viewport y and a reader positioned before the first
-    /// cell; call [`Row::next_cell`] until it returns `None`.
+    /// cell; call [`Row::next_cell`] until it returns `None`. `Row::dirty`
+    /// says whether the last [`Self::update`] changed that row.
     pub fn visit_rows(&mut self, mut visit_row: impl FnMut(i32, Row<'_>)) {
         unsafe {
             if ghostty_render_state_get(
@@ -398,6 +571,7 @@ impl<U> Vt<U> {
                 visit_row(
                     y,
                     Row {
+                        row: self.rows,
                         cells: self.cells,
                         column: 0,
                         _marker: std::marker::PhantomData,
@@ -405,6 +579,20 @@ impl<U> Vt<U> {
                 );
             }
         }
+    }
+
+    /// The dirty level of the last [`Self::update`]: 0 nothing changed,
+    /// 1 some rows changed (query per row via [`Row::dirty`]), 2 redraw all.
+    pub fn dirty(&mut self) -> u8 {
+        let mut dirty: c_int = 0;
+        unsafe {
+            ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_DIRTY,
+                &mut dirty as *mut _ as *mut c_void,
+            );
+        }
+        dirty.clamp(0, 2) as u8
     }
 
     /// The cursor as the viewport sees it: `(x, y, shape)` when visible,
@@ -439,6 +627,237 @@ impl<U> Vt<U> {
         };
         Some((cursor.viewport_x, cursor.viewport_y, shape))
     }
+
+    /// Creates a search bound to this terminal. The handle is kept by the
+    /// caller (in the same lock) and freed before the terminal.
+    pub fn create_search(&mut self) -> Result<Search, String> {
+        let mut search: GhosttySearch = std::ptr::null_mut();
+        unsafe {
+            if ghostty_search_new(std::ptr::null(), &mut search, self.terminal)
+                != GHOSTTY_SUCCESS
+            {
+                return Err("term.search_create_failed".to_string());
+            }
+        }
+        Ok(Search {
+            handle: search,
+            terminal: self.terminal,
+        })
+    }
+
+    /// The current value of a DEC private mode (the `ghostty_mode_new`
+    /// word, e.g. [`MODE_BRACKETED_PASTE`]).
+    pub fn mode(&mut self, mode: u16) -> bool {
+        let mut config = GhosttyTerminalModeConfig { mode, value: false };
+        unsafe {
+            ghostty_terminal_get(
+                self.terminal,
+                TERMINAL_DATA_MODE,
+                &mut config as *mut _ as *mut c_void,
+            );
+        }
+        config.value
+    }
+
+    /// Whether the alternate screen is showing — vim, less, htop. The
+    /// wheel turns into arrow keys there instead of scrolling history.
+    pub fn alternate_screen(&mut self) -> bool {
+        let mut screen: c_int = 0;
+        unsafe {
+            ghostty_terminal_get(
+                self.terminal,
+                TERMINAL_DATA_ACTIVE_SCREEN,
+                &mut screen as *mut _ as *mut c_void,
+            );
+        }
+        screen == 1
+    }
+}
+
+/// A scrollback search over one terminal, newest matches first.
+///
+/// Every method reads the terminal, so callers serialize access with the
+/// same lock that guards the [`Vt`]; the handle must be freed before the
+/// terminal it is bound to.
+pub struct Search {
+    handle: GhosttySearch,
+    terminal: GhosttyTerminal,
+}
+
+// The handle never escapes the lock that guards the session, exactly like
+// Vt.
+unsafe impl Send for Search {}
+
+/// One highlighted stretch of cells in viewport coordinates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SearchRect {
+    pub row: u16,
+    pub column: u16,
+    pub columns: u16,
+}
+
+impl Search {
+    /// Sets what to look for; `None` clears the needle and returns the
+    /// search to idle. ASCII letters match case-insensitively.
+    pub fn set_needle(&mut self, needle: Option<&str>) {
+        let value = needle.map(|text| GhosttyString {
+            ptr: text.as_bytes().as_ptr(),
+            len: text.len(),
+        });
+        unsafe {
+            ghostty_search_set(
+                self.handle,
+                SEARCH_OPT_NEEDLE,
+                value
+                    .as_ref()
+                    .map_or(std::ptr::null(), |string| string as *const _ as *const c_void)
+                    .cast_mut(),
+            );
+        }
+    }
+
+    /// Brings the search up to date. Blocking; interactive callers accept
+    /// this because the alternative is a feed/tick state machine for a
+    /// 10 000-line scrollback cap.
+    pub fn run(&mut self) -> bool {
+        unsafe { ghostty_search_run(self.handle) == GHOSTTY_SUCCESS }
+    }
+
+    /// Selects the next (older) match, scrolling it into view, and returns
+    /// `(total, selected index)` — the "k of n" the find bar shows.
+    /// Wraps after the oldest match.
+    pub fn step(&mut self, forward: bool) -> Option<(usize, usize)> {
+        let moved = unsafe {
+            if forward {
+                ghostty_search_select_next(self.handle)
+            } else {
+                ghostty_search_select_prev(self.handle)
+            }
+        };
+        if moved != GHOSTTY_SUCCESS {
+            return None;
+        }
+        let mut total: usize = 0;
+        let mut index: usize = 0;
+        unsafe {
+            ghostty_search_get(
+                self.handle,
+                SEARCH_DATA_TOTAL_MATCHES,
+                &mut total as *mut _ as *mut c_void,
+            );
+            ghostty_search_get(
+                self.handle,
+                SEARCH_DATA_SELECTED_INDEX,
+                &mut index as *mut _ as *mut c_void,
+            );
+        }
+        Some((total, index))
+    }
+
+    /// The matches on the visible pages, in viewport coordinates, for
+    /// drawing highlight rectangles. Matches slightly outside the
+    /// viewport (same page) are clipped away.
+    pub fn viewport_matches(&mut self, cols: u16, rows: u16) -> Vec<SearchRect> {
+        let mut buffer = GhosttySelectionBuffer {
+            ptr: std::ptr::null_mut(),
+            cap: 0,
+            len: 0,
+        };
+        unsafe {
+            if ghostty_search_get(
+                self.handle,
+                SEARCH_DATA_VIEWPORT_MATCHES,
+                &mut buffer as *mut _ as *mut c_void,
+            ) != GHOSTTY_OUT_OF_SPACE
+                || buffer.len == 0
+            {
+                return Vec::new();
+            }
+        }
+        let mut selections = vec![GhosttySelection {
+            start: GhosttyGridRef {
+                node: std::ptr::null_mut(),
+                x: 0,
+                y: 0,
+            },
+            end: GhosttyGridRef {
+                node: std::ptr::null_mut(),
+                x: 0,
+                y: 0,
+            },
+            rectangle: false,
+        }; buffer.len];
+        buffer.ptr = selections.as_mut_ptr();
+        buffer.cap = selections.len();
+        let mut rects = Vec::new();
+        unsafe {
+            if ghostty_search_get(
+                self.handle,
+                SEARCH_DATA_VIEWPORT_MATCHES,
+                &mut buffer as *mut _ as *mut c_void,
+            ) != GHOSTTY_SUCCESS
+            {
+                return rects;
+            }
+            for selection in &selections[..buffer.len.min(selections.len())] {
+                rects.extend(selection_rects(self.terminal, selection, cols, rows));
+            }
+        }
+        rects
+    }
+}
+
+/// Turns one selection into per-row viewport rectangles.
+fn selection_rects(
+    terminal: GhosttyTerminal,
+    selection: &GhosttySelection,
+    cols: u16,
+    rows: u16,
+) -> Vec<SearchRect> {
+    let mut start = GhosttyPointCoordinate::default();
+    let mut end = GhosttyPointCoordinate::default();
+    unsafe {
+        if ghostty_terminal_point_from_grid_ref(
+            terminal,
+            &selection.start,
+            POINT_TAG_VIEWPORT,
+            &mut start,
+        ) != GHOSTTY_SUCCESS
+            || ghostty_terminal_point_from_grid_ref(
+                terminal,
+                &selection.end,
+                POINT_TAG_VIEWPORT,
+                &mut end,
+            ) != GHOSTTY_SUCCESS
+        {
+            return Vec::new();
+        }
+    }
+    if start.y >= u32::from(rows) || end.y >= u32::from(rows) {
+        return Vec::new();
+    }
+    let (top, right, bottom) = if (start.y, start.x) <= (end.y, end.x) {
+        (start, end.x, end.y)
+    } else {
+        (end, start.x, start.y)
+    };
+    (top.y..=bottom)
+        .filter_map(|row| {
+            let from = if row == top.y { top.x } else { 0 };
+            let to = if row == bottom { right } else { cols.saturating_sub(1) };
+            (from <= to).then(|| SearchRect {
+                row: row as u16,
+                column: from,
+                columns: to - from + 1,
+            })
+        })
+        .collect()
+}
+
+impl Drop for Search {
+    fn drop(&mut self) {
+        unsafe { ghostty_search_free(self.handle) };
+    }
 }
 
 impl<U> Drop for Vt<U> {
@@ -456,12 +875,41 @@ impl<U> Drop for Vt<U> {
 
 /// A reader over one row's cells, borrowed from [`Vt::visit_rows`].
 pub struct Row<'a> {
+    row: GhosttyRenderStateRowIterator,
     cells: GhosttyRenderStateRowCells,
     column: u16,
     _marker: std::marker::PhantomData<&'a mut ()>,
 }
 
 impl Row<'_> {
+    /// Whether the render state's last update changed this row. Only
+    /// meaningful while the dirty level is partial; a full update marks
+    /// every row dirty anyway.
+    pub fn dirty(&self) -> bool {
+        let mut dirty = false;
+        unsafe {
+            ghostty_render_state_row_get(
+                self.row,
+                ROW_DATA_DIRTY,
+                &mut dirty as *mut _ as *mut c_void,
+            );
+        }
+        dirty
+    }
+
+    /// The row's identity across render-state updates. Two ids are the same
+    /// row contents when both words are equal; a zeroed id is never valid.
+    pub fn id(&self) -> GhosttyRowId {
+        let mut id = GhosttyRowId { bits: [0; 2] };
+        unsafe {
+            ghostty_render_state_row_get(
+                self.row,
+                ROW_DATA_ID,
+                &mut id as *mut _ as *mut c_void,
+            );
+        }
+        id
+    }
     /// Advances to the next cell, returning its column, packed value and
     /// style, or `None` past the last column.
     pub fn next_cell(&mut self) -> Option<(u16, GhosttyCell, GhosttyStyle)> {
