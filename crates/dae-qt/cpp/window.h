@@ -183,10 +183,6 @@ inline void dae_qt_hide_placeholder()
     window->deleteLater();
 }
 
-#if defined(Q_OS_WIN)
-// Defined with the rest of the native window code, below.
-inline void uncloak_painted(HWND hwnd);
-#endif
 
 /// Hooks the first `frameSwapped` of the main window. `frameSwapped` can be
 /// emitted from the render thread, so the lambda is queued back to the window's
@@ -208,15 +204,7 @@ inline void dae_qt_watch_first_frame(std::size_t enginePtr)
         if (!window)
             return;
         QObject::connect(
-            window, &QQuickWindow::frameSwapped, window, [window] {
-#if defined(Q_OS_WIN)
-                // The real window has painted: let DWM composite it before the
-                // stand-in goes away, or the gap shows the desktop for a frame.
-                if (const auto handle = reinterpret_cast<HWND>(window->winId()))
-                    uncloak_painted(handle);
-#else
-                Q_UNUSED(window)
-#endif
+            window, &QQuickWindow::frameSwapped, window, [] {
                 dae_qt_hide_placeholder();
                 if (!dae_qt_startup_timing)
                     return;
@@ -291,10 +279,6 @@ constexpr int kDwmcprRound = 2;
 /// frame to land on — the QML content arrives washed out over whatever was
 /// behind the window (docs/qml-aot.md §17).
 constexpr DWORD kDwmwaTransitionsForcedisabled = 3;
-/// `DWMWA_CLOAK`: TRUE keeps DWM from compositing the window while it is still
-/// transparent. A Qt Quick window is shown before its first frame exists, and
-/// with an alpha buffer that gap shows the desktop *through* the app.
-constexpr DWORD kDwmwaCloak = 13;
 
 inline void set_transitions(HWND hwnd, BOOL disabled)
 {
@@ -685,40 +669,6 @@ inline void install_filter_once()
     installed = true;
 }
 
-/// Hides the window from the compositor until it has something to show.
-///
-/// `root.visible = true` runs at the end of `Component.onCompleted`, while the
-/// first frame still needs the D3D11 device (or, with the stand-in window up,
-/// just a swapchain). Between those two moments the window is on screen and
-/// *empty*, and because it has an alpha buffer the desktop shows through it —
-/// measured 780→1000 ms on a cold launch (`docs/qml-aot.md` §17). Cloaking
-/// keeps DWM from compositing it, so the first thing anyone sees is real
-/// content. `dae_qt_watch_first_frame` uncloaks.
-///
-/// Also stops the reveal fade for that first appearance only: the attribute is
-/// window-wide, so it is handed back with the cloak and minimize/restore keep
-/// their animations.
-inline void cloak_until_painted(HWND hwnd)
-{
-    const BOOL on = TRUE;
-    DwmSetWindowAttribute(hwnd, kDwmwaCloak, &on, sizeof(on));
-    set_transitions(hwnd, TRUE);
-    // A window whose first frame never arrives must not stay invisible.
-    QTimer::singleShot(2000, qApp, [hwnd] {
-        if (!IsWindow(hwnd))
-            return;
-        const BOOL off = FALSE;
-        DwmSetWindowAttribute(hwnd, kDwmwaCloak, &off, sizeof(off));
-        set_transitions(hwnd, FALSE);
-    });
-}
-
-inline void uncloak_painted(HWND hwnd)
-{
-    const BOOL off = FALSE;
-    DwmSetWindowAttribute(hwnd, kDwmwaCloak, &off, sizeof(off));
-    set_transitions(hwnd, FALSE);
-}
 
 /// Registers the window named `token` and applies the native frame.
 ///
@@ -755,7 +705,9 @@ inline bool dae_qt_attach(const QString& token)
 
     style_window(hwnd);
     set_window_icon(hwnd);
-    cloak_until_painted(hwnd);
+    // No cloak: the window shows immediately and the QML tree paints into it
+    // as it loads (the user prefers a visible-but-empty first moment over a
+    // delayed appearance; see docs/qml-aot.md §17 for the tradeoff).
 
     // The HWND key must go away with the window: Windows recycles handles, and
     // a stale entry would hit-test a new window with the old DPR and material.
