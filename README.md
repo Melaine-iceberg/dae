@@ -17,10 +17,14 @@ that shell; `git log` and the decision document are where it lives now.
   merges into what already landed instead of starting over — and one
   process-wide speed limit for slow links. Both apply to the running transfer
   the moment you click, because the core holds a control per operation rather
-  than the window holding a flag. When a path needs rights this process does not
-  have, that *one operation* is replayed by an elevated copy of the binary
-  instead of elevating the whole app; and a delete that fails because a program
-  holds the file names the program instead of only saying "access denied".
+  than the window holding a flag. Several transfers run at once: a slot holds
+  a job from its conflict check to its last byte, so a crawling SFTP copy or
+  a dialog nobody answers parks one slot instead of the queue behind it, and
+  each job's collisions are asked separately. When a path needs rights this
+  process does not have, that *one operation* is replayed by an elevated copy
+  of the binary instead of elevating the whole app; and a delete that fails
+  because a program holds the file names the program instead of only saying
+  "access denied".
 - **Templates worth reusing.** "New from template" instantiates any file or
   folder kept in the templates directory: a whole project skeleton copies as a
   tree, a document copies its contents, and the undo record remembers the

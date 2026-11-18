@@ -10,12 +10,14 @@
 //!
 //! # Slots
 //!
-//! [`MAX_RUNNING`] transfers run at once; the rest wait in the queue. The
-//! pre-run phase (conflict check, then the dialog) is serial: at most one job
-//! is not running, because the shell has one conflict dialog and two jobs
-//! asking questions through it would interleave their prompts. A job that
-//! starts running frees the pre-run position for the next waiting job, so a
-//! long copy never holds up the queue behind it.
+//! [`MAX_SLOTS`] jobs are held at once, each owning a slot from acceptance
+//! until it reports back — the conflict check, the answers and the copy all
+//! happen inside the slot. The rest wait in the queue. A slot is a job, not
+//! a phase (the lesson borrowed from Opus and the KIO Scheduler), so a
+//! crawling remote check or a dialog nobody answers parks one slot instead
+//! of pausing the whole line behind it. The price is that the shell must
+//! serve several jobs' questions at once: it queues their prompts, asks
+//! them one at a time, and every answer and dismissal carries a job id.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,9 +31,12 @@ use super::service;
 
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(1);
 
-/// How many transfers run at once. Two is what a desktop disk can keep busy
-/// without the panel becoming a wall of rows; the queue absorbs the rest.
-pub const MAX_RUNNING: usize = 2;
+/// How many jobs the scheduler holds at once, a slot each, from acceptance
+/// (conflict check, conflict answers) until the batch reports back. Four
+/// keeps a crawling SFTP transfer from ever being the only thing moving:
+/// the queue behind it still runs local copies, and the global token
+/// bucket — not this count — is what keeps the wire honest.
+pub const MAX_SLOTS: usize = 4;
 
 /// One copy or move, from request to completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,19 +208,15 @@ enum Spawn {
 }
 
 impl State {
-    /// A slot is free *and* no job is in its pre-run phase: the one conflict
-    /// dialog cannot serve two jobs at once.
+    /// A slot is free. A job holds its slot through its whole pre-run phase
+    /// — the shell serves each job's prompts independently — so one job
+    /// checking or asking never holds up the next.
     fn can_accept(&self) -> bool {
-        self.jobs.len() < MAX_RUNNING && self.jobs.iter().all(|job| job.running)
+        self.jobs.len() < MAX_SLOTS
     }
 
     fn job(&mut self, job_id: u64) -> Option<&mut ActiveJob> {
         self.jobs.iter_mut().find(|job| job.id == job_id)
-    }
-
-    /// The one job still in its pre-run phase, if any.
-    fn pending_id(&self) -> Option<u64> {
-        self.jobs.iter().find(|job| !job.running).map(|job| job.id)
     }
 
     fn remove(&mut self, job_id: u64) -> Option<ActiveJob> {
@@ -271,9 +272,9 @@ impl State {
         (vec![event], spawn)
     }
 
-    /// Accepts waiting jobs while a slot and the pre-run position allow. A
-    /// resume starts running inside `accept`, which can free the position
-    /// again — hence the loop rather than a single accept.
+    /// Accepts waiting jobs while a slot allows. A resume starts running
+    /// inside `accept` without freeing a slot, so the loop simply continues
+    /// until the slots are full or the queue is empty.
     fn pump(&mut self) -> (Vec<JobEvent>, Vec<Spawn>) {
         let mut events = Vec::new();
         let mut spawns = Vec::new();
@@ -294,10 +295,53 @@ impl State {
         spawns.insert(0, spawn);
         (events, spawns)
     }
+
+    /// Answers the conflict `job_id` is asking about; the batch runs when the
+    /// last answer lands, and its slot keeps holding the job either way.
+    /// Several jobs can be asking at once, so the address is per job: a
+    /// job that is already running is not asking anything, and a stale
+    /// answer from a dialog the queue moved past changes nothing.
+    fn answer(
+        &mut self,
+        job_id: u64,
+        action: ConflictAction,
+        apply_to_all: bool,
+    ) -> (Vec<JobEvent>, Vec<Spawn>) {
+        let Some(job) = self.job(job_id) else {
+            return (Vec::new(), Vec::new());
+        };
+        if job.running {
+            return (Vec::new(), Vec::new());
+        }
+        let answered = job.answer(action, apply_to_all);
+        if !answered {
+            let prompt = self
+                .job(job_id)
+                .expect("job just answered")
+                .prompt()
+                .expect("an unanswered batch has a next conflict");
+            return (vec![prompt], Vec::new());
+        }
+        self.run_and_pump(job_id)
+    }
+
+    /// The dialog for `job_id` was dismissed: nothing of that job runs, its
+    /// slot frees and the queue moves up. Other jobs' questions — and every
+    /// running transfer — are untouched.
+    fn dismiss(&mut self, job_id: u64) -> (Vec<JobEvent>, Vec<Spawn>) {
+        let Some(job) = self.job(job_id) else {
+            return (Vec::new(), Vec::new());
+        };
+        if job.running {
+            return (Vec::new(), Vec::new());
+        }
+        self.remove(job_id);
+        self.pump()
+    }
 }
 
-/// The transfer queue: [`MAX_RUNNING`] operation slots, one serial pre-run
-/// phase, and a waiting line behind them.
+/// The transfer queue: [`MAX_SLOTS`] job slots — checking, answering,
+/// running, in any mix — and a waiting line behind them.
 pub struct JobScheduler {
     state: Mutex<State>,
     runtime: tokio::runtime::Handle,
@@ -330,39 +374,25 @@ impl JobScheduler {
         self.deliver(events, spawns);
     }
 
-    /// Answers the conflict the dialog is showing; runs the batch when the
-    /// last answer lands. The dialog always belongs to the one pending job.
-    pub fn answer(self: &Arc<Self>, action: ConflictAction, apply_to_all: bool) {
+    /// Answers the conflict the dialog is showing for `job_id`; runs the
+    /// batch when the last answer lands. Several jobs can be asking at once,
+    /// so the address is per job.
+    pub fn answer(self: &Arc<Self>, job_id: u64, action: ConflictAction, apply_to_all: bool) {
         let (events, spawns) = {
             let mut state = self.lock();
-            let Some(job_id) = state.pending_id() else {
-                return;
-            };
-            let answered = state
-                .job(job_id)
-                .expect("pending job")
-                .answer(action, apply_to_all);
-            if answered {
-                state.run_and_pump(job_id)
-            } else {
-                let job = state.job(job_id).expect("pending job");
-                (job.prompt().into_iter().collect(), Vec::new())
-            }
+            state.answer(job_id, action, apply_to_all)
         };
         self.deliver(events, spawns);
     }
 
-    /// The conflict dialog was dismissed: nothing runs, the queue advances.
-    /// A running transfer is untouched — its cancel goes through the control
-    /// registered under its operation id, not here.
-    pub fn cancel_pending(self: &Arc<Self>) {
+    /// The conflict dialog for `job_id` was dismissed: nothing of that job
+    /// runs, its slot frees and the queue advances. Other jobs — running or
+    /// asking — are untouched; a running transfer's cancel goes through the
+    /// control registered under its operation id, not here.
+    pub fn dismiss(self: &Arc<Self>, job_id: u64) {
         let (events, spawns) = {
             let mut state = self.lock();
-            let Some(job_id) = state.pending_id() else {
-                return;
-            };
-            state.remove(job_id);
-            state.pump()
+            state.dismiss(job_id)
         };
         self.deliver(events, spawns);
     }
@@ -567,42 +597,105 @@ mod tests {
         assert_eq!(items[1].on_conflict, ConflictAction::Merge);
     }
 
-    /// Two slots run at once; a third waits. The pre-run phase is serial: a
-    /// job still checking its conflicts holds the position even with a slot
-    /// free, because the shell has one dialog.
+    /// A slot belongs to a whole job — checking, awaiting answers, running,
+    /// any mix. The queue therefore accepts the next job while one is still
+    /// in its pre-run phase: a crawling remote check or a dialog nobody
+    /// answers parks one slot, not the line behind it.
     #[test]
-    fn two_slots_run_and_the_pre_run_phase_stays_serial() {
+    fn slots_hold_whole_jobs_so_a_slow_pre_run_never_blocks_the_queue() {
         let mut state = State::default();
         state.queue.push(request(&["C:/a"], "C:/one", false));
         state.queue.push(request(&["C:/b"], "C:/two", true));
         state.queue.push(request(&["C:/c"], "C:/three", false));
+        state.queue.push(request(&["C:/d"], "C:/four", false));
 
-        // The first job is accepted and checks; the second must wait even
-        // though a slot is free — the first is not running yet.
+        // Every job is accepted at once, each with its conflict check in
+        // flight — impossible when the pre-run phase was one global
+        // position the shell's single dialog had to serve.
         let (events, spawns) = state.pump();
-        assert_eq!(events.len(), 1);
-        assert!(matches!(events[0], JobEvent::Accepted { job_id: 1, .. }));
-        assert_eq!(spawns.len(), 1);
-        assert_eq!(state.queue.len(), 2);
+        assert_eq!(events.len(), MAX_SLOTS);
+        assert_eq!(spawns.len(), MAX_SLOTS);
+        assert!(spawns.iter().all(|spawn| matches!(spawn, Spawn::Check { .. })));
+        assert!(state.queue.is_empty());
+        assert_eq!(state.jobs.len(), MAX_SLOTS);
 
-        // Once it runs, the second is accepted; the third still waits.
-        state.start_running(1);
-        let (events, _) = state.pump();
-        assert!(matches!(events[0], JobEvent::Accepted { job_id: 2, .. }));
-        assert_eq!(state.queue.len(), 1);
-
-        // Both running: no capacity left for the third.
-        state.start_running(2);
+        // The slots are full: a fifth waits.
+        state.queue.push(request(&["C:/e"], "C:/five", false));
         let (events, spawns) = state.pump();
         assert!(events.is_empty());
         assert!(spawns.is_empty());
-        assert_eq!(state.jobs.len(), MAX_RUNNING);
 
-        // A finished job frees a slot and the third moves up.
-        state.remove(1);
+        // One job answers its collisions and starts running — still one job
+        // per slot, so the fifth keeps waiting.
+        let job = state.job(2).expect("job");
+        job.conflicts = vec![conflict("C:/b")];
+        let (events, _) = state.answer(2, ConflictAction::Replace, false);
+        assert!(matches!(events[..], [JobEvent::Started { job_id: 2, .. }]));
         let (events, _) = state.pump();
-        assert!(matches!(events[0], JobEvent::Accepted { job_id: 3, .. }));
+        assert!(events.is_empty());
+
+        // A finished job frees its slot and the fifth moves up.
+        state.remove(4);
+        let (events, _) = state.pump();
+        assert!(matches!(events[..], [JobEvent::Accepted { job_id: 5, .. }]));
         assert!(state.queue.is_empty());
+    }
+
+    /// Several jobs can be awaiting answers at once; an answer reaches the
+    /// job it names and nothing else, and a dismissal only ever drops the
+    /// job it names.
+    #[test]
+    fn answers_and_dismissals_reach_the_named_job_and_only_that_one() {
+        let mut state = State::default();
+        state.queue.push(request(&["C:/a"], "C:/one", false));
+        state.queue.push(request(&["C:/b"], "C:/two", false));
+        state.pump();
+        for (id, path) in [(1, "C:/a"), (2, "C:/b")] {
+            let job = state.job(id).expect("job");
+            job.conflicts = vec![conflict(path), conflict(&format!("{path}-2"))];
+        }
+
+        // Job 2's first answer advances job 2 alone; job 1's batch is frozen
+        // until its own turn.
+        let (events, spawns) = state.answer(2, ConflictAction::Skip, false);
+        assert!(matches!(
+            events[..],
+            [JobEvent::ConflictPrompt { job_id: 2, index: 1, total: 2, .. }]
+        ));
+        assert!(spawns.is_empty());
+        assert!(!state.job(1).expect("job").decisions.contains_key("C:/a"));
+        assert_eq!(state.job(2).expect("job").index, 1);
+
+        // A stale answer — a job already running, or one that never was —
+        // changes nothing.
+        state.start_running(1);
+        let (events, _) = state.answer(1, ConflictAction::Skip, false);
+        assert!(events.is_empty());
+        let (events, _) = state.answer(7, ConflictAction::Skip, false);
+        assert!(events.is_empty());
+
+        // Job 2's second answer runs its batch; a running job is not
+        // dismissible, so both jobs survive a dismissal addressed at them.
+        let (events, _) = state.answer(2, ConflictAction::Replace, true);
+        assert!(matches!(events[..], [JobEvent::Started { job_id: 2, .. }]));
+        for id in [1, 2] {
+            let (events, spawns) = state.dismiss(id);
+            assert!(events.is_empty());
+            assert!(spawns.is_empty());
+            assert!(state.job(id).is_some());
+        }
+
+        // A job that is still asking, though, is dismissible: it goes, and
+        // with the queue empty the event list says nothing else moved.
+        state.queue.push(request(&["C:/c"], "C:/three", false));
+        let (events, _) = state.pump();
+        assert!(matches!(events[..], [JobEvent::Accepted { job_id: 3, .. }]));
+        let job = state.job(3).expect("job");
+        job.conflicts = vec![conflict("C:/c")];
+        let (events, spawns) = state.dismiss(3);
+        assert!(events.is_empty());
+        assert!(spawns.is_empty());
+        assert!(state.job(3).is_none());
     }
 
     /// A resume skips the check and starts running inside `accept`, so one
@@ -630,18 +723,19 @@ mod tests {
         let host = Arc::new(crate::host::testing::RecordingHost::default());
         let scheduler =
             JobScheduler::new(runtime.handle().clone(), host as Arc<dyn Host>);
-        // The first request takes a slot; the next two wait behind the
-        // pre-run phase and the slot count.
+        // The first four submissions take the four slots and sit in their
+        // checks (this runtime is never polled); the fifth waits in the
+        // queue.
         scheduler.submit(request(&["C:/a"], "C:/one", false));
         scheduler.submit(request(&["C:/b"], "C:/two", false));
         scheduler.submit(request(&["C:/c"], "C:/three", false));
+        scheduler.submit(request(&["C:/d"], "C:/four", false));
+        scheduler.submit(request(&["C:/e"], "C:/five", false));
 
         scheduler.drop_queued(7);
-        assert_eq!(scheduler.queued().len(), 2);
+        assert_eq!(scheduler.queued().len(), 1);
         scheduler.drop_queued(0);
-        let queued = scheduler.queued();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].destination, "C:/three");
+        assert!(scheduler.queued().is_empty());
         scheduler.clear_queued();
         assert!(scheduler.queued().is_empty());
     }
@@ -657,7 +751,7 @@ mod tests {
         let scheduler =
             JobScheduler::new(runtime.handle().clone(), Arc::clone(&host) as Arc<dyn Host>);
         scheduler.submit(request(&["C:/a"], "C:/one", false));
-        scheduler.cancel_pending();
+        scheduler.dismiss(1);
         host.take();
 
         scheduler.finish(1, Ok(()));
@@ -710,7 +804,7 @@ mod tests {
             };
             assert_eq!(total, 1);
 
-            scheduler.answer(ConflictAction::Replace, false);
+            scheduler.answer(1, ConflictAction::Replace, false);
 
             let finished = wait_for(&host, |event| {
                 matches!(event, Event::TransferJob(JobEvent::Finished { .. }))
@@ -734,11 +828,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Two copies submitted back to back both reach the disk. (That the slots
-    /// genuinely overlap is proven deterministically by the state-machine
-    /// test above; here the blocking pool's timing is not ours to pin.)
+    /// Two copies submitted back to back both reach the disk, each holding
+    /// its own slot. (That the slots genuinely overlap is proven
+    /// deterministically by the state-machine test above; here the blocking
+    /// pool's timing is not ours to pin.)
     #[test]
-    fn two_copies_run_through_the_two_slots() {
+    fn two_copies_run_through_the_slots() {
         use crate::host::testing::RecordingHost;
 
         let dir = std::env::temp_dir().join(format!(

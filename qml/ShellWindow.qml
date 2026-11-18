@@ -7089,7 +7089,7 @@ Window {
                 passwordDialog.close()
                 root.resetArchiveState()
             } else if (transferConflict.visible)
-                Workspace.cancelConflict()
+                Workspace.cancelConflict(Workspace.conflictJobId)
             else if (cloudDialog.shown)
                 cloudDialog.dismiss()
             else if (connectDialog.shown)

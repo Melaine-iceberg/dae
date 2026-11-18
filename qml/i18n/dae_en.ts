@@ -7441,6 +7441,11 @@
         <translation>Conflict %1 of %2</translation>
     </message>
     <message>
+        <location filename="../TransferConflictDialog.qml" line="128"/>
+        <source>回答后还有 %1 个传输等待确认</source>
+        <translation>%1 more transfer(s) are waiting for your answer</translation>
+    </message>
+    <message>
         <location filename="../TransferConflictDialog.qml" line="126"/>
         <source>“%1”已存在于目标文件夹，请选择%2方式。</source>
         <translation>“%1” already exists in the target folder. Choose %2 mode.</translation>
