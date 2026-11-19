@@ -109,6 +109,9 @@ Item {
     onModeChanged: {
         if (mode === "address") {
             addressInput.text = bar.addressPath
+            // The recent directories back the completion until the typed text
+            // grows a separator; they arrive once per edit, not per keystroke.
+            bar.recentPaths = Workspace.recentDirectories()
             // The field is only visible once the mode has been laid out; a
             // hidden item cannot take focus.
             Qt.callLater(bar.focusAddress)
@@ -578,6 +581,10 @@ Item {
                     && target.charAt(0) === '"'
                     && target.charAt(target.length - 1) === '"')
                 target = target.substring(1, target.length - 1)
+            // `~` and environment shorthands expand here, after the quote
+            // strip and before the navigation; anything unresolvable stays
+            // as typed and the navigation says so.
+            target = Workspace.expandTypedPath(target)
             focus = false
             if (target.length > 0)
                 bar.addressAccepted(target)
@@ -593,6 +600,9 @@ Item {
     property int completionIndex: -1
     property string completionDir: ""
     property var completionNames: []
+    /// The recently visited directories, the completion's source until the
+    /// typed text has a separator.
+    property var recentPaths: []
 
     function splitTypedPath(text) {
         let cut = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"))
@@ -618,7 +628,19 @@ Item {
         }
         const split = bar.splitTypedPath(addressInput.text)
         if (split.parent === "") {
-            bar.closeCompletions()
+            // No separator yet: the history is the source, newest first.
+            // A prefix that matches nothing closes the list, exactly the
+            // way the directory completion does.
+            const prefix = split.prefix.toLowerCase()
+            const matches = []
+            const names = bar.recentPaths
+            for (let index = 0; index < names.length && matches.length < 8; index += 1) {
+                const path = String(names[index])
+                if (prefix === "" || path.toLowerCase().indexOf(prefix) === 0)
+                    matches.push(path)
+            }
+            bar.completions = matches
+            bar.completionIndex = matches.length > 0 ? 0 : -1
             return
         }
         if (split.parent !== bar.completionDir) {

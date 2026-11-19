@@ -17,6 +17,7 @@ pub use crate::{error, types};
 
 pub mod actions;
 pub mod archive;
+pub mod archive_view;
 pub mod atomic;
 pub mod clipboard;
 pub mod cloud;

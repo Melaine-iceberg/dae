@@ -47,6 +47,11 @@ Item {
     readonly property bool directoryReported: session !== null && session.cwd !== ""
 
     signal exited()
+    /// The header's close button asks the shell to hide the panel. The panel
+    /// must not assign to `active` itself: that property is bound by the shell,
+    /// and a local assignment would break the binding, leaving the status bar
+    /// and focus ring believing the terminal is still open.
+    signal hideRequested()
 
     /// The shell this session is running, named by its file name. Before the
     /// first start it shows what the setting will launch; afterwards it keeps
@@ -158,11 +163,41 @@ Item {
             root.activeIndex = Math.max(0, root.sessions.length - 1)
     }
 
-    /// The panel never injects `cd` into a running shell — that pollutes
-    /// the shell's own history (Zed's rule too). The shell's directory is
-    /// *reported* through OSC 7/9/1337 by the integration snippets in
-    /// Assets/terminal-integration, and new sessions simply start in the
-    /// active tab's folder.
+    /// The panel never *follows* navigation with an injected `cd` — that
+    /// pollutes the shell's own history (Zed's rule too). The shell's
+    /// directory is *reported* through OSC 7/9/1337 by the integration
+    /// snippets in Assets/terminal-integration, and new sessions simply
+    /// start in the active tab's folder.
+
+    /// ...but a jump the user *asks* for is theirs: `cd` to the active
+    /// tab's folder, sent as keyboard input, quoted the shell in the
+    /// session understands. The history entry is the user's own doing.
+    function jumpToFolder() {
+        if (!root.running || root.session === null || root.tab === null)
+            return
+        if (!root.tab.folder)
+            return
+        const path = String(root.tab.listing.path)
+        // The PTY is a local shell; a remote tab has no directory to name.
+        if (path === "" || !/^([A-Za-z]:[\\/]|\/)/.test(path))
+            return
+        const shell = root.shellName.toLowerCase()
+        let command
+        if (shell.indexOf("powershell") >= 0 || shell === "pwsh") {
+            // PowerShell: escape what a double-quoted string interpolates.
+            const quoted = '"' + path.replace(/`/g, '``').replace(/\$/g, '`$') + '"'
+            command = 'cd -- ' + quoted
+        } else if (shell.indexOf("cmd") >= 0) {
+            command = 'cd /d "' + path.replace(/"/g, '""') + '"'
+        } else {
+            // POSIX: single quotes are literal; splice in `'\''` for the
+            // one character that can appear in them.
+            const quoted = "'" + path.replace(/'/g, "'\\''") + "'"
+            command = 'cd -- ' + quoted
+        }
+        root.session.write(command + '\n')
+        view.focusTerminal()
+    }
 
     /// §11.6's 清屏: the shell's own clear command, so the scrollback that
     /// goes away is the one the shell owns.
@@ -444,6 +479,35 @@ Item {
                 }
             }
 
+            /// 跳转: the deliberate `cd` the user asked for (G-9).
+            Rectangle {
+                width: 44
+                height: Theme.controlXs
+                radius: Theme.radiusXs
+                visible: root.running
+                color: jumpMouse.containsMouse ? Theme.hover : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("跳转")
+                    color: jumpMouse.containsMouse
+                        ? Theme.terminalInkStrong : Theme.terminalInk
+                    font.pixelSize: Theme.typeMicro
+                    textFormat: Text.PlainText
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("跳转")
+                Accessible.onPressAction: root.jumpToFolder()
+
+                MouseArea {
+                    id: jumpMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.jumpToFolder()
+                }
+            }
+
 
             /// 重新启动: the active session died; start it again in the
             /// folder it was born in.
@@ -483,6 +547,7 @@ Item {
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("关闭终端")
+                Accessible.onPressAction: root.hideRequested()
 
                 Rectangle {
                     anchors.fill: parent
@@ -502,7 +567,7 @@ Item {
                     id: closeMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    onClicked: root.active = false
+                    onClicked: root.hideRequested()
                 }
             }
         }

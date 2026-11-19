@@ -87,6 +87,21 @@ impl FileSystemBackend for LocalBackend {
         Ok(Box::new(std::fs::File::create(PathBuf::from(path))?))
     }
 
+    fn open_write_at(&self, path: &str, offset: u64) -> Result<Box<dyn Write + Send>, FileSystemError> {
+        use std::io::Seek;
+
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(PathBuf::from(path))?;
+        // Seek, not append: the engine positions the writer where its own
+        // stat said the partial ends, and a sparse tail — a partial shorter
+        // than the caller believed — is the resume's error to surface, not
+        // a gap to write past silently.
+        file.seek(std::io::SeekFrom::Start(offset))?;
+        Ok(Box::new(file))
+    }
+
     fn remove(&self, path: &str) -> Result<(), FileSystemError> {
         let path = PathBuf::from(path);
         let metadata = std::fs::symlink_metadata(&path)?;

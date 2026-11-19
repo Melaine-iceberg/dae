@@ -189,98 +189,22 @@ impl qobject::SidebarModel {
         // are process-wide and loading them here is idempotent.
         crate::init_stores();
 
-        let mut base = Vec::new();
-        let hidden = sidebar::load_hidden_places().unwrap_or_default();
-        let mut places = sidebar::system_places();
-        // `system_places` reports the OS's resolution order, which on Windows
-        // puts Documents before Downloads. The sidebar's first five rows are
-        // the destinations a user reaches for in the order they reach for
-        // them, so they are ranked here instead of trusting the probe.
-        places.sort_by_key(|place| place_rank(place.kind));
-        for place in places {
-            if hidden.contains(&place.kind) {
-                continue;
-            }
-            base.push(place_row(place.kind, &place.path));
-        }
-        // Hiding is the one place action that removes its own row, so the way
-        // back has to be a row of its own or it would not exist anywhere.
-        if !hidden.is_empty() {
-            base.push(SidebarRow {
-                section: SECTION_PLACES.to_owned(),
-                name: "Restore hidden places".to_owned(),
-                path: String::new(),
-                kind: "restorePlaces".to_owned(),
-                detail: format!("{} hidden", hidden.len()),
-                icon: "eye".to_owned(),
-                is_dir: false,
-                fill: 0.0,
-                file_system: String::new(),
-                removable: false,
-            });
-        }
-        let favorites = sidebar::load_favorites().unwrap_or_default();
-        if favorites.is_empty() {
-            // The hint is the favorites section's drop target: a folder
-            // dragged onto it is pinned, and the section stays discoverable
-            // before anything has been pinned.
-            base.push(SidebarRow {
-                section: SECTION_FAVORITES.to_owned(),
-                name: "Drop folders here to favorite them".to_owned(),
-                path: String::new(),
-                kind: "favoriteHint".to_owned(),
-                detail: String::new(),
-                icon: "star".to_owned(),
-                is_dir: false,
-                fill: 0.0,
-                file_system: String::new(),
-                removable: false,
-            });
-        } else {
-            for favorite in favorites {
-                base.push(SidebarRow {
-                    section: SECTION_FAVORITES.to_owned(),
-                    name: favorite.name,
-                    path: favorite.path,
-                    kind: "favorite".to_owned(),
-                    detail: String::new(),
-                    icon: "star".to_owned(),
-                    is_dir: true,
-                    fill: 0.0,
-                    file_system: String::new(),
-                    removable: false,
-                });
-            }
-        }
-
-        let mut network = Vec::new();
-        for connection in connections::list_connections().unwrap_or_default() {
-            network.push(connection_row(connection));
-        }
-        // The add row keeps the group reachable while it is empty, and stays
-        // at the end once there is something to manage. The WSL rows are
-        // inserted ahead of this list when the async probe returns, because a
-        // distro is also a network location.
-        network.push(action_row(
-            SECTION_NETWORK,
-            "Connect network storage…",
-            "addConnection",
-        ));
-
-        let mut cloud = Vec::new();
-        for account in list_cloud_accounts().unwrap_or_default() {
-            cloud.push(cloud_row(account));
-        }
-        cloud.push(action_row(SECTION_CLOUD, "Add cloud account…", "addCloud"));
-
+        // Every source here is a file read or a device probe, and this
+        // refresh sits on the window-creation path, so the row build runs on
+        // the blocking pool and only the landing is queued onto the Qt
+        // thread (`listing-shell-costs.md` §7).
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
+            let Ok((mut rows, network, cloud)) =
+                tokio::task::spawn_blocking(build_base_rows).await
+            else {
+                return;
+            };
             let volumes = sidebar::list_disks().await.unwrap_or_default();
             // Empty everywhere but Windows, which also makes the rows
             // disappear on the other platforms.
             let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
 
-            let mut rows = base;
             for volume in volumes {
                 let name = volume_name(&volume.name, &volume.mount_point);
                 // The row answers "how much can I still write here" (§7.3.2);
@@ -308,6 +232,10 @@ impl qobject::SidebarModel {
             for distro in distros {
                 rows.push(distro_row(distro));
             }
+            // The add row keeps the group reachable while it is empty, and
+            // stays at the end once there is something to manage. The WSL
+            // rows are inserted ahead of this list, because a distro is also
+            // a network location.
             rows.extend(network);
             rows.extend(cloud);
             let _ = thread.queue(move |mut model| {
@@ -328,6 +256,99 @@ impl qobject::SidebarModel {
         ));
         self.as_mut().set_loaded(true);
     }
+}
+
+/// The sidebar's file-backed sections: places, favorites, saved network
+/// connections and cloud accounts, in display order. Runs on the blocking
+/// pool (see `refresh`); the volumes and WSL distros are awaited afterwards
+/// and appended by the caller.
+///
+/// Returns the base rows, then the network and cloud rows separately so the
+/// async half can keep them at the end of the list.
+fn build_base_rows() -> (Vec<SidebarRow>, Vec<SidebarRow>, Vec<SidebarRow>) {
+    let mut base = Vec::new();
+    let hidden = sidebar::load_hidden_places().unwrap_or_default();
+    let mut places = sidebar::system_places();
+    // `system_places` reports the OS's resolution order, which on Windows puts
+    // Documents before Downloads. The sidebar's first five rows are the
+    // destinations a user reaches for in the order they reach for them, so
+    // they are ranked here instead of trusting the probe.
+    places.sort_by_key(|place| place_rank(place.kind));
+    for place in places {
+        if hidden.contains(&place.kind) {
+            continue;
+        }
+        base.push(place_row(place.kind, &place.path));
+    }
+    // Hiding is the one place action that removes its own row, so the way
+    // back has to be a row of its own or it would not exist anywhere.
+    if !hidden.is_empty() {
+        base.push(SidebarRow {
+            section: SECTION_PLACES.to_owned(),
+            name: "Restore hidden places".to_owned(),
+            path: String::new(),
+            kind: "restorePlaces".to_owned(),
+            detail: format!("{} hidden", hidden.len()),
+            icon: "eye".to_owned(),
+            is_dir: false,
+            fill: 0.0,
+            file_system: String::new(),
+            removable: false,
+        });
+    }
+    let favorites = sidebar::load_favorites().unwrap_or_default();
+    if favorites.is_empty() {
+        // The hint is the favorites section's drop target: a folder dragged
+        // onto it is pinned, and the section stays discoverable before
+        // anything has been pinned.
+        base.push(SidebarRow {
+            section: SECTION_FAVORITES.to_owned(),
+            name: "Drop folders here to favorite them".to_owned(),
+            path: String::new(),
+            kind: "favoriteHint".to_owned(),
+            detail: String::new(),
+            icon: "star".to_owned(),
+            is_dir: false,
+            fill: 0.0,
+            file_system: String::new(),
+            removable: false,
+        });
+    } else {
+        for favorite in favorites {
+            base.push(SidebarRow {
+                section: SECTION_FAVORITES.to_owned(),
+                name: favorite.name,
+                path: favorite.path,
+                kind: "favorite".to_owned(),
+                detail: String::new(),
+                icon: "star".to_owned(),
+                is_dir: true,
+                fill: 0.0,
+                file_system: String::new(),
+                removable: false,
+            });
+        }
+    }
+
+    let mut network = Vec::new();
+    for connection in connections::list_connections().unwrap_or_default() {
+        network.push(connection_row(connection));
+    }
+    // The add row keeps the group reachable while it is empty, and stays at
+    // the end once there is something to manage.
+    network.push(action_row(
+        SECTION_NETWORK,
+        "Connect network storage…",
+        "addConnection",
+    ));
+
+    let mut cloud = Vec::new();
+    for account in list_cloud_accounts().unwrap_or_default() {
+        cloud.push(cloud_row(account));
+    }
+    cloud.push(action_row(SECTION_CLOUD, "Add cloud account…", "addCloud"));
+
+    (base, network, cloud)
 }
 
 /// The order of the rows inside the Places section. The first five are the

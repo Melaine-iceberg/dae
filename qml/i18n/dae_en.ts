@@ -1592,6 +1592,10 @@
         <source>更新于 %1</source>
         <translation type="vanished">Updated %1</translation>
     </message>
+    <message>
+        <source>名称不能包含 /</source>
+        <translation>Name cannot contain /</translation>
+    </message>
 </context>
 <context>
     <name>FilterMenu</name>
@@ -1681,6 +1685,17 @@
         <location filename="../FilterMenu.qml" line="189"/>
         <source>清除筛选</source>
         <translation>Clear filters</translation>
+    </message>
+    <message>
+        <location filename="../FilterMenu.qml" line="131"/>
+        <location filename="../FilterMenu.qml" line="152"/>
+        <source>按名称筛选</source>
+        <translation>Filter by name</translation>
+    </message>
+    <message>
+        <location filename="../FilterMenu.qml" line="162"/>
+        <source>清除名称筛选</source>
+        <translation>Clear name filter</translation>
     </message>
 </context>
 <context>
@@ -3186,6 +3201,36 @@
         <source>无法读取设置</source>
         <translation>Could not read settings</translation>
     </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>浏览压缩包仅适用于本地压缩包</source>
+        <translation>Archive browsing is only available for local archives</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此压缩包已加密，请先输入密码解压再浏览</source>
+        <translation>This archive is encrypted. Extract it with the password to browse its files</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此压缩包格式不支持浏览，请使用解压</source>
+        <translation>This archive format cannot be browsed. Use Extract instead</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此文件使用的压缩方法暂不支持读取</source>
+        <translation>This file uses a compression method the archive viewer cannot read</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>压缩包为只读，请解压后再编辑</source>
+        <translation>Archives are read-only. Extract the files to edit them</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>压缩包路径的格式为 archive:&lt;压缩包&gt;!&lt;内部路径&gt;</source>
+        <translation>An archive path is archive:&lt;archive&gt;!&lt;inner path&gt;</translation>
+    </message>
 </context>
 <context>
     <name>Locator</name>
@@ -4220,6 +4265,14 @@
         <location filename="../SearchFilterBar.qml" line="232"/>
         <source>所有卷</source>
         <translation>All volumes</translation>
+    </message>
+    <message>
+        <source>使用正则表达式</source>
+        <translation>Use regular expression</translation>
+    </message>
+    <message>
+        <source>区分大小写</source>
+        <translation>Match case</translation>
     </message>
 </context>
 <context>
@@ -5557,6 +5610,16 @@
     <message>
         <source>终端字体覆盖；留空使用「字体设置」页的全局等宽字体</source>
         <translation>Terminal font override; leave empty to use the global monospace font from the Fonts page</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="285"/>
+        <source>终端跳转当前目录</source>
+        <translation>Jump the terminal to the current folder</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="286"/>
+        <source>让内嵌终端 cd 到当前标签的文件夹</source>
+        <translation>Send a cd into the active tab's folder to the embedded terminal</translation>
     </message>
 </context>
 <context>
@@ -7308,6 +7371,16 @@
         <source>关闭终端</source>
         <translation>Close terminal</translation>
     </message>
+    <message>
+        <location filename="../TerminalPanel.qml" line="487"/>
+        <source>跳转</source>
+        <translation>Jump</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml" line="495"/>
+        <source>跳转</source>
+        <translation>Jump</translation>
+    </message>
 </context>
 <context>
     <name>TitleBar</name>
@@ -7558,6 +7631,11 @@
         <location filename="../TransferQueue.qml" line="489"/>
         <source>取消 </source>
         <translation>Cancel </translation>
+    </message>
+    <message>
+        <location filename="../TransferQueue.qml" line="367"/>
+        <source>剩余 %1</source>
+        <translation>%1 left</translation>
     </message>
 </context>
 <context>

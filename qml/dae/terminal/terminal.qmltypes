@@ -6,11 +6,12 @@ import QtQuick.tooling 1.2
 // file only lets qmllint, qmlcachegen and qmltc resolve `import dae.terminal`.
 //
 // Keep it in sync with the Q_PROPERTY / Q_INVOKABLE / Q_SIGNAL block there.
+// Property indexes follow the Q_PROPERTY declaration order in the header.
 
 Module {
     Component {
         file: "terminal_item.h"
-        lineNumber: 41
+        lineNumber: 53
         name: "TerminalItem"
         accessSemantics: "reference"
         prototype: "QQuickItem"
@@ -24,7 +25,7 @@ Module {
             write: "setSession"
             notify: "sessionChanged"
             index: 0
-            lineNumber: 44
+            lineNumber: 53
         }
         Property {
             name: "dark"
@@ -33,7 +34,16 @@ Module {
             write: "setDark"
             notify: "darkChanged"
             index: 1
-            lineNumber: 45
+            lineNumber: 54
+        }
+        Property {
+            name: "copyOnSelect"
+            type: "bool"
+            read: "copyOnSelect"
+            write: "setCopyOnSelect"
+            notify: "copyOnSelectChanged"
+            index: 2
+            lineNumber: 58
         }
         Property {
             name: "fontSize"
@@ -41,8 +51,8 @@ Module {
             read: "fontSize"
             write: "setFontSize"
             notify: "fontChanged"
-            index: 2
-            lineNumber: 46
+            index: 3
+            lineNumber: 59
         }
         Property {
             name: "lineHeight"
@@ -50,8 +60,8 @@ Module {
             read: "lineHeight"
             write: "setLineHeight"
             notify: "fontChanged"
-            index: 3
-            lineNumber: 47
+            index: 4
+            lineNumber: 60
         }
         Property {
             name: "fontFamily"
@@ -59,14 +69,40 @@ Module {
             read: "fontFamily"
             write: "setFontFamily"
             notify: "fontChanged"
-            index: 4
-            lineNumber: 48
+            index: 5
+            lineNumber: 61
         }
-        Signal { name: "sessionChanged"; lineNumber: 78 }
-        Signal { name: "darkChanged"; lineNumber: 79 }
-        Signal { name: "fontChanged"; lineNumber: 80 }
-        Method { name: "refresh"; lineNumber: 72 }
-        Method { name: "focusTerminal"; lineNumber: 73 }
-        Method { name: "copySelection"; lineNumber: 75 }
+        Property {
+            name: "columns"
+            type: "int"
+            read: "columns"
+            notify: "gridSizeChanged"
+            index: 6
+            lineNumber: 64
+        }
+        Property {
+            name: "rows"
+            type: "int"
+            read: "rows"
+            notify: "gridSizeChanged"
+            index: 7
+            lineNumber: 65
+        }
+        Signal { name: "sessionChanged"; lineNumber: 100 }
+        Signal { name: "darkChanged"; lineNumber: 101 }
+        Signal { name: "fontChanged"; lineNumber: 102 }
+        Signal { name: "gridSizeChanged"; lineNumber: 103 }
+        Signal { name: "searchRequested"; lineNumber: 106 }
+        Signal { name: "copyOnSelectChanged"; lineNumber: 107 }
+        Signal {
+            name: "linkActivated"
+            lineNumber: 110
+            Parameter { name: "target"; type: "QString" }
+            Parameter { name: "line"; type: "int" }
+            Parameter { name: "column"; type: "int" }
+        }
+        Method { name: "refresh"; lineNumber: 94 }
+        Method { name: "focusTerminal"; lineNumber: 95 }
+        Method { name: "copySelection"; lineNumber: 97 }
     }
 }

@@ -1,10 +1,28 @@
 # PGO 与 BOLT：编译期和后链接的两种优化
 
-> **状态：已接入，未测量收益。** 两个壳都接上了：`tauri`（旧 WebView 壳）与
-> `qt`（`apps/dae`，cxx-qt 桥）。本地流程（Windows / Linux）与 `release.yml` 的两条腿
-> （Windows / Linux）都覆盖，Linux 额外带 LLVM BOLT；每一步都有降级路径；但**还没有一次干净的 A/B 数字**说明它把启动或列目录加快了多少。
-> 按 `docs/decisions/` 的习惯，这里只写「怎么跑、为什么这么接、失败时退到哪」，
-> 收益等有数了再回填——没有数字之前，不要在任何地方宣称它更快。
+> **状态：已接入，A/B 已测（2026-11-18）：脚本化训练负载下无可测收益。** 两个壳都接上了：
+> `qt`（`apps/dae`，cxx-qt 桥）与已退役的 Tauri 腿的脚本同源。本地流程（Windows）与
+> `release.yml` 都覆盖，Linux 额外带 LLVM BOLT；每一步都有降级路径。
+>
+> **A/B 的数字（Windows x64，Ryzen 9 7940H，K: ReFS，同一份工作区代码，两两交替采样）：**
+>
+> | 口径 | 基线（plain release） | `-Cprofile-use` | 判读 |
+> |---|---:|---:|---|
+> | 启动 `qml-root-completed`（7 次/组，中位） | 1098.98 ms | 1079.79 ms | −1.7%，但组内散布 ±40 ms，逐对比符号翻转 → 噪声内 |
+> | 启动 `first-frame`（同上） | 1231.94 ms | 1206.83 ms | −2.0%，同上 |
+> | 启动 `qml-first-list`（同上） | 1470.56 ms | 1459.73 ms | −0.7%，同上 |
+> | 完成重排 `sort`（119,990 行 worker，5 次/组，`DAE_LOG=debug` 的 `re-sort` 行） | 78.3 ms（75.0–81.4） | 81.1 ms（79.4–83.8） | **+3.5%，两组分布几乎不重叠，是变慢不是噪声** |
+> | 同上 `reset` | 85.1 ms | 86.9 ms | +2%，边缘 |
+>
+> **判读：这份 profile 是 `train` 用语料目录跑出来的，而语料是定宽名字，`rows_are_sorted`
+> 守卫通过、完成重排序路径一次都没执行——`-Cprofile-use` 拿不到它的计数，把这条真实热点
+> 当冷路径布局，反而吃了 3.5%。启动时间线由 Qt DLL、字体数据库、QML 实例化主导，本来
+> 就不是 IR PGO 动得到的。** 结论：不要用这份脚本化 profile 宣称收益；要让 PGO 值回构建，
+> 训练负载必须含自然序目录的导航（`huge-natural` 一类，逼出 `re-sort`），或者干脆不用
+> ——当前 profile 下，plain release 与 PGO 打平（启动）且排序更慢。
+>
+> 收益的复现命令与语料见 §3 与本节末尾的「A/B 复现」；按 `docs/decisions/` 的习惯，
+> 没有正数之前，任何地方都不要写「PGO 让 dae 更快」。
 >
 > 选择哪个壳：`--qt`（或 `DAE_PERF_SHELL=qt`）。不带参数时仍是 Tauri，直到旧壳退役。
 
@@ -311,9 +329,31 @@ Qt 腿另有 `windeployqt` / `macdeployqt` / `linuxdeploy` 的时间，那本来
 
 ## 8. 还没做
 
-- **没有 A/B 数字。** 冷启动、目录列举、搜索各自能拿多少，目前未知；要量的话用
-  `bench/` 里的 harness（`listing-pipeline`）配合两个二进制对比。
-- **没有把本地训练的 profdata 接进 CI。** 现在 CI 自己练，覆盖率低但流程闭环。
+- **A/B 已有数字（2026-11-18，见文首状态块）：脚本化语料训练出的 profile 无可测收益，
+  完成重排反而慢 3.5%。** 下一份 profile 训练时必须驱动自然序目录的导航；在那之前
+  `release.yml` 的 PGO 腿跑通流程可以，但不要引用它当性能依据。
+- **没有把本地训练的 profdata 接进 CI。** 现在 CI 自己练，覆盖率低但流程闭环；且训练
+  负载与本节结论相同——语料目录只覆盖到守卫通过的那条路径。
+
 - **没有 macOS/Windows 的等价后链接步骤**（BOLT 只认 ELF，不存在等价物）；PGO 三平台都已开。
 - **没有 sign 之后的验证**：`latest.json` 的签名是否始终指向 BOLT 后的产物，需要一次真实
   的 tag 发布来确认（这条是 CI 改动里唯一没被本地验证过的部分）。
+
+### A/B 复现（Windows，文首数字的来源）
+
+```bash
+# 基线与 PGO 各一份二进制，同一工作区代码
+bun run perf:pgo:qt:train --seconds 90   # 产出 .perf/pgo/dae.profdata
+cargo build --release -p dae-app          # 基线；拷走并连同 ghostty-vt.dll 一起放
+bun run perf:pgo:qt:build                 # -Cprofile-use 的那份
+
+# 启动时间线：DAE_STARTUP_PERF=1 各 7 次交替，取 `qml-root-completed` /
+# `first-frame` / `qml-first-list` 的中位（标记打到 stderr）。
+# Rust 重负载：自然序语料逼出完成重排，读 debug 日志的 re-sort 行。
+./bench/listing-pipeline/target/release/listing-pipeline prepare K:/dae-listing-bench/huge 120000
+# …再用 IMG_<n%997><n>.png 形状重建一个 huge-natural（定宽名字守卫会通过，
+# 重排路径就不被执行）…
+DAE_LOG=debug <exe> K:/dae-listing-bench/huge-natural   # 各 5 次，读
+# %LOCALAPPDATA%/com.melaine.dae/logs/dae.log 的
+# "re-sort: 119990 rows, sort … ms, permute … ms, reset … ms"
+```

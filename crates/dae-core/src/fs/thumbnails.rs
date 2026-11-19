@@ -71,6 +71,31 @@ pub fn extract(path: &str, size: u32, modified: Option<SystemTime>) -> Option<Th
     backend::extract(path, size, modified)
 }
 
+/// Bounded bytes of a remote-backed image, for the in-process decoders to
+/// thumbnail (G-5: Dolphin's "pull it when the user can see it").
+///
+/// Only the formats the view decodes itself are worth the wire: the
+/// desktop-produced set (PDF, video, HEIC) would download megabytes the
+/// caller cannot decode without a local file. `None` is a normal miss — the
+/// row keeps its type glyph — and covers every reason: unsupported format,
+/// unreachable backend, not a file, empty, or larger than `max_bytes`.
+pub fn fetch_remote(path: &str, max_bytes: u64) -> Option<Vec<u8>> {
+    use std::io::Read;
+
+    if !super::preview::is_thumbnail_path(path) || max_bytes == 0 {
+        return None;
+    }
+    let backend = super::vfs::resolve(path).ok()?;
+    let stat = backend.stat(path).ok()?;
+    if stat.kind != super::types::EntryKind::File || stat.size == 0 || stat.size > max_bytes {
+        return None;
+    }
+    let reader = backend.open_read(path).ok()?;
+    let mut bytes = Vec::new();
+    reader.take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
 // Compiled under `cfg(test)` as well as on Linux, the same arrangement as
 // `icons::linux`: the spec parsing and key arithmetic are where the quiet bugs
 // live, and they can be tested on a host that cannot build a Linux app at all.
@@ -140,5 +165,54 @@ mod tests {
         assert!(is_supported_path("C:/tree/photo.heic"));
         assert!(!is_supported_path("C:/tree/photo.jpg"));
         assert!(!is_supported_path("C:/tree/main.rs"));
+    }
+
+    #[test]
+    fn fetch_remote_reads_a_non_local_image_and_rejects_the_rest() {
+        use std::io::Write as _;
+
+        let dir = std::env::temp_dir()
+            .join(format!("dae-thumbnails-remote-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // A one-pixel PNG, small enough to spell out.
+        let png: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x62, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+
+        // The archive backend stands in for "remote": a real non-local
+        // scheme whose `open_read` serves bounded bytes over the same trait.
+        let zip_path = dir.join("shots.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("pixel.png", options).unwrap();
+        zip.write_all(png).unwrap();
+        zip.start_file("report.pdf", options).unwrap();
+        zip.write_all(b"%PDF-1.4").unwrap();
+        zip.start_file("huge.png", options).unwrap();
+        zip.write_all(&vec![0u8; 512]).unwrap();
+        zip.add_directory("folder", options).unwrap();
+        zip.finish().unwrap();
+        let base = format!("archive:{}!", zip_path.to_string_lossy());
+
+        assert_eq!(
+            fetch_remote(&format!("{base}/pixel.png"), 1024 * 1024).as_deref(),
+            Some(png)
+        );
+        // A format the desktop produces but the view cannot decode over the
+        // wire is not worth the download.
+        assert_eq!(fetch_remote(&format!("{base}/report.pdf"), 1024 * 1024), None);
+        // The byte cap answers before the first read.
+        assert_eq!(fetch_remote(&format!("{base}/huge.png"), 64), None);
+        // Directories and unknown members miss quietly.
+        assert_eq!(fetch_remote(&format!("{base}/folder"), 1024 * 1024), None);
+        assert_eq!(fetch_remote(&format!("{base}/missing.png"), 1024 * 1024), None);
     }
 }

@@ -70,6 +70,15 @@ pub mod qobject {
         /// that stat. The image provider's own cache version-tags these, so
         /// they are not kept a second time here.
         fn dae_qt_render_system_thumbnail(path: &str, size: i32, modified_ms: i64) -> Vec<u8>;
+
+        /// Whether a path addresses the local disk. The thumbnail provider
+        /// asks before it touches `QFileInfo`, which only knows local files.
+        fn dae_qt_is_local_path(path: &str) -> bool;
+
+        /// Bounded bytes for a thumbnail over a remote backend: resolve the
+        /// scheme, stat, and read up to `max_bytes`. An empty answer is a
+        /// normal miss — the row keeps its type glyph.
+        fn dae_qt_fetch_remote_thumbnail(path: &str, max_bytes: i64) -> Vec<u8>;
     }
 }
 
@@ -159,6 +168,16 @@ fn dae_qt_render_system_thumbnail(path: &str, size: i32, modified_ms: i64) -> Ve
     dae_core::fs::thumbnails::extract(path, clamp_edge(size), modified_from_ms(modified_ms))
         .map(|thumbnail| thumbnail.bytes)
         .unwrap_or_default()
+}
+
+
+fn dae_qt_is_local_path(path: &str) -> bool {
+    dae_core::fs::vfs::is_local_path(path)
+}
+
+fn dae_qt_fetch_remote_thumbnail(path: &str, max_bytes: i64) -> Vec<u8> {
+    let max = u64::try_from(max_bytes).unwrap_or(0);
+    dae_core::fs::thumbnails::fetch_remote(path, max).unwrap_or_default()
 }
 
 /// The mtime `QFileInfo` reports, as the `SystemTime` the freshness rule

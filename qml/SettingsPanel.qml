@@ -281,7 +281,9 @@ FocusScope {
                 { id: "explorer.viewColumn", label: qsTr("分栏视图"),
                   detail: qsTr("直接切换到 Miller 分栏") },
                 { id: "explorer.toggleSizeUnits", label: qsTr("切换大小单位"),
-                  detail: qsTr("在 KB/MB 与 KiB/MiB 之间切换") }
+                  detail: qsTr("在 KB/MB 与 KiB/MiB 之间切换") },
+                { id: "explorer.terminalJumpFolder", label: qsTr("终端跳转当前目录"),
+                  detail: qsTr("让内嵌终端 cd 到当前标签的文件夹") }
             ]
         },
         {

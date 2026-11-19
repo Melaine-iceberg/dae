@@ -35,6 +35,8 @@ pub fn resolve(path: &str) -> Result<SharedBackend, FileSystemError> {
         Scheme::Ftp | Scheme::Ftps => ftp::open_backend(&url),
         Scheme::WebDav | Scheme::WebDavS => webdav::open_backend(&url),
         Scheme::Cloud => cloud::open_backend(&url),
+        // A read-only view inside one archive file on the local disk.
+        Scheme::Archive => super::archive_view::open_backend(&url),
     }
 }
 
@@ -105,9 +107,24 @@ pub trait FileSystemBackend: Send + Sync {
 
     /// Opens a file for reading as a byte stream.
     fn open_read(&self, path: &str) -> Result<Box<dyn Read + Send>, FileSystemError>;
-
     /// Creates (or truncates) a file for sequential writing.
     fn open_write(&self, path: &str) -> Result<Box<dyn Write + Send>, FileSystemError>;
+
+    /// Opens (or creates) `path` with the writer positioned at `offset`,
+    /// keeping what is already there. The byte-level resume writes the
+    /// remainder of a partial destination through this. A backend that
+    /// cannot position a writer inherits the default, and the engine falls
+    /// back to copying the whole file.
+    fn open_write_at(
+        &self,
+        path: &str,
+        offset: u64,
+    ) -> Result<Box<dyn Write + Send>, FileSystemError> {
+        let _ = offset;
+        Err(FileSystemError::Unsupported(format!(
+            "This storage backend does not support resuming a partial file: {path}"
+        )))
+    }
 
     /// Deletes a file or an empty directory.
     fn remove(&self, path: &str) -> Result<(), FileSystemError>;

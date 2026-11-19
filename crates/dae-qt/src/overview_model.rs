@@ -2,10 +2,11 @@
 //!
 //! The overview combines four independent sources: known places and custom
 //! favorites, the recent list, the user's spaces, and the git repositories
-//! behind recent folders. The first three are cheap and synchronous, so the
-//! page can paint immediately; the project scan is spawned and replaces the
-//! row list when it answers. A generation counter keeps a slow scan from
-//! overwriting a newer refresh (a tab switch or a favorites change).
+//! behind recent folders. All of them read files — JSON stores, a disk
+//! listing, git — so `refresh` builds the row list on the blocking pool and
+//! lands it on the Qt thread; a generation counter keeps a slow build or
+//! scan from overwriting a newer refresh (a tab switch or a favorites
+//! change).
 //!
 //! Sections and row anatomy are flattened into one model on purpose: the page
 //! is one scroll, and one model with section names avoids four sources with
@@ -253,36 +254,63 @@ impl qobject::OverviewModel {
         let generation = self.generation.wrapping_add(1);
         self.as_mut().rust_mut().generation = generation;
 
-        let (mut rows, candidates) = self.as_ref().build_base();
-        let hidden: Vec<&str> = self
+        // The section sources are JSON reads and a disk listing — cheap only
+        // on a warm cache, and this refresh sits on the window-creation path
+        // — so the rows are built on the blocking pool and only the landing
+        // runs on the Qt thread (`listing-shell-costs.md` §7). The generation
+        // checked in `apply_base`/`apply_projects` drops a build from an
+        // older refresh (a tab switch, a hidden-section change).
+        let hidden: Vec<String> = self
             .hidden_sections
             .split(',')
             .map(str::trim)
             .filter(|name| !name.is_empty())
+            .map(str::to_owned)
             .collect();
-        if !hidden.is_empty() {
-            rows.retain(|row| !hidden.contains(&row.section));
-        }
-        let count = rows.len() as i32;
-        self.as_mut().rust_mut().base_rows = rows.clone();
-        self.as_mut().replace_rows(rows);
-        self.as_mut().set_count(count);
-        self.as_mut().set_loaded(true);
-        self.as_mut().set_project_busy(false);
-        self.as_mut().set_status(QString::default());
-
-        if candidates.is_empty() {
-            return;
-        }
-
-        self.as_mut().set_project_busy(true);
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
+            let Ok((mut rows, candidates)) =
+                tokio::task::spawn_blocking(Self::build_overview_base).await
+            else {
+                return;
+            };
+            if !hidden.is_empty() {
+                rows.retain(|row| !hidden.iter().any(|name| name == row.section));
+            }
+            let scanning = !candidates.is_empty();
+            let count = rows.len() as i32;
+            let _ = thread.queue(move |mut model| {
+                model.as_mut().apply_base(generation, count, rows, scanning);
+            });
+            if !scanning {
+                return;
+            }
             let projects = scan_projects(candidates).await;
             let _ = thread.queue(move |mut model| {
                 model.as_mut().apply_projects(generation, projects);
             });
         });
+    }
+
+    /// Lands the rows a background `refresh` built. Stale generations are
+    /// dropped; a fresh one publishes the base rows and, when a project scan
+    /// is still running, arms the busy flag the board's spinner reads.
+    fn apply_base(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        count: i32,
+        rows: Vec<OverviewRow>,
+        scanning: bool,
+    ) {
+        if self.generation != generation {
+            return;
+        }
+        self.as_mut().rust_mut().base_rows = rows.clone();
+        self.as_mut().replace_rows(rows);
+        self.as_mut().set_count(count);
+        self.as_mut().set_loaded(true);
+        self.as_mut().set_project_busy(scanning);
+        self.as_mut().set_status(QString::default());
     }
 
     fn kind_at(&self, row: i32) -> QString {
@@ -368,7 +396,7 @@ impl qobject::OverviewModel {
         self.as_mut().set_project_busy(false);
     }
 
-    fn build_base(&self) -> (Vec<OverviewRow>, Vec<ProjectCandidate>) {
+    fn build_overview_base() -> (Vec<OverviewRow>, Vec<ProjectCandidate>) {
         let mut rows = Vec::new();
         let mut candidates = Vec::new();
         let mut seen_paths = HashSet::new();

@@ -92,14 +92,7 @@ Menu {
         { kind: "toggle", property: "syncLayout", glyph: "refresh",
           label: qsTr("所有目录使用同一布局") },
         { kind: "toggle", property: "adaptiveLayout", glyph: "grid",
-          label: qsTr("按内容自动选择布局") },
-        { kind: "sep" },
-        { kind: "label", label: qsTr("图标大小") },
-        { kind: "size", value: 24, label: "24" },
-        { kind: "size", value: 32, label: "32" },
-        { kind: "size", value: 48, label: "48" },
-        { kind: "size", value: 64, label: "64" },
-        { kind: "size", value: 96, label: "96" }
+          label: qsTr("按内容自动选择布局") }
     ]
 
     rows: root.normalized()
@@ -124,8 +117,6 @@ Menu {
             return ExplorerPrefs[item.group] === item.value
         if (item.kind === "column")
             return (ExplorerPrefs.columns || "").split(",").indexOf(item.value) >= 0
-        if (item.kind === "size")
-            return ExplorerPrefs.iconSize === item.value
         // Actions and labels never carry a tick; `undefined === undefined`
         // would otherwise mark the overview row.
         return false
@@ -160,8 +151,6 @@ Menu {
                 configured.push(item.value)
             ExplorerPrefs.setString("columns", configured.join(","))
         }
-        if (item.kind === "size")
-            ExplorerPrefs.setNumber("iconSize", item.value)
     }
 
     function normalized() {
@@ -177,7 +166,7 @@ Menu {
                 checked: kind === "item" && root.checked(entry),
                 checkable: kind === "item" && (entry.kind === "radio"
                     || entry.kind === "toggle" || entry.kind === "shellToggle"
-                    || entry.kind === "column" || entry.kind === "size")
+                    || entry.kind === "column")
             })
         }
         return mapped

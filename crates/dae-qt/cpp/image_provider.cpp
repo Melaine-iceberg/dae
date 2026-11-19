@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QColor>
 #include <QElapsedTimer>
+#include <QBuffer>
 #include <QFont>
 #include <QImageReader>
 #include <QMutexLocker>
@@ -41,6 +42,16 @@ QString decodedPath(QString id)
     return QUrl::fromPercentEncoding(id.toUtf8());
 }
 
+/// The `v=...` revision the listing put in the URL. A local file's cache key
+/// re-reads mtime and size from disk; a remote source has only this stamp.
+QString revisionOf(const QString& id)
+{
+    const int query = id.indexOf(QLatin1Char('?'));
+    if (query < 0)
+        return QString();
+    const QUrlQuery values(id.mid(query + 1));
+    return values.queryItemValue(QStringLiteral("v"));
+}
 int requestedDimension(const QString& id, const QSize& requestedSize)
 {
     int dimension = requestedSize.isValid()
@@ -70,11 +81,17 @@ QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
                                             const QSize& requestedSize)
 {
     const QString path = decodedPath(id);
+    const int dimension = requestedDimension(id, requestedSize);
+
+    // A network backend is not a file QFileInfo could stat; its bytes arrive
+    // bounded from the vfs layer and its revision travels in the URL.
+    if (!dae_qt_is_local_path(path.toStdString()))
+        return remoteImage(id, path, dimension, size);
+
     const QFileInfo info(path);
     if (!info.isFile() || !info.isReadable())
         return {};
 
-    const int dimension = requestedDimension(id, requestedSize);
     const QString key = QStringLiteral("%1|%2|%3|%4")
                             .arg(path)
                             .arg(dimension)
@@ -122,6 +139,62 @@ QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
         }
     }
 
+    if (image.isNull())
+        return {};
+
+    if (size)
+        *size = image.size();
+
+    {
+        QMutexLocker locker(&m_mutex);
+        m_cache.insert(key, new QImage(image));
+    }
+    return image;
+}
+
+// The remote half of the thumbnail provider: bounded bytes from the vfs
+// layer, decoded from memory the same way the local half decodes from disk.
+// The revision in the URL (`v=mtime-size`) is the only freshness fact a
+// remote source has, so it doubles as the cache key.
+QImage ThumbnailImageProvider::remoteImage(const QString& id, const QString& path,
+                                           int dimension, QSize* size)
+{
+    const QString key = QStringLiteral("%1|%2|%3|remote")
+                            .arg(path)
+                            .arg(dimension)
+                            .arg(revisionOf(id));
+    {
+        QMutexLocker locker(&m_mutex);
+        if (const QImage* cached = m_cache.object(key)) {
+            if (size)
+                *size = cached->size();
+            return *cached;
+        }
+    }
+
+    const rust::Vec<uint8_t> bytes =
+        dae_qt_fetch_remote_thumbnail(path.toStdString(), kMaxSourceBytes);
+    if (bytes.empty())
+        return {};
+
+    QBuffer buffer;
+    buffer.setData(reinterpret_cast<const char*>(bytes.data()),
+                   qint64(bytes.size()));
+    buffer.open(QIODevice::ReadOnly);
+    QImageReader reader(&buffer);
+    reader.setAutoTransform(true);
+    const QSize original = reader.size();
+    if (original.isValid() && original.width() > 0 && original.height() > 0) {
+        const QSize target = original.scaled(dimension, dimension, Qt::KeepAspectRatio);
+        if (target.isValid())
+            reader.setScaledSize(target);
+    }
+    QImage image = reader.read();
+    if (!image.isNull()
+        && (image.width() > dimension || image.height() > dimension)) {
+        image = image.scaled(dimension, dimension, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+    }
     if (image.isNull())
         return {};
 

@@ -145,12 +145,16 @@ pub fn register_image_providers(engine: *mut cxx_qt_lib::QQmlApplicationEngine) 
 }
 
 /// Whether the pane should give this file an image slot: formats Qt decodes
-/// itself, plus the ones the desktop can produce (PDF, video, HEIC). Network
-/// entries have no desktop thumbnail provider, so they get none rather than a
-/// slot that only ever says "无法生成缩略图".
+/// itself, plus the ones the desktop can produce (PDF, video, HEIC) — the
+/// desktop set only for local files, because a producer needs the file on
+/// this disk. Remote rows still get the formats the in-process decoders
+/// read, pulled bounded through `fs::thumbnails::fetch_remote`.
 fn has_thumbnail(path: &str) -> bool {
-    vfs::is_local_path(path)
-        && (preview::is_thumbnail_path(path) || dae_core::fs::thumbnails::is_supported_path(path))
+    if vfs::is_local_path(path) {
+        preview::is_thumbnail_path(path) || dae_core::fs::thumbnails::is_supported_path(path)
+    } else {
+        preview::is_thumbnail_path(path)
+    }
 }
 
 #[derive(Default)]
@@ -600,6 +604,7 @@ async fn snapshot_body(properties: FileProperties, path: &str, dark: bool) -> Sn
         (text, media, exif)
     };
 
+
     let children = if is_directory {
         folder_children(path).await
     } else {
@@ -627,10 +632,99 @@ async fn snapshot_body(properties: FileProperties, path: &str, dark: bool) -> Sn
         }
     };
 
+    // The one honest preview of an unknown binary: its first bytes as a hex
+    // view. Only when nothing else answered — an image keeps its picture,
+    // media its tags, an Office container its sections — and only for a
+    // local file. The code card renders it: mono, no line numbers,
+    // horizontally scrollable, exactly what a byte listing wants.
+    let hex = if is_directory || !vfs::is_local_path(path) {
+        None
+    } else {
+        let name = properties.name.as_str();
+        let claimed = media.is_some()
+            || exif.is_some()
+            || office.is_some()
+            || !office_error.is_empty()
+            || preview::is_thumbnail_path(name)
+            || is_media_path(name);
+        if claimed {
+            None
+        } else {
+            let path = path.to_owned();
+            tokio::task::spawn_blocking(move || read_hex_preview(&path))
+                .await
+                .ok()
+        }
+    };
+
+    let forced_kind = hex
+        .as_ref()
+        .is_some_and(Result::is_ok)
+        .then(|| SourceKind::Code(String::new()));
+    let text = match (text, hex) {
+        // A decodeable text always wins; the hex view is the fallback, not
+        // a second opinion.
+        (Some(text), _) => Some(text),
+        (None, Some(Ok(hex))) => Some(hex),
+        (None, None | Some(Err(_))) => None,
+    };
+
     snapshot_from(
-        properties, text, media, exif, children, office, office_error, dark,
+        properties, text, media, exif, children, office, office_error, dark, forced_kind,
     )
 }
+
+/// The first [`HEX_PREVIEW_BYTES`] of a local file as a hex listing, or the
+/// error the read failed with. `truncated` says the file had more bytes
+/// than the view shows.
+fn read_hex_preview(
+    path: &str,
+) -> Result<preview::TextPreview, dae_core::error::FileSystemError> {
+    use std::io::Read;
+
+    let total = std::fs::metadata(path).map(|metadata| metadata.len())?;
+    let mut reader = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(HEX_PREVIEW_BYTES as usize);
+    reader
+        .take(HEX_PREVIEW_BYTES.into())
+        .read_to_end(&mut bytes)?;
+    Ok(preview::TextPreview {
+        content: format_hex(&bytes),
+        truncated: total > bytes.len() as u64,
+    })
+}
+
+/// One row per 16 bytes: an 8-digit offset, the bytes, then the printable
+/// ASCII column with everything else shown as a dot. The address column is
+/// the row's own identity, so the plain card's line numbers would only
+/// repeat it.
+fn format_hex(bytes: &[u8]) -> String {
+    const WIDTH: usize = 16;
+    let mut out = String::new();
+    for (row, chunk) in bytes.chunks(WIDTH).enumerate() {
+        out.push_str(&format!("{:08x}  ", row * WIDTH));
+        for index in 0..WIDTH {
+            match chunk.get(index) {
+                Some(byte) => out.push_str(&format!("{byte:02x} ")),
+                None => out.push_str("   "),
+            }
+        }
+        out.push(' ');
+        for byte in chunk {
+            out.push(if byte.is_ascii_graphic() || *byte == b' ' {
+                *byte as char
+            } else {
+                '.'
+            });
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// The hex view's read window. Not paginated on purpose: a full hex editor
+/// is its own surface, this is a peek.
+const HEX_PREVIEW_BYTES: u32 = 4096;
 
 /// The pane names the first few children of a selected folder. This is a
 /// bounded snapshot rather than a listing: no watcher, no sorting options, no
@@ -681,12 +775,14 @@ fn snapshot_from(
     office: Option<office::OfficePreview>,
     office_error: String,
     dark: bool,
+    forced_kind: Option<SourceKind>,
 ) -> Snapshot {
     let is_directory = properties.kind == EntryKind::Directory;
     let revision = revision_of(&properties);
     let (content, truncated, has_text, source_kind, content_html) = match text {
         Some(text) => {
-            let kind = preview_markup::classify(&properties.name);
+            let kind =
+                forced_kind.unwrap_or_else(|| preview_markup::classify(&properties.name));
             let html = preview_markup::render(&text.content, &properties.path, &kind, dark);
             (text.content, text.truncated, true, kind, html)
         }
@@ -922,12 +1018,69 @@ mod tests {
     }
 
     #[test]
-    fn network_entries_have_no_desktop_thumbnail() {
-        assert!(!has_thumbnail("smb://nas/media/photo.jpg"));
+    fn remote_entries_get_the_formats_qt_decodes_but_not_the_desktop_set() {
+        // Over the wire the pane still previews images...
+        assert!(has_thumbnail("smb://nas/share/photo.jpg"));
+        assert!(has_thumbnail("archive:/K:/shots.zip!/pixel.png"));
+        // ...but a PDF or a video would need a local file for the desktop
+        // producer, so it keeps the type glyph.
+        assert!(!has_thumbnail("smb://nas/share/report.pdf"));
+        assert!(!has_thumbnail("webdav://nas/clip.mp4"));
+        assert!(!has_thumbnail("archive:/K:/shots.zip!/main.rs"));
+    }
+
+    #[test]
+    fn network_entries_keep_the_desktop_produced_set_off() {
+        // Images over the wire are covered above; what stayed local-only is
+        // the desktop-produced set, whose producers read a local file.
+        assert!(!has_thumbnail("smb://nas/media/report.pdf"));
         assert!(!has_thumbnail("sftp://nas/home/clip.mp4"));
         assert!(!has_thumbnail(
-            "cloud://google_drive:me@example.com/photo.jpg"
+            "cloud://google_drive:me@example.com/photo.heic"
         ));
+    }
+
+    #[test]
+    fn the_hex_view_lays_out_offset_bytes_and_ascii() {
+        // `HI!` then a control byte, then padding to make the row's tail
+        // visibly short.
+        let bytes = [b'H', b'I', b'!', 0x00, b' '];
+        let hex = format_hex(&bytes);
+        let rows: Vec<&str> = hex.trim_end_matches('\n').split('\n').collect();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].contains("HI!. "), "ASCII column with a dot for control");
+        assert_eq!(
+            rows[0].find("HI!. "),
+            Some(8 + 2 + 16 * 3 + 1),
+            "short rows pad so the ASCII column stays aligned"
+        );
+
+        // Row two gets its own address.
+        let many: Vec<u8> = (0..20u8).collect();
+        let hex = format_hex(&many);
+        let rows: Vec<&str> = hex.trim_end_matches('\n').split('\n').collect();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[1].starts_with("00000010"));
+    }
+
+    #[test]
+    fn the_hex_view_reads_a_bounded_window() {
+        let root = std::env::temp_dir().join("dae-preview-hex");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let small = root.join("small.bin");
+        std::fs::write(&small, b"abcd").unwrap();
+        let preview = read_hex_preview(&small.to_string_lossy()).unwrap();
+        assert!(!preview.truncated, "the whole file fits the window");
+        assert!(preview.content.contains("61 62 63 64"), "the bytes are listed");
+        assert!(preview.content.contains("abcd"), "and readable in the ASCII column");
+
+        let big = root.join("big.bin");
+        std::fs::write(&big, vec![0u8; HEX_PREVIEW_BYTES as usize + 1]).unwrap();
+        let preview = read_hex_preview(&big.to_string_lossy()).unwrap();
+        assert!(preview.truncated, "one byte past the window says so");
+        let lines = preview.content.trim_end_matches('\n').split('\n').count();
+        assert_eq!(lines, (HEX_PREVIEW_BYTES / 16) as usize, "exactly the window's rows");
     }
 
     #[test]

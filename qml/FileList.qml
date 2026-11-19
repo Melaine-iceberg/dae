@@ -49,14 +49,10 @@ Item {
     readonly property int headerHeight: density === "compact" ? 28
         : density === "spacious" ? 36 : 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
-    /// The detail columns stop at a readable measure instead of stretching
-    /// with the window. 980 dp is the widest the table needs: name floor plus
-    /// every detail column in §7.1.2 (42 + 16 + 260 + 88 + 104 + 150 + 150 +
-    /// 120), so enabling created and tags still leaves a readable name. Past
-    /// this point the row is background, and that strip still takes clicks,
-    /// marquees and drops.
-    readonly property int contentMaxWidth: 980
-    readonly property int contentWidth: Math.min(width, contentMaxWidth)
+    /// The name column flexes with the pane while metadata columns retain
+    /// their measured widths. A file manager should use a wide window for
+    /// long names rather than leaving an unused strip beside a capped table.
+    readonly property int contentWidth: width
     /// The details columns as stored in preferences, padded to a stable length
     /// for positional widths.
     readonly property var columnIds: ["type", "size", "modified", "created", "tags"]
@@ -584,6 +580,10 @@ Item {
     /// Open the OS terminal at the current directory; the shell owns the
     /// command and the per-location gate.
     signal openTerminalRequested(string path)
+    /// Ask the embedded terminal to `cd` into the active tab's folder, as an
+    /// explicit user action (G-9): the panel refuses to *follow* navigation
+    /// automatically; this is the keyboard way to ask for one jump.
+    signal terminalJumpRequested()
     /// Toggle the preview panel for `path` (Space). The panel is the window's,
     /// but the key belongs to the focused list.
     signal previewRequested(string path)
@@ -592,6 +592,70 @@ Item {
         if (root.viewMode === "column")
             return columnView !== null ? columnView.selectedPathList() : []
         return root.model !== null ? root.model.selectedPaths() : []
+    }
+
+    /// The model that owns the selection the action bar is about to change.
+    /// Miller columns have one model per column; asking the tab's root model
+    /// for a path selected in a deeper column used to produce an index of -1.
+    function selectionModel(paths) {
+        if (root.viewMode === "column" && columnView !== null) {
+            const first = paths && paths.length > 0 ? paths[0] : columnView.currentPath()
+            return columnView.modelForPath(first)
+        }
+        return root.model
+    }
+
+    function selectionIndex(model, path) {
+        return model !== null && model !== undefined ? model.indexOfPath(path) : -1
+    }
+
+    function selectionIsDirectory(path) {
+        const model = root.selectionModel([path])
+        const index = root.selectionIndex(model, path)
+        return index >= 0 && model.isDirectoryAt(index)
+    }
+
+    /// The directory a selection-based command should write into. In Miller
+    /// columns that is the active column, even when part of the selection
+    /// lives in an earlier one; elsewhere it is the selected path's parent.
+    function actionDirectory(paths) {
+        if (root.viewMode === "column" && columnView !== null) {
+            const current = columnView.currentModel()
+            if (current !== null && current !== undefined
+                    && String(current.path) !== "")
+                return String(current.path)
+        }
+        const model = root.selectionModel(paths)
+        if (model !== null && model !== undefined && String(model.path) !== "")
+            return String(model.path)
+        return root.tab !== null ? root.tab.listing.path : ""
+    }
+
+    /// Opens one selected path through the same route as Enter, so remote
+    /// preview and archive entry are not bypassed by the footer.
+    function activateSelectionPath(path) {
+        if (path === "")
+            return
+        if (root.viewMode === "column" && columnView !== null) {
+            columnView.activatePath(path)
+            return
+        }
+        const index = root.selectionIndex(root.model, path)
+        if (index >= 0)
+            root.handleActivate(index)
+        else
+            Workspace.openPath(path)
+    }
+
+    /// The model the keyboard is working in: the active Miller column, the
+    /// search result model, or the tab's listing.
+    function activeModel() {
+        if (root.viewMode === "column" && columnView !== null) {
+            const model = columnView.currentModel()
+            if (model !== null && model !== undefined)
+                return model
+        }
+        return root.model
     }
 
     function clearSelection() {
@@ -621,7 +685,8 @@ Item {
                                   ExplorerPrefs.folderOrder)
         root.tab.listing.setGroup(ExplorerPrefs.groupKey, ExplorerPrefs.groupDate)
         root.tab.listing.setFilters(ExplorerPrefs.showHiddenFiles, ExplorerPrefs.kindFilter,
-                                    ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter)
+                                    ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter,
+                                    ExplorerPrefs.nameFilter)
     }
 
     onTabChanged: {
@@ -674,6 +739,7 @@ Item {
         function onKindFilterChanged() { root.applyViewPreferences() }
         function onModifiedFilterChanged() { root.applyViewPreferences() }
         function onSizeFilterChanged() { root.applyViewPreferences() }
+        function onNameFilterChanged() { root.applyViewPreferences() }
     }
 
     /// Asks the model for the tags of the rows currently on screen. The
@@ -726,6 +792,8 @@ Item {
     function cursorIndex() {
         if (viewMode === "grid" && gridView !== null)
             return gridView.cursorIndex()
+        if (viewMode === "column" && columnView !== null)
+            return columnView.currentIndex()
         return list.currentIndex
     }
 
@@ -734,9 +802,88 @@ Item {
     }
 
     function pathAtIndex(index) {
+        if (root.viewMode === "column" && columnView !== null)
+            return columnView.pathAtIndex(index)
         if (root.model === null || index < 0)
             return ""
         return root.model.pathAt(index)
+    }
+
+    /// Rows one PageUp/PageDown travels. One row short of the viewport so
+    /// the landing row is always one the user already saw.
+    function listPageStep() {
+        return Math.max(1, Math.floor(list.height / root.rowHeight) - 1)
+    }
+
+    /// The row a direction key lands on in the list view, or -1 when the key
+    /// is not one of ours. The grid answers in its own geometry.
+    function cursorKeyTarget(event, from) {
+        let step = 0
+        switch (event.key) {
+        case Qt.Key_Up: step = -1; break
+        case Qt.Key_Down: step = 1; break
+        case Qt.Key_PageUp: step = -root.listPageStep(); break
+        case Qt.Key_PageDown: step = root.listPageStep(); break
+        case Qt.Key_Home: return 0
+        case Qt.Key_End: return list.count - 1
+        default: return -1
+        }
+        return Math.max(0, Math.min(list.count - 1, from + step))
+    }
+
+    /// The keyboard cursor is also the selection cursor — Finder and Explorer
+    /// semantics, and the pointer already had all three gestures: a plain
+    /// arrow selects as it moves, Shift extends from the click anchor, Ctrl
+    /// moves without touching the selection.
+    function handleCursorKey(event) {
+        if (root.model === null || root.viewMode === "column")
+            return false
+        // Alt and Meta stay with the platform (window menu, workspace
+        // switches); a cursor key carrying them is not ours.
+        if ((event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) !== 0)
+            return false
+        const from = root.cursorIndex()
+        const target = root.viewMode === "grid" && gridView !== null
+            ? gridView.cursorKeyTarget(event, from)
+            : root.cursorKeyTarget(event, from)
+        if (target < 0)
+            return false
+        if (root.viewMode === "grid" && gridView !== null) {
+            gridView.setCursor(target)
+            gridView.positionCursor(target)
+        } else {
+            list.currentIndex = target
+            list.positionViewAtIndex(target, ListView.Contain)
+        }
+        const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+        const shift = (event.modifiers & Qt.ShiftModifier) !== 0
+        if (shift) {
+            // An extend without an anchor starts where the cursor stands.
+            let anchorPath = root.tab !== null ? root.tab.selectionAnchor : ""
+            if (anchorPath === "") {
+                anchorPath = root.pathAtIndex(from)
+                if (root.tab !== null && anchorPath !== "")
+                    root.tab.selectionAnchor = anchorPath
+            }
+            const anchor = anchorPath === "" ? from : root.model.indexOfPath(anchorPath)
+            if (anchor >= 0) {
+                root.model.selectRange(Math.min(anchor, target), Math.max(anchor, target))
+                root.selectionChanged()
+                return true
+            }
+            // No anchor survives the rows that changed: a plain select.
+        } else if (ctrl) {
+            // A pure cursor move: the selection keeps whatever it had.
+            return true
+        }
+        const path = root.pathAtIndex(target)
+        if (path !== "") {
+            root.model.selectOnly(target)
+            if (root.tab !== null)
+                root.tab.selectionAnchor = path
+            root.selectionChanged()
+        }
+        return true
     }
 
     Timer {
@@ -809,8 +956,9 @@ Item {
     }
 
     function pasteIntoCurrent() {
-        if (root.model !== null && root.model.path !== "")
-            Workspace.pasteInto(root.model.path)
+        const model = root.activeModel()
+        if (model !== null && model !== undefined && model.path !== "")
+            Workspace.pasteInto(model.path)
     }
 
     /// Clicking the active column toggles direction; a new column starts at
@@ -879,6 +1027,10 @@ Item {
         const path = root.pathAtIndex(index)
         if (path === "")
             return
+        if (root.viewMode === "column" && columnView !== null) {
+            columnView.activateIndex(index)
+            return
+        }
         root.activatePath(path, root.model.isDirectoryAt(index))
     }
 
@@ -887,32 +1039,42 @@ Item {
             root.navigateRequested(path)
         else if (root.remote)
             root.remoteOpenRequested(path)
+        else if (root.enterArchive !== null && root.enterArchive(path))
+            return
         else
             Workspace.openPath(path)
     }
 
+    /// The shell's archive-entry hook: a local zip/tar row is a directory
+    /// view, not a file to launch. `null` when the shell does not provide it.
+    property var enterArchive: null
+
+
     function selectAll() {
-        if (root.model === null)
+        const model = root.activeModel()
+        if (model === null || model === undefined)
             return
-        root.model.selectAll()
+        model.selectAll()
         root.selectionChanged()
     }
 
     /// 反选, from the palette (§10.1). The flip happens in Rust, over the row
     /// flags, so a 120k-row directory costs one call rather than one per row.
     function invertSelection() {
-        if (root.model === null)
+        const model = root.activeModel()
+        if (model === null || model === undefined)
             return
-        root.model.invertSelection()
+        model.invertSelection()
         root.selectionChanged()
     }
 
     /// 按类型选择: replaces the selection with one family and reports how many
     /// rows that left selected.
     function selectFamily(id) {
-        if (root.model === null)
+        const model = root.activeModel()
+        if (model === null || model === undefined)
             return 0
-        const count = root.model.selectFamily(id)
+        const count = model.selectFamily(id)
         root.selectionChanged()
         return count
     }
@@ -922,18 +1084,19 @@ Item {
     /// that fills the status line; folders get their own entry so "按类型选择"
     /// can pick them too.
     function familyList() {
-        if (root.model === null || root.model.familyCounts === undefined)
+        const model = root.activeModel()
+        if (model === null || model === undefined || model.familyCounts === undefined)
             return []
         let entries = []
         try {
-            entries = JSON.parse(root.model.familyCounts)
+            entries = JSON.parse(model.familyCounts)
         } catch (error) {
             entries = []
         }
         if (!Array.isArray(entries))
             entries = []
-        if (root.model.folders > 0)
-            entries.unshift({ id: "folder", count: root.model.folders })
+        if (model.folders > 0)
+            entries.unshift({ id: "folder", count: model.folders })
         return entries
     }
 
@@ -1278,16 +1441,21 @@ Item {
         return root.model.indexOfPath(candidate) >= 0
     }
 
-    /// Validates the draft and publishes the hint under the field. A name with
-    /// a separator or one of Windows' reserved characters can never be created,
-    /// so it is refused here instead of by the backend.
+    /// Validates the draft and publishes the hint under the field. Windows
+    /// reserves a wider set of characters; POSIX filesystems only reserve the
+    /// separator and NUL, so applying the Windows rule everywhere rejected
+    /// perfectly legal macOS and Linux names before the backend saw them.
     function checkRename(text) {
         if (text.trim() === "") {
             root.renameError = qsTr("名称不能为空")
             return false
         }
-        if (/[\\/:*?"<>|]/.test(text)) {
-            root.renameError = qsTr("名称不能包含 \\ / : * ? \" < > |")
+        const windows = Qt.platform.os === "windows"
+        const invalid = windows ? /[\\/:*?"<>|]/ : /\//
+        if (invalid.test(text) || text.indexOf("\u0000") >= 0) {
+            root.renameError = windows
+                ? qsTr("名称不能包含 \\ / : * ? \" < > |")
+                : qsTr("名称不能包含 /")
             return false
         }
         if (root.nameTaken(root.renamePath, text)) {
@@ -1411,15 +1579,24 @@ Item {
             return true
         }
         if (root.matches("explorer.openSystemTerminal", event)) {
-            root.openTerminalRequested(root.model !== null ? root.model.path : "")
+            const model = root.activeModel()
+            root.openTerminalRequested(model !== null && model !== undefined
+                                      ? model.path : "")
+            return true
+        }
+        // G-9: an explicit one-shot jump, the keyboard twin of the panel's
+        // own button. Unbound by default; the settings page owns the chord.
+        if (root.matches("explorer.terminalJumpFolder", event)) {
+            root.terminalJumpRequested()
             return true
         }
 
         // Navigation is intrinsic to the focused view, not part of the shared
         // action catalogue, so it keeps its own keys.
         if (event.key === Qt.Key_F5) {
-            if (root.model !== null)
-                root.model.reload()
+            const model = root.activeModel()
+            if (model !== null && model !== undefined)
+                model.reload()
             return true
         }
         if (event.key === Qt.Key_Backspace) {
@@ -1431,6 +1608,11 @@ Item {
                 root.handleActivate(index)
             return true
         }
+
+        // The selection cursor follows the keyboard the same way it follows
+        // the pointer; `handleCursorKey` answers both surfaces' geometry.
+        if (root.handleCursorKey(event))
+            return true
         if ((event.modifiers & Qt.ControlModifier) !== 0
                 && (event.modifiers & Qt.ShiftModifier) !== 0
                 && event.key === Qt.Key_N) {
@@ -1843,7 +2025,7 @@ Item {
                 /// The row stops at the column track's cap; ListView leaves the
                 /// rest of the viewport as background, exactly like the
                 /// Tauri shell's Windows-style detail view.
-                width: Math.min(ListView.view.width, root.contentMaxWidth)
+                width: ListView.view.width
                 height: root.rowHeight
                 /// A cut row stays legible but reads as pending (§7.1.7).
                 opacity: row.isCut ? 0.4 : 1
@@ -2051,6 +2233,7 @@ Item {
                     sourceSize.width: Math.round(18 * Screen.devicePixelRatio)
                     sourceSize.height: Math.round(18 * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
+                    asynchronous: true
                     smooth: true
                     visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
                         && status === Image.Ready
@@ -2784,6 +2967,7 @@ Item {
                 ColumnView {
                     anchors.fill: parent
                     tab: root.tab
+                    keyHandler: root.handleKey
 
                     onActivateRequested: function (path, isDir) {
                         root.activatePath(path, isDir)

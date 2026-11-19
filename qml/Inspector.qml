@@ -128,8 +128,9 @@ Item {
         }
     }
 
-    /// The entry was read through a network backend. Text previews work, but
-    /// thumbnails, media tags, and OS open/reveal do not.
+    /// The entry was read through a network backend (or an archive view).
+    /// Text and image previews work — images are pulled bounded through the
+    /// vfs layer — but media tags and OS open/reveal do not.
     readonly property bool remote: controller.remote
     readonly property string thumbnailSource: root.single && controller.hasThumbnail
         && controller.thumbnailRevision !== ""

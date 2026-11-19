@@ -20,6 +20,7 @@ Menu {
     readonly property bool active: ExplorerPrefs.kindFilter !== "all"
         || ExplorerPrefs.modifiedFilter !== "any"
         || ExplorerPrefs.sizeFilter !== "any"
+        || ExplorerPrefs.nameFilter !== ""
         || !ExplorerPrefs.showHiddenFiles
 
     readonly property var items: [
@@ -104,6 +105,120 @@ Menu {
     /// The way back from a filter combination that found nothing. It is a
     /// footer rather than the last row so a menu scrolled to the top of a
     /// short window still offers it.
+
+    /// The one filter that is typed rather than chosen. It sits above the
+    /// rows the way the clear row sits below them: same listing, same
+    /// vocabulary, and the box is what answers free text.
+    header: Component {
+        Item {
+            id: band
+            implicitHeight: 40
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
+                color: Theme.hairline
+            }
+
+            TextInput {
+                id: nameInput
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.right: clearBox.visible ? clearBox.left : parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                color: Theme.ink
+                selectionColor: Theme.accent
+                selectedTextColor: Theme.onAccent
+                font.pixelSize: Theme.typeBody
+                selectByMouse: true
+                clip: true
+
+                Accessible.role: Accessible.EditableText
+                Accessible.name: qsTr("按名称筛选")
+
+                onTextChanged: nameDebounce.restart()
+                onAccepted: {
+                    ExplorerPrefs.setString("nameFilter", nameInput.text)
+                    root.close()
+                }
+                // A one-line box has no use for Down: hand the rows back the
+                // keyboard so the menu stays reachable without a pointer.
+                Keys.onDownPressed: root.focusRows()
+                Keys.onEscapePressed: root.close()
+
+                Text {
+                    visible: nameInput.text === ""
+                    text: qsTr("按名称筛选")
+                    color: Theme.inkTertiary
+                    font.pixelSize: Theme.typeBody
+                }
+            }
+
+            Item {
+                id: clearBox
+                visible: nameInput.text !== ""
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: 16
+                height: 16
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("清除名称筛选")
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "×"
+                    color: clearMouse.containsMouse ? Theme.ink : Theme.inkTertiary
+                    font.pixelSize: Theme.typeBody
+                }
+
+                MouseArea {
+                    id: clearMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        nameInput.text = ""
+                        ExplorerPrefs.setString("nameFilter", "")
+                        nameInput.forceActiveFocus()
+                    }
+                }
+            }
+
+            /// Typing rebuilds the listing on every change; the pause keeps
+            /// one word from being four reloads.
+            Timer {
+                id: nameDebounce
+                interval: 300
+                onTriggered: ExplorerPrefs.setString("nameFilter", nameInput.text)
+            }
+
+            Connections {
+                target: root
+                function onVisibleChanged() {
+                    if (!root.visible)
+                        return
+                    nameInput.text = ExplorerPrefs.nameFilter
+                    // `Menu.show()` queues `list.takeFocus` first; a second
+                    // hop lands after it, so the box wins the keyboard.
+                    Qt.callLater(function () {
+                        Qt.callLater(function () { nameInput.forceActiveFocus() })
+                    })
+                }
+                /// The clear row below also clears the box; the box follows
+                /// unless the user is the one typing into it.
+                function onNameFilterChanged() {
+                    if (!nameInput.activeFocus)
+                        nameInput.text = ExplorerPrefs.nameFilter
+                }
+            }
+        }
+    }
+
     footer: Component {
         Item {
             implicitHeight: root.active ? 29 : 0

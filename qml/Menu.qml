@@ -39,6 +39,11 @@ Item {
     /// `implicitHeight`; the panel reads it.
     property Component footer: null
 
+    /// A band pinned to the top of the panel. The filter menu's name box
+    /// lives there: typing is not a row that can be chosen, and the rows
+    /// scroll under it the way they do over the footer.
+    property Component header: null
+
     property var submenuActions: []
     /// The row whose submenu is open, so `replaceActions` can refresh it.
     property int submenuIndex: -1
@@ -60,9 +65,10 @@ Item {
     z: 1000
 
     /// §7.5: menu rows are 28 dp; the panel's own 4 dp top and bottom padding
-    /// sit outside that. The footer band adds its own height, which the Loader
+    /// sit outside that. Both bands add their own height, which the Loader
     /// mirrors from the item it built.
     readonly property int footerHeight: footerLoader.implicitHeight
+    readonly property int headerHeight: headerLoader.implicitHeight
 
     readonly property var entries: root.rows.length > 0
         ? root.rows : root.normalized(root.actions)
@@ -98,6 +104,12 @@ Item {
         root.visible = false
         root.actions = []
         root.closeSubmenu()
+    }
+
+    /// Hands the keyboard to the rows, the way `show()` does. The header band
+    /// calls it to give the arrow keys back to the menu.
+    function focusRows() {
+        list.takeFocus()
     }
 
     /// Swaps the rows without moving the panel: the installed apps' commands
@@ -227,7 +239,7 @@ Item {
         width: list.naturalWidth
         // Never taller than the window: the rows scroll inside whatever the
         // window can give them.
-        height: Math.min(list.contentHeight + 8 + root.footerHeight,
+        height: Math.min(list.contentHeight + 8 + root.footerHeight + root.headerHeight,
                          root.height - 16)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         /// §6.6: the panel lifts the last 2 dp as it arrives, and hiding is
@@ -263,12 +275,20 @@ Item {
             onWheel: {}
         }
 
+        Loader {
+            id: headerLoader
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            sourceComponent: root.header
+        }
+
         MenuList {
             id: list
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 4
+            anchors.topMargin: 4 + root.headerHeight
             // The footer band keeps its place at the bottom; the rows scroll
             // above it rather than sliding under it.
             anchors.bottom: parent.bottom

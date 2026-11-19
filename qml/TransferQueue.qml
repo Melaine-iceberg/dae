@@ -359,10 +359,14 @@ Item {
                                 return qsTr("已暂停")
                             if (!model.running)
                                 return qsTr("准备中")
-                            if (model.total > 0)
-                                return model.speed !== ""
-                                    ? model.percent + "% · " + model.speed
-                                    : model.percent + "%"
+                            if (model.total > 0) {
+                                let text = model.percent + "%"
+                                if (model.speed !== "")
+                                    text += " · " + model.speed
+                                if (model.eta !== "" && model.eta !== undefined)
+                                    text += " · " + qsTr("剩余 %1").arg(model.eta)
+                                return text
+                            }
                             return model.speed
                         }
                         progress: model.percent / 100

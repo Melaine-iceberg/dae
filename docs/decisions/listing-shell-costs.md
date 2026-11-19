@@ -354,7 +354,7 @@ n 次比较，**结构推断**，未单独计时）。
   选中的行才拼路径。
 - 历史条目存的是路径数组，大选区会随后退栈保留多份——是内存问题，不是帧时间。
 
-## 7. 次级清单（均未做，按体感可能性排）
+## 7. 次级清单（按体感可能性排；2026-11-18：`rowIcon`、`git_badge` 已实施，`Glyph.qml` 一行已过时）
 
 > 本节一律用符号名定位：§10 的实现让审计时的行号全部错位过一轮。
 
@@ -362,12 +362,12 @@ n 次比较，**结构推断**，未单独计时）。
 |---|---|---|
 | `FileList.qml` 的 `list` | grid/column 模式下 list 仍常驻，165 个 delegate 随 reset 重建（§10.1 只按需化了 grid/column） | 要等 `list.` 的引用面收窄（滚动恢复、框选、前缀直接读它）后再 lazy |
 | `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.6 |
-| `FileList.qml` 的 `rowIcon` | 行内系统图标 `Image` 没有 `asynchronous: true`（同文件缩略图、ColumnView、FileGrid 都有），provider 调用发生在 GUI 线程 | 只在 `iconStyle == "system"` 时可见；默认 `themed` 走 Glyph，不触发 |
-| `model.rs` 的 `git_badge` | git 徽标精确查不到就线性回退，干净行（大多数）都走这条 | 成本 = O(行 × 脏条目)，只在有大量未提交改动的仓库里明显 |
+| `FileList.qml` 的 `rowIcon` | **已实施（2026-11-18）**：`asynchronous: true` 补上，行内系统图标的 provider 调用离开 GUI 线程；`visible` 原本就等到 `Image.Ready`，异步期间由 `FileIcon` Glyph 兜底 | 只在 `iconStyle == "system"` 时走 |
+| `model.rs` 的 `git_badge` | **已实施（2026-11-18）**：`adopt_git` 同时维护 ASCII 小写键的折叠表 `git_entries_folded`，`ROLE_GIT` 读干净行从 O(脏条目) 线性扫描变一次哈希查找 | 成本曾 = O(行 × 脏条目)；大小写冲突时先插入者胜，与被替换的扫描的迭代序一样不定 |
 | `ShellWindow.qml` 的 `onSelectionChanged` → `PreviewPanel.showPaths` | 选区一变就重开预览，无去重、无防抖；`showPaths` 只在恰好 1 项时 `open`（多选是 `clear`），单行框选会每次重开 | 结果应用在 GUI 线程，超时的任务靠 generation 丢弃但会跑完 |
-| `Glyph.qml` 的 `canvas.onPaint` | 每行一个 `Canvas.Immediate`，悬停/选中改 tint → `requestPaint`，paint 里 `d.match(...)` 每次重新分词 | 仓库做过 Canvas→Rectangle 的创建期 A/B（`qml-aot.md` §7）无差异；重绘路径**未测**（§9.1），所以不排前 |
-| `OverviewModel::refresh`、`SidebarModel::refresh` | 刷新在 GUI 线程同步读 `recents`/`favorites`/`hidden` 等 JSON，再 `replace_rows` 两次 | Overview/侧栏切换时；文档注释里“这三次读是便宜的”只在热缓存成立 |
-| `DirectoryListModel::data` | 每次角色读取重新格式化 size/time/路径/图标/缩略图；delegate 声明 13 个 required role，创建时全部读取 | 每屏几十行、每行 2–4 次分配，量级小于排序，但在滚动路径上 |
+| `Glyph.qml` 的 `canvas.onPaint` | **已过时**：`Glyph.qml` 已改为 `glyph://` provider 缓存光栅的普通 `Image`（`docs/decisions/ui-glyph-raster-cache.md`），文件里没有 `Canvas`，本行描述的实现不存在了 | 审计当时的记录，保留备查 |
+| `OverviewModel::refresh`、`SidebarModel::refresh` | **已实施（2026-11-18）**：两处 refresh 的行构建都搬到 blocking pool（overview 的 `build_overview_base` 含 `list_disks_sync` 与 recents/spaces/tags JSON，sidebar 的 `build_base_rows` 含 hidden/favorites/connections/cloud JSON），Qt 线程只做 generation 复核 + `replace_rows` | overview 的 landing 带 generation 守卫，旧刷新被丢弃；sidebar 沿用原异步形状不加守卫（改动前 volumes 半段同样无守卫） |
+| `DirectoryListModel::data` | **量过，不做（2026-11-18）**：一屏 165 行 × 13 次角色读取（每次读都重复 size/timestamp/full_path，3 倍悲观的口径）共 **0.428 ms**；真实 delegate 创建只读一遍。行内缓存要么急切化 12 万行（**74.8 ms**，测量同一次）要么给 `StoredRow` 加 interior mutability，两头都亏 | 数字来自 `model::tests::reports_the_cost_of_role_formatting`，`--release --ignored --nocapture` |
 | `Tab.qml` 选区路径数组存入 `historyEntry()` | 大选区会随后退栈保留多份 | 内存，不是帧时间（§6.5） |
 | `TrashView.qml` 的 `selectionVersion`/`isSelected` | 回收站仍是 `path -> true` map + `selectionVersion`，delegate 每次变更跑一次 `isSelected` | 行在 `trash_model.rs` 里；要等那份模型也带 `selected` 角色时一起搬（§6.5） |
 

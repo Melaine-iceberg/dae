@@ -19,11 +19,20 @@ Item {
     id: root
 
     property var tab: null
+    /// The shell's shared key handler. Navigation keys stay with the column
+    /// (they mean drill and pop here); commands use the same bindings as the
+    /// list and grid instead of a second, smaller shortcut set.
+    property var keyHandler: null
 
     /// Directories opened by each column, left to right: `chain[0]` is the
     /// folder the first column drilled into. The number of columns is
     /// `chain.length + 1`.
     property var chain: []
+
+    /// The column with the keyboard and the current command target. Miller
+    /// columns keep selection in every column; this index says which one the
+    /// footer and the keyboard mean when a path could be ambiguous.
+    property int activePaneIndex: 0
 
     signal activateRequested(string path, bool isDir)
     signal contextRequested(string path, bool isDir, real x, real y)
@@ -41,12 +50,104 @@ Item {
         target: root.tab !== null ? root.tab.listing : null
         function onPathChanged() {
             root.chain = []
+            root.activePaneIndex = 0
         }
     }
 
     onChainChanged: Qt.callLater(function () {
-        flick.contentX = Math.max(0, flick.contentWidth - flick.width)
+        root.focusActivePane()
     })
+
+    function paneAt(index) {
+        if (index < 0 || index >= panes.count)
+            return null
+        return panes.itemAt(index)
+    }
+
+    function clampedActivePane() {
+        return Math.max(0, Math.min(panes.count - 1, root.activePaneIndex))
+    }
+
+    function activePane() {
+        return root.paneAt(root.clampedActivePane())
+    }
+
+    function scrollActiveIntoView() {
+        const index = root.clampedActivePane()
+        const left = index * root.columnWidth
+        if (left < flick.contentX)
+            flick.contentX = left
+        else if (left + root.columnWidth > flick.contentX + flick.width)
+            flick.contentX = left + root.columnWidth - flick.width
+    }
+
+    function focusActivePane() {
+        const pane = root.activePane()
+        if (pane !== null)
+            pane.takeFocus()
+        root.scrollActiveIntoView()
+    }
+
+    function currentModel() {
+        const pane = root.activePane()
+        return pane !== null ? pane.listing : null
+    }
+
+    function currentIndex() {
+        const pane = root.activePane()
+        return pane !== null ? pane.currentIndex() : -1
+    }
+
+    function currentPath() {
+        const pane = root.activePane()
+        return pane !== null ? pane.currentPath() : ""
+    }
+
+    function pathAtIndex(index) {
+        const pane = root.activePane()
+        return pane !== null ? pane.listing.pathAt(index) : ""
+    }
+
+    function activateIndex(index) {
+        const pane = root.activePane()
+        if (pane === null)
+            return
+        const path = pane.listing.pathAt(index)
+        if (path !== "")
+            root.activateRequested(path, pane.listing.isDirectoryAt(index))
+    }
+
+    function activatePath(path) {
+        const pane = root.paneForPath(path)
+        if (pane === null) {
+            Workspace.openPath(path)
+            return
+        }
+        const index = pane.listing.indexOfPath(path)
+        root.activateRequested(path, pane.listing.isDirectoryAt(index))
+    }
+
+    /// The pane that owns `path`, searched from the deepest column outward.
+    /// A selected path is unique to one directory listing, so the first hit is
+    /// also its parent model.
+    function paneForPath(path) {
+        if (path === undefined || path === null || String(path) === "")
+            return null
+        for (let index = panes.count - 1; index >= 0; index -= 1) {
+            const pane = panes.itemAt(index)
+            if (pane !== null && pane.listing.indexOfPath(String(path)) >= 0)
+                return pane
+        }
+        return null
+    }
+
+    function modelForPath(path) {
+        const pane = root.paneForPath(path)
+        if (pane !== null)
+            return pane.listing
+        const active = root.activePane()
+        return active !== null ? active.listing : null
+    }
 
     function drill(path, depth) {
         if (!path)
@@ -54,18 +155,21 @@ Item {
         const next = root.chain.slice(0, depth)
         next.push(path)
         root.chain = next
+        root.activePaneIndex = next.length
     }
 
     function pop(depth) {
         if (depth <= 0)
             return
         root.chain = root.chain.slice(0, depth - 1)
+        root.activePaneIndex = Math.max(0, depth - 1)
     }
 
     function takeFocus() {
-        const pane = panes.itemAt(Math.max(0, root.chain.length))
+        const pane = root.paneAt(root.clampedActivePane())
         if (pane)
             pane.takeFocus()
+        root.scrollActiveIntoView()
     }
 
     /// Every column owns its own model, so the selection spans several of
@@ -246,11 +350,77 @@ Item {
                              ExplorerPrefs.folderOrder)
             listing.setGroup(ExplorerPrefs.groupKey, ExplorerPrefs.groupDate)
             listing.setFilters(ExplorerPrefs.showHiddenFiles, ExplorerPrefs.kindFilter,
-                               ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter)
+                               ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter,
+                               ExplorerPrefs.nameFilter)
         }
 
         function takeFocus() {
+            root.activePaneIndex = pane.depth
             list.forceActiveFocus()
+        }
+
+        function currentIndex() {
+            return list.currentIndex
+        }
+
+        function currentPath() {
+            return list.currentIndex >= 0 ? pane.listing.pathAt(list.currentIndex) : ""
+        }
+
+        /// Arrow keys follow the same rule as the detail list: move the cursor,
+        /// select with it, Shift extends from the click anchor and Ctrl moves
+        /// without changing the selection.
+        function moveCursor(event) {
+            if (pane.listing.loaded <= 0)
+                return false
+            let step = 0
+            switch (event.key) {
+            case Qt.Key_Up: step = -1; break
+            case Qt.Key_Down: step = 1; break
+            case Qt.Key_PageUp:
+                step = -Math.max(1, Math.floor(list.height / pane.rowHeight) - 1)
+                break
+            case Qt.Key_PageDown:
+                step = Math.max(1, Math.floor(list.height / pane.rowHeight) - 1)
+                break
+            case Qt.Key_Home:
+                return pane.selectCursor(0, event.modifiers)
+            case Qt.Key_End:
+                return pane.selectCursor(pane.listing.loaded - 1, event.modifiers)
+            default:
+                return false
+            }
+            const from = list.currentIndex
+            const target = from < 0
+                ? (step > 0 ? 0 : -1)
+                : Math.max(0, Math.min(pane.listing.loaded - 1, from + step))
+            return target >= 0 && pane.selectCursor(target, event.modifiers)
+        }
+
+        function selectCursor(target, modifiers) {
+            const path = pane.listing.pathAt(target)
+            if (path === "")
+                return false
+            list.currentIndex = target
+            list.positionViewAtIndex(target, ListView.Contain)
+            const ctrl = (modifiers & Qt.ControlModifier) !== 0
+            const shift = (modifiers & Qt.ShiftModifier) !== 0
+            if (shift && pane.tab !== null && pane.tab.selectionAnchor !== "") {
+                const anchor = pane.listing.indexOfPath(pane.tab.selectionAnchor)
+                if (anchor >= 0) {
+                    pane.listing.selectRange(Math.min(anchor, target),
+                                             Math.max(anchor, target))
+                    pane.selectionChanged()
+                    return true
+                }
+            }
+            if (!ctrl) {
+                pane.listing.selectOnly(target)
+                if (pane.tab !== null)
+                    pane.tab.selectionAnchor = path
+                pane.selectionChanged()
+            }
+            return true
         }
 
         onPathChanged: {
@@ -277,6 +447,7 @@ Item {
             function onKindFilterChanged() { pane.applyPreferences() }
             function onModifiedFilterChanged() { pane.applyPreferences() }
             function onSizeFilterChanged() { pane.applyPreferences() }
+            function onNameFilterChanged() { pane.applyPreferences() }
         }
 
         /// The drag takes the whole trail's selection, not just this column's:
@@ -288,6 +459,7 @@ Item {
         function handleClick(index, ctrl, shift) {
             if (tab === null)
                 return
+            root.activePaneIndex = pane.depth
             list.forceActiveFocus()
             list.currentIndex = index
             const value = listing.pathAt(index)
@@ -413,20 +585,41 @@ Item {
             focus: true
             activeFocusOnTab: true
 
+            onActiveFocusChanged: {
+                if (activeFocus)
+                    root.activePaneIndex = pane.depth
+            }
+
             Keys.onPressed: function (event) {
                 pane.keyboardCursor = true
-                if (event.key === Qt.Key_Right) {
+                if ((event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) !== 0)
+                    return
+                switch (event.key) {
+                case Qt.Key_Up:
+                case Qt.Key_Down:
+                case Qt.Key_PageUp:
+                case Qt.Key_PageDown:
+                case Qt.Key_Home:
+                case Qt.Key_End:
+                    event.accepted = pane.moveCursor(event)
+                    return
+                case Qt.Key_Right: {
                     const path = list.currentIndex >= 0
                         ? pane.listing.pathAt(list.currentIndex) : ""
                     if (path !== "" && pane.listing.isDirectoryAt(list.currentIndex)) {
                         pane.drillRequested(path, pane.depth)
                         event.accepted = true
                     }
-                } else if (event.key === Qt.Key_Left && pane.depth > 0) {
-                    // Step back out to the column that opened this one.
-                    pane.popRequested(pane.depth)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    return
+                }
+                case Qt.Key_Left:
+                    if (pane.depth > 0) {
+                        pane.popRequested(pane.depth)
+                        event.accepted = true
+                    }
+                    return
+                case Qt.Key_Return:
+                case Qt.Key_Enter:
                     if (list.currentIndex >= 0) {
                         const path = pane.listing.pathAt(list.currentIndex)
                         if (path !== "") {
@@ -435,11 +628,29 @@ Item {
                             event.accepted = true
                         }
                     }
-                } else if (event.text.length === 1 && event.text !== " "
-                           && event.text.charCodeAt(0) >= 0x20
-                           && (event.modifiers & (Qt.ControlModifier | Qt.AltModifier
-                                                  | Qt.MetaModifier)) === 0) {
+                    return
+                case Qt.Key_Backspace:
+                    if (pane.depth > 0) {
+                        pane.popRequested(pane.depth)
+                        event.accepted = true
+                        return
+                    }
+                    break
+                }
+
+                // Printable keys are type-ahead within this column; every
+                // other command uses the shared catalogue, so Delete, cut,
+                // copy, paste, preview, refresh and type-ahead all mean the
+                // same thing here as in the detail list.
+                const typing = event.text.length === 1 && event.text !== " "
+                    && event.key < Qt.Key_Delete
+                    && (event.modifiers & (Qt.ControlModifier | Qt.AltModifier
+                                           | Qt.MetaModifier)) === 0
+                if (typing) {
                     pane.typeAhead(event.text)
+                    event.accepted = true
+                } else if (root.keyHandler !== null
+                           && root.keyHandler(event)) {
                     event.accepted = true
                 }
             }

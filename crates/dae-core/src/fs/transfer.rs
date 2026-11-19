@@ -747,10 +747,12 @@ fn child_stat(
 /// file on the destination, which is the only portable mapping.
 ///
 /// `merge` is the "continue a cancelled copy" mode: an existing directory is
-/// kept and entered instead of being replaced, and a file whose destination
-/// already matches the source byte count and modification time is counted as
-/// done without being read. Everything else still goes through the normal
-/// write path, so a file that changed since the interrupted run is re-copied.
+/// kept and entered instead of being replaced, a file whose destination
+/// already matches the source byte count and modification time is counted
+/// as done without being read, and a *smaller* destination that is at least
+/// as new as the source continues from where its own bytes ended — the
+/// byte-level resume. Everything else still goes through the normal write
+/// path, so a file that changed since the interrupted run is re-copied.
 fn copy_node(
     source: &dyn FileSystemBackend,
     source_path: &str,
@@ -772,18 +774,40 @@ fn copy_node(
             return Ok(());
         }
 
+        // Where a partial from the interrupted run ends, or zero when there
+        // is nothing worth continuing.
+        let resumed_at = if merge {
+            resume_offset(destination_backend, destination_path, stat).unwrap_or(0)
+        } else {
+            0
+        };
+
         let mut reader = source.open_read(source_path)?;
-        let writer = destination_backend.open_write(destination_path)?;
+        let writer = if resumed_at > 0 {
+            match destination_backend.open_write_at(destination_path, resumed_at) {
+                Ok(writer) => {
+                    // The skipped prefix is already on disk; count it so the
+                    // bar describes the file, not the remainder.
+                    progress.advance_by(resumed_at, Path::new(source_path));
+                    skip_bytes(reader.as_mut(), resumed_at)?;
+                    writer
+                }
+                // The backend cannot position a writer: start over, the way
+                // the first run did.
+                Err(_) => destination_backend.open_write(destination_path)?,
+            }
+        } else {
+            destination_backend.open_write(destination_path)?
+        };
         return match copy_stream(reader.as_mut(), writer, source_path, progress) {
             Ok(()) => Ok(()),
             Err(error) => {
-                // A cancelled file is a truncated file. Leaving it behind would
-                // make the next attempt look like a conflict with a real file,
-                // so the half-written destination goes and the completed
-                // siblings — which are already in the journal — stay.
-                if matches!(error, FileSystemError::Cancelled(_)) {
-                    let _ = destination_backend.remove(destination_path);
-                }
+                // A cancelled file is a truncated file, and it stays: the
+                // status center's continue answers through Merge, which
+                // picks the partial up at its own end. An ordinary copy
+                // onto the same name meets the conflict dialog, and
+                // Replace removes the partial before writing — both are
+                // deliberate answers about a file the user can see.
                 Err(error)
             }
         };
@@ -815,7 +839,7 @@ fn copy_node(
 /// Filesystems that only store whole seconds (FAT, most SMB servers) report a
 /// time the source may state with more precision; anything inside two seconds
 /// is the same write.
-const MERGE_TIME_TOLERANCE_MS: u64 = 2_000;
+pub(crate) const MERGE_TIME_TOLERANCE_MS: u64 = 2_000;
 
 /// True when `destination_path` already holds the file `stat` describes.
 ///
@@ -852,6 +876,57 @@ fn destination_matches(
         }
         _ => false,
     }
+}
+
+/// Where a merge should continue writing `stat`'s file, or `None` when the
+/// destination is not the interrupted run's own partial.
+///
+/// A partial is: a file, non-empty, smaller than the source (its equal
+/// twin is [`destination_matches`]), never larger — a larger file is
+/// something else and gets overwritten — and at least as new as the
+/// source, so a source edited after the interrupted run is re-copied from
+/// zero rather than grafted onto stale bytes.
+fn resume_offset(
+    destination_backend: &dyn FileSystemBackend,
+    destination_path: &str,
+    stat: &EntryStat,
+) -> Option<u64> {
+    let existing = destination_backend.stat(destination_path).ok()?;
+    if existing.kind != EntryKind::File
+        || existing.size == 0
+        || existing.size >= stat.size
+    {
+        return None;
+    }
+    let partial_size = existing.size;
+    match (existing.modified_at, stat.modified_at) {
+        (Some(modified), Some(source))
+            if modified.saturating_add(MERGE_TIME_TOLERANCE_MS) >= source =>
+        {
+            Some(partial_size)
+        }
+        _ => None,
+    }
+}
+
+/// Reads and discards `bytes` from `reader`: the read primitive has no
+/// seek, so the resume's prefix is streamed past. A local source pays
+/// nothing the next read would not; a network source pays it once per
+/// resume, which is still cheaper than re-transferring what already landed.
+fn skip_bytes(reader: &mut dyn Read, bytes: u64) -> Result<(), FileSystemError> {
+    let mut remaining = bytes;
+    let mut buffer = vec![0u8; STREAM_CHUNK_BYTES];
+    while remaining > 0 {
+        let want = remaining.min(buffer.len() as u64) as usize;
+        let read = reader.read(&mut buffer[..want])?;
+        if read == 0 {
+            return Err(FileSystemError::Io(format!(
+                "the source ended {bytes} bytes in: shorter than the partial"
+            )));
+        }
+        remaining -= read as u64;
+    }
+    Ok(())
 }
 
 /// One chunk handed from the reading side to the writing side, carrying its
@@ -1131,18 +1206,32 @@ mod tests {
         /// Paths whose `open_write` always fails, so a batch can be made to
         /// fail partway through while the rest of it still lands.
         poison: Option<String>,
+        /// Whether `open_write_at` answers Unsupported, the way a backend
+        /// without an offset write does.
+        deny_write_at: bool,
     }
 
     const PROBE_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
 
     impl ProbeBackend {
         fn new(poison: Option<&str>) -> Self {
+            Self::with_flags(poison, false)
+        }
+
+        /// The same probe, but one whose destination cannot position a
+        /// writer — most network backends until they grow an offset write.
+        fn no_offset_writes() -> Self {
+            Self::with_flags(None, true)
+        }
+
+        fn with_flags(poison: Option<&str>, deny_write_at: bool) -> Self {
             Self {
                 inner: LocalBackend,
                 in_flight: AtomicUsize::new(0),
                 peak: AtomicUsize::new(0),
                 stats: AtomicUsize::new(0),
                 poison: poison.map(str::to_owned),
+                deny_write_at,
             }
         }
 
@@ -1223,6 +1312,22 @@ mod tests {
 
             self.enter();
             let writer = self.inner.open_write(path);
+            self.leave();
+            writer
+        }
+
+        fn open_write_at(
+            &self,
+            path: &str,
+            offset: u64,
+        ) -> Result<Box<dyn Write + Send>, FileSystemError> {
+            if self.deny_write_at {
+                return Err(FileSystemError::Unsupported(format!(
+                    "no offset writes: {path}"
+                )));
+            }
+            self.enter();
+            let writer = self.inner.open_write_at(path, offset);
             self.leave();
             writer
         }
@@ -1922,5 +2027,184 @@ mod tests {
             "a 256 KiB chunk at 512 KiB/s finished in {elapsed:?}"
         );
         assert_eq!(written.load(AtomicOrdering::SeqCst), STREAM_CHUNK_BYTES);
+    }
+
+    /// The byte-level resume through the whole engine: a destination holding
+    /// the interrupted run's prefix continues at its own end. The poison on
+    /// `open_write` is the proof of which path ran — a full re-copy would
+    /// have tripped it.
+    #[test]
+    fn a_merge_continues_a_partial_file_from_its_own_end() {
+        use std::sync::Arc;
+
+        let root = std::env::temp_dir().join(format!("dae-resume-partial-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(&source_dir).expect("create source");
+        fs::create_dir_all(&destination_dir).expect("create destination");
+
+        let payload: Vec<u8> = (0..(STREAM_CHUNK_BYTES as u32 * 3))
+            .map(|index| (index % 251) as u8)
+            .collect();
+        fs::write(source_dir.join("big.bin"), &payload).expect("write source");
+
+        // The interrupted run's own partial: the first chunk, written after
+        // the source so it is also the newer file.
+        fs::write(
+            destination_dir.join("big.bin"),
+            &payload[..STREAM_CHUNK_BYTES],
+        )
+        .expect("write the partial");
+
+        let source: Arc<dyn FileSystemBackend> = Arc::new(ProbeBackend::new(None));
+        // The truncate path refuses this destination; only the offset write
+        // can land the file.
+        let destination: Arc<dyn FileSystemBackend> = Arc::new(ProbeBackend::new(Some("big.bin")));
+
+        let progress = TestProgress::new();
+        let mut journal = Vec::new();
+        copy_entries(
+            vec![TransferSource {
+                path: source_dir.join("big.bin").to_string_lossy().into_owned(),
+                backend: source,
+                on_conflict: ConflictAction::Merge,
+            }],
+            &destination_dir.to_string_lossy(),
+            &destination,
+            &progress,
+            &mut journal,
+        )
+        .expect("the merge continues the partial");
+
+        assert_eq!(
+            fs::read(destination_dir.join("big.bin")).expect("read resumed file"),
+            payload,
+            "the resumed file is byte for byte the source"
+        );
+        assert_eq!(
+            progress.completed.load(AtomicOrdering::Relaxed),
+            progress.total.load(AtomicOrdering::Relaxed),
+            "the skipped prefix counts: the bar describes the whole file"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    /// A partial that is larger than the source, or older than it, is not
+    /// this run's leftover: both fall back to the ordinary overwrite.
+    #[test]
+    fn a_merge_rewrites_a_larger_or_stale_partial() {
+        use std::sync::Arc;
+        use std::time::{Duration, SystemTime};
+
+        let root = std::env::temp_dir().join(format!("dae-resume-stale-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(&source_dir).expect("create source");
+        fs::create_dir_all(&destination_dir).expect("create destination");
+
+        let payload: Vec<u8> = (0..4096u32).map(|index| index as u8).collect();
+        fs::write(source_dir.join("big.bin"), &payload).expect("write source");
+
+        // Larger than the source: something else entirely.
+        let larger = destination_dir.join("big.bin");
+        fs::write(&larger, [&payload[..], &[9u8; 32]].concat()).expect("write the larger partial");
+
+        // Older than the source: the source changed after the interruption.
+        let stale = destination_dir.join("stale.bin");
+        fs::write(&stale, &payload[..2048]).expect("write the stale partial");
+        let hour_ago = SystemTime::now()
+            .checked_sub(Duration::from_secs(3600))
+            .expect("an hour ago is representable");
+        fs::File::options()
+            .write(true)
+            .open(&stale)
+            .and_then(|file| file.set_modified(hour_ago))
+            .expect("age the partial");
+        fs::write(source_dir.join("stale.bin"), &payload).expect("write the newer source");
+
+        let source: Arc<dyn FileSystemBackend> = Arc::new(ProbeBackend::new(None));
+        let destination: Arc<dyn FileSystemBackend> = Arc::new(ProbeBackend::new(None));
+
+        let progress = TestProgress::new();
+        let mut journal = Vec::new();
+        copy_entries(
+            vec![
+                TransferSource {
+                    path: source_dir.join("big.bin").to_string_lossy().into_owned(),
+                    backend: std::sync::Arc::clone(&source),
+                    on_conflict: ConflictAction::Merge,
+                },
+                TransferSource {
+                    path: source_dir.join("stale.bin").to_string_lossy().into_owned(),
+                    backend: source,
+                    on_conflict: ConflictAction::Merge,
+                },
+            ],
+            &destination_dir.to_string_lossy(),
+            &destination,
+            &progress,
+            &mut journal,
+        )
+        .expect("both files land");
+
+        assert_eq!(
+            fs::read(&larger).expect("read the rewritten file"),
+            payload,
+            "a larger destination is overwritten, not appended"
+        );
+        assert_eq!(
+            fs::read(&stale).expect("read the refreshed file"),
+            payload,
+            "a source newer than the partial is re-copied from zero"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    /// A destination that cannot position a writer keeps working: the merge
+    /// re-copies the whole file through the ordinary truncate path.
+    #[test]
+    fn a_merge_without_offset_writes_recopies_the_whole_file() {
+        use std::sync::Arc;
+
+        let root = std::env::temp_dir().join(format!("dae-resume-nooffset-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(&source_dir).expect("create source");
+        fs::create_dir_all(&destination_dir).expect("create destination");
+
+        let payload: Vec<u8> = (0..4096u32).map(|index| (index % 251) as u8).collect();
+        fs::write(source_dir.join("big.bin"), &payload).expect("write source");
+        fs::write(destination_dir.join("big.bin"), &payload[..1024]).expect("write the partial");
+
+        let source: Arc<dyn FileSystemBackend> = Arc::new(ProbeBackend::new(None));
+        let destination: Arc<dyn FileSystemBackend> = Arc::new(ProbeBackend::no_offset_writes());
+
+        let progress = TestProgress::new();
+        let mut journal = Vec::new();
+        copy_entries(
+            vec![TransferSource {
+                path: source_dir.join("big.bin").to_string_lossy().into_owned(),
+                backend: source,
+                on_conflict: ConflictAction::Merge,
+            }],
+            &destination_dir.to_string_lossy(),
+            &destination,
+            &progress,
+            &mut journal,
+        )
+        .expect("the fallback lands the file");
+
+        assert_eq!(
+            fs::read(destination_dir.join("big.bin")).expect("read the fallback copy"),
+            payload,
+            "without offset writes the whole file is re-copied"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
     }
 }

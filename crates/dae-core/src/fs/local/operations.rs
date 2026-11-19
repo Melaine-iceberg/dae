@@ -471,13 +471,23 @@ fn copy_entry(
             return Ok(());
         }
 
+        // A merge picks up an interrupted attempt's own partial, but only
+        // when the bytes will pass through this process: `fs::copy` is
+        // atomic and always starts from zero, so the offset is worth
+        // having exactly on the throttled path.
+        let resumed_at = if merge {
+            local_resume_offset(source, destination, &metadata)
+        } else {
+            0
+        };
+
         // `fs::copy` is CopyFileExW on Windows and copy_file_range on Linux:
         // server-side on a share, reflink where the filesystem supports it. It
         // is also uninterruptible, so a limit — which needs the bytes to pass
         // through this process — is the one case worth giving that up for.
         match progress.control() {
             Some(control) if control.rate_limit().is_some() => {
-                copy_file_throttled(source, destination, control, progress)?;
+                copy_file_throttled(source, destination, control, progress, resumed_at)?;
             }
             _ => {
                 if metadata.len() >= PROGRESS_POLL_MIN_BYTES {
@@ -582,18 +592,36 @@ fn copy_file_with_progress(
 
 /// Copies one file through this process so the rate limit can see the bytes.
 ///
-/// Only used when a limit is set: without one the OS copy above is faster and
-/// keeps server-side and reflink semantics. A cancellation here removes the
-/// half-written destination for the same reason the stream engine does — the
-/// next attempt must not read a truncated file as an existing one.
+/// Only used when a limit is set: without one the OS copy is faster and
+/// keeps server-side and reflink semantics. `resumed_at` is where a merge
+/// found the interrupted attempt's own partial; zero means start from zero.
+/// A cancellation keeps the partial — the status center's continue answers
+/// through Merge and picks the file up at its own end.
 fn copy_file_throttled(
     source: &Path,
     destination: &Path,
     control: &TransferControl,
     progress: &dyn FileOperationProgressReporterTrait,
+    resumed_at: u64,
 ) -> Result<(), FileSystemError> {
+    use std::io::{Seek, SeekFrom};
+
     let mut reader = fs::File::open(source)?;
-    let mut writer = fs::File::create(destination)?;
+    reader.seek(SeekFrom::Start(resumed_at))?;
+    let mut writer = if resumed_at > 0 {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(destination)?;
+        file.seek(SeekFrom::Start(resumed_at))?;
+        file
+    } else {
+        fs::File::create(destination)?
+    };
+    if resumed_at > 0 {
+        // The skipped prefix is already on disk; the bar describes the file.
+        progress.advance_by(resumed_at, source);
+    }
     let mut buffer = vec![0_u8; THROTTLED_CHUNK_BYTES];
 
     let outcome = (|| -> Result<(), FileSystemError> {
@@ -619,13 +647,36 @@ fn copy_file_throttled(
             writer.flush()?;
             Ok(())
         }
-        Err(error) => {
-            drop(writer);
-            if matches!(error, FileSystemError::Cancelled(_)) {
-                let _ = fs::remove_file(destination);
-            }
-            Err(error)
-        }
+        // A cancelled file is a truncated file, and it stays: the partial
+        // is the resume's own input, and an ordinary copy onto the same
+        // name meets the conflict dialog or a deliberate Replace.
+        Err(error) => Err(error),
+    }
+}
+
+/// Where a merge continues a partial, on the local fast path. Same rules as
+/// `transfer::resume_offset`: a file, non-empty, smaller than the source,
+/// and at least as new — a source edited after the interrupted run is
+/// re-copied from zero rather than grafted onto stale bytes.
+fn local_resume_offset(source: &Path, destination: &Path, source_metadata: &fs::Metadata) -> u64 {
+    let Ok(existing) = fs::metadata(destination) else {
+        return 0;
+    };
+    if !existing.is_file() || existing.len() == 0 || existing.len() >= source_metadata.len() {
+        return 0;
+    }
+    let (Some(existing_modified), Some(source_modified)) = (
+        super::directory::modified_at_millis(&existing),
+        super::directory::modified_at_millis(source_metadata),
+    ) else {
+        return 0;
+    };
+    if existing_modified.saturating_add(super::super::transfer::MERGE_TIME_TOLERANCE_MS)
+        >= source_modified
+    {
+        existing.len()
+    } else {
+        0
     }
 }
 
@@ -961,7 +1012,7 @@ mod tests {
             let source = source.clone();
             let destination = destination.clone();
             std::thread::spawn(move || {
-                copy_file_throttled(&source, &destination, &control, progress.as_ref())
+                copy_file_throttled(&source, &destination, &control, progress.as_ref(), 0)
             })
         };
 

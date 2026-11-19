@@ -9,10 +9,11 @@ import QtQuick.Window
 // rows. An empty action bar does not exist — the shell hides this component
 // when nothing is selected.
 //
-// The buttons are words, not glyphs: "移动到…" has no good icon, and the names
-// are what a mouse user reads before the second click. Order follows how often
-// the action is used, not how the context menu is grouped; everything rarer
-// sits behind 更多, which opens the row menu's second page.
+// The buttons pair a mark with the verb, because a footer of ten words reads
+// as a paragraph and a footer of ten glyphs makes the user learn an alphabet.
+// Order follows how often the action is used. On a narrow window the tail
+// folds away, but 更多 always opens the complete row menu, so no command has a
+// width-dependent dead end.
 Item {
     id: bar
 
@@ -40,23 +41,55 @@ Item {
     signal menuRequested(string kind, real x, real y)
     signal transferRequested(real x, real y)
 
+    /// Responsive command sets. The summary and transfer queue keep their own
+    /// space; only the commands that fit are painted. Anything folded away is
+    /// still in 更多, which opens the complete row menu rather than a dead end.
+    readonly property int layoutTier: {
+        const queue = transferChip.count > 0 ? transferChip.width + 20 : 0
+        const selection = bar.width < 720 ? 104 : 164
+        const room = bar.width - queue - selection - 32
+        if (room >= 780)
+            return 3
+        if (room >= 580)
+            return 2
+        if (room >= 450)
+            return 1
+        return 0
+    }
+
     readonly property var items: [
-        { id: "open", label: qsTr("打开"), enabled: bar.count > 0 },
-        { id: "cut", label: qsTr("剪切"), enabled: bar.count > 0 },
-        { id: "copy", label: qsTr("复制"), enabled: bar.count > 0 },
-        { id: "paste", label: qsTr("粘贴"),
+        { id: "open", label: qsTr("打开"), glyph: "external", tier: 2,
+          enabled: bar.count > 0 },
+        { id: "cut", label: qsTr("剪切"), glyph: "cut", tier: 0,
+          enabled: bar.count > 0 },
+        { id: "copy", label: qsTr("复制"), glyph: "copy", tier: 0,
+          enabled: bar.count > 0 },
+        { id: "paste", label: qsTr("粘贴"), glyph: "paste", tier: 0,
           enabled: bar.clipboardReady && !bar.remote },
-        { id: "rename",
+        { id: "rename", glyph: "pencil", tier: 1,
           label: bar.count > 1 ? qsTr("批量重命名…") : qsTr("重命名"),
           enabled: bar.count > 0 && !bar.remote },
-        { id: "trash", label: qsTr("删除"), enabled: bar.count > 0 },
-        { id: "moveTo", label: qsTr("移动到…"),
+        { id: "trash", label: qsTr("删除"), glyph: "trash", tier: 0,
+          enabled: bar.count > 0 },
+        { id: "moveTo", label: qsTr("移动到…"), glyph: "folder", tier: 3,
           enabled: bar.count > 0 && !bar.remote },
-        { id: "compress", label: qsTr("压缩"),
+        { id: "compress", label: qsTr("压缩"), glyph: "archive", tier: 3,
           enabled: bar.count > 0 && !bar.remote },
-        { id: "tags", label: qsTr("标签"), enabled: bar.count > 0, menu: true },
-        { id: "more", label: qsTr("更多"), enabled: bar.count > 0, menu: true }
+        { id: "tags", label: qsTr("标签"), glyph: "star", tier: 2,
+          enabled: bar.count > 0, menu: true },
+        { id: "more", label: qsTr("更多"), glyph: "more", tier: 0,
+          enabled: bar.count > 0, menu: true }
     ]
+
+    readonly property var visibleItems: {
+        const visible = []
+        for (let index = 0; index < bar.items.length; index += 1) {
+            const item = bar.items[index]
+            if (item.tier <= bar.layoutTier)
+                visible.push(item)
+        }
+        return visible
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -71,108 +104,138 @@ Item {
         color: Theme.hairline
     }
 
-    Row {
-        id: actions
+    // Selection context stays on the left, as in Explorer and Finder. It does
+    // not jump to the far edge when the command set changes with the width.
+    Item {
+        id: summary
         anchors.left: parent.left
+        anchors.leftMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(bar.width < 720 ? 92 : 152, summaryText.implicitWidth + 8)
+        height: Theme.controlMd
+
+        Text {
+            id: summaryText
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("已选 %1 项").arg(bar.count)
+                + (bar.sizeText !== "" && bar.width >= 720 ? " · " + bar.sizeText : "")
+            color: Theme.inkSecondary
+            font.family: Theme.monoFamily
+            font.pixelSize: Theme.typeCaption
+            font.features: { "tnum": 1 }
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+        }
+    }
+
+    Rectangle {
+        anchors.left: summary.right
         anchors.leftMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 2
+        width: Theme.ruleWidth(Screen.devicePixelRatio)
+        height: 16
+        color: Theme.hairline
+    }
 
-        Repeater {
-            model: bar.items
-            delegate: Rectangle {
-                id: button
-                required property var modelData
+    Item {
+        id: actionViewport
+        anchors.left: summary.right
+        anchors.leftMargin: 16
+        anchors.verticalCenter: parent.verticalCenter
+        width: actions.implicitWidth
+        height: Theme.controlMd
+        clip: true
 
-                width: buttonLabel.implicitWidth + (modelData.menu === true ? 26 : 16)
-                height: Theme.controlMd
-                radius: Theme.radiusSm
-                color: buttonMouse.containsMouse && modelData.enabled
-                    ? Theme.hover : "transparent"
-                opacity: modelData.enabled ? 1 : 0.4
-                border.width: button.activeFocus ? 1 : 0
-                border.color: Theme.accent
+        Row {
+            id: actions
+            height: Theme.controlMd
+            spacing: 3
 
-                Accessible.role: Accessible.Button
-                Accessible.name: modelData.label
-                Accessible.onPressAction: button.trigger()
+            Repeater {
+                model: bar.visibleItems
+                delegate: Rectangle {
+                    id: button
+                    required property var modelData
 
-                /// The buttons are the footer's keyboard stops, in the same
-                /// order they are painted; Enter and Space fire them like a
-                /// click does.
-                activeFocusOnTab: modelData.enabled
-                Keys.onReturnPressed: button.trigger()
-                Keys.onSpacePressed: button.trigger()
+                    width: buttonRow.implicitWidth + 18
+                    height: Theme.controlMd
+                    radius: Theme.radiusSm
+                    color: buttonMouse.pressed && modelData.enabled ? Theme.selection
+                        : (buttonMouse.containsMouse && modelData.enabled
+                            ? Theme.hover : "transparent")
+                    opacity: modelData.enabled ? 1 : 0.38
+                    border.width: button.activeFocus ? 1 : 0
+                    border.color: Theme.accent
 
-                function trigger() {
-                    if (!modelData.enabled)
-                        return
-                    if (modelData.menu === true) {
-                        const point = button.mapToItem(null, 0, 0)
-                        bar.menuRequested(modelData.id, point.x, point.y)
-                    } else {
-                        bar.actionRequested(modelData.id)
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.label
+                    Accessible.onPressAction: button.trigger()
+
+                    activeFocusOnTab: modelData.enabled
+                    Keys.onReturnPressed: button.trigger()
+                    Keys.onEnterPressed: button.trigger()
+                    Keys.onSpacePressed: button.trigger()
+
+                    function trigger() {
+                        if (!modelData.enabled)
+                            return
+                        if (modelData.menu === true) {
+                            const point = button.mapToItem(null, 0, 0)
+                            bar.menuRequested(modelData.id, point.x, point.y)
+                        } else {
+                            bar.actionRequested(modelData.id)
+                        }
                     }
-                }
 
-                Text {
-                    id: buttonLabel
-                    anchors.left: parent.left
-                    anchors.leftMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: button.modelData.label
-                    color: button.modelData.id === "trash" ? Theme.danger : Theme.ink
-                    font.pixelSize: Theme.typeBody
-                }
+                    Row {
+                        id: buttonRow
+                        anchors.centerIn: parent
+                        spacing: 6
 
-                Glyph {
-                    anchors.left: buttonLabel.right
-                    anchors.leftMargin: 4
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: button.modelData.menu === true
-                    kind: "chevronDown"
-                    implicitWidth: 10
-                    implicitHeight: 10
-                    tint: Theme.inkTertiary
-                }
+                        Glyph {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 14
+                            height: 14
+                            kind: button.modelData.glyph
+                            tint: button.modelData.id === "trash" ? Theme.danger : Theme.inkSecondary
+                        }
 
-                MouseArea {
-                    id: buttonMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: button.trigger()
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: button.modelData.label
+                            color: button.modelData.id === "trash" ? Theme.danger : Theme.ink
+                            font.pixelSize: Theme.typeBody
+                        }
+                    }
+
+                    ToolTip { text: button.modelData.label }
+
+                    MouseArea {
+                        id: buttonMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: button.trigger()
+                    }
                 }
             }
         }
     }
 
-    Text {
-        id: summary
+    // The queue stays pinned to the edge. On exceptionally narrow windows the
+    // full queue remains available after clearing the selection; commands take
+    // precedence only when the two surfaces physically cannot coexist.
+    TransferChip {
+        id: transferChip
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        text: qsTr("%1 项").arg(bar.count)
-            + (bar.sizeText !== "" ? " · " + bar.sizeText : "")
-        color: Theme.inkSecondary
-        font.family: Theme.monoFamily
-        font.pixelSize: Theme.typeCaption
-        font.features: { "tnum": 1 }
-        textFormat: Text.PlainText
-
-        Accessible.role: Accessible.StaticText
-        Accessible.name: text
-    }
-
-    // The queue's only door stays open while a selection exists — a paste that
-    // starts a transfer must never be invisible. It holds the centre unless the
-    // action row reaches it, in which case it moves right rather than covering
-    // a button.
-    TransferChip {
-        id: transferChip
-        anchors.verticalCenter: parent.verticalCenter
-        x: Math.max(actions.x + actions.width + 12, (bar.width - width) / 2)
         visible: transferChip.count > 0
-            && transferChip.x + transferChip.width < summary.x - 8
+            && actionViewport.x + actionViewport.width + 12 < transferChip.x
         onOpenRequested: function (x, y) { bar.transferRequested(x, y) }
     }
 }

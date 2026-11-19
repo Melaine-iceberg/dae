@@ -36,6 +36,12 @@ public:
     QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
 
 private:
+    /// The remote half of `requestImage`: bounded bytes from the vfs layer,
+    /// decoded from memory. Split out because the local half's `QFileInfo`
+    /// guard and the revision sources differ.
+    QImage remoteImage(const QString& id, const QString& path, int dimension,
+                       QSize* size);
+
     QMutex m_mutex;
     QCache<QString, QImage> m_cache;
 };

@@ -1592,6 +1592,10 @@
         <source>更新于 %1</source>
         <translation type="vanished">更新於 %1</translation>
     </message>
+    <message>
+        <source>名称不能包含 /</source>
+        <translation>名稱不能包含 /</translation>
+    </message>
 </context>
 <context>
     <name>FilterMenu</name>
@@ -1681,6 +1685,17 @@
         <location filename="../FilterMenu.qml" line="189"/>
         <source>清除筛选</source>
         <translation>清除篩選</translation>
+    </message>
+    <message>
+        <location filename="../FilterMenu.qml" line="131"/>
+        <location filename="../FilterMenu.qml" line="152"/>
+        <source>按名称筛选</source>
+        <translation>按名稱篩選</translation>
+    </message>
+    <message>
+        <location filename="../FilterMenu.qml" line="162"/>
+        <source>清除名称筛选</source>
+        <translation>清除名稱篩選</translation>
     </message>
 </context>
 <context>
@@ -3186,6 +3201,36 @@
         <source>无法读取设置</source>
         <translation>無法讀取設定</translation>
     </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>浏览压缩包仅适用于本地压缩包</source>
+        <translation>瀏覽壓縮包僅適用於本地壓縮包</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此压缩包已加密，请先输入密码解压再浏览</source>
+        <translation>此壓縮包已加密，請先輸入密碼解壓再瀏覽</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此压缩包格式不支持浏览，请使用解压</source>
+        <translation>此壓縮包格式不支援瀏覽，請使用解壓</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此文件使用的压缩方法暂不支持读取</source>
+        <translation>此檔案使用的壓縮方法暫不支援讀取</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>压缩包为只读，请解压后再编辑</source>
+        <translation>壓縮包為唯讀，請解壓後再編輯</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>压缩包路径的格式为 archive:&lt;压缩包&gt;!&lt;内部路径&gt;</source>
+        <translation>壓縮包路徑的格式為 archive:&lt;壓縮包&gt;!&lt;內部路徑&gt;</translation>
+    </message>
 </context>
 <context>
     <name>Locator</name>
@@ -4220,6 +4265,14 @@
         <location filename="../SearchFilterBar.qml" line="232"/>
         <source>所有卷</source>
         <translation>所有磁碟區</translation>
+    </message>
+    <message>
+        <source>使用正则表达式</source>
+        <translation>使用正規表示式</translation>
+    </message>
+    <message>
+        <source>区分大小写</source>
+        <translation>區分大小寫</translation>
     </message>
 </context>
 <context>
@@ -5557,6 +5610,16 @@
     <message>
         <source>终端字体覆盖；留空使用「字体设置」页的全局等宽字体</source>
         <translation>終端字型覆寫；留空使用「字型設定」頁的全域等寬字型</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="285"/>
+        <source>终端跳转当前目录</source>
+        <translation>終端跳轉目前目錄</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml" line="286"/>
+        <source>让内嵌终端 cd 到当前标签的文件夹</source>
+        <translation>讓內嵌終端 cd 到目前標籤的資料夾</translation>
     </message>
 </context>
 <context>
@@ -7308,6 +7371,16 @@
         <source>关闭终端</source>
         <translation>關閉終端機</translation>
     </message>
+    <message>
+        <location filename="../TerminalPanel.qml" line="487"/>
+        <source>跳转</source>
+        <translation>跳轉</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml" line="495"/>
+        <source>跳转</source>
+        <translation>跳轉</translation>
+    </message>
 </context>
 <context>
     <name>TitleBar</name>
@@ -7558,6 +7631,11 @@
         <location filename="../TransferQueue.qml" line="489"/>
         <source>取消 </source>
         <translation>取消 </translation>
+    </message>
+    <message>
+        <location filename="../TransferQueue.qml" line="367"/>
+        <source>剩余 %1</source>
+        <translation>剩餘 %1</translation>
     </message>
 </context>
 <context>

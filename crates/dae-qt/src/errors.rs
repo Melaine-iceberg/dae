@@ -112,6 +112,18 @@ fn friendly_code(code: &str) -> Option<&'static str> {
         Some("The selected items are no longer in Trash")
     } else if code.starts_with("fs.trash_restore_no_origin") {
         Some("The item's original location could not be determined")
+    } else if code.starts_with("fs.archive_local_only") {
+        Some("Archive browsing is only available for local archives")
+    } else if code.starts_with("fs.archive_encrypted") {
+        Some("This archive is encrypted. Extract it with the password to browse its files")
+    } else if code.starts_with("fs.archive_format_unsupported") {
+        Some("This archive format cannot be browsed. Use Extract instead")
+    } else if code.starts_with("fs.archive_method_unsupported") {
+        Some("This file uses a compression method the archive viewer cannot read")
+    } else if code.starts_with("fs.archive_read_only") {
+        Some("Archives are read-only. Extract the files to edit them")
+    } else if code.starts_with("fs.archive_missing_separator") {
+        Some("An archive path is archive:<archive>!<inner path>")
     } else if code.starts_with("git.not_a_worktree") {
         Some("This directory is not in a Git repository")
     } else if code.starts_with("git.branch_not_found") {

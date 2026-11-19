@@ -53,6 +53,8 @@ Window {
     objectName: token
     width: 1180
     height: 780
+    minimumWidth: 640
+    minimumHeight: 420
     visible: false
     title: root.activeTab !== null ? root.activeTab.title : "dae"
     color: "transparent"
@@ -1204,7 +1206,11 @@ Window {
     }
 
     function isRemotePath(path) {
+        // `archive:` has no `//` of its own, so it gets its own test: the
+        // container is local, but the view inside is read-only and rides the
+        // remote gating.
         return /^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(path || "")
+            || /^archive:/i.test(path || "")
     }
 
     /// Local-only surfaces are switched off when the active tab moves to a
@@ -1301,6 +1307,7 @@ Window {
         next.push(tab)
         root.splitTabs = next
         root.splitActiveIndex = next.length - 1
+        root.splitFocused = true
         Qt.callLater(splitList.takeFocus)
     }
 
@@ -1309,6 +1316,7 @@ Window {
             return
         root.splitActiveIndex = index
         root.splitPathEditing = false
+        root.splitFocused = true
         Qt.callLater(splitList.takeFocus)
     }
 
@@ -1325,6 +1333,7 @@ Window {
                 closing.dispose()
             root.splitTabs = []
             root.splitActiveIndex = 0
+            root.splitFocused = false
             ExplorerPrefs.setBool("splitEnabled", false)
             return
         }
@@ -1335,6 +1344,16 @@ Window {
             root.splitActiveIndex -= 1
         if (closing)
             closing.dispose()
+    }
+
+    /// One way out of split view for the header, the menu and the keyboard.
+    /// It leaves focus on the primary listing instead of a disposed pane.
+    function closeSplitView() {
+        if (!root.splitActive)
+            return
+        root.splitFocused = false
+        ExplorerPrefs.setBool("splitEnabled", false)
+        Qt.callLater(fileList.takeFocus)
     }
 
     function applySplitPreference() {
@@ -2009,10 +2028,24 @@ Window {
     function acceptPreview(path, isDir) {
         if (isDir)
             root.navigate(path)
+        else if (root.enterArchivePath(path))
+            return
         else if (root.isRemotePath(path))
             root.acceptRemotePreview(path)
         else
             Workspace.openPath(path)
+    }
+
+    /// A local zip/tar enters the archive view instead of launching the
+    /// container. Everything else answers false so the caller keeps its own
+    /// behavior.
+    function enterArchivePath(path) {
+        if (root.isRemotePath(path))
+            return false
+        if (!/\.(zip|tar)$/i.test(path))
+            return false
+        root.navigate("archive:" + path + "!")
+        return true
     }
 
     /// Enter on a remote file cannot reach a local handler. Show the preview
@@ -2055,6 +2088,18 @@ Window {
     function parentOf(path) {
         if (!path)
             return ""
+        // Inside an archive: the inner path climbs first, and the archive
+        // root climbs out to the folder that holds the archive.
+        const archive = /^archive:(.*)$/i.exec(path)
+        if (archive !== null) {
+            const bang = path.indexOf("!")
+            const inner = path.slice(bang + 1).replace(/^\/+|\/+$/g, "")
+            if (inner !== "") {
+                const cut = inner.lastIndexOf("/")
+                return path.slice(0, bang) + "!" + (cut > 0 ? "/" + inner.slice(0, cut) : "")
+            }
+            return root.parentOf(archive[1])
+        }
         let trimmed = path
         while (trimmed.length > 1
                && (trimmed.endsWith("/") || trimmed.endsWith("\\")))
@@ -2163,6 +2208,15 @@ Window {
     }
 
     function contextDirectory() {
+        // The menu can belong to a split pane or a deeper Miller column. Ask
+        // that view for its active directory instead of assuming the tab's
+        // root listing, which would create files in the wrong column.
+        if (root.contextList !== null) {
+            const paths = root.contextList.selectedPathList()
+            const directory = root.contextList.actionDirectory(paths)
+            if (directory !== "")
+                return directory
+        }
         return root.contextTab !== null ? root.contextTab.listing.path : root.activePath
     }
 
@@ -3522,25 +3576,27 @@ Window {
         const paths = list.selectedPathList()
         if (paths.length === 0)
             return
-        const model = list.model
+        // Miller columns select across several models. Ask the pane that owns
+        // the first selected row, not the tab's root listing: otherwise the
+        // footer looked at the wrong index and treated folders as files.
+        const model = list.selectionModel(paths)
         const first = paths[0]
-        const firstIndex = model !== null ? model.indexOfPath(first) : -1
-        const firstIsDir = firstIndex >= 0 && model.isDirectoryAt(firstIndex)
+        const firstIndex = list.selectionIndex(model, first)
+        const firstIsDir = model !== null && model !== undefined
+            && firstIndex >= 0 && model.isDirectoryAt(firstIndex)
         const many = paths.length > 1
-        const directory = list.tab !== null && list.tab !== undefined
-            ? list.tab.listing.path : root.activePath
+        const directory = list.actionDirectory(paths)
         switch (id) {
         case "open":
             // One row: the same act as Enter. Several: open every file and
             // leave folders alone — navigating has no meaning for a set.
-            if (!many && firstIndex >= 0) {
-                list.handleActivate(firstIndex)
+            if (!many) {
+                list.activateSelectionPath(first)
                 break
             }
             for (let index = 0; index < paths.length; index += 1) {
-                const at = model !== null ? model.indexOfPath(paths[index]) : -1
-                if (at >= 0 && !model.isDirectoryAt(at))
-                    Workspace.openPath(paths[index])
+                if (!list.selectionIsDirectory(paths[index]))
+                    list.activateSelectionPath(paths[index])
             }
             break
         case "cut":
@@ -3561,7 +3617,7 @@ Window {
                 root.renameInList(list, first)
             break
         case "trash":
-            if (root.remoteLocation) {
+            if (list.remote) {
                 root.requestRemoteDelete(paths)
                 break
             }
@@ -3582,9 +3638,10 @@ Window {
     }
 
     /// The action bar's two menu buttons. 标签 reuses the row menu's tag rows;
-    /// 更多 opens the row menu's second page. Either way the menu's target is
-    /// seeded from the live selection first, because `runMenuAction` resolves
-    /// against the captured context, not against the bar.
+    /// 更多 opens the complete first page, including commands that the footer
+    /// folded away at this width. The menu's target is seeded from the live
+    /// selection first, because `runMenuAction` resolves against the captured
+    /// context, not against the bar.
     function openActionBarMenu(kind, x, y) {
         const list = root.actionList
         if (list === null)
@@ -3592,20 +3649,21 @@ Window {
         const paths = list.selectedPathList()
         if (paths.length === 0)
             return
-        const model = list.model
-        const index = model !== null ? model.indexOfPath(paths[0]) : -1
+        const model = list.selectionModel(paths)
+        const index = list.selectionIndex(model, paths[0])
         root.contextTab = list === splitList ? root.splitTab : root.activeTab
         root.contextList = list
         root.contextPath = paths[0]
-        root.contextIsDir = index >= 0 && model.isDirectoryAt(index)
+        root.contextIsDir = model !== null && model !== undefined
+            && index >= 0 && model.isDirectoryAt(index)
         root.contextKind = "row"
-        root.rowMenuMore = kind !== "tags"
+        root.rowMenuMore = false
         if (kind === "tags") {
             menu.openAt(x, y, root.tagSubmenu())
             return
         }
         shellCommands.load(root.currentSelection(), paths[0])
-        menu.openAt(x, y, root.rowMoreMenuItems())
+        menu.openAt(x, y, root.rowMenuItems())
     }
 
     function runMenuAction(id) {
@@ -4878,45 +4936,6 @@ Window {
             height: parent.height - Theme.shellTitle - Theme.shellNav
                 - root.footerHeight - searchFilterBar.height
 
-            Item {
-                id: sidebarHandle
-
-                readonly property bool live: root.sidebarVisible
-
-                width: live ? 6 : 0
-                height: parent.height
-
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: Theme.ruleWidth(Screen.devicePixelRatio)
-                    height: parent.height
-                    color: sidebarHandleMouse.containsMouse ? root.accent : Theme.hairline
-                }
-
-                MouseArea {
-                    id: sidebarHandleMouse
-                    Accessible.ignored: true
-                    anchors.fill: parent
-                    enabled: sidebarHandle.live
-                    hoverEnabled: true
-                    cursorShape: Qt.SizeHorCursor
-
-                    property real startX: 0
-                    property int startWidth: 0
-
-                    onPressed: function (mouse) {
-                        startX = mapToItem(null, mouse.x, 0).x
-                        startWidth = ExplorerPrefs.sidebarWidth
-                    }
-                    onPositionChanged: function (mouse) {
-                        if (!pressed)
-                            return
-                        const dx = mapToItem(null, mouse.x, 0).x - startX
-                        ExplorerPrefs.setNumber("sidebarWidth", Math.round(startWidth + dx))
-                    }
-                }
-            }
-
             Sidebar {
                 id: sidebar
                 width: root.sidebarVisible ? ExplorerPrefs.sidebarWidth : 0
@@ -4958,6 +4977,53 @@ Window {
                 }
             }
 
+            // The drag strip belongs between the sidebar and the listing.
+            // It used to sit on the sidebar's outer edge, where its visible
+            // line and its hit area disagreed and could compete with window
+            // resizing. It keeps the exact width the content column subtracts.
+            Item {
+                id: sidebarHandle
+
+                readonly property bool live: root.sidebarVisible
+
+                width: live ? 6 : 0
+                height: parent.height
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
+                    height: parent.height
+                    // At rest the sidebar's own edge is the divider; the
+                    // handle paints only while it is a live target, so two
+                    // hairlines never run three pixels apart.
+                    color: sidebarHandleMouse.containsMouse ? root.accent : "transparent"
+                }
+
+                MouseArea {
+                    id: sidebarHandleMouse
+                    Accessible.ignored: true
+                    anchors.fill: parent
+                    enabled: sidebarHandle.live
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeHorCursor
+
+                    property real startX: 0
+                    property int startWidth: 0
+
+                    onPressed: function (mouse) {
+                        startX = mapToItem(null, mouse.x, 0).x
+                        startWidth = ExplorerPrefs.sidebarWidth
+                    }
+                    onPositionChanged: function (mouse) {
+                        if (!pressed)
+                            return
+                        const dx = mapToItem(null, mouse.x, 0).x - startX
+                        ExplorerPrefs.setNumber("sidebarWidth", Math.round(startWidth + dx))
+                    }
+                    onDoubleClicked: ExplorerPrefs.setNumber("sidebarWidth", 240)
+                }
+            }
+
             Column {
                 id: contentColumn
                 width: parent.width - sidebar.width - sidebarHandle.width
@@ -4982,6 +5048,7 @@ Window {
                         searchQuery: root.searchQuery
                         searchMode: root.searchMode
                         shortcutMap: root.shortcutMap
+                        enterArchive: root.enterArchivePath
 
                         onNavigateRequested: function (path) {
                             root.navigate(path)
@@ -4993,7 +5060,13 @@ Window {
                         onRenameSubmitted: function (path, text) {
                             Workspace.renameEntry(path, text)
                         }
-                        onCreateFolderRequested: root.promptCreate(true)
+                        onCreateFolderRequested: {
+                            const directory = fileList.actionDirectory(fileList.selectedPathList())
+                            if (directory !== "")
+                                root.promptCreateIn(directory, true)
+                            else
+                                root.promptCreate(true)
+                        }
                         onClearSearchRequested: root.closeSearch()
                         onContentSearchRequested: root.setSearchMode("content")
                         onToastRequested: function(message) { toast.show(message, false) }
@@ -5004,7 +5077,8 @@ Window {
                             root.showEmptyMenu(x, y)
                         }
                         onSelectionChanged: {
-                            root.syncInspector(fileList.selectedPathList(), fileList.model)
+                            const paths = fileList.selectedPathList()
+                            root.syncInspector(paths, fileList.selectionModel(paths))
                         }
                         onRemoteDeleteRequested: function (paths) {
                             root.requestRemoteDelete(paths)
@@ -5019,6 +5093,12 @@ Window {
                         }
                         onOpenTerminalRequested: function (path) {
                             root.openSystemTerminal(path)
+                        }
+                        onTerminalJumpRequested: {
+                            // The panel decides whether a session can take
+                            // the jump; the shell never sees a remote path.
+                            if (root.terminalActive)
+                                terminalPanel.jumpToFolder()
                         }
                         onPreviewRequested: function (path) {
                             root.togglePreview(path)
@@ -5045,115 +5125,222 @@ Window {
                         anchors.bottom: parent.bottom
                         visible: root.splitActive
 
-                        /// §11.4: the pane's own tab strip. It is 30 dp, one
-                        /// row, and scrolls horizontally like the primary one;
-                        /// the chips name their directory and a middle click
-                        /// closes them.
+                        /// §11.4: the pane's own tab strip. It is one row and
+                        /// scrolls horizontally like the primary one; the
+                        /// chips name their directory, close on middle click
+                        /// or their own ×, and keep the whole strip usable
+                        /// when several tabs are open in a narrow pane.
                         Rectangle {
                             id: splitStrip
                             width: parent.width
                             height: 32
                             color: root.chromeColor
 
-                            Row {
-                                id: splitStripRow
+                            function reveal(chip) {
+                                if (chip.x < splitTabFlick.contentX)
+                                    splitTabFlick.contentX = chip.x
+                                else if (chip.x + chip.width
+                                         > splitTabFlick.contentX + splitTabFlick.width)
+                                    splitTabFlick.contentX = chip.x + chip.width
+                                        - splitTabFlick.width
+                            }
+
+                            Flickable {
+                                id: splitTabFlick
                                 anchors.left: parent.left
                                 anchors.leftMargin: 8
+                                anchors.right: splitTabPlus.left
+                                anchors.rightMargin: 6
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
+                                height: 24
+                                contentWidth: splitStripRow.width
+                                contentHeight: height
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                flickableDirection: Flickable.HorizontalFlick
 
-                                Repeater {
-                                    model: root.splitTabs
+                                Row {
+                                    id: splitStripRow
+                                    width: implicitWidth
+                                    height: splitTabFlick.height
+                                    spacing: 2
 
-                                    Rectangle {
-                                        id: splitChip
-                                        required property int index
-                                        required property var modelData
+                                    Repeater {
+                                        model: root.splitTabs
 
-                                        readonly property bool active:
-                                            root.splitActiveIndex === splitChip.index
-                                        readonly property string label:
-                                            root.tabLabelOf(splitChip.modelData)
-                                        width: Math.min(160,
-                                            Math.max(64, splitChipText.implicitWidth + 20))
-                                        height: 24
-                                        radius: Theme.radiusSm
-                                        color: active ? Theme.canvas
-                                            : (chipMouse.containsMouse ? Theme.hover : "transparent")
+                                        Rectangle {
+                                            id: splitChip
+                                            required property int index
+                                            required property var modelData
 
-                                        Accessible.role: Accessible.PageTab
-                                        Accessible.name: splitChip.modelData
-                                            ? splitChip.modelData.title : ""
-                                        Accessible.selectable: true
-                                        Accessible.selected: splitChip.active
+                                            readonly property bool active:
+                                                root.splitActiveIndex === splitChip.index
+                                            readonly property string label:
+                                                root.tabLabelOf(splitChip.modelData)
+                                            readonly property bool closeShown:
+                                                splitChip.active || chipMouse.containsMouse
+                                                || splitChip.activeFocus
+                                            width: Math.min(176,
+                                                Math.max(88, splitChipText.implicitWidth + 32))
+                                            height: 24
+                                            radius: Theme.radiusSm
+                                            color: active ? Theme.canvas
+                                                : (chipMouse.containsMouse ? Theme.hover : "transparent")
+                                            border.width: splitChip.activeFocus ? 1 : 0
+                                            border.color: Theme.accent
 
-                                        Text {
-                                            id: splitChipText
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 8
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 8
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: splitChip.label
-                                            color: splitChip.active
-                                                ? root.textColor : root.mutedColor
-                                            font.pixelSize: Theme.typeCaption
-                                            font.weight: splitChip.active
-                                                ? Font.Medium : Font.Normal
-                                            elide: Text.ElideMiddle
-                                        }
+                                            Accessible.role: Accessible.PageTab
+                                            Accessible.name: splitChip.modelData
+                                                ? splitChip.modelData.title : ""
+                                            Accessible.selectable: true
+                                            Accessible.selected: splitChip.active
+                                            Accessible.onPressAction:
+                                                root.splitSelectTab(splitChip.index)
 
-                                        ToolTip {
-                                            text: splitChip.modelData
-                                                ? String(splitChip.modelData.title) : ""
-                                        }
+                                            activeFocusOnTab: true
+                                            Keys.onReturnPressed:
+                                                root.splitSelectTab(splitChip.index)
+                                            Keys.onSpacePressed:
+                                                root.splitSelectTab(splitChip.index)
+                                            onActiveFocusChanged: {
+                                                if (activeFocus)
+                                                    splitStrip.reveal(splitChip)
+                                            }
 
-                                        MouseArea {
-                                            id: chipMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-                                            onClicked: function (mouse) {
-                                                if (mouse.button === Qt.MiddleButton)
+                                            Text {
+                                                id: splitChipText
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 8
+                                                anchors.right: splitChipClose.left
+                                                anchors.rightMargin: 2
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: splitChip.label
+                                                color: splitChip.active
+                                                    ? root.textColor : root.mutedColor
+                                                font.pixelSize: Theme.typeCaption
+                                                font.weight: splitChip.active
+                                                    ? Font.Medium : Font.Normal
+                                                elide: Text.ElideMiddle
+                                            }
+
+                                            Item {
+                                                id: splitChipClose
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 2
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 20
+                                                height: 20
+                                                visible: splitChip.closeShown
+
+                                                Accessible.role: Accessible.Button
+                                                Accessible.name: qsTr("关闭标签页")
+                                                Accessible.onPressAction:
                                                     root.splitCloseTab(splitChip.index)
-                                                else
-                                                    root.splitSelectTab(splitChip.index)
+
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: Theme.radiusXs
+                                                    color: splitChipCloseMouse.containsMouse
+                                                        ? Theme.hover : "transparent"
+                                                }
+
+                                                Glyph {
+                                                    anchors.centerIn: parent
+                                                    width: 10
+                                                    height: 10
+                                                    kind: "close"
+                                                    tint: splitChipCloseMouse.containsMouse
+                                                        ? root.textColor : Theme.inkTertiary
+                                                }
+
+                                                MouseArea {
+                                                    id: splitChipCloseMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    onClicked:
+                                                        root.splitCloseTab(splitChip.index)
+                                                }
+                                            }
+
+                                            ToolTip {
+                                                text: splitChip.modelData
+                                                    ? String(splitChip.modelData.title) : ""
+                                            }
+
+                                            MouseArea {
+                                                id: chipMouse
+                                                anchors.left: parent.left
+                                                anchors.right: splitChipClose.left
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                hoverEnabled: true
+                                                acceptedButtons: Qt.LeftButton
+                                                    | Qt.MiddleButton
+                                                onClicked: function (mouse) {
+                                                    if (mouse.button === Qt.MiddleButton)
+                                                        root.splitCloseTab(splitChip.index)
+                                                    else
+                                                        root.splitSelectTab(splitChip.index)
+                                                }
                                             }
                                         }
                                     }
                                 }
+                            }
 
-                                Item {
-                                    width: 20
-                                    height: 20
-                                    anchors.verticalCenter: parent.verticalCenter
+                            WheelHandler {
+                                acceptedDevices: PointerDevice.Mouse
+                                    | PointerDevice.TouchPad
+                                onWheel: function (event) {
+                                    const step = event.pixelDelta.x !== 0
+                                        ? event.pixelDelta.x
+                                        : (event.angleDelta.x !== 0
+                                            ? event.angleDelta.x : event.angleDelta.y)
+                                    splitTabFlick.contentX = Math.max(0,
+                                        Math.min(splitTabFlick.contentWidth - splitTabFlick.width,
+                                                 splitTabFlick.contentX - step))
+                                }
+                            }
 
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: Theme.radiusXs
-                                        color: splitPlusMouse.containsMouse
-                                            ? Theme.hover : "transparent"
-                                    }
+                            Item {
+                                id: splitTabPlus
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 22
+                                height: 22
 
-                                    Glyph {
-                                        anchors.centerIn: parent
-                                        width: 12
-                                        height: 12
-                                        kind: "plus"
-                                        tint: splitPlusMouse.containsMouse
-                                            ? root.textColor : Theme.inkSecondary
-                                    }
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Theme.radiusXs
+                                    color: splitPlusMouse.containsMouse
+                                        ? Theme.hover : "transparent"
+                                    border.width: splitTabPlus.activeFocus ? 1 : 0
+                                    border.color: Theme.accent
+                                }
 
-                                    Accessible.role: Accessible.Button
-                                    Accessible.name: qsTr("在此窗格新建标签页")
-                                    Accessible.onPressAction: root.splitAddTab()
+                                Glyph {
+                                    anchors.centerIn: parent
+                                    width: 12
+                                    height: 12
+                                    kind: "plus"
+                                    tint: splitPlusMouse.containsMouse
+                                        ? root.textColor : Theme.inkSecondary
+                                }
 
-                                    MouseArea {
-                                        id: splitPlusMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        onClicked: root.splitAddTab()
-                                    }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("在此窗格新建标签页")
+                                Accessible.onPressAction: root.splitAddTab()
+
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: root.splitAddTab()
+                                Keys.onSpacePressed: root.splitAddTab()
+
+                                MouseArea {
+                                    id: splitPlusMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: root.splitAddTab()
                                 }
                             }
 
@@ -5176,30 +5363,48 @@ Window {
                             /// completion list hangs over the pane's list.
                             z: 20
 
-                            Text {
+                            Item {
                                 id: splitClose
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: "\u00D7"
-                                color: splitCloseMouse.containsMouse
-                                    ? root.textColor : root.mutedColor
-                                font.pixelSize: Theme.typeBody
-                            }
-
-                            MouseArea {
-                                id: splitCloseMouse
-                                anchors.right: splitClose.right
-                                anchors.rightMargin: -6
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: splitClose.width + 12
-                                height: splitClose.height + 12
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton
-                                onClicked: ExplorerPrefs.setBool("splitEnabled", false)
+                                width: 28
+                                height: 28
 
                                 Accessible.role: Accessible.Button
                                 Accessible.name: qsTr("关闭分屏")
+                                Accessible.onPressAction: root.closeSplitView()
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: root.closeSplitView()
+                                Keys.onSpacePressed: root.closeSplitView()
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Theme.radiusSm
+                                    color: splitCloseMouse.containsMouse ? Theme.hover
+                                        : "transparent"
+                                    border.width: splitClose.activeFocus ? 1 : 0
+                                    border.color: Theme.accent
+                                }
+
+                                Glyph {
+                                    anchors.centerIn: parent
+                                    width: 12
+                                    height: 12
+                                    kind: "close"
+                                    tint: splitCloseMouse.containsMouse
+                                        ? root.textColor : root.mutedColor
+                                }
+
+                                ToolTip { text: qsTr("关闭分屏") }
+
+                                MouseArea {
+                                    id: splitCloseMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.LeftButton
+                                    onClicked: root.closeSplitView()
+                                }
                             }
 
                             /// The pane's own locator: a breadcrumb trail, the
@@ -5271,6 +5476,7 @@ Window {
                             visible: root.splitTab !== null
                             tab: root.splitTab
                             shortcutMap: root.shortcutMap
+                            enterArchive: root.enterArchivePath
 
                             onNavigateRequested: function (path) {
                                 root.navigateSplit(path)
@@ -5291,7 +5497,8 @@ Window {
                                 root.showSplitEmptyMenu(x, y)
                             }
                             onSelectionChanged: {
-                                root.syncInspector(splitList.selectedPathList(), splitList.model)
+                                const paths = splitList.selectedPathList()
+                                root.syncInspector(paths, splitList.selectionModel(paths))
                             }
                             onRemoteDeleteRequested: function (paths) {
                                 root.requestRemoteDelete(paths)
@@ -5301,6 +5508,10 @@ Window {
                             }
                             onOpenTerminalRequested: function (path) {
                                 root.openSystemTerminal(path)
+                            }
+                            onTerminalJumpRequested: {
+                                if (root.terminalActive)
+                                    terminalPanel.jumpToFolder()
                             }
 
                             // Focus follows the pointer; the pane itself carries
@@ -5492,6 +5703,13 @@ Window {
                         onExited: {
                             fileList.takeFocus()
                         }
+                        onHideRequested: {
+                            root.terminalActive = false
+                            if (root.actionList !== null)
+                                root.actionList.takeFocus()
+                            else
+                                fileList.takeFocus()
+                        }
                     }
                 }
             }
@@ -5608,7 +5826,6 @@ Window {
             Text {
                 id: statusText
                 x: 10
-                width: Math.min(implicitWidth, parent.width * 0.42)
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
                     if (root.activeTab === null)
@@ -5637,7 +5854,8 @@ Window {
                         return search.status !== ""
                             ? root.localizeBackend(search.status) : qsTr("没有匹配项")
                     }
-                    const listing = root.activeTab.listing
+                    const listing = root.actionList !== null
+                        ? root.actionList.activeModel() : root.activeTab.listing
                     if (Workspace.busy && Workspace.progressLabel !== "")
                         return root.localizeBackend(Workspace.progressLabel)
                     const base = root.listingSummary(listing)
@@ -5650,6 +5868,8 @@ Window {
                 elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
                 Accessible.name: text
+                width: Math.min(implicitWidth,
+                    Math.max(0, statusRight.x - x - 12))
             }
 
             /// What is on the clipboard, while something is. The in-app
@@ -5728,8 +5948,14 @@ Window {
             // both footer states must keep the queue's only door visible, and
             // a paste is exactly what a selection leads to.
             TransferChip {
-                anchors.horizontalCenter: parent.horizontalCenter
+                id: statusTransfer
                 anchors.verticalCenter: parent.verticalCenter
+                x: Math.max(clipboardChip.visible
+                        ? clipboardChip.x + clipboardChip.width + 12
+                        : statusText.x + statusText.width + 12,
+                    (parent.width - width) / 2)
+                visible: statusTransfer.count > 0
+                    && statusTransfer.x + statusTransfer.width < statusRight.x - 8
                 onOpenRequested: function (x, y) { transferQueue.openAbove(x, y) }
             }
 
@@ -5809,7 +6035,7 @@ Window {
                     id: gitStatus
                     width: gitStatusRow.implicitWidth + 8
                     height: Theme.controlSm
-                    visible: root.gitVisible
+                    visible: root.gitVisible && root.width >= 900
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("分支 %1，打开分支面板")
@@ -5892,6 +6118,7 @@ Window {
                     label: qsTr("标签")
                     glyph: "star"
                     visible: root.folderActive && !root.remoteLocation
+                        && root.width >= 1040
                     onActivated: root.openTagsMenu(tagsStatus)
                 }
 
@@ -5900,7 +6127,7 @@ Window {
                     label: qsTr("筛选")
                     glyph: "filter"
                     checked: filterMenu.active
-                    visible: root.folderActive
+                    visible: root.folderActive && root.width >= 840
                     onActivated: {
                         const point = filtersStatus.mapToItem(null, 0, 0)
                         filterMenu.openAbove(point.x, point.y)
@@ -5912,7 +6139,7 @@ Window {
                     label: qsTr("侧栏")
                     glyph: "panel"
                     checked: root.sidebarVisible
-                    visible: root.folderActive
+                    visible: root.folderActive && root.width >= 760
                     onActivated: root.sidebarVisible = !root.sidebarVisible
                 }
 
@@ -5973,6 +6200,7 @@ Window {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("检查器")
+                            visible: root.width >= 720
                             color: root.inspectorVisible ? Theme.ink : Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
@@ -6032,6 +6260,7 @@ Window {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("终端")
+                            visible: root.width >= 720
                             color: root.terminalActive ? Theme.ink : Theme.inkTertiary
                             font.pixelSize: Theme.typeMicro
                         }
@@ -6060,7 +6289,7 @@ Window {
             background: root.chromeColor
             count: root.actionCount
             sizeText: root.actionList !== null ? root.actionList.selectionSizeText : ""
-            remote: root.remoteLocation
+            remote: root.actionList !== null ? root.actionList.remote : false
             clipboardReady: Workspace.clipboardMode !== ""
 
             onActionRequested: function (id) { root.runActionBarAction(id) }

@@ -674,14 +674,12 @@ D3D11 设备/交换链——没有壳时这段 150–200 ms，有壳时（设备
   是系统那层淡入。
 - **Mica 合成晚了**。把 `blur=false` + `windowMaterial=none` 之后仍然是透的，说明不是背景材质。
 
-### 修法：cloak 到首帧
+### 修法（2026-11-18 已回退）：cloak 到首帧
 
-`window.h` 里 attach 时给窗口 `DWMWA_CLOAK = TRUE`，DWM 就不再合成它——它照常渲染，
-只是不给屏幕看。首帧的 `frameSwapped` 里先 `uncloak`、再关掉壳，所以任何一帧都不会出现
-「空窗口压在桌面或壳上」。
-
-同时借这段时间把 `DWMWA_TRANSITIONS_FORCEDISABLED` 关掉，首帧到达后再交还，最小化/还原
-动画不受影响；另有一个 2 s 兜底，免得首帧永远不来时窗口一直是隐形的。
+~~`window.h` 里 attach 时给窗口 `DWMWA_CLOAK = TRUE`~~——已移除。cloak 的解锁钩子只挂
+在 engine 自己加载的根对象上，拖标签页撕出的窗口走 `createObject` 创建，没人解锁，只能
+等 2 s 兜底定时器，表现为「松手后窗口隔两秒才出现」。用户选择接受透明空窗的瞬间、直接
+上屏（`dae_qt_attach` 现在不再 cloak），§17 的其余测量仍是这层取舍的依据。
 
 ### 结果
 

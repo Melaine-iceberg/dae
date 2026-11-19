@@ -681,6 +681,22 @@ pub mod qobject {
         #[cxx_name = "subdirectories"]
         fn subdirectories(&self, directory: &QString) -> QStringList;
 
+        /// The recently visited directories, newest first, deduplicated.
+        /// The address field's completion turns to these when the typed
+        /// text has no separator yet: a bare name is far more likely to be
+        /// the start of a place the user has been than of a drive root.
+        #[qinvokable]
+        #[cxx_name = "recentDirectories"]
+        fn recent_directories(&self) -> QStringList;
+
+        /// Expands the typed-address shorthands: a leading `~` to the user's
+        /// home, `%VAR%` (Windows style) and `$VAR`/`${VAR}` (POSIX style)
+        /// to environment values. Anything that does not resolve stays as
+        /// typed — the navigation then reports the path in its own words.
+        #[qinvokable]
+        #[cxx_name = "expandTypedPath"]
+        fn expand_typed_path(&self, text: &QString) -> QString;
+
         #[qinvokable]
         #[cxx_name = "recordRecent"]
         fn record_recent(
@@ -2430,6 +2446,13 @@ impl qobject::Workspace {
             let percent = (row.done.min(row.total) * 100)
                 .checked_div(row.total)
                 .unwrap_or(0) as i32;
+            let eta = if row.running {
+                transfer_eta(row.done, row.total, row.speed_bps)
+                    .map(format_eta)
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
             list.push(serde_json::json!({
                 "jobId": row.job_id,
                 "operationId": row.operation_id.clone().unwrap_or_default(),
@@ -2441,6 +2464,7 @@ impl qobject::Workspace {
                 "total": row.total,
                 "percent": percent,
                 "speed": row.speed,
+                "eta": eta,
                 "current": row.current,
             }));
         }
@@ -3512,6 +3536,117 @@ impl qobject::Workspace {
         out
     }
 
+    fn recent_directories(&self) -> QStringList {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = QStringList::default();
+        for recent in dae_core::fs::recents::list_recents().unwrap_or_default() {
+            if recent.kind != dae_core::types::EntryKind::Directory {
+                continue;
+            }
+            if seen.insert(recent.path.clone()) {
+                out.append(QString::from(recent.path.as_str()));
+            }
+            if out.len() >= 32 {
+                break;
+            }
+        }
+        out
+    }
+
+    fn expand_typed_path(&self, text: &QString) -> QString {
+        QString::from(Self::expand_shorthand(&text.to_string()).as_str())
+    }
+
+/// Expands the typed-address shorthands. A leading `~` (alone or before a
+/// separator) becomes the user's home; `%VAR%` and `$VAR`/`${VAR}` become
+/// environment values. Anything that does not resolve stays as typed — the
+/// navigation then reports the path in its own words, which is what
+/// "keep what I typed" means.
+fn expand_shorthand(text: &str) -> String {
+    let expanded = if let Some(rest) = text.strip_prefix('~') {
+        if rest.is_empty() || rest.starts_with(['/', '\\']) {
+            std::env::var_os("USERPROFILE")
+                .or_else(|| std::env::var_os("HOME"))
+                .map(|home| {
+                    let home = home.to_string_lossy().into_owned();
+                    if rest.is_empty() { home } else { format!("{home}{rest}") }
+                })
+                .unwrap_or_else(|| text.to_owned())
+        } else {
+            text.to_owned()
+        }
+    } else {
+        text.to_owned()
+    };
+    Self::expand_percent(&Self::expand_dollar(&expanded))
+}
+
+/// `%VAR%` to the environment value, char-wise so multibyte text survives
+/// untouched. An unresolvable pair is left exactly as typed.
+fn expand_percent(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '%' && index + 1 < chars.len()
+            && let Some(close) = chars[index + 1..].iter().position(|item| *item == '%')
+        {
+            let name: String = chars[index + 1..index + 1 + close].iter().collect();
+            if !name.is_empty()
+                && name.chars().all(|item| item.is_ascii_alphanumeric() || item == '_')
+                && let Some(value) = std::env::var_os(&name)
+            {
+                out.push_str(&value.to_string_lossy());
+                index += close + 2;
+                continue;
+            }
+        }
+        out.push(chars[index]);
+        index += 1;
+    }
+    out
+}
+
+/// `$VAR` and `${VAR}` to the environment value. A `$` that names nothing
+/// stays — POSIX paths legally carry one.
+fn expand_dollar(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '$' && index + 1 < chars.len() {
+            if chars[index + 1] == '{' {
+                if let Some(close) = chars[index + 2..].iter().position(|item| *item == '}') {
+                    let name: String = chars[index + 2..index + 2 + close].iter().collect();
+                    if let Some(value) = std::env::var_os(&name) {
+                        out.push_str(&value.to_string_lossy());
+                        index += close + 3;
+                        continue;
+                    }
+                }
+            } else {
+                let mut end = index + 1;
+                while end < chars.len()
+                    && (chars[end].is_ascii_alphanumeric() || chars[end] == '_')
+                {
+                    end += 1;
+                }
+                if end > index + 1 {
+                    let name: String = chars[index + 1..end].iter().collect();
+                    if let Some(value) = std::env::var_os(&name) {
+                        out.push_str(&value.to_string_lossy());
+                        index = end;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(chars[index]);
+        index += 1;
+    }
+    out
+}
+
     fn reveal(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
         if !vfs::is_local_path(&path) {
@@ -4422,6 +4557,37 @@ fn format_speed(bytes_per_second: f64) -> String {
     }
 }
 
+/// Remaining seconds for a running row, `None` when the readout cannot answer
+/// yet: no smoothed rate (the first sample only seeds the next one), a total
+/// the job never learned, or nothing left to copy.
+fn transfer_eta(done: u64, total: u64, speed_bps: f64) -> Option<f64> {
+    if speed_bps <= 0.0 {
+        return None;
+    }
+    let remaining = total.checked_sub(done)?;
+    if remaining == 0 {
+        return None;
+    }
+    Some(remaining as f64 / speed_bps)
+}
+
+/// `1:42`, `12:07`, `1:04:22`. A clock rather than a sentence, so the readout
+/// never needs a translator — same reason `format_speed` prints raw units.
+fn format_eta(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds < 0.0 {
+        return String::new();
+    }
+    let whole = (seconds + 0.5).min(359_999.0) as u64;
+    let hours = whole / 3600;
+    let minutes = (whole % 3600) / 60;
+    let secs = whole % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{secs:02}")
+    } else {
+        format!("{minutes}:{secs:02}")
+    }
+}
+
 fn success_message(kind: &str) -> &'static str {
     match kind {
         "create" => "Created",
@@ -4502,6 +4668,42 @@ fn push_json_string(out: &mut String, value: &str) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn typed_paths_expand_home_and_environment_shorthands() {
+        use qobject::Workspace;
+
+        // The name is unique to this test; nothing else reads it while
+        // tests run in parallel.
+        unsafe { std::env::set_var("DAE_QT_TEST_VAR", "K:/expanded") };
+        assert_eq!(
+            Workspace::expand_shorthand("%DAE_QT_TEST_VAR%\\sub"),
+            "K:/expanded\\sub"
+        );
+        assert_eq!(
+            Workspace::expand_shorthand("start $DAE_QT_TEST_VAR"),
+            "start K:/expanded"
+        );
+        assert_eq!(
+            Workspace::expand_shorthand("${DAE_QT_TEST_VAR}/x"),
+            "K:/expanded/x"
+        );
+        // Unresolvable shorthands stay exactly as typed.
+        assert_eq!(
+            Workspace::expand_shorthand("%DAE_QT_MISSING%"),
+            "%DAE_QT_MISSING%"
+        );
+        assert_eq!(Workspace::expand_shorthand("$DAE_QT_MISSING"), "$DAE_QT_MISSING");
+        assert_eq!(Workspace::expand_shorthand("50% done"), "50% done");
+        assert_eq!(Workspace::expand_shorthand("~notes"), "~notes");
+        // `~` alone or before a separator is the home.
+        let home = std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .expect("a test machine has a home");
+        let home = home.to_string_lossy().into_owned();
+        assert_eq!(Workspace::expand_shorthand("~"), home);
+        assert_eq!(Workspace::expand_shorthand("~\\sub"), format!("{home}\\sub"));
+    }
+
     /// The readout is scanned, not read: one decimal above a megabyte, none
     /// below, and never a unit the number does not need.
     #[test]
@@ -4514,6 +4716,32 @@ mod tests {
         // A negative sample can only come from a clock that moved backwards;
         // it must not print "-0 B/s".
         assert_eq!(format_speed(-12.0), "0 B/s");
+    }
+
+    /// TeraCopy's other readout: the estimate rides the smoothed rate, so it
+    /// answers only once two progress events have been seen, and it never
+    /// divides by a job that has not started.
+    #[test]
+    fn an_eta_answers_only_from_two_samples() {
+        assert_eq!(transfer_eta(10, 100, 0.0), None, "no rate yet");
+        assert_eq!(transfer_eta(100, 100, 2.0), None, "nothing left");
+        assert_eq!(transfer_eta(10, 0, 2.0), None, "no total learned");
+        // 90 bytes left at 3 B/s is half a minute away.
+        assert_eq!(transfer_eta(10, 100, 3.0), Some(30.0));
+    }
+
+    #[test]
+    fn an_eta_prints_as_a_clock() {
+        assert_eq!(format_eta(42.4), "0:42");
+        assert_eq!(format_eta(727.0), "12:07");
+        assert_eq!(format_eta(3762.0), "1:02:42");
+        // A clock that moved backwards, or a rate that went negative, prints
+        // nothing rather than a negative time.
+        assert_eq!(format_eta(f64::NAN), "");
+        assert_eq!(format_eta(-1.0), "");
+        // Past a hundred hours the estimate is noise; it saturates the
+        // clock rather than growing without bound.
+        assert_eq!(format_eta(400_000.0), "99:59:59");
     }
 
     /// A transfer conflict for `path`, with both sides looking like plain

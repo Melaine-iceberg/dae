@@ -39,6 +39,10 @@ pub enum Scheme {
     WebDav,
     WebDavS,
     Cloud,
+    /// A read-only view inside an archive: `archive:<target>!/<inner>`.
+    /// The target is itself an [`EntryUrl`]; browsing inside it is backed by
+    /// the archive's own index (see `archive_view.rs`).
+    Archive,
 }
 
 impl Scheme {
@@ -53,6 +57,7 @@ impl Scheme {
             Scheme::WebDav => "webdav",
             Scheme::WebDavS => "webdavs",
             Scheme::Cloud => "cloud",
+            Scheme::Archive => "archive",
         }
     }
 
@@ -75,6 +80,7 @@ impl Scheme {
             "ftps" => Ok(Scheme::Ftps),
             "webdav" => Ok(Scheme::WebDav),
             "webdavs" => Ok(Scheme::WebDavS),
+            "archive" => Ok(Scheme::Archive),
             "cloud" => Ok(Scheme::Cloud),
             other => Err(FileSystemError::InvalidInput(format!(
                 "Unsupported storage protocol: {other}"
@@ -123,6 +129,14 @@ pub enum Location {
         email: String,
         segments: Vec<String>,
     },
+
+    /// `archive:<target>!/<inner segments>`. The target is a fully parsed
+    /// path — local first; a remote target parses but the backend rejects
+    /// it, so the error stays one layer down where the reason is known.
+    Archive {
+        target: Box<EntryUrl>,
+        segments: Vec<String>,
+    },
 }
 
 /// A parsed explorer path. Parsing validates; the accessors cannot hand back
@@ -133,10 +147,15 @@ pub struct EntryUrl {
 }
 
 impl EntryUrl {
-    /// Parses one path of any kind. A `://` with a separator before it is a
-    /// regular path that merely contains the bytes — `C:/notes on smb://`,
-    /// the file — and stays local.
+    /// Parses one path of any kind. An `archive:` form has no `://` of its
+    /// own (`archive:/K:/a.zip!/x`), so it is recognized before the generic
+    /// split; anything else with a `://` separator before it is a regular
+    /// path that merely contains the bytes — `C:/notes on smb://`, the file —
+    /// and stays local.
     pub fn parse(text: &str) -> Result<Self, FileSystemError> {
+        if text.len() >= 8 && text[..8].eq_ignore_ascii_case("archive:") {
+            return Self::parse_archive(&text[8..]);
+        }
         let Some((prefix, rest)) = text.split_once("://") else {
             return Ok(Self {
                 location: Location::Local {
@@ -229,6 +248,35 @@ impl EntryUrl {
         })
     }
 
+    /// Parses the text after `archive:`: one `!` separates the target path
+    /// from the inner segments. The first `!` wins — a target whose own name
+    /// contains `!` is the one documented ambiguity of the form, and the
+    /// canonical text always round-trips.
+    fn parse_archive(rest: &str) -> Result<Self, FileSystemError> {
+        if rest.starts_with("//") {
+            return Err(FileSystemError::InvalidInput(format!(
+                "fs.archive_scheme_form: {rest}"
+            )));
+        }
+        let (target_text, inner) = rest.split_once('!').ok_or_else(|| {
+            FileSystemError::InvalidInput(format!("fs.archive_missing_separator: {rest}"))
+        })?;
+        let target = Self::parse(target_text)?;
+        if matches!(target.location, Location::Archive { .. }) {
+            return Err(FileSystemError::InvalidInput(format!(
+                "fs.archive_nested_unsupported: {rest}"
+            )));
+        }
+        // `normalize_segments` clamps `..` at the archive root, so a member
+        // can never address outside its own archive.
+        Ok(Self {
+            location: Location::Archive {
+                target: Box::new(target),
+                segments: normalize_segments(inner),
+            },
+        })
+    }
+
     pub fn location(&self) -> &Location {
         &self.location
     }
@@ -238,6 +286,7 @@ impl EntryUrl {
             Location::Local { .. } => Scheme::Local,
             Location::Server { scheme, .. } => *scheme,
             Location::Cloud { .. } => Scheme::Cloud,
+            Location::Archive { .. } => Scheme::Archive,
         }
     }
 
@@ -271,13 +320,15 @@ impl EntryUrl {
         }
     }
 
-    /// The segments beneath the server root or the account root. Empty for a
-    /// local path, which has no segments — its shape belongs to the OS.
+    /// The segments beneath the server root, the account root, or the archive
+    /// root. Empty for a local path, which has no segments — its shape
+    /// belongs to the OS.
     pub fn segments(&self) -> &[String] {
         match &self.location {
             Location::Local { .. } => &[],
             Location::Server { segments, .. } => segments,
             Location::Cloud { segments, .. } => segments,
+            Location::Archive { segments, .. } => segments,
         }
     }
 
@@ -297,6 +348,10 @@ impl EntryUrl {
                 email: email.clone(),
                 segments,
             },
+            Location::Archive { target, .. } => Location::Archive {
+                target: target.clone(),
+                segments,
+            },
         };
         Self { location }
     }
@@ -311,7 +366,7 @@ impl EntryUrl {
                     path: Path::new(path).join(name).to_string_lossy().into_owned(),
                 },
             },
-            Location::Server { .. } | Location::Cloud { .. } => {
+            Location::Server { .. } | Location::Cloud { .. } | Location::Archive { .. } => {
                 let mut segments = self.segments().to_vec();
                 segments.push(name.to_owned());
                 self.with_segments(segments)
@@ -335,7 +390,7 @@ impl EntryUrl {
                     name,
                 ))
             }
-            Location::Server { .. } | Location::Cloud { .. } => {
+            Location::Server { .. } | Location::Cloud { .. } | Location::Archive { .. } => {
                 let mut segments = self.segments().to_vec();
                 let name = segments.pop()?;
                 Some((self.with_segments(segments), name))
@@ -343,7 +398,8 @@ impl EntryUrl {
         }
     }
 
-    /// The last segment, or a local path's file name.
+    /// The last segment, or a local path's file name. An archive root names
+    /// the archive file itself, so the root is not nameless.
     pub fn file_name(&self) -> Option<&str> {
         match &self.location {
             Location::Local { path } => Path::new(path)
@@ -351,6 +407,9 @@ impl EntryUrl {
                 .and_then(std::ffi::OsStr::to_str),
             Location::Server { segments, .. } | Location::Cloud { segments, .. } => {
                 segments.last().map(String::as_str)
+            }
+            Location::Archive { target, segments } => {
+                segments.last().map(String::as_str).or_else(|| target.file_name())
             }
         }
     }
@@ -382,6 +441,13 @@ impl fmt::Display for EntryUrl {
                 segments,
             } => {
                 write!(formatter, "cloud://{}:{email}", provider.as_str())?;
+                if !segments.is_empty() {
+                    write!(formatter, "/{}", segments.join("/"))?;
+                }
+                Ok(())
+            }
+            Location::Archive { target, segments } => {
+                write!(formatter, "archive:{target}!")?;
                 if !segments.is_empty() {
                     write!(formatter, "/{}", segments.join("/"))?;
                 }
@@ -449,7 +515,7 @@ fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemE
 /// backslashes fold, separators collapse, and `.`/`..` drop — the engines
 /// build child and parent paths by slicing segments, so a segment that
 /// pretends to be a directory is a path the wrong round trip.
-fn normalize_segments(rest: &str) -> Vec<String> {
+pub(crate) fn normalize_segments(rest: &str) -> Vec<String> {
     rest.replace('\\', "/")
         .trim_matches('/')
         .split('/')

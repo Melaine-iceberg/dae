@@ -93,6 +93,7 @@ struct StoredPrefs {
     kind_filter: String,
     modified_filter: String,
     size_filter: String,
+    name_filter: String,
     size_units: String,
     grid_thumb: String,
     restore_session: bool,
@@ -140,6 +141,7 @@ impl Default for StoredPrefs {
             kind_filter: "all".to_owned(),
             modified_filter: "any".to_owned(),
             size_filter: "any".to_owned(),
+            name_filter: String::new(),
             size_units: "binary".to_owned(),
             grid_thumb: "portrait".to_owned(),
             restore_session: true,
@@ -236,6 +238,12 @@ impl StoredPrefs {
             &mut self.modified_filter,
         );
         string("sizeFilter", SIZE_FILTERS, &mut self.size_filter);
+        // Free text: what the filter menu's name box typed. An empty value
+        // means "no name filter"; the cap keeps a held key from writing a
+        // paragraph into the document.
+        if let Some(value) = fields.get("nameFilter") {
+            self.name_filter = sanitize_name_filter(value);
+        }
         string("sizeUnits", SIZE_UNITS, &mut self.size_units);
         string("gridThumb", GRID_THUMBS, &mut self.grid_thumb);
         boolean("restoreSession", &mut self.restore_session);
@@ -318,6 +326,7 @@ impl StoredPrefs {
         write(&mut out, "kindFilter", &self.kind_filter);
         write(&mut out, "modifiedFilter", &self.modified_filter);
         write(&mut out, "sizeFilter", &self.size_filter);
+        write(&mut out, "nameFilter", &self.name_filter);
         write(&mut out, "sizeUnits", &self.size_units);
         write(&mut out, "gridThumb", &self.grid_thumb);
         write(&mut out, "restoreSession", bool_text(self.restore_session));
@@ -584,6 +593,7 @@ pub struct ExplorerPrefs {
     kind_filter: String,
     modified_filter: String,
     size_filter: String,
+    name_filter: String,
     size_units: String,
     grid_thumb: String,
     restore_session: bool,
@@ -635,6 +645,7 @@ impl ExplorerPrefs {
             kind_filter: String::from(prefs.kind_filter.as_str()),
             modified_filter: String::from(prefs.modified_filter.as_str()),
             size_filter: String::from(prefs.size_filter.as_str()),
+            name_filter: String::from(prefs.name_filter.as_str()),
             size_units: String::from(prefs.size_units.as_str()),
             grid_thumb: String::from(prefs.grid_thumb.as_str()),
             restore_session: prefs.restore_session,
@@ -687,6 +698,7 @@ impl ExplorerPrefs {
             kind_filter: self.kind_filter.clone(),
             modified_filter: self.modified_filter.clone(),
             size_filter: self.size_filter.clone(),
+            name_filter: self.name_filter.clone(),
             size_units: self.size_units.clone(),
             grid_thumb: self.grid_thumb.clone(),
             restore_session: self.restore_session,
@@ -765,6 +777,12 @@ fn next_saved_search_id(entries: &[SavedSearch]) -> String {
     candidate
 }
 
+/// The name filter is typed, not chosen: trim it and cap it at 128 characters
+/// so the preferences document can never grow a paragraph from one box.
+fn sanitize_name_filter(value: &str) -> String {
+    value.trim().chars().take(128).collect()
+}
+
 fn now_millis() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -836,6 +854,7 @@ impl ExplorerPrefs {
         set_kind_filter(String) => kind_filter, kind_filter_changed;
         set_modified_filter(String) => modified_filter, modified_filter_changed;
         set_size_filter(String) => size_filter, size_filter_changed;
+        set_name_filter(String) => name_filter, name_filter_changed;
         set_size_units(String) => size_units, size_units_changed;
         set_grid_thumb(String) => grid_thumb, grid_thumb_changed;
         set_restore_session(bool) => restore_session, restore_session_changed;
@@ -926,6 +945,11 @@ impl ExplorerPrefs {
         Notify = modified_filter_changed
     );
     qproperty!("sizeFilter", Member = size_filter, Notify = size_filter_changed);
+    qproperty!(
+        "nameFilter",
+        Member = name_filter,
+        Notify = name_filter_changed
+    );
     qproperty!("sizeUnits", Member = size_units, Notify = size_units_changed);
     qproperty!("gridThumb", Member = grid_thumb, Notify = grid_thumb_changed);
     qproperty!(
@@ -1039,6 +1063,8 @@ impl ExplorerPrefs {
     #[qsignal]
     fn size_filter_changed(&mut self);
     #[qsignal]
+    fn name_filter_changed(&mut self);
+    #[qsignal]
     fn size_units_changed(&mut self);
     #[qsignal]
     fn grid_thumb_changed(&mut self);
@@ -1100,12 +1126,23 @@ impl ExplorerPrefs {
 
     #[qslot]
     fn set_string(&mut self, key: String, value: String) {
-        // The one free-text preference: an executable name or path. Empty
-        // clears it so the platform default is used again.
+        // Free-text preferences: an executable name or path, and what the
+        // filter menu's name box typed. Empty clears either one.
         if key == "terminalShell" {
             let next = String::from(value.trim());
             if self.terminal_shell != next {
                 self.set_terminal_shell(next);
+                save(&self.stored());
+            }
+            return;
+        }
+
+        // The filter menu's name box. Trimmed and capped on the way in so
+        // the listing predicate only ever sees a short, sane needle.
+        if key == "nameFilter" {
+            let next = sanitize_name_filter(&value);
+            if self.name_filter != next {
+                self.set_name_filter(next);
                 save(&self.stored());
             }
             return;
@@ -1602,6 +1639,10 @@ impl ExplorerPrefs {
         }
         if self.size_filter != "any" {
             self.set_size_filter("any".to_owned());
+            changed = true;
+        }
+        if !self.name_filter.is_empty() {
+            self.set_name_filter(String::new());
             changed = true;
         }
         if changed {

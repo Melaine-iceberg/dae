@@ -20,7 +20,7 @@ use zip::{AesMode, CompressionMethod, ZipWriter};
 
 const STREAM_CHUNK_BYTES: usize = 256 * 1024;
 
-fn zip_error(error: zip::result::ZipError) -> FileSystemError {
+pub(crate) fn zip_error(error: zip::result::ZipError) -> FileSystemError {
     FileSystemError::Io(error.to_string())
 }
 

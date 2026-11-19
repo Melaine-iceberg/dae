@@ -260,7 +260,7 @@ pub fn default_shortcuts() -> HashMap<String, String> {
     } else {
         ("Alt+Left", "Alt+Right")
     };
-    let entries: [(&str, &str); 52] = [
+    let entries: [(&str, &str); 53] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
         ("app.pathJump", "Mod+L"),
@@ -328,6 +328,10 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("explorer.bulkRename", ""),
         ("explorer.cycleView", ""),
         ("explorer.toggleSizeUnits", ""),
+        // G-9: an explicit one-shot `cd` into the active tab's folder, sent
+        // to the embedded terminal as keyboard input. Unbound by default —
+        // the user decides when the panel's button deserves a chord.
+        ("explorer.terminalJumpFolder", ""),
     ];
     entries
         .into_iter()
@@ -638,6 +642,7 @@ mod tests {
             "explorer.bulkRename",
             "explorer.cycleView",
             "explorer.toggleSizeUnits",
+            "explorer.terminalJumpFolder",
         ];
         assert_eq!(ids.len(), expected.len(), "shortcut count drifted");
         for id in expected {

@@ -35,10 +35,14 @@ Item {
     readonly property int padding: 16
     readonly property int gapX: 12
     readonly property int gapY: 12
-    /// §11.2: a tile never gets narrower than 104 dp, and the thumbnail is
-    /// either 3:4 or 1:1 depending on the grid setting.
-    readonly property int minCellWidth: 104
-    readonly property int thumbWidth: Math.max(72, Math.round(tileWidth - 4))
+    /// Icon size is a real view control, not a stored preference without a
+    /// consumer. The 24–96 setting maps to 48–192 dp thumbnails; cells leave
+    /// room for a two-line name and expand into the available width.
+    readonly property int requestedThumb: Math.max(48,
+        Math.min(192, Math.round(ExplorerPrefs.iconSize * 2)))
+    readonly property int minCellWidth: requestedThumb + 24
+    readonly property int thumbWidth: Math.max(48,
+        Math.min(Math.max(48, tileWidth - 8), requestedThumb))
     readonly property bool portraitThumbs: ExplorerPrefs.gridThumb !== "square"
     readonly property int thumbHeight: portraitThumbs
         ? Math.round(thumbWidth * 4 / 3) : thumbWidth
@@ -150,6 +154,33 @@ Item {
             return
         grid.currentIndex = index
         grid.positionViewAtIndex(index, GridView.Contain)
+    }
+
+    /// Rows one PageUp/PageDown travels; whole tiles, one row short of the
+    /// viewport so the landing row was already on screen.
+    function visibleRows() {
+        return Math.max(1, Math.floor(grid.height / grid.cellHeight) - 1)
+    }
+
+    /// The tile a direction key lands on, or -1 when the key is not one of
+    /// ours. Left and Right cross row ends the way Explorer's grid does: the
+    /// row below's first tile, not a stop.
+    function cursorKeyTarget(event, from) {
+        let step = 0
+        switch (event.key) {
+        case Qt.Key_Left: step = -1; break
+        case Qt.Key_Right: step = 1; break
+        case Qt.Key_Up: step = -root.flowColumns; break
+        case Qt.Key_Down: step = root.flowColumns; break
+        case Qt.Key_PageUp: step = -root.flowColumns * root.visibleRows(); break
+        case Qt.Key_PageDown: step = root.flowColumns * root.visibleRows(); break
+        case Qt.Key_Home: return 0
+        case Qt.Key_End: return grid.count - 1
+        default: return -1
+        }
+        if (from < 0)
+            return step > 0 ? 0 : -1
+        return Math.max(0, Math.min(grid.count - 1, from + step))
     }
 
     // ---- marquee ---------------------------------------------------------
@@ -328,13 +359,15 @@ Item {
             readonly property int glyphEdge: Math.max(24,
                 Math.min(44, Math.round(thumb.width * 0.42)))
 
-            /// A drop target is the only thing that gets a wash; the frame is
-            /// a solid accent edge — a dashed line means "placeholder" in a
-            /// file manager and nothing else (§6.7).
+            /// Hover and selection are quiet fills on the whole tile; the
+            /// thumbnail itself keeps its natural contrast. This makes the
+            /// hit area visible without turning every file into a card.
             Rectangle {
                 anchors.fill: parent
                 radius: Theme.radiusSm
-                color: cell.dropTarget ? Theme.accentSoft : "transparent"
+                color: cell.dropTarget ? Theme.accentSoft
+                    : cell.selected ? Theme.selection
+                    : (hover.containsMouse ? Theme.hover : "transparent")
                 border.width: cell.dropTarget ? 1.5 : 0
                 border.color: Theme.accent
                 Accessible.ignored: true
@@ -480,12 +513,17 @@ Item {
                 }
             }
 
+            ToolTip {
+                text: cell.fileName + (cell.isDir || cell.sizeText === ""
+                    ? "" : " · " + cell.sizeText)
+            }
+
             MouseArea {
                 id: hover
                 anchors.fill: parent
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
-                cursorShape: Qt.PointingHandCursor
+                cursorShape: Qt.ArrowCursor
 
                 property bool dragArmed: false
                 property bool dragStarted: false

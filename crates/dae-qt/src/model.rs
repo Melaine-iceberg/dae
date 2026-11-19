@@ -291,6 +291,7 @@ pub mod qobject {
             kind: &QString,
             modified: &QString,
             size: &QString,
+            name: &QString,
         );
 
         /// Emitted before a load clears the rows. The view reads its scroll
@@ -989,12 +990,15 @@ impl SizeFilter {
 /// Which rows a listing shows. Kept as a value so a batch can be filtered
 /// against one snapshot of the preferences rather than re-reading the model
 /// settings per row.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct RowFilter {
     show_hidden: bool,
     kind: KindFilter,
     modified: ModifiedFilter,
     size: SizeFilter,
+    /// What the filter menu's name box typed, folded to lowercase on the way
+    /// in. `None` means the box was empty and every name matches.
+    name: Option<String>,
 }
 
 impl Default for RowFilter {
@@ -1004,6 +1008,7 @@ impl Default for RowFilter {
             kind: KindFilter::All,
             modified: ModifiedFilter::Any,
             size: SizeFilter::Any,
+            name: None,
         }
     }
 }
@@ -1011,6 +1016,11 @@ impl Default for RowFilter {
 impl RowFilter {
     fn keeps(&self, row: &StoredRow, modified_cutoff: u64) -> bool {
         if !self.show_hidden && row.hidden {
+            return false;
+        }
+        if let Some(needle) = &self.name
+            && !ascii_fold_contains(&row.name, needle)
+        {
             return false;
         }
 
@@ -1083,6 +1093,31 @@ impl RowFilter {
         };
         millis
     }
+}
+
+/// ASCII-case-insensitive substring test for the name filter. The needle is
+/// already folded; the haystack is scanned without allocating a lowercased
+/// copy, because the predicate runs once per row per batch, and the rows
+/// arrive on the enumeration hot path. Non-ASCII bytes compare as-is: Windows
+/// name matching is ASCII case rules, and a CJK filename has no case to fold.
+fn ascii_fold_contains(haystack: &str, needle: &str) -> bool {
+    let hay = haystack.as_bytes();
+    let ned = needle.as_bytes();
+    if ned.is_empty() {
+        return true;
+    }
+    if hay.len() < ned.len() {
+        return false;
+    }
+    'windows: for start in 0..=hay.len() - ned.len() {
+        for offset in 0..ned.len() {
+            if hay[start + offset].to_ascii_lowercase() != ned[offset] {
+                continue 'windows;
+            }
+        }
+        return true;
+    }
+    false
 }
 
 /// The fields the ordering rules read. Implemented by [`StoredRow`] and by the
@@ -2015,6 +2050,12 @@ pub struct DirectoryListModelRust {
     /// the rows rather than inside `StoredRow`: a status refresh must not make
     /// the row diff treat the whole directory as changed.
     git_entries: HashMap<String, GitEntryStatusKind>,
+    /// The same entries keyed by ASCII-lowercased name, so the `ROLE_GIT`
+    /// read of a clean row — the common case — is a hash lookup instead of a
+    /// scan over every dirty entry (`git_badge`). Kept in lockstep with
+    /// `git_entries`; two entries differing only in case keep the first one
+    /// folded, where the old scan's pick was iteration-order anyway.
+    git_entries_folded: HashMap<String, GitEntryStatusKind>,
     /// Tag ids per full path, filled in batches after the listing lands.
     /// Keyed by path rather than stored on the row so a refresh can carry the
     /// ids over when a row's metadata changed but its path did not.
@@ -2084,6 +2125,7 @@ impl Default for DirectoryListModelRust {
             git_remote_branches: QStringList::default(),
             git_current_branch: QString::default(),
             git_entries: HashMap::new(),
+            git_entries_folded: HashMap::new(),
             tags_cache: HashMap::new(),
             tag_generation: 0,
             tags_complete: false,
@@ -2176,6 +2218,7 @@ impl qobject::DirectoryListModel {
             }
             ROLE_GIT => QVariant::from(&QString::from(git_badge(
                 &self.git_entries,
+                &self.git_entries_folded,
                 self.git_directory_untracked,
                 &row.name,
             ))),
@@ -2572,6 +2615,13 @@ impl qobject::DirectoryListModel {
             .into_iter()
             .map(|entry| (entry.name, entry.kind))
             .collect();
+        // The folded twin `git_badge` falls back to; see the field's doc. First
+        // insertion wins a case collision, matching what the scan it replaces
+        // could only ever guarantee by accident.
+        let folded: HashMap<String, GitEntryStatusKind> = entries
+            .iter()
+            .map(|(name, kind)| (name.to_ascii_lowercase(), *kind))
+            .collect();
         let badges_changed =
             self.git_entries != entries || self.git_directory_untracked != directory_untracked;
 
@@ -2580,6 +2630,7 @@ impl qobject::DirectoryListModel {
         {
             let mut rust = self.as_mut().rust_mut();
             rust.git_entries = entries;
+            rust.git_entries_folded = folded;
             rust.git_directory_untracked = directory_untracked;
         }
         if badges_changed {
@@ -2640,6 +2691,7 @@ impl qobject::DirectoryListModel {
         {
             let mut rust = self.as_mut().rust_mut();
             rust.git_entries.clear();
+            rust.git_entries_folded.clear();
             rust.git_directory_untracked = false;
         }
         if !self.git_root.as_slice().is_empty() {
@@ -3103,12 +3155,16 @@ impl qobject::DirectoryListModel {
         kind: &QString,
         modified: &QString,
         size: &QString,
+        name: &QString,
     ) {
+        let folded = name.to_string();
+        let folded = folded.trim().to_ascii_lowercase();
         let next = RowFilter {
             show_hidden,
             kind: KindFilter::parse(&kind.to_string()),
             modified: ModifiedFilter::parse(&modified.to_string()),
             size: SizeFilter::parse(&size.to_string()),
+            name: (!folded.is_empty()).then_some(folded),
         };
         if self.filter == next {
             return;
@@ -3175,7 +3231,7 @@ impl qobject::DirectoryListModel {
         if self.filter == RowFilter::default() {
             return rows;
         }
-        let filter = self.filter;
+        let filter = &self.filter;
         let cutoff = filter.modified_cutoff();
         rows.into_iter()
             .filter(|row| filter.keeps(row, cutoff))
@@ -3512,6 +3568,7 @@ impl qobject::DirectoryListModel {
                 rust.tags_complete = false;
                 rust.tag_generation = rust.tag_generation.wrapping_add(1);
                 rust.git_entries.clear();
+                rust.git_entries_folded.clear();
                 rust.git_directory_untracked = false;
             }
             self.as_mut().end_reset_model();
@@ -4591,22 +4648,24 @@ fn folded_starts_with(name: &str, needle: &str) -> bool {
 /// The coarse Git state QML paints for one direct child.
 ///
 /// The core keys entries by the spelling Git reported. On a case-insensitive
-/// filesystem the directory listing can disagree about case, so fall back to
-/// an ASCII-insensitive lookup before treating the row as clean.
+/// filesystem the directory listing can disagree about case, so fall back to a
+/// lookup in `folded` — the same entries keyed by ASCII-lowercased name —
+/// before treating the row as clean. `data()` runs per visible cell, so the
+/// fallback must not scan `entries`: a clean row is the common case, and the
+/// old linear scan made every one of them pay for the directory's dirty tail.
 fn git_badge(
     entries: &HashMap<String, GitEntryStatusKind>,
+    folded: &HashMap<String, GitEntryStatusKind>,
     directory_untracked: bool,
     name: &str,
 ) -> &'static str {
     if directory_untracked {
         return "untracked";
     }
-    let kind = entries.get(name).copied().or_else(|| {
-        entries
-            .iter()
-            .find(|(entry, _)| entry.eq_ignore_ascii_case(name))
-            .map(|(_, kind)| *kind)
-    });
+    let kind = entries
+        .get(name)
+        .copied()
+        .or_else(|| folded.get(&name.to_ascii_lowercase()).copied());
     match kind {
         Some(GitEntryStatusKind::Added) => "added",
         Some(GitEntryStatusKind::Modified) => "modified",
@@ -4644,13 +4703,14 @@ pub(crate) fn thumbnail_for(path: &str, name: &str, kind: EntryKind, version: &s
     crate::icons::thumbnail_source(path, version)
 }
 
-/// The thumbnail URL for a row, or empty when the desktop cannot draw one.
+/// The thumbnail URL for a row, or empty when nothing can draw one.
 ///
-/// Network entries and directories have no first frame; the extension check is
-/// the same one the preview pane uses, so a row's thumbnail slot and the
-/// preview's image slot agree about what is renderable.
+/// Directories have no first frame. Locally the extension check is the same
+/// one the preview pane uses, desktop-produced types included. Over a
+/// network backend only the formats Qt decodes in process are worth the
+/// wire — a remote PDF would download megabytes no local producer can read.
 fn thumbnail_url(remote: bool, path: &str, name: &str, row: &StoredRow) -> String {
-    if remote {
+    if remote && !dae_core::fs::preview::is_thumbnail_path(path) {
         return String::new();
     }
     thumbnail_for(path, name, row.kind, &icon_version(row))
@@ -4672,6 +4732,27 @@ mod tests {
             hidden: true,
             read_only: true,
         }
+    }
+
+    #[test]
+    fn remote_rows_thumbnail_only_the_formats_qt_decodes() {
+        let row = StoredRow::from_entry(&entry("smb://nas/share/logo.png"), "smb://nas/share/");
+        // A remote image is worth the wire: the fetch and the decode both
+        // happen in process.
+        assert!(thumbnail_url(true, "smb://nas/share/logo.png", "logo.png", &row).contains(
+            "image://thumbnail/smb%3A//nas/share/logo.png"
+        ));
+        // A remote PDF stays a type glyph: megabytes no producer can read.
+        let row = StoredRow::from_entry(&entry("smb://nas/share/report.pdf"), "smb://nas/share/");
+        assert_eq!(
+            thumbnail_url(true, "smb://nas/share/report.pdf", "report.pdf", &row),
+            ""
+        );
+        // Local rows keep the desktop-produced types.
+        let row = StoredRow::from_entry(&entry("K:/dae/report.pdf"), "K:/dae/");
+        assert!(thumbnail_url(false, "K:/dae/report.pdf", "report.pdf", &row).contains(
+            "image://thumbnail/K%3A/dae/report.pdf"
+        ));
     }
 
     #[test]
@@ -4725,11 +4806,15 @@ mod tests {
         let mut entries = HashMap::new();
         entries.insert("Readme.md".to_owned(), GitEntryStatusKind::Modified);
         entries.insert("logo.svg".to_owned(), GitEntryStatusKind::Added);
-        assert_eq!(git_badge(&entries, false, "Readme.md"), "modified");
-        assert_eq!(git_badge(&entries, false, "readme.md"), "modified");
-        assert_eq!(git_badge(&entries, false, "logo.svg"), "added");
-        assert_eq!(git_badge(&entries, false, "clean.txt"), "");
-        assert_eq!(git_badge(&entries, true, "clean.txt"), "untracked");
+        let folded: HashMap<String, GitEntryStatusKind> = entries
+            .iter()
+            .map(|(name, kind)| (name.to_ascii_lowercase(), *kind))
+            .collect();
+        assert_eq!(git_badge(&entries, &folded, false, "Readme.md"), "modified");
+        assert_eq!(git_badge(&entries, &folded, false, "readme.md"), "modified");
+        assert_eq!(git_badge(&entries, &folded, false, "logo.svg"), "added");
+        assert_eq!(git_badge(&entries, &folded, false, "clean.txt"), "");
+        assert_eq!(git_badge(&entries, &folded, true, "clean.txt"), "untracked");
     }
 
     fn rows(names: &[&str]) -> Vec<StoredRow> {
@@ -5122,6 +5207,68 @@ mod tests {
                 folding / 5.0
             );
         }
+    }
+
+    /// Prints what one screen of delegate creation pays the model's role
+    /// formatting, and what a full 120k-row model would pay if the same work
+    /// were done eagerly. Run with:
+    ///
+    /// ```text
+    /// cargo test -p dae-qt --lib --release -- --ignored --nocapture \
+    ///   reports_the_cost_of_role_formatting
+    /// ```
+    #[test]
+    #[ignore = "prints the role formatting cost; run with --release --ignored --nocapture"]
+    fn reports_the_cost_of_role_formatting() {
+        let count = 120_000usize;
+        let rows: Vec<StoredRow> = (0..count)
+            .map(|index| {
+                let mut row = StoredRow::from_entry(
+                    &entry(&format!("IMG_{}{}.png", index % 997, index)),
+                    "K:/bench/",
+                );
+                row.size = Some(index as u64);
+                row.modified_at = Some(1_794_000_000_000);
+                row
+            })
+            .collect();
+        let base = "K:/bench/";
+
+        let start = std::time::Instant::now();
+        let mut sink = 0usize;
+        for row in &rows {
+            // The five allocating roles a details-view delegate reads.
+            std::hint::black_box(crate::format::size(row.size.unwrap_or(0)));
+            std::hint::black_box(crate::format::timestamp(row.modified_at.unwrap_or(0)));
+            std::hint::black_box(crate::format::timestamp(row.modified_at.unwrap_or(0)));
+            let path = row.full_path(base);
+            let version = icon_version(row);
+            std::hint::black_box(crate::icons::source_for(
+                &path,
+                row.kind == EntryKind::Directory,
+                &version,
+            ));
+            sink += path.len();
+        }
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        println!(
+            "{count} rows x 5 allocating roles: {elapsed:.1} ms total ({:.3} us/row); sink {sink}",
+            elapsed / count as f64
+        );
+
+        // One screen: what a delegate build actually costs the model side.
+        let start = std::time::Instant::now();
+        for row in rows.iter().take(165) {
+            for _ in 0..13 {
+                std::hint::black_box(crate::format::size(row.size.unwrap_or(0)));
+                std::hint::black_box(crate::format::timestamp(row.modified_at.unwrap_or(0)));
+                std::hint::black_box(row.full_path(base));
+            }
+        }
+        println!(
+            "165-row screen, 13 reads each: {:.3} ms",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
     }
 
     #[test]
@@ -5586,6 +5733,49 @@ mod tests {
             .map(|row| row.name.as_str())
             .collect();
         assert_eq!(kept, ["hidden.txt", "photo.png", "folder", "huge.iso"]);
+    }
+
+    #[test]
+    fn a_name_filter_matches_ignoring_ascii_case() {
+        let rows = vec![
+            stored("Report Q3.docx", EntryKind::File, 10, 1, false),
+            stored("photo.png", EntryKind::File, 10, 1, false),
+            stored("report.csv", EntryKind::File, 10, 1, false),
+        ];
+
+        let filter = RowFilter {
+            name: Some("report".to_owned()),
+            ..RowFilter::default()
+        };
+        assert_eq!(
+            names(
+                &rows
+                    .iter()
+                    .filter(|row| filter.keeps(row, 0))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            ),
+            ["Report Q3.docx", "report.csv"]
+        );
+
+        // An empty needle matches every name, which is why `set_filters`
+        // folds it to `None` on the way in.
+        let empty = RowFilter {
+            name: Some(String::new()),
+            ..RowFilter::default()
+        };
+        assert_eq!(
+            rows.iter().filter(|row| empty.keeps(row, 0)).count(),
+            rows.len()
+        );
+
+        // The needle arrives folded (set_filters does it); É matches as-is
+        // because folding is ASCII-only, like Windows name matching.
+        assert!(ascii_fold_contains("RÉSUMÉ.txt", "sumÉ"));
+        assert!(ascii_fold_contains("计划报告.docx", "报告"));
+        assert!(ascii_fold_contains("README", "readme"));
+        assert!(!ascii_fold_contains("README", "amd"));
+        assert!(ascii_fold_contains("any", ""));
     }
 
     #[test]

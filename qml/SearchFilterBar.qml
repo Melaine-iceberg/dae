@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 
@@ -95,6 +96,25 @@ Item {
         return root.optionAt(id).glob
     }
 
+    /// Keeps a keyboard-focused chip inside the horizontally scrolling filter
+    /// strip. The row is wider than the pane on small windows, and a focused
+    /// control that is scrolled out of view is a control nobody can see.
+    function revealChip(item) {
+        if (item === null || item === undefined || item.width <= 0)
+            return
+        const left = item.x
+        const right = left + item.width
+        if (left < filterFlick.contentX)
+            filterFlick.contentX = left
+        else if (right > filterFlick.contentX + filterFlick.width)
+            filterFlick.contentX = right - filterFlick.width
+    }
+
+    function openTypeMenu() {
+        const point = typeChip.mapToItem(null, 0, 0)
+        root.typeMenuRequested(point.x, point.y + typeChip.height + 4)
+    }
+
     implicitWidth: row.implicitWidth + 140
     implicitHeight: Theme.controlLg
 
@@ -111,9 +131,9 @@ Item {
         color: Theme.hairline
     }
 
-    /// One chip: 24 high, 11 px, corner 4. A chip is a switch, not a button —
-    /// its pressed state is the fill the shell uses everywhere for "this is the
-    /// current one", never the signal colour.
+    /// One chip: 24 high, 11 px, corner 4. A chip is a switch, not a button.
+    /// Its active state uses the same quiet accent wash as the rest of the
+    /// shell's toggles; hover is a separate, lighter step.
     component Chip: Rectangle {
         id: chip
 
@@ -122,19 +142,32 @@ Item {
         property bool available: true
         /// A fixed square chip for marks like ".*" and "Aa".
         property bool square: false
+        property string tip: ""
 
         signal clicked()
 
         height: Theme.controlSm
         width: chip.square ? 28 : Math.ceil(chipLabel.implicitWidth) + 14
         radius: Theme.radiusXs
-        color: chip.active ? Theme.hover : "transparent"
-        border.width: 1
-        border.color: chip.active ? Theme.line : Theme.hairline
+        color: chip.active ? Theme.accentSoft
+            : (chipMouse.containsMouse ? Theme.hover : "transparent")
+        border.width: chip.activeFocus ? 1.5 : 1
+        border.color: chip.activeFocus ? Theme.accent
+            : (chip.active ? Theme.accentSoftStrong : Theme.hairline)
         opacity: chip.available ? 1 : 0.45
 
         Accessible.role: Accessible.Button
         Accessible.name: chip.label
+        Accessible.onPressAction: chip.clicked()
+
+        activeFocusOnTab: chip.available
+        Keys.onReturnPressed: chip.clicked()
+        Keys.onEnterPressed: chip.clicked()
+        Keys.onSpacePressed: chip.clicked()
+        onActiveFocusChanged: {
+            if (activeFocus)
+                root.revealChip(chip)
+        }
 
         Text {
             id: chipLabel
@@ -144,7 +177,12 @@ Item {
             font.pixelSize: Theme.typeMicro
         }
 
+        ToolTip {
+            text: chip.tip
+        }
+
         MouseArea {
+            id: chipMouse
             anchors.fill: parent
             enabled: chip.available
             hoverEnabled: true
@@ -153,14 +191,25 @@ Item {
         }
     }
 
-    Row {
-        id: row
-
+    Flickable {
+        id: filterFlick
         anchors.left: parent.left
-        anchors.leftMargin: 12
+        anchors.leftMargin: 8
+        anchors.right: summaryRow.left
+        anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
         height: Theme.controlSm
-        spacing: 6
+        contentWidth: row.width
+        contentHeight: height
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.HorizontalFlick
+
+        Row {
+            id: row
+            width: implicitWidth
+            height: filterFlick.height
+            spacing: 6
 
         Chip {
             label: qsTr("文件名")
@@ -239,6 +288,7 @@ Item {
             square: true
             visible: root.contentMode
             label: ".*"
+            tip: qsTr("使用正则表达式")
             active: root.regex
             onClicked: root.regexToggled()
         }
@@ -247,6 +297,7 @@ Item {
             square: true
             visible: root.contentMode
             label: "Aa"
+            tip: qsTr("区分大小写")
             active: root.caseSensitive
             onClicked: root.caseToggled()
         }
@@ -255,15 +306,31 @@ Item {
             id: typeChip
 
             visible: root.contentMode
+            readonly property bool filtered: root.typeId !== "all"
             width: visible ? typeRow.implicitWidth + 28 : 0
             height: Theme.controlSm
             radius: Theme.radiusXs
-            color: typeMouse.containsMouse ? Theme.hover : "transparent"
-            border.width: 1
-            border.color: Theme.hairline
+            color: filtered ? Theme.accentSoft
+                : (typeMouse.containsMouse ? Theme.hover : "transparent")
+            border.width: typeChip.activeFocus ? 1.5 : 1
+            border.color: typeChip.activeFocus ? Theme.accent
+                : (filtered ? Theme.accentSoftStrong : Theme.hairline)
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("按类型筛选：%1").arg(root.typeLabel(root.typeId))
+            Accessible.onPressAction: root.openTypeMenu()
+            activeFocusOnTab: typeChip.visible
+            Keys.onReturnPressed: root.openTypeMenu()
+            Keys.onEnterPressed: root.openTypeMenu()
+            Keys.onSpacePressed: root.openTypeMenu()
+            onActiveFocusChanged: {
+                if (activeFocus)
+                    root.revealChip(typeChip)
+            }
+            onVisibleChanged: {
+                if (!visible && activeFocus)
+                    focus = false
+            }
 
             Row {
                 id: typeRow
@@ -302,10 +369,20 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    const point = typeChip.mapToItem(null, 0, 0)
-                    root.typeMenuRequested(point.x, point.y + typeChip.height + 4)
-                }
+                onClicked: root.openTypeMenu()
+            }
+        }
+        }
+
+        WheelHandler {
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            onWheel: function (event) {
+                const step = event.pixelDelta.x !== 0
+                    ? event.pixelDelta.x
+                    : (event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y)
+                filterFlick.contentX = Math.max(0,
+                    Math.min(filterFlick.contentWidth - filterFlick.width,
+                             filterFlick.contentX - step))
             }
         }
     }
@@ -318,6 +395,8 @@ Item {
         && !root.indexAvailable
 
     Row {
+        id: summaryRow
+        width: implicitWidth
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
@@ -327,7 +406,7 @@ Item {
             id: slowHint
 
             anchors.verticalCenter: parent.verticalCenter
-            visible: root.slowScope
+            visible: root.slowScope && root.width >= 920
             text: qsTr("索引不可用 · 逐个遍历，可能较慢")
             color: Theme.warning
             font.pixelSize: Theme.typeMicro
@@ -339,6 +418,7 @@ Item {
             id: countText
 
             anchors.verticalCenter: parent.verticalCenter
+            visible: root.width >= 520 || root.busy
             text: {
                 if (root.busy)
                     return qsTr("搜索中…")
