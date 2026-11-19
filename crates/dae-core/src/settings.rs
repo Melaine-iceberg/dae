@@ -234,11 +234,15 @@ impl Default for TerminalSettings {
 }
 
 fn default_font_size() -> u8 {
-    12
+    // 13 px matches the editor-grade default Zed's terminal ships with; 12
+    // read as a caption next to it.
+    13
 }
 
 fn default_line_height() -> f32 {
-    1.75
+    // 1.2 stacks rows at the density Zed's terminal shows; the airy 1.75
+    // read as a blank band between every line.
+    1.2
 }
 
 /// The single source of truth for default key bindings.
@@ -706,7 +710,7 @@ mod tests {
         assert!(!loaded.shortcuts.contains_key("bogus.id"));
         assert_eq!(loaded.shortcuts["app.commandBar"], "Mod+K");
         assert_eq!(loaded.terminal.font_size, 15);
-        assert_eq!(loaded.terminal.line_height, 1.75);
+        assert_eq!(loaded.terminal.line_height, 1.2);
         assert_eq!(loaded.terminal.font_family, None);
         assert_eq!(loaded.fonts.ui_family, None);
         assert_eq!(loaded.fonts.mono_family, None);

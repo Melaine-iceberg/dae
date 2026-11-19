@@ -178,10 +178,15 @@ private:
     QString m_fontFamily;
     QStringList m_fallbackCandidates;
     QHash<quint32, QString> m_fallbackFamilies;
-    qreal m_lineHeight = 1.75;
+    qreal m_lineHeight = 1.4;
     qreal m_cellWidth = 0.0;
     qreal m_cellHeight = 0.0;
     qreal m_ascent = 0.0;
+    /// Descent of the primary face. The cursor and preedit are drawn at the
+    /// glyph height (`ascent + descent`), not the full spaced cell, so a
+    /// generous line height does not inflate them the way Zed's terminal
+    /// does not.
+    qreal m_descent = 0.0;
     int m_cols = 0;
     int m_rows = 0;
     int m_lastCols = 0;

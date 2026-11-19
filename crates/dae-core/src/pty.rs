@@ -267,6 +267,12 @@ impl TerminalSession {
         }
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
+        // A stray `NO_COLOR` in whatever launched the file manager (a CI
+        // shell, a terminal that sets it) would otherwise ride into the
+        // pane's shells and mute every prompt — Zed and VS Code scrub the
+        // variable for the same reason. The pane is a terminal; colour is
+        // its default.
+        command.env_remove("NO_COLOR");
         // Lets shell integration snippets (Assets/terminal-integration)
         // detect that they are running under dae, the way Zed's ZED_TERM
         // does; nothing else reads it.
@@ -798,20 +804,23 @@ fn palette(dark: bool) -> &'static [Rgb; 19] {
     ];
     const LIGHT: [Rgb; 19] = [
         rgb(0x1c, 0x1e, 0x23), // black — the ink
-        rgb(0xba, 0x2b, 0x2e), // red
-        rgb(0x22, 0x78, 0x49), // green
-        rgb(0x8d, 0x5a, 0x00), // yellow
-        rgb(0x33, 0x6a, 0x88), // blue
-        rgb(0x64, 0x5b, 0x8b), // magenta
-        rgb(0x00, 0x7a, 0x7b), // cyan
+        // The semantic hues keep Campbell saturation on the light canvas:
+        // the previous dark-muted tones sat within a few luminance points
+        // of the ink, so starship's named colours read as plain text.
+        rgb(0xc5, 0x0f, 0x1f), // red
+        rgb(0x13, 0xa1, 0x0e), // green
+        rgb(0x9e, 0x75, 0x00), // yellow — amber, matches the prompt arrow
+        rgb(0x00, 0x37, 0xda), // blue
+        rgb(0x88, 0x17, 0x98), // magenta
+        rgb(0x00, 0x78, 0xd4), // cyan
         rgb(0xd7, 0xd9, 0xdc), // white — a fill
         rgb(0x6b, 0x6d, 0x72), // bright black — dim text
-        rgb(0xa3, 0x27, 0x2a), // bright red
-        rgb(0x1a, 0x5f, 0x3a), // bright green
-        rgb(0x7a, 0x4e, 0x00), // bright yellow
-        rgb(0x2b, 0x5b, 0x76), // bright blue
-        rgb(0x55, 0x4b, 0x7a), // bright magenta
-        rgb(0x00, 0x69, 0x6a), // bright cyan
+        rgb(0xe7, 0x48, 0x56), // bright red
+        rgb(0x00, 0xa8, 0x0d), // bright green
+        rgb(0xc1, 0x9c, 0x00), // bright yellow
+        rgb(0x3a, 0x96, 0xdd), // bright blue
+        rgb(0xb2, 0x3b, 0xb5), // bright magenta
+        rgb(0x00, 0xa5, 0xb8), // bright cyan
         rgb(0xf7, 0xf7, 0xf9), // bright white
         rgb(0x1c, 0x1e, 0x23), // foreground
         rgb(0xfd, 0xfd, 0xfd), // background — `Theme.canvas`
@@ -838,8 +847,8 @@ fn home_directory() -> Option<PathBuf> {
 }
 
 /// A configured shell wins over the platform guess. It is handed to the PTY as
-/// the program itself — no guessed `-NoLogo` and no argument splitting — so a
-/// path with spaces stays one path.
+/// the program itself — no argument splitting, so a path with spaces stays one
+/// path.
 fn shell_command(shell: Option<String>) -> CommandBuilder {
     if let Some(program) = shell {
         return CommandBuilder::new(program);
@@ -849,16 +858,17 @@ fn shell_command(shell: Option<String>) -> CommandBuilder {
 
 #[cfg(target_os = "windows")]
 fn default_shell_command() -> CommandBuilder {
-    let (program, args): (&str, &[&str]) = if is_in_path("pwsh.exe") {
-        ("pwsh.exe", &["-NoLogo"])
+    // No `-NoLogo`: the startup banner ("PowerShell 7.7.0") is the reference
+    // point every other terminal on this machine shows, so the pane shows it
+    // too instead of looking like something swallowed the first line.
+    let program = if is_in_path("pwsh.exe") {
+        "pwsh.exe"
     } else if is_in_path("powershell.exe") {
-        ("powershell.exe", &["-NoLogo"])
+        "powershell.exe"
     } else {
-        ("cmd.exe", &[])
+        "cmd.exe"
     };
-    let mut command = CommandBuilder::new(program);
-    command.args(args);
-    command
+    CommandBuilder::new(program)
 }
 
 #[cfg(target_os = "windows")]

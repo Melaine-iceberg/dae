@@ -694,6 +694,7 @@ Item {
         /// property, so qmllint cannot see it.
         // qmllint disable missing-property
         copyOnSelect: ExplorerPrefs.copyOnSelect
+        dark: root.dark
         fontSize: Workspace.terminalFontSize
         lineHeight: Workspace.terminalLineHeight
         fontFamily: Workspace.terminalFontFamily !== ""

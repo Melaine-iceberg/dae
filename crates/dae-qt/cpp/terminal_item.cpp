@@ -62,7 +62,13 @@ void drawCellText(QPainter* painter, const QRectF& rect, const QString& text)
         painter->scale(rect.width() / natural, 1.0);
         painter->translate(-left, 0.0);
     }
-    painter->drawText(rect, Qt::TextSingleLine | Qt::AlignLeft | Qt::AlignVCenter, text);
+    // TextDontClip: several prompt glyphs (starship's `❯`, powerline arrows)
+    // carry ink past the cell's left edge, and Qt clips drawText to the
+    // given rectangle — cutting the ink made `❯` read as `)`. The squeeze
+    // above already keeps wide glyphs inside their cells, so removing the
+    // clip only lets sub-pixel bearings bleed a hair into the neighbour.
+    painter->drawText(rect, Qt::TextSingleLine | Qt::TextDontClip | Qt::AlignLeft
+                                 | Qt::AlignVCenter, text);
     painter->restore();
 }
 
@@ -133,12 +139,13 @@ TerminalItem::TerminalItem(QQuickItem* parent)
     // says out loud which instance the grid is measured from. Bold cells raise
     // the same axis in `styleFont` instead of padding it with a synthetic
     // embolden.
-    m_font.setVariableAxis(QFont::Tag("wght"), 400.0f);
-    // The terminal paints through QPainter, not the scene graph's text path,
-    // so it needs the same hinting preference the application font carries
-    // (proposal §9.2, §12.4). Vertical hinting keeps 13 px cells on the pixel
-    // grid at 100 % and 125 % without changing the cell advance.
-    m_font.setHintingPreference(QFont::PreferVerticalHinting);
+    // The terminal paints through QPainter, not the scene graph's text path.
+    // Hinted glyphs snap their stems to the pixel grid, which reads as
+    // "no antialiasing" next to unhinted renderers; Zed's terminal draws
+    // unhinted with grayscale coverage, so the grid asks for the same and
+    // lets the rasteriser antialias every edge (supersedes the earlier
+    // PreferVerticalHinting note).
+    m_font.setHintingPreference(QFont::PreferNoHinting);
     measureCells();
 
     m_blink.setInterval(530);
@@ -253,6 +260,7 @@ void TerminalItem::measureCells()
     m_cellWidth = qMax(1.0, metrics.horizontalAdvance(QLatin1Char('M')));
     m_cellHeight = qMax(1.0, metrics.lineSpacing() * m_lineHeight);
     m_ascent = metrics.ascent();
+    m_descent = metrics.descent();
 }
 
 void TerminalItem::applySizeToSession()
@@ -538,8 +546,14 @@ void TerminalItem::paint(QPainter* painter)
 
     const bool drawCursor = m_cursorVisible && (!hasActiveFocus() || m_blinkOn);
     if (drawCursor) {
-        const QRectF cursor(m_cursorCol * m_cellWidth, m_cursorRow * m_cellHeight, m_cellWidth,
-                            m_cellHeight);
+        // The cursor covers the glyph height, not the spaced cell: with a
+        // generous line height the cell is taller than the text and a
+        // full-cell cursor reads as a mis-sized block. Zed draws the cursor
+        // at the text height, centred in the row.
+        const qreal glyphHeight = m_ascent + m_descent;
+        const qreal glyphTop
+            = m_cursorRow * m_cellHeight + (m_cellHeight - glyphHeight) / 2.0;
+        const QRectF cursor(m_cursorCol * m_cellWidth, glyphTop, m_cellWidth, glyphHeight);
         const QColor accent = terminalAccent(m_dark);
         switch (m_cursorShape) {
         case 1: // underline
