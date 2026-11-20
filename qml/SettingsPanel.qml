@@ -199,6 +199,7 @@ FocusScope {
     readonly property var materialOptions: [
         { value: "none", label: qsTr("不透明") },
         { value: "mica", label: qsTr("云母 (Mica)") },
+        { value: "mica-alt", label: qsTr("云母 Alt (Mica Alt)") },
         { value: "acrylic", label: qsTr("亚克力 (Acrylic)") }
     ]
     /// The material choice is a Windows concept; other platforms either have
@@ -1087,7 +1088,7 @@ FocusScope {
 
                     SettingsRow {
                         label: qsTr("窗口材质")
-                        description: qsTr("Mica 从壁纸取色，Acrylic 实时模糊；选择材质会开启背景效果，默认不透明。")
+                        description: qsTr("Mica 从壁纸取色，Mica Alt 色调更重、适合标签栏，Acrylic 实时模糊；仅作用于顶部标签栏。选择材质会开启背景效果，默认不透明。")
                         visible: root.showMaterialChoices
                         onReset: Appearance.chooseWindowMaterial("none")
 

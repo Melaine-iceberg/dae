@@ -48,6 +48,12 @@ pub mod qobject {
             plus_right: f64,
         ) -> bool;
 
+        /// The system caption-icon family (Segoe Fluent Icons / Segoe MDL2
+        /// Assets on Windows, empty elsewhere). The bar draws the window buttons
+        /// with the same glyphs DWM uses.
+        #[namespace = "dae_qt"]
+        fn dae_qt_caption_icon_family() -> QString;
+
         #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
 
@@ -122,6 +128,16 @@ pub mod qobject {
         /// Windows materials are resolved separately). The settings panel
         /// reads it to say why blur is unavailable.
         #[qproperty(bool, blur_supported, cxx_name = "blurSupported")]
+        /// The caption button the pointer is over, as a column index (0 minimise,
+        /// 1 maximise, 2 close) or -1. Windows only: the three columns are native
+        /// non-client zones, so the native filter pushes this from the NC mouse
+        /// state and the bar paints the system hover wash from it. -1 elsewhere.
+        #[qproperty(i32, nc_button_hover, cxx_name = "ncButtonHover")]
+        /// The caption button being held, same encoding as `ncButtonHover`.
+        #[qproperty(i32, nc_button_pressed, cxx_name = "ncButtonPressed")]
+        /// The system caption-icon family the bar draws its window-button glyphs
+        /// with. Empty off Windows, where the drawn glyphs stay.
+        #[qproperty(QString, caption_icon_family, cxx_name = "captionIconFamily")]
         type WindowController = super::WindowControllerRust;
 
         /// Applies the native frame, installs the IME focus guard and records
@@ -131,8 +147,8 @@ pub mod qobject {
         fn attach(self: Pin<&mut WindowController>) -> bool;
 
         /// Resolves the user's settings against this machine and applies the
-        /// result. `requested` is "mica", "acrylic" or "none" (Windows only);
-        /// `blur` is the background-effects switch.
+        /// result. `requested` is "mica", "mica-alt", "acrylic" or "none"
+        /// (Windows only); `blur` is the background-effects switch.
         #[qinvokable]
         #[cxx_name = "applyMaterial"]
         fn apply_material(
@@ -179,6 +195,9 @@ pub struct WindowControllerRust {
     attached: bool,
     applied_material: QString,
     blur_supported: bool,
+    nc_button_hover: i32,
+    nc_button_pressed: i32,
+    caption_icon_family: QString,
 }
 
 impl Default for WindowControllerRust {
@@ -188,6 +207,9 @@ impl Default for WindowControllerRust {
             attached: false,
             applied_material: QString::from("none"),
             blur_supported: false,
+            nc_button_hover: -1,
+            nc_button_pressed: -1,
+            caption_icon_family: QString::default(),
         }
     }
 }
@@ -202,6 +224,12 @@ impl qobject::WindowController {
             qobject::attach_window(&token) && crate::ime::install_focus_cancel_guard(&token);
         self.as_mut().set_attached(attached);
         self.as_mut().set_blur_supported(blur_supported());
+        self.as_mut()
+            .set_caption_icon_family(qobject::dae_qt_caption_icon_family());
+        startup_mark(&format!(
+            "caption-icons [{}]",
+            self.caption_icon_family.to_string()
+        ));
         attached
     }
 

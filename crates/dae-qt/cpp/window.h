@@ -12,7 +12,10 @@
 //     WM_NCHITTEST maps the QML title bar to the native hit codes. Returning
 //     HTCAPTION and letting DefWindowProc run the move loop is what makes drag,
 //     double-click maximize and Aero Snap native instead of reimplemented.
-//     Returning HTMAXBUTTON on the maximize button is what opens Snap Layouts.
+//     The three button columns answer HTMINBUTTON / HTMAXBUTTON / HTCLOSE, so
+//     DefWindowProc owns their clicks and HTMAXBUTTON opens Snap Layouts; the
+//     filter forwards the NC hover/press state to QML, which paints the system
+//     glyphs and wash (DWM draws no buttons over a fully-client window).
 //   * **The backdrop.** Tauri reaches Mica/Acrylic through window-vibrancy; Qt
 //     has no equivalent, so the DWM attributes are written directly. The
 //     *decision* (which build, whether transparency is allowed) stays in Rust
@@ -273,6 +276,7 @@ constexpr DWORD kDwmwaMicaEffect = 1029; // undocumented, builds 22000-22522
 constexpr int kDwmsbtNone = 1;
 constexpr int kDwmsbtMainWindow = 2; // Mica
 constexpr int kDwmsbtTransientWindow = 3; // Acrylic
+constexpr int kDwmsbtTabbedWindow = 4; // Mica Alt, builds 22621+
 constexpr int kDwmcprRound = 2;
 /// `DWMWA_TRANSITIONS_FORCEDISABLED`: TRUE stops DWM from fading this window in
 /// and out. The shell paints its own chrome, so a reveal fade has no opaque
@@ -335,7 +339,44 @@ struct WindowState
     double client_right_dp = 0.0;
     double plus_left_dp = 0.0;
     double plus_right_dp = 0.0;
+    /// The caption button the pointer is over / holding, as a column index
+    /// (0 minimise, 1 maximise, 2 close), or -1 for none. All three columns are
+    /// native non-client zones now, so QML gets no mouse events for them; the
+    /// filter mirrors the NC mouse state here and pushes it to the controller
+    /// so the bar can paint the system hover/press wash.
+    int nc_hover = -1;
+    int nc_pressed = -1;
+    bool nc_tracking = false;
+    /// The window's `WindowController`, found once at attach. The filter sets
+    /// its `ncButtonHover` / `ncButtonPressed` properties from the GUI thread.
+    QPointer<QObject> controller;
 };
+
+/// The column index of a non-client caption-button hit code, or -1.
+inline int nc_button_index(WPARAM hit)
+{
+    switch (hit) {
+    case HTMINBUTTON:
+        return 0;
+    case HTMAXBUTTON:
+        return 1;
+    case HTCLOSE:
+        return 2;
+    default:
+        return -1;
+    }
+}
+
+/// Mirrors the NC button state onto the QML controller. Runs on the GUI thread
+/// (native events are dispatched there), so a direct property write is safe and
+/// the generated setters emit the notify signals QML binds to.
+inline void notify_nc_state(WindowState& state)
+{
+    if (!state.controller)
+        return;
+    state.controller->setProperty("ncButtonHover", state.nc_hover);
+    state.controller->setProperty("ncButtonPressed", state.nc_pressed);
+}
 
 inline QHash<quintptr, WindowState>& window_states()
 {
@@ -354,6 +395,48 @@ inline WindowState* state_for(HWND hwnd)
         return nullptr;
     auto it = window_states().find(window_key(hwnd));
     return it == window_states().end() ? nullptr : &it.value();
+}
+
+/// Drops a stale press highlight once the physical button is up. DefWindowProc
+/// owns the matching WM_NCLBUTTONUP inside its non-client tracking loop, so the
+/// filter does not always see it; the maximize release poll calls this too.
+inline void clear_nc_pressed(HWND hwnd)
+{
+    if (WindowState* state = state_for(hwnd)) {
+        if (state->nc_pressed != -1) {
+            state->nc_pressed = -1;
+            notify_nc_state(*state);
+        }
+    }
+}
+
+/// The window's QML `WindowController`. There is exactly one per window; the
+/// generated QObject class name carries `WindowController`, so a substring match
+/// finds it without depending on the CXX-Qt namespace prefix.
+inline QObject* find_controller(QQuickWindow* window)
+{
+    const auto children = window->findChildren<QObject*>();
+    for (QObject* child : children) {
+        if (QByteArray(child->metaObject()->className()).contains("WindowController"))
+            return child;
+    }
+    return nullptr;
+}
+
+/// The system caption-icon face. Windows 11 ships Segoe Fluent Icons; Windows 10
+/// ships Segoe MDL2 Assets. Both carry the exact chrome glyphs DWM draws
+/// (E921/E922/E923/E8BB), so the bar's buttons read as the system's own. Empty
+/// off Windows, where the bar keeps its drawn glyphs.
+inline QString dae_qt_caption_icon_family()
+{
+    static const QString family = [] {
+        if (QFontDatabase::hasFamily(QStringLiteral("Segoe Fluent Icons")))
+            return QStringLiteral("Segoe Fluent Icons");
+        if (QFontDatabase::hasFamily(QStringLiteral("Segoe MDL2 Assets")))
+            return QStringLiteral("Segoe MDL2 Assets");
+        return QString();
+    }();
+    return family;
 }
 
 inline int titlebar_px_for(qreal dpr)
@@ -425,15 +508,17 @@ inline LRESULT hit_test_for(const WindowState& state, POINT screen)
 
     if (client.y >= 0 && client.y < titlebar) {
         const int right = client_rect.right;
-        // Minimize and close are ordinary client areas: QML draws their hover
-        // and owns their click. Maximize stays a native non-client zone at all
-        // times, because HTMAXBUTTON is what opens Snap Layouts. Windows does
-        // not re-run the hit test on press, so a pressed-state exception here
-        // would never be seen; the NC click is handled on the down instead.
+        // All three columns are native non-client buttons. DefWindowProc owns
+        // their press tracking and fires the matching system command on release
+        // (SC_MINIMIZE, the maximize toggle, SC_CLOSE), and HTMAXBUTTON is what
+        // opens Snap Layouts on hover. QML paints the glyphs and the hover/press
+        // wash from the NC state the filter forwards; it never sees a click here.
+        if (client.x >= right - 3 * button && client.x < right - 2 * button)
+            return HTMINBUTTON;
         if (client.x >= right - 2 * button && client.x < right - button)
             return HTMAXBUTTON;
-        if (client.x >= right - 3 * button && client.x < right)
-            return HTCLIENT;
+        if (client.x >= right - button && client.x < right)
+            return HTCLOSE;
         const auto in_client_band = [&](double left, double right) {
             const int band_left = qRound(left * dpr);
             const int band_right = qRound(right * dpr);
@@ -541,13 +626,16 @@ inline bool apply_backdrop_to(HWND hwnd, int material, bool dark)
 
     enable_blur_behind(hwnd);
 
-    const int type = material == 0 ? kDwmsbtMainWindow : kDwmsbtTransientWindow;
+    const int type = material == 0 ? kDwmsbtMainWindow
+        : material == 4 ? kDwmsbtTabbedWindow
+                        : kDwmsbtTransientWindow;
     const HRESULT backdrop =
         DwmSetWindowAttribute(hwnd, kDwmwaSystemBackdropType, &type, sizeof(type));
 
-    if (FAILED(backdrop) && material == 0) {
+    if (FAILED(backdrop) && (material == 0 || material == 4)) {
         // The 22000-22522 band knows Mica only through the undocumented flag
-        // the Tauri module's window-vibrancy version also falls back to.
+        // the Tauri module's window-vibrancy version also falls back to; a
+        // Mica Alt request on a build without the tabbed variant lands here too.
         BOOL on = TRUE;
         return SUCCEEDED(DwmSetWindowAttribute(hwnd, kDwmwaMicaEffect, &on, sizeof(on)));
     }
@@ -609,13 +697,15 @@ inline void perform_maximize_toggle(QPointer<QQuickWindow> window, bool was_zoom
 /// lets the loop unwind before calling Qt's window-state API.
 inline void maximize_after_release(QPointer<QQuickWindow> window, bool was_zoomed)
 {
+    const HWND hwnd = window ? reinterpret_cast<HWND>(window->winId()) : nullptr;
     auto* timer = new QTimer(qApp);
     timer->setInterval(20);
-    QObject::connect(timer, &QTimer::timeout, qApp, [timer, window, was_zoomed]() {
+    QObject::connect(timer, &QTimer::timeout, qApp, [timer, window, was_zoomed, hwnd]() {
         if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0)
             return;
         timer->stop();
         timer->deleteLater();
+        clear_nc_pressed(hwnd);
         QTimer::singleShot(80, qApp, [window, was_zoomed]() {
             perform_maximize_toggle(window, was_zoomed);
         });
@@ -644,9 +734,68 @@ public:
             *result = hit_test_for(*state, screen);
             return true;
         }
-        case WM_NCLBUTTONDOWN:
+        case WM_NCMOUSEMOVE: {
+            const int idx = nc_button_index(msg->wParam);
+            if (idx != state->nc_hover) {
+                state->nc_hover = idx;
+                notify_nc_state(*state);
+            }
+            // Arm the non-client leave tracker once per entry so a pointer that
+            // leaves the bar straight into the client area still clears hover.
+            if (idx >= 0 && !state->nc_tracking) {
+                TRACKMOUSEEVENT tme{};
+                tme.cbSize = sizeof(tme);
+                tme.dwFlags = TME_LEAVE | TME_NONCLIENT;
+                tme.hwndTrack = msg->hwnd;
+                TrackMouseEvent(&tme);
+                state->nc_tracking = true;
+            }
+            return false;
+        }
+        case WM_NCMOUSELEAVE:
+            state->nc_tracking = false;
+            if (state->nc_hover != -1 || state->nc_pressed != -1) {
+                state->nc_hover = -1;
+                state->nc_pressed = -1;
+                notify_nc_state(*state);
+            }
+            return false;
+        case WM_NCLBUTTONDOWN: {
+            const int idx = nc_button_index(msg->wParam);
+            if (idx >= 0) {
+                state->nc_pressed = idx;
+                state->nc_hover = idx;
+                notify_nc_state(*state);
+            }
             if (msg->wParam == HTMAXBUTTON)
                 maximize_after_release(state->window, IsZoomed(msg->hwnd) != FALSE);
+            return false;
+        }
+        case WM_NCLBUTTONUP: {
+            const int idx = nc_button_index(msg->wParam);
+            if (idx >= 0 && state->nc_pressed == idx) {
+                state->nc_pressed = -1;
+                notify_nc_state(*state);
+            }
+            return false;
+        }
+        case WM_NCACTIVATE:
+            if (msg->wParam == FALSE
+                && (state->nc_hover != -1 || state->nc_pressed != -1)) {
+                state->nc_hover = -1;
+                state->nc_pressed = -1;
+                state->nc_tracking = false;
+                notify_nc_state(*state);
+            }
+            return false;
+        case WM_SIZE:
+            if (msg->wParam == SIZE_MINIMIZED
+                && (state->nc_hover != -1 || state->nc_pressed != -1)) {
+                state->nc_hover = -1;
+                state->nc_pressed = -1;
+                state->nc_tracking = false;
+                notify_nc_state(*state);
+            }
             return false;
         case WM_NCCALCSIZE:
             return fix_zoomed_client(msg->hwnd, msg->wParam, msg->lParam, result);
@@ -693,6 +842,8 @@ inline bool dae_qt_attach(const QString& token)
     if (existing != window_states().end()) {
         existing->window = window;
         existing->dpr = window->devicePixelRatio();
+        if (!existing->controller)
+            existing->controller = find_controller(window);
         return true;
     }
 
@@ -701,6 +852,7 @@ inline bool dae_qt_attach(const QString& token)
     state.token = token;
     state.hwnd = hwnd;
     state.dpr = window->devicePixelRatio();
+    state.controller = find_controller(window);
     window_states().insert(key, state);
 
     style_window(hwnd);
@@ -791,6 +943,12 @@ inline double dae_qt_native_handle(const QString& token)
 #else // !Q_OS_WIN
 
 inline void dae_qt_dress_placeholder(QWindow*) {}
+
+/// No system caption-icon face off Windows; the bar keeps its drawn glyphs.
+inline QString dae_qt_caption_icon_family()
+{
+    return QString();
+}
 
 #if defined(Q_OS_LINUX) && QT_CONFIG(wayland)
 

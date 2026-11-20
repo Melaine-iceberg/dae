@@ -110,6 +110,26 @@ Item {
     readonly property bool fullScreen: window !== null
         && window.visibility === Window.FullScreen
 
+    /// On Windows the three window buttons are native non-client zones:
+    /// DefWindowProc owns their clicks and the Snap Layouts hover, and the
+    /// native filter mirrors the NC hover/press state onto the controller. The
+    /// bar paints the system glyphs and wash from that state rather than taking
+    /// mouse events it would never receive.
+    readonly property bool nativeButtons: Qt.platform.os === "windows"
+    readonly property int ncHover: nativeButtons && controller !== null
+        ? controller.ncButtonHover : -1
+    readonly property int ncPressed: nativeButtons && controller !== null
+        ? controller.ncButtonPressed : -1
+    readonly property string nativeIconFamily: controller !== null
+        ? controller.captionIconFamily : ""
+    /// The system caption hover/press wash: a translucent on-surface layer over
+    /// the chrome, matching the native buttons in both themes. Close keeps its
+    /// own red below.
+    readonly property color ncHoverFill: dark ? Qt.rgba(1, 1, 1, 0.06)
+                                              : Qt.rgba(0, 0, 0, 0.04)
+    readonly property color ncPressFill: dark ? Qt.rgba(1, 1, 1, 0.09)
+                                              : Qt.rgba(0, 0, 0, 0.06)
+
     // ── Tab metrics (§7.3.1) ────────────────────────────────────────────────
     readonly property int tabWidthValue: 184
     /// 30 dp inside a 38 dp bar: four above, four below.
@@ -1029,12 +1049,12 @@ Item {
 
                 readonly property bool isClose: index === 2
                 readonly property bool isMaximize: index === 1
-                readonly property bool hovered: mouse.containsMouse
-                /// Native only on Windows: there DefWindowProc owns the
-                /// maximise button so Snap Layouts opens on hover, and the NC
-                /// hit test means a QML click would never arrive anyway.
-                readonly property bool nativeMaximize: button.isMaximize
-                    && Qt.platform.os === "windows"
+                /// Windows reads hover/press from the native NC state; the other
+                /// platforms keep the QML MouseArea below.
+                readonly property bool hovered: root.nativeButtons
+                    ? root.ncHover === index : mouse.containsMouse
+                readonly property bool pressed: root.nativeButtons
+                    ? root.ncPressed === index : mouse.pressed
 
                 Accessible.role: Accessible.Button
                 Accessible.name: button.isClose ? qsTr("关闭")
@@ -1053,16 +1073,37 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     color: button.isClose
-                        ? (button.hovered ? "#c42b1c" : "transparent")
-                        : (button.hovered ? Theme.hover : "transparent")
+                        ? (button.hovered
+                            ? (button.pressed ? "#b22a1c" : "#c42b1c")
+                            : "transparent")
+                        : (button.hovered
+                            ? (root.nativeButtons
+                                ? (button.pressed ? root.ncPressFill : root.ncHoverFill)
+                                : Theme.hover)
+                            : "transparent")
                 }
 
-                // One set of geometry on every platform (§5.4): a minimise
-                // line, a maximise square, a restore pair and a close cross.
-                // Windows still owns the NC hit test and the Snap Layouts
-                // hover, but it no longer supplies the glyph.
+                // The system's own caption glyphs (Segoe Fluent Icons on Windows
+                // 11, Segoe MDL2 Assets on 10): the exact code points DWM draws,
+                // at the native 10 px, so the buttons read as the system's own.
+                Text {
+                    visible: root.nativeButtons && root.nativeIconFamily !== ""
+                    anchors.centerIn: parent
+                    font.family: root.nativeIconFamily
+                    font.pixelSize: 10
+                    text: button.isClose ? "\uE8BB"
+                        : button.isMaximize ? (root.maximized ? "\uE923" : "\uE922")
+                        : "\uE921"
+                    color: button.isClose && button.hovered
+                        ? Theme.inkOnSolid : root.textColor
+                }
+
+                // Drawn fallback for the platforms without the system icon face
+                // (§5.4): a minimise line, a maximise square, a restore pair and
+                // a close cross. Windows uses the system glyphs above instead.
                 Item {
                     id: drawnGlyph
+                    visible: !root.nativeButtons || root.nativeIconFamily === ""
                     anchors.centerIn: parent
                     width: 14
                     height: 14
@@ -1144,8 +1185,8 @@ Item {
                 MouseArea {
                     id: mouse
                     anchors.fill: parent
-                    enabled: !button.nativeMaximize
-                    hoverEnabled: !button.nativeMaximize
+                    enabled: !root.nativeButtons
+                    hoverEnabled: !root.nativeButtons
                     onClicked: {
                         if (button.isClose)
                             root.window.close()

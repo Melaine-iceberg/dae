@@ -17,7 +17,7 @@ const FILE_NAME: &str = "appearance-qt.ini";
 const THEMES: &[&str] = &["system", "light", "dark"];
 const ACCENTS: &[&str] = &["system", "brand", "custom"];
 const LANGUAGES: &[&str] = dae_core::settings::LANGUAGES;
-const MATERIALS: &[&str] = &["mica", "acrylic", "none"];
+const MATERIALS: &[&str] = &["mica", "mica-alt", "acrylic", "none"];
 
 /// The C++ half of the language install. Only the `extern "C++"` block is
 /// left here after the Qt Bridge port; [`crate::i18n`] still calls these three

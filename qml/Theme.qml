@@ -205,15 +205,16 @@ QtObject {
                                              contentAlpha)
 
     // ── Material tint ───────────────────────────────────────────────────────
-    /// The veil painted over a native backdrop, by backdrop kind. The tint is
-    /// neutral (M3 surfaces are neutral-plus-seed, not warm paper).
+    /// The veil painted over a native backdrop. Only the chrome bar (`panel`
+    /// false) stays translucent so the backdrop reads through it; every panel
+    /// surface is solid, which confines the material to the tab bar alone.
     function backdropTint(material, isDark, panel) {
-        if (material === "none")
+        if (material === "none" || panel)
             return isDark ? theme.window : theme.chrome
         const blur = material === "blur"
         const alpha = blur
-            ? (panel ? (isDark ? 0.76 : 0.84) : (isDark ? 0.78 : 0.86))
-            : (panel ? (isDark ? 0.30 : 0.34) : (isDark ? 0.38 : 0.46))
+            ? (isDark ? 0.78 : 0.86)
+            : (isDark ? 0.38 : 0.46)
         return isDark
             ? Qt.rgba(0.031, 0.047, 0.043, alpha)
             : Qt.rgba(0.945, 0.961, 0.953, alpha)

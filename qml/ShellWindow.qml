@@ -414,9 +414,9 @@ Window {
           + " · " + (config.settingsFound ? "settings.toml" : qsTr("默认设置"))
           + " · " + (config.configDir !== "" ? config.configDir : qsTr("配置目录不可用"))
 
-    readonly property color chromeTint: Theme.backdropTint(material, dark, false)
-    readonly property color solidChrome: Theme.chrome
-    readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
+    /// The nav / path / status bands are solid; the material lives only in the
+    /// tab bar, which paints its own translucent veil (TopBar.chromeColor).
+    readonly property color chromeColor: Theme.chrome
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkSecondary
     readonly property color hairline: Theme.hairline
@@ -4233,23 +4233,33 @@ Window {
         objectName: "daeGlassScene"
         anchors.fill: parent
 
-    // The frameless window keeps an alpha buffer for the native frame. When a
-    // material is active, the canvas must stay transparent or it would paint
-    // over the backdrop; every pane and chrome band paints its own colour, so
-    // only the seams and chrome tints let the backdrop through. With no
-    // material the canvas is the solid fill the regular shell expects.
+    // The frameless window keeps an alpha buffer for the native frame. The
+    // canvas is solid everywhere below the tab bar, so the backdrop can only
+    // read through the bar's own translucent veil; the bar strip is left
+    // unpainted here for exactly that reason.
     Rectangle {
-        anchors.fill: parent
-        color: root.material === "none" ? Theme.canvas : "transparent"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        // The tab bar strip stays unpainted so the native backdrop reads
+        // through the bar's veil; everything below it is solid. A numeric
+        // offset, not an anchor to chromeBar (a non-sibling): cross-parent
+        // anchor lines do not resolve and would collapse this fill.
+        y: Theme.shellTitle
+        color: Theme.canvas
     }
 
     /// A user image behind the listing. The listing surfaces switch to
     /// `Theme.content` (a translucent canvas) while this is set, so the image
     /// shows through at the contrast guard the settings page exposes. Chrome
     /// stays solid; that is what keeps the frame and its labels readable over
-    /// an arbitrary photograph.
+    /// an arbitrary photograph. The tab bar strip is excluded so the bar keeps
+    /// showing the native backdrop rather than the photograph.
     Image {
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        y: Theme.shellTitle
         visible: ExplorerPrefs.backgroundImage !== ""
         source: root.backgroundImageSource(ExplorerPrefs.backgroundImage)
         fillMode: Image.PreserveAspectCrop

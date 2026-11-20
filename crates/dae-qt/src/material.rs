@@ -30,9 +30,16 @@ const MICA_MIN_BUILD: u32 = 22000;
 /// 11 builds keep Mica.
 const ACRYLIC_MIN_BUILD: u32 = 22523;
 
+/// The first build with the tabbed Mica variant (`DWMSBT_TABBEDWINDOW`). Below
+/// it a Mica Alt request degrades to plain Mica rather than to no backdrop.
+const MICA_ALT_MIN_BUILD: u32 = 22621;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Material {
     Mica,
+    /// Mica Alt / tabbed Mica: the heavier-tinted Mica variant meant for tabbed
+    /// chrome, which is exactly the shell's title bar.
+    MicaAlt,
     Acrylic,
     /// A live background blur: Wayland's `ext-background-effect-v1` or
     /// macOS's `NSVisualEffectView`. Windows has no equivalent name; the
@@ -47,6 +54,7 @@ impl Material {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Mica => "mica",
+            Self::MicaAlt => "mica-alt",
             Self::Acrylic => "acrylic",
             Self::Blur => "blur",
             Self::None => "none",
@@ -60,12 +68,14 @@ impl Material {
             Self::Acrylic => 1,
             Self::Blur => 3,
             Self::None => 2,
+            Self::MicaAlt => 4,
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "mica" => Some(Self::Mica),
+            "mica-alt" => Some(Self::MicaAlt),
             "acrylic" => Some(Self::Acrylic),
             "blur" => Some(Self::Blur),
             "none" => Some(Self::None),
@@ -76,7 +86,8 @@ impl Material {
 
 /// The Windows decision: the accessibility setting wins, then the build band,
 /// then the user's choice. Acrylic on a build without
-/// `DWMWA_SYSTEMBACKDROP_TYPE` degrades to Mica rather than to no backdrop.
+/// `DWMWA_SYSTEMBACKDROP_TYPE` degrades to Mica rather than to no backdrop, and
+/// Mica Alt before the tabbed variant exists degrades the same way.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn choose(build: Option<u32>, transparency_on: bool, requested: &str) -> Material {
     if !transparency_on {
@@ -94,8 +105,11 @@ fn choose(build: Option<u32>, transparency_on: bool, requested: &str) -> Materia
     if requested == "acrylic" && build >= ACRYLIC_MIN_BUILD {
         return Material::Acrylic;
     }
-    // `mica`, an old Acrylic request, and any unrecognised value all resolve
-    // to the default material.
+    if requested == "mica-alt" && build >= MICA_ALT_MIN_BUILD {
+        return Material::MicaAlt;
+    }
+    // `mica`, an old Acrylic or Mica Alt request, and any unrecognised value all
+    // resolve to the default material.
     Material::Mica
 }
 
@@ -281,6 +295,28 @@ fn read() -> Option<(Option<u32>, bool)> {
 mod tests {
     use super::*;
 
+    /// Mica Alt starts where the tabbed backdrop variant starts.
+    #[test]
+    fn mica_alt_starts_with_the_tabbed_variant() {
+        assert_eq!(
+            choose(Some(MICA_ALT_MIN_BUILD), true, "mica-alt"),
+            Material::MicaAlt
+        );
+        assert_eq!(choose(Some(26100), true, "mica-alt"), Material::MicaAlt);
+        assert_eq!(
+            choose(Some(MICA_ALT_MIN_BUILD - 1), true, "mica-alt"),
+            Material::Mica,
+            "a build without the tabbed variant falls back to Mica"
+        );
+    }
+
+    /// Mica Alt is a Windows 11 material; Windows 10 gets nothing.
+    #[test]
+    fn mica_alt_covers_only_windows_11() {
+        assert_eq!(choose(Some(21996), true, "mica-alt"), Material::None);
+        assert_eq!(choose(Some(MICA_ALT_MIN_BUILD), false, "mica-alt"), Material::None);
+    }
+
     /// Acrylic starts where `DWMWA_SYSTEMBACKDROP_TYPE` starts.
     #[test]
     fn acrylic_starts_with_the_backdrop_attribute() {
@@ -362,6 +398,7 @@ mod tests {
     fn names_and_codes_round_trip() {
         for material in [
             Material::Mica,
+            Material::MicaAlt,
             Material::Acrylic,
             Material::Blur,
             Material::None,
@@ -372,6 +409,7 @@ mod tests {
         assert_eq!(Material::Acrylic.code(), 1);
         assert_eq!(Material::None.code(), 2);
         assert_eq!(Material::Blur.code(), 3);
+        assert_eq!(Material::MicaAlt.code(), 4);
         assert_eq!(Material::from_name("vibrancy"), None);
     }
 }

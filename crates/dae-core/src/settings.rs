@@ -452,7 +452,7 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
     if !LANGUAGES.contains(&settings.language.as_str()) {
         settings.language = "system".to_string();
     }
-    if !["mica", "acrylic", "none"].contains(&settings.window_material.as_str()) {
+    if !["mica", "mica-alt", "acrylic", "none"].contains(&settings.window_material.as_str()) {
         settings.window_material = "none".to_string();
     }
     settings
