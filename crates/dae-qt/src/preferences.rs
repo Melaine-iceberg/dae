@@ -107,6 +107,7 @@ struct StoredPrefs {
     adaptive_layout: bool,
     preview_width: i32,
     sidebar_width: i32,
+    terminal_height: i32,
     terminal_shell: String,
     copy_on_select: bool,
     toolbar_leading: String,
@@ -156,6 +157,7 @@ impl Default for StoredPrefs {
             adaptive_layout: false,
             preview_width: 300,
             sidebar_width: 240,
+            terminal_height: 240,
             terminal_shell: String::new(),
             copy_on_select: false,
             toolbar_leading: "back,forward,up".to_owned(),
@@ -263,6 +265,7 @@ impl StoredPrefs {
         boolean("adaptiveLayout", &mut self.adaptive_layout);
         number("previewWidth", &mut self.preview_width);
         number("sidebarWidth", &mut self.sidebar_width);
+        number("terminalHeight", &mut self.terminal_height);
         // Free text, unlike the enumerated preferences above: any executable
         // name or path is valid, and an empty value means "the platform guess".
         if let Some(value) = fields.get("terminalShell") {
@@ -347,6 +350,7 @@ impl StoredPrefs {
         write(&mut out, "adaptiveLayout", bool_text(self.adaptive_layout));
         write(&mut out, "previewWidth", &self.preview_width.to_string());
         write(&mut out, "sidebarWidth", &self.sidebar_width.to_string());
+        write(&mut out, "terminalHeight", &self.terminal_height.to_string());
         write(&mut out, "terminalShell", &self.terminal_shell);
         write(&mut out, "copyOnSelect", bool_text(self.copy_on_select));
         write(&mut out, "toolbarLeading", &self.toolbar_leading);
@@ -611,6 +615,7 @@ pub struct ExplorerPrefs {
     adaptive_layout: bool,
     preview_width: i32,
     sidebar_width: i32,
+    terminal_height: i32,
     terminal_shell: String,
     copy_on_select: bool,
     toolbar_leading: String,
@@ -666,6 +671,7 @@ impl ExplorerPrefs {
             adaptive_layout: prefs.adaptive_layout,
             preview_width: prefs.preview_width,
             sidebar_width: prefs.sidebar_width,
+            terminal_height: prefs.terminal_height,
             terminal_shell: String::from(prefs.terminal_shell.as_str()),
             copy_on_select: prefs.copy_on_select,
             toolbar_leading: String::from(prefs.toolbar_leading.as_str()),
@@ -718,6 +724,7 @@ impl ExplorerPrefs {
             adaptive_layout: self.adaptive_layout,
             preview_width: self.preview_width,
             sidebar_width: self.sidebar_width,
+            terminal_height: self.terminal_height,
             terminal_shell: self.terminal_shell.clone(),
             copy_on_select: self.copy_on_select,
             toolbar_leading: self.toolbar_leading.clone(),
@@ -873,6 +880,7 @@ impl ExplorerPrefs {
         set_motion_scheme(String) => motion_scheme, motion_scheme_changed;
         set_preview_width(i32) => preview_width, preview_width_changed;
         set_sidebar_width(i32) => sidebar_width, sidebar_width_changed;
+        set_terminal_height(i32) => terminal_height, terminal_height_changed;
         set_terminal_shell(String) => terminal_shell, terminal_shell_changed;
         set_copy_on_select(bool) => copy_on_select, copy_on_select_changed;
         set_toolbar_leading(String) => toolbar_leading, toolbar_leading_changed;
@@ -1002,6 +1010,11 @@ impl ExplorerPrefs {
         Notify = sidebar_width_changed
     );
     qproperty!(
+        "terminalHeight",
+        Member = terminal_height,
+        Notify = terminal_height_changed
+    );
+    qproperty!(
         "terminalShell",
         Member = terminal_shell,
         Notify = terminal_shell_changed
@@ -1098,6 +1111,8 @@ impl ExplorerPrefs {
     fn preview_width_changed(&mut self);
     #[qsignal]
     fn sidebar_width_changed(&mut self);
+    #[qsignal]
+    fn terminal_height_changed(&mut self);
     #[qsignal]
     fn terminal_shell_changed(&mut self);
     #[qsignal]
@@ -1429,6 +1444,17 @@ impl ExplorerPrefs {
                     return;
                 }
                 self.set_sidebar_width(next);
+                true
+            }
+            "terminalHeight" => {
+                // The grip clamps to the window it lives in; the document
+                // only needs a sane absolute range so a hand edit cannot
+                // hide the panel or claim a taller-than-screen one.
+                let next = value.clamp(120, 4096);
+                if self.terminal_height == next {
+                    return;
+                }
+                self.set_terminal_height(next);
                 true
             }
             // The grid's slider and the list's thumbnails share one value.

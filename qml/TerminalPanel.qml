@@ -9,9 +9,11 @@ import dae.terminal 1.0
 // (Zed's `current_project_directory` semantics). Hiding the panel keeps
 // every shell alive; switching or closing tabs touches none of them.
 //
-// 240 px high and embedded in the content column, so the listing above it
-// keeps its rows and the terminal never covers them. See
-// docs/ui-instrument-migration.md §7.2 and docs/terminal-redesign.md §3.
+// Embedded in the content column, so the listing above it keeps its rows and
+// the terminal never covers them. 240 px by default; the top edge is a drag
+// handle whose range reaches the column's top boundary, and the height is
+// remembered in explorer-qt.ini. See docs/ui-instrument-migration.md §7.2 and
+// docs/terminal-redesign.md §3.
 Item {
     id: root
 
@@ -26,7 +28,14 @@ Item {
     property bool dark: true
     property string material: "none"
     property bool active: false
-    property int panelHeight: 240
+    /// The content column's height: the drag handle's upper boundary.
+    property int heightLimit: 0
+    /// Live height while the top edge is dragged; -1 when at rest, so the
+    /// preference binding below stays the source of truth between gestures.
+    property int liveHeight: -1
+    readonly property int heightFloor: 120
+    readonly property int panelHeight: Math.max(heightFloor,
+        Math.min(ExplorerPrefs.terminalHeight, heightLimit))
     /// The shell's OSC 0/2 title when it reports one; the panel names the
     /// configured shell before the first report and after an integration-less
     /// shell stays with the executable's name.
@@ -65,7 +74,7 @@ Item {
             : Qt.platform.os === "osx" ? "zsh" : "bash"
     }
 
-    implicitHeight: active ? panelHeight : 0
+    implicitHeight: active ? (liveHeight >= 0 ? liveHeight : panelHeight) : 0
     height: implicitHeight
     clip: true
 
@@ -724,6 +733,60 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    /// The top edge is the height grip: a 6 px strip over the header's own
+    /// top padding, so no header control loses its hit area. The range runs
+    /// from a header plus a few rows up to the column's top boundary; the
+    /// preference is written once on release, not per pointer pixel.
+    Item {
+        id: heightHandle
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 6
+        z: 10
+        visible: root.active
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: Theme.ruleWidth(Screen.devicePixelRatio)
+            color: heightMouse.containsMouse || heightMouse.pressed
+                ? Theme.accent : "transparent"
+        }
+
+        MouseArea {
+            id: heightMouse
+            Accessible.ignored: true
+            anchors.fill: parent
+            hoverEnabled: true
+            preventStealing: true
+            cursorShape: Qt.SizeVerCursor
+            property real startY: 0
+            property int startHeight: 0
+            onPressed: function (mouse) {
+                startY = mapToItem(null, mouse.x, mouse.y).y
+                startHeight = root.height
+            }
+            onPositionChanged: function (mouse) {
+                if (!pressed)
+                    return
+                const dy = mapToItem(null, mouse.x, mouse.y).y - startY
+                root.liveHeight = Math.max(root.heightFloor,
+                    Math.min(root.heightLimit, startHeight - dy))
+            }
+            onReleased: {
+                if (root.liveHeight >= 0) {
+                    ExplorerPrefs.setNumber("terminalHeight", root.liveHeight)
+                    root.liveHeight = -1
+                }
+            }
+            onCanceled: root.liveHeight = -1
+            onDoubleClicked: ExplorerPrefs.setNumber("terminalHeight",
+                                                     Theme.terminalHeight)
         }
     }
 

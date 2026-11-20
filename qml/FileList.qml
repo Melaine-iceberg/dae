@@ -49,10 +49,19 @@ Item {
     readonly property int headerHeight: density === "compact" ? 28
         : density === "spacious" ? 36 : 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
-    /// The name column flexes with the pane while metadata columns retain
-    /// their measured widths. A file manager should use a wide window for
-    /// long names rather than leaving an unused strip beside a capped table.
-    readonly property int contentWidth: width
+    /// The name column flexes with the pane up to a cap; past it the table
+    /// keeps its width and the rest of the pane stays background, the way
+    /// Explorer's detail view reads on a wide window. Metadata columns keep
+    /// their measured widths.
+    readonly property int nameMaxWidth: 420
+    readonly property int detailsWidth: {
+        let used = 0
+        for (let index = 0; index < shownColumns.length; index += 1)
+            used += effectiveColumnWidth(shownColumns[index])
+        return used
+    }
+    readonly property int contentWidth: Math.min(width,
+        16 + nameMaxWidth + 8 + detailsWidth + 16)
     /// The details columns as stored in preferences, padded to a stable length
     /// for positional widths.
     readonly property var columnIds: ["type", "size", "modified", "created", "tags"]
@@ -78,7 +87,7 @@ Item {
             let used = 0
             for (let index = 0; index < list.length; index += 1)
                 used += root.effectiveColumnWidth(list[index])
-            if (root.contentWidth - 16 - 50 - used >= root.nameMinWidth)
+            if (root.width - 16 - 50 - used >= root.nameMinWidth)
                 break
             for (let index = 0; index < root.columnRetreat.length; index += 1) {
                 const drop = list.indexOf(root.columnRetreat[index])
@@ -2091,7 +2100,7 @@ Item {
                 /// The row stops at the column track's cap; ListView leaves the
                 /// rest of the viewport as background, exactly like the
                 /// Tauri shell's Windows-style detail view.
-                width: ListView.view.width
+                width: root.contentWidth
                 height: root.rowHeight
                 /// A cut row stays legible but reads as pending (§7.1.7).
                 opacity: row.isCut ? 0.4 : 1

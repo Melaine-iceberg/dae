@@ -5806,6 +5806,7 @@ Window {
                         id: terminalPanel
                         width: parent ? parent.width : 0
                         active: root.folderActive && root.terminalActive
+                        heightLimit: contentColumn.height
                         tab: root.activeTab
                         dark: root.dark
                         material: root.material
