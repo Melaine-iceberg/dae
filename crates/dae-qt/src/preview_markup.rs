@@ -500,7 +500,7 @@ impl Renderer<'_> {
     fn inline_code(&mut self, code: &str) {
         let _ = write!(
             self.out,
-            "<span style=\"font-family:'Mona Sans Mono VF','Mona Sans Mono','Cascadia Mono',Consolas,monospace; color:{}; \
+            "<span style=\"font-family:'Google Sans Code','Cascadia Mono',Consolas,monospace; color:{}; \
              background-color:{};\">",
             self.palette.inline_code_fg, self.palette.inline_code_bg
         );

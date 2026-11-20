@@ -28,15 +28,14 @@ quint16 readU16(const uchar* data)
     return quint16(data[0]) | (quint16(data[1]) << 8);
 }
 
-/// The fixed-pitch faces in resolution order: the bundled Mona Sans Mono VF,
+/// The fixed-pitch faces in resolution order: the bundled Google Sans Code,
 /// then Symbols Nerd Font Mono (private-use icon glyphs only — the ones a
 /// powerline/oh-my-posh prompt draws), then the platform monos. Qt walks the
 /// list per glyph, so Chinese and icons reach a face that has them while every
-/// cell that does have a Mona glyph keeps its advance.
+/// cell that does have a bundled glyph keeps its advance.
 QStringList bundledMonoFamilies()
 {
-    return QStringList{ QStringLiteral("Mona Sans Mono VF"),
-                        QStringLiteral("Mona Sans Mono"),
+    return QStringList{ QStringLiteral("Google Sans Code"),
                         QStringLiteral("Symbols Nerd Font Mono"),
                         QStringLiteral("Cascadia Mono"),
                         QStringLiteral("Consolas"),
@@ -46,12 +45,12 @@ QStringList bundledMonoFamilies()
 /// Draws `text` into `rect`, squeezing it horizontally when the face that owns
 /// the glyphs advances wider than the cells those glyphs occupy.
 ///
-/// A Mona Sans Mono cell is 0.618 em; an icon face's glyph is a full em. Drawn
-/// at its own advance an icon would run past the right edge of its cell and be
-/// clipped there (Qt clips `drawText` to the rectangle it was given), so the
-/// grid wins: the run keeps its height and baseline and gives up width. Text
-/// from the cell's own face measures exactly `rect` wide, so this is a no-op
-/// for every ordinary run.
+/// A Google Sans Code cell is 0.6 em by design (8 px at 13 px); an icon
+/// face's glyph is a full em. Drawn at its own advance an icon would run past
+/// the right edge of its cell and be clipped there (Qt clips `drawText` to the
+/// rectangle it was given), so the grid wins: the run keeps its height and
+/// baseline and gives up width. Text from the cell's own face measures exactly
+/// `rect` wide, so this is a no-op for every ordinary run.
 void drawCellText(QPainter* painter, const QRectF& rect, const QString& text)
 {
     const qreal natural = QFontMetricsF(painter->font()).horizontalAdvance(text);
@@ -134,11 +133,10 @@ TerminalItem::TerminalItem(QQuickItem* parent)
     m_font.setStyleHint(QFont::Monospace);
     m_font.setFixedPitch(true);
     m_font.setPixelSize(13);
-    // Mona Sans Mono VF's variable default instance is ExtraLight (wght=200),
-    // and while Qt maps QFont::weight onto `wght` for a request, pinning it
-    // says out loud which instance the grid is measured from. Bold cells raise
-    // the same axis in `styleFont` instead of padding it with a synthetic
-    // embolden.
+    // Google Sans Code's variable default instance is Regular (wght=400),
+    // which is the instance the grid is measured from. Bold cells raise the
+    // same axis to 700 in `styleFont` instead of padding the face with a
+    // synthetic embolden.
     // The terminal paints through QPainter, not the scene graph's text path.
     // Hinted glyphs snap their stems to the pixel grid, which reads as
     // "no antialiasing" next to unhinted renderers; Zed's terminal draws

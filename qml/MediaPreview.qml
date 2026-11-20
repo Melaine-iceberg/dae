@@ -20,7 +20,7 @@ Item {
     property color hairline: Theme.hairline
     /// The play triangle sits on an accent plate, so its ink has to follow the
     /// resolved accent rather than stay white (§6.1.4).
-    readonly property color playInk: Theme.onAccent
+    readonly property color playInk: Theme.inkOnAccent
 
     property bool muted: false
     /// True once playback has started, so the poster steps aside for the
@@ -241,7 +241,7 @@ Item {
                 anchors.margins: 8
                 visible: root.video && root.started && root.playing
                 text: root.durationLabel(player.position)
-                color: Theme.onAccent
+                color: Theme.inkOnAccent
                 font.pixelSize: Theme.typeMicro
             }
         }
@@ -340,14 +340,14 @@ Item {
                         width: 3
                         height: 11
                         radius: Theme.radiusSm
-                        color: Theme.onAccent
+                        color: Theme.inkOnAccent
                     }
 
                     Rectangle {
                         width: 3
                         height: 11
                         radius: Theme.radiusSm
-                        color: Theme.onAccent
+                        color: Theme.inkOnAccent
                     }
                 }
 

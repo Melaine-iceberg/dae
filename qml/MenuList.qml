@@ -33,10 +33,9 @@ FocusScope {
     /// Escape with no submenu open, or with one: the host knows which.
     signal escapeRequested()
 
-    /// §7.5: a menu row is 28 dp. The list used to run at 32, which made a
-    /// ten-row menu 40 dp taller than the design and pushed the bottom rows
-    /// off a small window.
-    readonly property int rowHeight: Theme.controlMd
+    /// M3 Expressive menu rows are one density step above the old 28: 32 dp
+    /// gives the 14 px label and the 12 dp selection block room to breathe.
+    readonly property int rowHeight: Theme.rowDefault
 
     /// Whether these rows draw in the gutter at all — an icon, a mark, or a
     /// tick. The whole list shares the answer: labelling each row from its own
@@ -326,7 +325,7 @@ FocusScope {
                         && modelData.checked === true && !hasImage
 
                     width: column.width
-                    height: separator ? 9 : (header ? 22 : root.rowHeight)
+                    height: separator ? 9 : (header ? 24 : root.rowHeight)
 
                     // The row is the accessible element, not the label inside
                     // it: a screen reader has to be able to say which verb is
@@ -389,9 +388,9 @@ FocusScope {
                             width: parent.width - x - 8
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.modelData.label || ""
-                            color: Theme.inkTertiary
+                            color: Theme.inkSecondary
                             font.pixelSize: Theme.typeMicro
-                            font.weight: Font.Medium
+                            font.weight: Theme.weightEmphasis
                             elide: Text.ElideRight
                         }
                     }
@@ -401,9 +400,19 @@ FocusScope {
                         anchors.fill: parent
                         anchors.leftMargin: 4
                         anchors.rightMargin: 4
-                        radius: Theme.radiusSm
-                        color: entry.current || root.hoverIndex === entry.index
-                            ? Theme.hover : "transparent"
+                        anchors.topMargin: 1
+                        anchors.bottomMargin: 1
+                        radius: Theme.radiusMd
+                        color: entry.current ? Theme.selection
+                            : (root.hoverIndex === entry.index ? Theme.hover
+                                                              : "transparent")
+                        Behavior on color {
+                            enabled: Theme.motion
+                            ColorAnimation {
+                                duration: Theme.motionFast
+                                easing.type: Theme.motionEaseEffects
+                            }
+                        }
                     }
 
                     Image {
@@ -436,7 +445,7 @@ FocusScope {
                         height: 14
                         anchors.verticalCenter: parent.verticalCenter
                         kind: "check"
-                        tint: Theme.ink
+                        tint: entry.current ? Theme.selectionInk : Theme.accent
                     }
 
                     Text {
@@ -452,9 +461,11 @@ FocusScope {
                                 return Theme.inkTertiary
                             if (entry.modelData.danger === true)
                                 return Theme.danger
-                            return Theme.ink
+                            return entry.current ? Theme.selectionInk : Theme.ink
                         }
                         font.pixelSize: Theme.typeBody
+                        font.weight: entry.current ? Theme.weightEmphasis
+                                                   : Font.Normal
                         elide: Text.ElideRight
                     }
 

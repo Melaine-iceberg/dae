@@ -137,9 +137,10 @@ Item {
         x: Math.round((root.width - width) / 2)
         y: root.height - height - 32
         radius: Theme.radiusLg
-        color: root.panelColor
-        border.width: 1
-        border.color: root.borderColor
+        color: "transparent"
+        border.width: 0
+
+        Glass { radius: Theme.radiusLg }
 
         Item {
             id: header
@@ -227,7 +228,7 @@ Item {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                         color: closeMouse.containsMouse ? Theme.hover : "transparent"
                     }
 
@@ -261,9 +262,10 @@ Item {
             y: -height - 6
             z: 2
             radius: Theme.radiusMd
-            color: Theme.raised
-            border.width: 1
-            border.color: root.borderColor
+            color: "transparent"
+            border.width: 0
+
+            Glass { radius: Theme.radiusMd }
 
             Column {
                 id: speedColumn
@@ -442,13 +444,13 @@ Item {
         signal pauseToggled()
 
         width: parent ? parent.width : 0
-        height: row.target !== "" ? 52 : 40
+        height: row.target !== "" ? 56 : 42
 
         Rectangle {
             anchors.fill: parent
             anchors.leftMargin: 4
             anchors.rightMargin: 4
-            radius: Theme.radiusSm
+            radius: Theme.radiusMd
             color: rowMouse.containsMouse ? Theme.hover : "transparent"
         }
 
@@ -555,16 +557,11 @@ Item {
                 textFormat: Text.PlainText
             }
 
-            Rectangle {
+            M3Progress {
                 width: parent.width
-                height: 2
-                color: Theme.line
-
-                Rectangle {
-                    width: parent.width * Math.max(0, Math.min(1, row.progress))
-                    height: parent.height
-                    color: Theme.accent
-                }
+                height: 10
+                value: Math.max(0, Math.min(1, row.progress))
+                indeterminate: row.pausable && !row.paused && row.progress <= 0
             }
         }
 

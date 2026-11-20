@@ -149,7 +149,7 @@ FocusScope {
     readonly property color panelColor: Theme.raised
     readonly property color sidebarColor: Theme.chrome
     readonly property color hoverFill: Theme.hover
-    readonly property color selectedFill: Theme.hover
+    readonly property color selectedFill: Theme.selection
 
     readonly property bool defaultManagerCanSet:
         Workspace.defaultManagerSupported && !Workspace.defaultManagerBusy
@@ -179,7 +179,16 @@ FocusScope {
     ]
     readonly property var accentOptions: [
         { value: "system", label: qsTr("系统强调色") },
-        { value: "brand", label: qsTr("青蓝") }
+        { value: "brand", label: qsTr("青蓝") },
+        { value: "custom", label: qsTr("自定义") }
+    ]
+    /// The seed palette offered when the accent source is "custom". Mid-tone
+    /// saturated hues: the M3 derivation guards every container/ink pair for
+    /// contrast, so any of these stays readable in both themes.
+    readonly property var accentPalette: [
+        "#007a7b", "#2563eb", "#4f46e5", "#7c3aed",
+        "#c026d3", "#db2777", "#dc2626", "#ea580c",
+        "#d97706", "#65a30d", "#16a34a", "#0891b2"
     ]
     readonly property var languageOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -682,8 +691,10 @@ FocusScope {
         id: panel
         anchors.fill: parent
         anchors.topMargin: Theme.shellTitle
-        color: root.panelColor
+        color: "transparent"
         clip: true
+
+        Glass { radius: 0 }
 
         MouseArea {
             anchors.fill: parent
@@ -817,7 +828,7 @@ FocusScope {
 
                     SettingsRow {
                         label: qsTr("强调色")
-                        description: qsTr("“系统”读取桌面强调色，“青蓝”使用应用自带的强调色。")
+                        description: qsTr("“系统”读取桌面强调色，“青蓝”用自带色，“自定义”从调色盘选种色。")
                         onReset: Appearance.chooseAccent("system")
 
                         Row {
@@ -829,11 +840,95 @@ FocusScope {
                                     required property var modelData
                                     label: modelData.label
                                     selected: Appearance.accent === modelData.value
-                                    swatch: modelData.value === "brand"
-                                        ? Theme.brandAccent : Workspace.accent
+                                    swatch: modelData.value === "brand" ? Theme.brandAccent
+                                        : modelData.value === "custom"
+                                            ? (Appearance.customAccent !== ""
+                                                ? Appearance.customAccent : Theme.accent)
+                                            : Workspace.accent
                                     onClicked: Appearance.chooseAccent(modelData.value)
                                 }
                             }
+                        }
+                    }
+
+                    /// The seed palette, revealed only while the accent source
+                    /// is "custom" so the row ladder stays 40 dp elsewhere.
+                    /// Picking a swatch re-derives every M3 role live.
+                    Item {
+                        visible: Appearance.accent === "custom"
+                        width: parent.width
+                        height: visible ? paletteBody.implicitHeight + 12 : 0
+
+                        Column {
+                            id: paletteBody
+                            width: parent.width
+                            spacing: 10
+
+                            Flow {
+                                width: parent.width
+                                spacing: 8
+
+                                Repeater {
+                                    model: root.accentPalette
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        property color hue: modelData
+                                        readonly property bool picked:
+                                            Appearance.customAccent === modelData
+                                        width: 26
+                                        height: 26
+                                        radius: 13
+                                        color: hue
+                                        border.width: picked ? 2 : 1
+                                        border.color: picked ? Theme.ink : Theme.outlineVariant
+
+                                        Accessible.role: Accessible.RadioButton
+                                        Accessible.name: modelData
+                                        Accessible.checkable: true
+                                        Accessible.checked: picked
+                                        Accessible.onPressAction:
+                                            Appearance.chooseCustomAccent(modelData)
+
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            visible: picked
+                                            width: 8
+                                            height: 8
+                                            radius: 4
+                                            color: Theme.readableInk(hue)
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Appearance.chooseCustomAccent(modelData)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Row {
+                                spacing: 8
+
+                                ChoiceChip {
+                                    label: qsTr("取色…")
+                                    onClicked: accentPicker.open()
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: Appearance.customAccent !== ""
+                                        ? Appearance.customAccent : qsTr("未选择")
+                                    color: root.mutedColor
+                                    font.pixelSize: Theme.typeCaption
+                                    font.family: Theme.monoFamily
+                                }
+                            }
+                        }
+
+                        ColorDialog {
+                            id: accentPicker
+                            onAccepted: Appearance.chooseCustomAccent(selectedColor)
                         }
                     }
 
@@ -955,26 +1050,38 @@ FocusScope {
                     }
 
                     SettingsRow {
-                        label: qsTr("动效")
-                        description: qsTr("关闭后所有过渡改为瞬时切换。")
-                        onReset: ExplorerPrefs.setBool("reduceMotion", false)
+                        label: qsTr("动效方案")
+                        description: qsTr("生动方案带弹簧过冲；标准方案平稳落入，不回弹。")
+                        onReset: ExplorerPrefs.setString("motionScheme", "expressive")
 
                         Row {
                             spacing: 8
 
                             Repeater {
                                 model: [
-                                    { value: false, label: qsTr("完整") },
-                                    { value: true, label: qsTr("减少") }
+                                    { value: "expressive", label: qsTr("生动") },
+                                    { value: "standard", label: qsTr("标准") }
                                 ]
                                 delegate: ChoiceChip {
                                     required property var modelData
                                     label: modelData.label
-                                    selected: ExplorerPrefs.reduceMotion === modelData.value
-                                    onClicked: ExplorerPrefs.setBool("reduceMotion",
-                                                                     modelData.value)
+                                    selected: ExplorerPrefs.motionScheme === modelData.value
+                                    onClicked: ExplorerPrefs.setString("motionScheme",
+                                                                       modelData.value)
                                 }
                             }
+                        }
+                    }
+
+                    SettingsRow {
+                        label: qsTr("减少动效")
+                        description: qsTr("开启后所有过渡改为瞬时切换。")
+                        onReset: ExplorerPrefs.setBool("reduceMotion", false)
+
+                        M3Switch {
+                            checked: ExplorerPrefs.reduceMotion
+                            onClicked: ExplorerPrefs.setBool("reduceMotion",
+                                                             !ExplorerPrefs.reduceMotion)
                         }
                     }
 
@@ -1013,21 +1120,20 @@ FocusScope {
                             ? root.backgroundNote : qsTr("关闭则使用实色，适合远程桌面环境。")
                         onReset: Appearance.chooseBlur(false)
 
-                        Row {
-                            spacing: 8
+                        M3Switch {
+                            checked: Appearance.blurEnabled
+                            onClicked: Appearance.chooseBlur(!Appearance.blurEnabled)
+                        }
+                    }
 
-                            Repeater {
-                                model: [
-                                    { value: true, label: qsTr("开启") },
-                                    { value: false, label: qsTr("关闭") }
-                                ]
-                                delegate: ChoiceChip {
-                                    required property var modelData
-                                    label: modelData.label
-                                    selected: Appearance.blurEnabled === modelData.value
-                                    onClicked: Appearance.chooseBlur(modelData.value)
-                                }
-                            }
+                    SettingsRow {
+                        label: qsTr("浮层毛玻璃")
+                        description: qsTr("菜单、对话框等浮层模糊背后内容；关闭改为不透明表面，适合性能较弱的设备。")
+                        onReset: Appearance.chooseFrostedGlass(true)
+
+                        M3Switch {
+                            checked: Appearance.frostedGlass
+                            onClicked: Appearance.chooseFrostedGlass(!Appearance.frostedGlass)
                         }
                     }
 
@@ -1036,21 +1142,9 @@ FocusScope {
                         description: qsTr("先显示纯色窗口，界面在它后面加载；下次启动生效。")
                         onReset: Appearance.chooseShellFirst(true)
 
-                        Row {
-                            spacing: 8
-
-                            Repeater {
-                                model: [
-                                    { value: true, label: qsTr("开启") },
-                                    { value: false, label: qsTr("关闭") }
-                                ]
-                                delegate: ChoiceChip {
-                                    required property var modelData
-                                    label: modelData.label
-                                    selected: Appearance.shellFirst === modelData.value
-                                    onClicked: Appearance.chooseShellFirst(modelData.value)
-                                }
-                            }
+                        M3Switch {
+                            checked: Appearance.shellFirst
+                            onClicked: Appearance.chooseShellFirst(!Appearance.shellFirst)
                         }
                     }
 
@@ -1119,7 +1213,7 @@ FocusScope {
                                     text: ExplorerPrefs.backgroundImage
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onAccent
+                                    selectedTextColor: Theme.inkOnAccent
                                     font.pixelSize: Theme.typeCaption
                                     selectByMouse: true
                                     clip: true
@@ -1131,17 +1225,18 @@ FocusScope {
                             Rectangle {
                                 width: 68
                                 height: Theme.controlMd
-                                radius: Theme.radiusSm
+                                radius: Theme.radiusFull
                                 color: chooseMouse.containsMouse
                                     ? root.hoverFill : "transparent"
                                 border.width: 1
-                                border.color: root.hairline
+                                border.color: Theme.outlineVariant
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: qsTr("选择…")
-                                    color: root.textColor
+                                    color: root.accent
                                     font.pixelSize: Theme.typeCaption
+                                    font.weight: Theme.weightStrong
                                 }
 
                                 MouseArea {
@@ -1157,11 +1252,11 @@ FocusScope {
                             Rectangle {
                                 width: 68
                                 height: Theme.controlMd
-                                radius: Theme.radiusSm
+                                radius: Theme.radiusFull
                                 color: clearMouse.containsMouse
                                     ? root.hoverFill : "transparent"
                                 border.width: 1
-                                border.color: root.hairline
+                                border.color: Theme.outlineVariant
                                 enabled: ExplorerPrefs.backgroundImage !== ""
                                 opacity: enabled ? 1 : 0.45
 
@@ -1220,17 +1315,18 @@ FocusScope {
                         Rectangle {
                             width: 96
                             height: Theme.controlMd
-                            radius: Theme.radiusSm
+                            radius: Theme.radiusFull
                             color: toolbarResetMouse.containsMouse
                                 ? root.hoverFill : "transparent"
                             border.width: 1
-                            border.color: root.hairline
+                            border.color: Theme.outlineVariant
 
                             Text {
                                 anchors.centerIn: parent
                                 text: qsTr("恢复默认")
-                                color: root.textColor
+                                color: root.accent
                                 font.pixelSize: Theme.typeCaption
+                                font.weight: Theme.weightStrong
                             }
 
                             MouseArea {
@@ -1317,7 +1413,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1326,7 +1422,7 @@ FocusScope {
                 Text {
                     x: 130; y: 118
                     width: content.width - 178
-                    text: qsTr("留空使用内置 Mona Sans VF；中文回退到系统字体。")
+                    text: qsTr("留空使用内置 Google Sans Flex；中文回退到系统字体。")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
@@ -1352,7 +1448,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -1361,7 +1457,7 @@ FocusScope {
                 Text {
                     x: 130; y: 184
                     width: content.width - 178
-                    text: qsTr("留空使用内置 Mona Sans Mono VF；终端、大小、速率与代码预览共用。")
+                    text: qsTr("留空使用内置 Google Sans Code；终端、大小、速率与代码预览共用。")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
@@ -1688,7 +1784,7 @@ FocusScope {
                                     verticalAlignment: TextInput.AlignVCenter
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onAccent
+                                    selectedTextColor: Theme.inkOnAccent
                                     font.pixelSize: Theme.typeCaption
                                     selectByMouse: true
                                     clip: true
@@ -1709,7 +1805,7 @@ FocusScope {
                                     verticalAlignment: TextInput.AlignVCenter
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onAccent
+                                    selectedTextColor: Theme.inkOnAccent
                                     font.pixelSize: Theme.typeCaption
                                     font.family: Theme.monoFamily
                                     selectByMouse: true
@@ -1752,7 +1848,7 @@ FocusScope {
                                     onTextEdited: actionRow.editArgs = text
                                     color: root.textColor
                                     selectionColor: root.accent
-                                    selectedTextColor: Theme.onAccent
+                                    selectedTextColor: Theme.inkOnAccent
                                     font.pixelSize: Theme.typeCaption
                                     font.family: Theme.monoFamily
                                     selectByMouse: true
@@ -1847,7 +1943,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onAccent
+                            selectedTextColor: Theme.inkOnAccent
                             font.pixelSize: Theme.typeCaption
                             selectByMouse: true
                             clip: true
@@ -1868,7 +1964,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onAccent
+                            selectedTextColor: Theme.inkOnAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -1911,7 +2007,7 @@ FocusScope {
                             onTextEdited: root.newActionArgs = text
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onAccent
+                            selectedTextColor: Theme.inkOnAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -2022,7 +2118,7 @@ FocusScope {
                     inputMethodHints: Qt.ImhDigitsOnly
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -2055,7 +2151,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -2089,7 +2185,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -2122,7 +2218,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
@@ -2333,10 +2429,10 @@ FocusScope {
                             width: 200
                             height: Theme.controlMd
                             anchors.verticalCenter: parent.verticalCenter
-                            radius: Theme.radiusXs
+                            radius: Theme.radiusSm
                             color: Theme.field
-                            border.width: 1
-                            border.color: nameInput.activeFocus ? Theme.accent : Theme.hairline
+                            border.width: nameInput.activeFocus ? 2 : 1
+                            border.color: nameInput.activeFocus ? Theme.accent : Theme.outlineVariant
 
                             TextInput {
                                 id: nameInput
@@ -2570,7 +2666,7 @@ FocusScope {
                     radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
-                    border.color: root.hairline
+                    border.color: Theme.outlineVariant
 
                     Text {
                         anchors.fill: parent
@@ -2646,7 +2742,7 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     text: qsTr("完成")
-                    color: Theme.onAccent
+                    color: Theme.inkOnAccent
                     font.pixelSize: Theme.typeCaption
                 }
 
@@ -2685,10 +2781,11 @@ FocusScope {
                 anchors.centerIn: parent
                 width: Math.min(420, parent.width - 64)
                 height: 164
-                radius: Theme.radiusLg
-                color: root.panelColor
-                border.width: 1
-                border.color: root.hairline
+                radius: Theme.radiusXl
+                color: "transparent"
+                border.width: 0
+
+                Glass { radius: Theme.radiusXl }
 
                 Text {
                     x: 22; y: 20
@@ -2704,9 +2801,9 @@ FocusScope {
                     x: 22; y: 54
                     width: parent.width - 44
                     height: 46
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
                     color: root.fieldColor
-                    border.width: 1
+                    border.width: 2
                     border.color: root.accent
 
                     Text {
@@ -2736,7 +2833,7 @@ FocusScope {
 
         width: parent.width
         height: Theme.controlLg
-        radius: Theme.radiusSm
+        radius: Theme.radiusFull
         color: root.page === nav.value
             ? root.selectedFill
             : (navMouse.containsMouse ? root.hoverFill : "transparent")
@@ -2760,25 +2857,13 @@ FocusScope {
 
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: 10
+            anchors.leftMargin: 12
             anchors.verticalCenter: parent.verticalCenter
             text: nav.label
-            color: root.page === nav.value ? root.textColor : root.mutedColor
+            color: root.page === nav.value ? Theme.selectionInk : root.mutedColor
             font.pixelSize: Theme.typeCaption
-            font.weight: root.page === nav.value ? Font.Medium : Font.Normal
-        }
-
-        // A thin signal-coloured marker makes the active page readable at a
-        // glance without tinting the whole row. The marker stays on `signal`:
-        // the system accent belongs to controls, not to "where am I".
-        Rectangle {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            width: 2
-            height: 16
-            radius: Theme.radiusSm
-            color: Theme.accent
-            visible: root.page === nav.value
+            font.weight: root.page === nav.value
+                ? Theme.weightEmphasis : Font.Normal
         }
 
         MouseArea {
@@ -2807,15 +2892,23 @@ FocusScope {
 
         // 24px for the swatch and 12px right padding, plus 2px of slack so the
         // last glyph never lands under the elide threshold.
-        width: chipText.implicitWidth + (chip.swatch.a > 0 ? 38 : 24)
+        width: chipText.implicitWidth + (chip.swatch.a > 0 ? 42 : 28)
         height: Theme.controlMd
-        radius: Theme.radiusSm
+        property real morph: chipMouse.pressed ? 1 : 0
+        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+        Behavior on morph {
+            enabled: Theme.motion
+            SpringAnimation {
+                spring: Theme.springSpatialFast
+                damping: Theme.dampSpatialFast
+                epsilon: 0.005
+            }
+        }
         color: chip.selected
-            ? (root.dark ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
-                         : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12))
+            ? Theme.selection
             : (chipMouse.containsMouse ? root.hoverFill : "transparent")
-        border.width: 1
-        border.color: chip.selected ? root.accent : root.hairline
+        border.width: chip.selected ? 0 : 1
+        border.color: Theme.outlineVariant
 
         /// A chip is one choice in a mutually exclusive set, which is a radio
         /// button however it is drawn.
@@ -2831,22 +2924,23 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             width: 10
             height: 10
-            radius: Theme.radiusSm
+            radius: width / 2
             color: chip.swatch
             border.width: 1
-            border.color: root.hairline
+            border.color: chip.selected ? Theme.selectionInk : Theme.outlineVariant
         }
 
         Text {
             id: chipText
             anchors.left: parent.left
-            anchors.leftMargin: chip.swatch.a > 0 ? 24 : 12
+            anchors.leftMargin: chip.swatch.a > 0 ? 26 : 14
             anchors.right: parent.right
-            anchors.rightMargin: 12
+            anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             text: chip.label
-            color: chip.selected ? root.textColor : root.mutedColor
+            color: chip.selected ? Theme.selectionInk : root.mutedColor
             font.pixelSize: Theme.typeMicro
+            font.weight: chip.selected ? Theme.weightStrong : Font.Normal
             elide: Text.ElideRight
         }
 
@@ -2863,12 +2957,21 @@ FocusScope {
         property string label: ""
         signal clicked()
 
-        width: buttonText.implicitWidth + 26
-        height: Theme.controlMd
-        radius: Theme.radiusSm
+        width: buttonText.implicitWidth + 32
+        height: Theme.controlLg
+        property real morph: buttonMouse.pressed ? 1 : 0
+        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+        Behavior on morph {
+            enabled: Theme.motion
+            SpringAnimation {
+                spring: Theme.springSpatialFast
+                damping: Theme.dampSpatialFast
+                epsilon: 0.005
+            }
+        }
         opacity: button.enabled ? 1 : 0.45
         color: button.enabled && buttonMouse.containsMouse
-            ? Qt.lighter(root.accent, 1.08) : root.accent
+            ? Theme.accentHover : Theme.accent
 
         Accessible.role: Accessible.Button
         Accessible.name: button.label
@@ -2881,8 +2984,9 @@ FocusScope {
             id: buttonText
             anchors.centerIn: parent
             text: button.label
-            color: Theme.onAccent
-            font.pixelSize: Theme.typeMicro
+            color: Theme.inkOnAccent
+            font.pixelSize: Theme.typeCaption
+            font.weight: Theme.weightStrong
         }
 
         MouseArea {
@@ -2898,13 +3002,24 @@ FocusScope {
         property string label: ""
         signal clicked()
 
-        width: buttonText.implicitWidth + 26
-        height: Theme.controlMd
-        radius: Theme.radiusSm
+        width: buttonText.implicitWidth + 32
+        height: Theme.controlLg
+        property real morph: buttonMouse.pressed ? 1 : 0
+        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+        Behavior on morph {
+            enabled: Theme.motion
+            SpringAnimation {
+                spring: Theme.springSpatialFast
+                damping: Theme.dampSpatialFast
+                epsilon: 0.005
+            }
+        }
         opacity: button.enabled ? 1 : 0.45
-        color: button.enabled && buttonMouse.containsMouse ? root.hoverFill : "transparent"
+        color: button.enabled && buttonMouse.containsMouse
+            ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
+            : "transparent"
         border.width: 1
-        border.color: root.hairline
+        border.color: Theme.outline
 
         Accessible.role: Accessible.Button
         Accessible.name: button.label
@@ -2917,8 +3032,9 @@ FocusScope {
             id: buttonText
             anchors.centerIn: parent
             text: button.label
-            color: root.mutedColor
-            font.pixelSize: Theme.typeMicro
+            color: Theme.accent
+            font.pixelSize: Theme.typeCaption
+            font.weight: Theme.weightStrong
         }
 
         MouseArea {
@@ -2934,19 +3050,29 @@ FocusScope {
         property string label: ""
         signal clicked()
 
-        width: smallText.implicitWidth + 20
-        height: Theme.controlSm
-        radius: Theme.radiusSm
-        color: smallMouse.containsMouse ? root.hoverFill : "transparent"
-        border.width: 1
-        border.color: root.hairline
+        width: smallText.implicitWidth + 24
+        height: Theme.controlMd
+        property real morph: smallMouse.pressed ? 1 : 0
+        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+        Behavior on morph {
+            enabled: Theme.motion
+            SpringAnimation {
+                spring: Theme.springSpatialFast
+                damping: Theme.dampSpatialFast
+                epsilon: 0.005
+            }
+        }
+        color: smallMouse.containsMouse
+            ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
+            : "transparent"
 
         Text {
             id: smallText
             anchors.centerIn: parent
             text: button.label
-            color: root.mutedColor
+            color: Theme.accent
             font.pixelSize: Theme.typeMicro
+            font.weight: Theme.weightStrong
         }
 
         MouseArea {
@@ -2986,10 +3112,10 @@ FocusScope {
     }
 
     component FieldFrame: Rectangle {
-        radius: Theme.radiusSm
+        radius: Theme.radiusMd
         color: root.fieldColor
         border.width: 1
-        border.color: root.hairline
+        border.color: Theme.outlineVariant
     }
 
     /// The dialog hands back a URL; the preference stores a native path so the

@@ -162,8 +162,10 @@ Item {
         anchors.centerIn: parent
         width: Math.min(490, root.width - 48)
         height: 470
-        radius: Theme.radiusLg
-        color: Theme.raised
+        radius: Theme.radiusXl
+        color: "transparent"
+
+        Glass { radius: Theme.radiusXl }
         border.width: 1
         border.color: Theme.overlayLine
 
@@ -295,7 +297,7 @@ Item {
                         text: root.redirectUri
                         color: Theme.inkSecondary
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onAccent
+                        selectedTextColor: Theme.inkOnAccent
                         font.pixelSize: Theme.typeMicro
                         font.family: Theme.monoFamily
 
@@ -374,7 +376,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: root.authorizing ? qsTr("等待授权中…") : qsTr("在浏览器中授权…")
-                color: Theme.onAccent
+                color: Theme.inkOnAccent
                 font.pixelSize: Theme.typeCaption
             }
 
@@ -452,7 +454,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: providerCard.glyph
-                color: Theme.onSolid
+                color: Theme.inkOnSolid
                 font.pixelSize: Theme.typeBody
                 font.weight: Font.Medium
             }
@@ -527,7 +529,7 @@ Item {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onAccent
+                selectedTextColor: Theme.inkOnAccent
                 font.pixelSize: Theme.typeCaption
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 selectByMouse: true

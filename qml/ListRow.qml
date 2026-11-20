@@ -1,18 +1,13 @@
 import QtQuick
 import QtQuick.Layouts
 
-/// One list row (§12.1). Every list-like page — overview, trash, spaces and
-/// the column browser — mounts this instead of restating the row grammar:
-/// 40 dp tall by default, a glyph, one or two lines of text, optional trailing
-/// content, a 4% hover wash, a 10% accent selection and a keyboard cursor.
+/// One list row. Every list-like page — overview, trash, spaces and the column
+/// browser — mounts this instead of restating the row grammar: 40 dp tall by
+/// default, a glyph, one or two lines of text, optional trailing content.
 ///
-/// It is `ListRow`, not `Row`: QtQuick already defines `Row`, and a file named
-/// `Row.qml` in this directory shadows it for every document here.
-///
-/// The row owns its interaction states and leaves the cells to the page. A
-/// page adds middle columns through `default` content (they land in a
-/// `RowLayout` and can use `Layout.*`) and right-aligned content through
-/// `trailing`; `meta` is a plain right-aligned figure for the common case.
+/// M3 Expressive selection is a rounded `secondaryContainer` block inset from
+/// the row's edges, not a full-bleed accent wash or a focus rail. Hover is the
+/// 8 % on-surface state layer; the keyboard cursor is a 2 px `primary` ring.
 Item {
     id: row
 
@@ -105,61 +100,71 @@ Item {
         id: stateMask
 
         anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        anchors.topMargin: 1
+        anchors.bottomMargin: 1
+        radius: Theme.radiusMd
         color: row.isSelected ? Theme.selection
             : row.dropTarget ? Theme.accentSoftStrong
             : (row.hovered || row.highlighted ? Theme.hover : "transparent")
-        topLeftRadius: row.isSelected && row.previousSelected ? 0 : Theme.radiusSm
-        topRightRadius: row.isSelected && row.previousSelected ? 0 : Theme.radiusSm
-        bottomLeftRadius: row.isSelected && row.nextSelected ? 0 : Theme.radiusSm
-        bottomRightRadius: row.isSelected && row.nextSelected ? 0 : Theme.radiusSm
-        Accessible.ignored: true
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        /// §7.1.7: the one-shot paste/create highlight. Fading needs a value
-        /// that changes, so opacity carries the flash; `visible` also follows
-        /// the property because an `OpacityAnimator` only commits it when the
-        /// animation finishes — waiting on the committed value alone would cut
-        /// the fade-out off. The animator runs on the render thread (§6.6).
-        opacity: row.flash ? 1 : 0
-        visible: row.flash || opacity > 0
-        radius: Theme.radiusSm
-        color: Theme.accentSoftStrong
         Accessible.ignored: true
 
-        Behavior on opacity {
+        Behavior on color {
             enabled: Theme.motion
-            OpacityAnimator { duration: 160; easing.type: Easing.OutCubic }
+            ColorAnimation {
+                duration: Theme.motionFast
+                easing.type: Theme.motionEaseEffects
+            }
         }
     }
 
     Rectangle {
         anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        anchors.topMargin: 1
+        anchors.bottomMargin: 1
+        /// One-shot paste/create highlight.
+        opacity: row.flash ? 1 : 0
+        visible: row.flash || opacity > 0
+        radius: Theme.radiusMd
+        color: Theme.accentSoftStrong
+        Accessible.ignored: true
+
+        Behavior on opacity {
+            enabled: Theme.motion
+            OpacityAnimator {
+                duration: Theme.motionEffects
+                easing.type: Theme.motionEaseEffects
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        anchors.topMargin: 1
+        anchors.bottomMargin: 1
         visible: row.dropTarget
-        radius: Theme.radiusSm
+        radius: Theme.radiusMd
         color: "transparent"
-        border.width: 1.5
+        border.width: 2
         border.color: Theme.accent
         Accessible.ignored: true
     }
 
     Rectangle {
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: 2
-        visible: row.showFocusRail && row.focusedCursor && row.isSelected
-        color: Theme.accent
-        Accessible.ignored: true
-    }
-
-    Rectangle {
         anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        anchors.topMargin: 1
+        anchors.bottomMargin: 1
         visible: row.focusedCursor && !row.isSelected
-        radius: Theme.radiusSm
+        radius: Theme.radiusMd
         color: "transparent"
-        border.width: 1.5
+        border.width: 2
         border.color: Theme.accent
         Accessible.ignored: true
     }

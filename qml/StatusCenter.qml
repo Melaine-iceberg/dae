@@ -29,7 +29,7 @@ Item {
     z: 1003
 
     readonly property color panelColor: Theme.raised
-    readonly property color borderColor: Theme.line
+    readonly property color borderColor: Theme.overlayLine
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkSecondary
     readonly property color faintColor: Theme.inkTertiary
@@ -91,42 +91,52 @@ Item {
         height: Math.min(420, headerRow.height + Math.max(96, list.contentHeight) + 20)
         x: Math.round((root.width - width) / 2)
         y: root.height - height - 32
-        radius: Theme.radiusMd
-        color: root.panelColor
-        border.width: 1
-        border.color: root.borderColor
+        radius: Theme.radiusXl
+        color: "transparent"
+        border.width: 0
+
+        Glass { radius: Theme.radiusXl }
 
         Item {
             id: headerRow
             width: parent.width
-            height: Theme.controlMd
+            height: 44
 
             Text {
-                x: 10
+                x: 16
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("状态中心")
-                color: root.faintColor
-                font.pixelSize: Theme.typeMicro
+                color: root.mutedColor
+                font.pixelSize: Theme.typeCaption
+                font.weight: Theme.weightEmphasis
             }
 
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: 8
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
+                spacing: 4
 
                 Item {
-                    width: 56
-                    height: Theme.controlSm
+                    width: 64
+                    height: Theme.controlMd
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("清除记录")
                     Accessible.onPressAction: Workspace.clearOperationHistory()
 
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radiusFull
+                        color: clearMouse.containsMouse
+                            ? Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                      Theme.accent.b, 0.08) : "transparent"
+                    }
+
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("清除记录")
-                        color: clearMouse.containsMouse ? root.textColor : root.faintColor
+                        color: clearMouse.containsMouse ? Theme.accent : root.mutedColor
                         font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                     }
@@ -140,12 +150,18 @@ Item {
                 }
 
                 Item {
-                    width: 18
-                    height: Theme.controlSm
+                    width: Theme.controlMd
+                    height: Theme.controlMd
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("关闭")
                     Accessible.onPressAction: root.close()
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radiusFull
+                        color: closeMouse.containsMouse ? Theme.hover : "transparent"
+                    }
 
                     Glyph {
                         anchors.centerIn: parent
@@ -192,7 +208,7 @@ Item {
 
                 width: ListView.view ? ListView.view.width : 0
                 height: content.height + 14
-                radius: Theme.radiusXs
+                radius: Theme.radiusMd
                 color: rowHover.hovered ? Theme.hover : "transparent"
 
                 HoverHandler { id: rowHover }

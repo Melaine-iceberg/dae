@@ -402,7 +402,7 @@ Item {
             readonly property bool folded: root.isFolded(sectionRow.section)
 
             width: ListView.view.width
-            height: Theme.controlXs
+            height: 24
 
             /// The header is the fold control (§7.3.2): one click closes the
             /// group, the next opens it, and the state is remembered.
@@ -434,7 +434,7 @@ Item {
                     : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
                 font.family: Theme.uiFamily
                 font.pixelSize: Theme.typeMicro
-                font.weight: Font.DemiBold
+                font.weight: Theme.weightEmphasis
             }
 
             Text {
@@ -532,9 +532,9 @@ Item {
                 && list.currentIndex === row.index
             readonly property bool lit: row.focused || row.armed
                 || rowMouse.containsMouse
-            /// Every destination is one 28 dp line (§7.3.2); a volume's tree
-            /// hangs below it rather than inside the row.
-            readonly property int rowHeight: 28
+            /// Every destination is one 32 dp line; a volume's tree hangs
+            /// below it rather than inside the row.
+            readonly property int rowHeight: 32
 
             width: ListView.view.width
             height: row.folded ? 0 : rowHeight + (row.treeOpen ? treeLoader.height : 0)
@@ -588,24 +588,25 @@ Item {
                     x: 8
                     width: rowBody.width - 16
                     height: rowBody.height
-                    radius: Theme.radiusSm
-                    /// The current destination is an 8 % accent wash with the
-                    /// text staying `ink` (§7.3.2); a drop target is the same
-                    /// wash one step stronger. Neither inverts the type.
+                    radius: Theme.radiusFull
+                    /// The current destination is an M3 `secondaryContainer`
+                    /// pill; the ink flips to `onSecondaryContainer` with it.
+                    /// A drop target is the accent wash, one step stronger.
                     color: row.armed ? Theme.accentSoft
-                        : row.focused ? Theme.accentFaint
+                        : row.focused ? Theme.selection
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
-                    border.width: row.cursor && !row.armed ? Theme.edgeWidth : 0
+                    border.width: row.cursor && !row.armed ? 2 : 0
                     border.color: Theme.accent
                 }
 
                 /// The plate's edge for a drop target: a solid accent frame,
-                /// where the keyboard cursor's ring is 1 dp and unfilled.
+                /// where the keyboard cursor's ring is 2 dp and unfilled.
                 Rectangle {
                     anchors.fill: plate
                     visible: row.armed
+                    radius: Theme.radiusFull
                     color: "transparent"
-                    border.width: 1.5
+                    border.width: 2
                     border.color: Theme.accent
                 }
 
@@ -617,7 +618,7 @@ Item {
 
                     visible: row.isVolume
                     x: 8
-                    y: 4
+                    y: 6
                     width: 16
                     height: Theme.controlXs
                     z: 2
@@ -649,11 +650,11 @@ Item {
                     id: rowIcon
 
                     x: row.isVolume ? 26 : 18
-                    y: 6
+                    y: 8
                     width: 16
                     height: 16
                     kind: root.glyphKind(row.icon)
-                    tint: row.focused && !row.armed ? Theme.accent
+                    tint: row.focused && !row.armed ? Theme.selectionInk
                         : (row.lit ? Theme.inkSecondary : Theme.inkTertiary)
                 }
 
@@ -662,7 +663,7 @@ Item {
 
                     x: row.isVolume ? 46 : 40
                     y: 0
-                    height: 28
+                    height: 32
                     // A volume's free-space figure owns the right edge, so the
                     // drive name elides only against that one run.
                     width: Math.max(0, (row.isVolume
@@ -672,9 +673,10 @@ Item {
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: row.kind === "favoriteHint" && root.favoriteDropActive
                         ? Theme.accent
-                        : row.focused && !row.armed ? Theme.ink
+                        : row.focused && !row.armed ? Theme.selectionInk
                         : (row.lit ? Theme.ink : Theme.inkSecondary)
                     font.pixelSize: Theme.typeBody
+                    font.weight: row.focused ? Theme.weightEmphasis : Font.Normal
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                 }
@@ -688,12 +690,12 @@ Item {
                     visible: row.isVolume
                     anchors.right: parent.right
                     anchors.rightMargin: 18
-                    height: 28
+                    height: 32
                     width: Math.min(implicitWidth, Math.max(0, rowBody.width * 0.45))
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
                     text: qsTr("%1 可用").arg(row.detail)
-                    color: row.focused && !row.armed ? Theme.ink
+                    color: row.focused && !row.armed ? Theme.selectionInk
                         : row.fill > 0.9 ? Theme.warning : Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
@@ -707,16 +709,18 @@ Item {
 
                     visible: row.isVolume
                     x: 46
-                    y: rowBody.height - 2
+                    y: rowBody.height - 4
                     width: Math.max(0, rowBody.width - 46 - 18)
-                    height: 2
-                    color: Theme.hairline
+                    height: 3
+                    radius: height / 2
+                    color: Theme.outlineVariant
 
                     Rectangle {
                         width: Math.round(parent.width
                             * Math.max(0, Math.min(1, row.fill)))
                         height: parent.height
-                        color: row.fill > 0.9 ? Theme.warning : Theme.inkTertiary
+                        radius: height / 2
+                        color: row.fill > 0.9 ? Theme.warning : Theme.primary
                     }
                 }
 
@@ -726,12 +730,12 @@ Item {
                     visible: !row.isVolume
                     anchors.right: parent.right
                     anchors.rightMargin: 18
-                    height: 28
+                    height: 32
                     width: Math.min(implicitWidth, 112)
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
                     text: root.detailLabel(row.detail)
-                    color: row.focused && !row.armed ? Theme.inkSecondary
+                    color: row.focused && !row.armed ? Theme.selectionInk
                         : Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
@@ -865,7 +869,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: savedArea.top
         visible: root.discovered.length > 0
-        height: visible ? 28 + serverList.height + 8 : 0
+        height: visible ? 32 + serverList.height + 8 : 0
 
         Rectangle {
             anchors.left: parent.left
@@ -884,7 +888,7 @@ Item {
             color: Theme.inkTertiary
             font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.DemiBold
+            font.weight: Theme.weightEmphasis
         }
 
         Glyph {
@@ -925,8 +929,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 28
-            height: Math.min(contentHeight, 3 * 28)
+            anchors.topMargin: 32
+            height: Math.min(contentHeight, 3 * 32)
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -937,7 +941,7 @@ Item {
                 required property var modelData
 
                 width: ListView.view.width
-                height: 28
+                height: 32
 
                 readonly property bool hovered: serverMouse.containsMouse
                 readonly property string label: modelData.name !== ""
@@ -950,7 +954,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: serverRow.hovered ? Theme.hover : "transparent"
                 }
 
@@ -1011,7 +1015,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: tagsArea.top
         visible: savedSearches.length > 0
-        height: visible ? 28 + savedList.height + 8 : 0
+        height: visible ? 32 + savedList.height + 8 : 0
 
         /// A malformed document reads as "no saved searches" rather than
         /// breaking the column; the preference setter already drops entries
@@ -1042,7 +1046,7 @@ Item {
             color: Theme.inkTertiary
             font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.DemiBold
+            font.weight: Theme.weightEmphasis
         }
 
         ListView {
@@ -1050,8 +1054,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 28
-            height: Math.min(contentHeight, 4 * 28)
+            anchors.topMargin: 32
+            height: Math.min(contentHeight, 4 * 32)
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -1062,7 +1066,7 @@ Item {
                 required property var modelData
 
                 width: ListView.view.width
-                height: 28
+                height: 32
 
                 readonly property bool hovered: savedMouse.containsMouse
 
@@ -1077,7 +1081,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: savedRow.hovered ? Theme.hover : "transparent"
                 }
 
@@ -1158,7 +1162,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: trashArea.top
         visible: tags.length > 0
-        height: visible ? 28 + tagList.height + 8 : 0
+        height: visible ? 32 + tagList.height + 8 : 0
 
         readonly property var tags: {
             try {
@@ -1195,7 +1199,7 @@ Item {
             color: Theme.inkTertiary
             font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
-            font.weight: Font.DemiBold
+            font.weight: Theme.weightEmphasis
         }
 
         ListView {
@@ -1203,8 +1207,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 28
-            height: Math.min(contentHeight, 6 * 28)
+            anchors.topMargin: 32
+            height: Math.min(contentHeight, 6 * 32)
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -1215,7 +1219,7 @@ Item {
                 required property var modelData
 
                 width: ListView.view.width
-                height: 28
+                height: 32
 
                 readonly property bool hovered: tagMouse.containsMouse
                 readonly property bool armed: tagDrop.containsDrag
@@ -1227,7 +1231,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: tagRow.armed ? Theme.accentSoft
                         : (tagRow.hovered ? Theme.hover : "transparent")
                 }
@@ -1294,7 +1298,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 42
+        height: 46
 
         Rectangle {
             anchors.left: parent.left
@@ -1311,45 +1315,34 @@ Item {
             x: 8
             y: 7
             width: parent.width - 16
-            height: Theme.controlMd
-            radius: Theme.radiusSm
+            height: Theme.controlLg
+            radius: Theme.radiusFull
             color: root.trashActive
-                ? Theme.accentSoft
+                ? Theme.selection
                 : (trashMouse.containsMouse ? Theme.hover : "transparent")
 
             Accessible.role: Accessible.Button
             Accessible.name: root.trashLabel
             Accessible.onPressAction: root.trashRequested()
 
-            Rectangle {
-                visible: root.trashActive
-                // Like a list row, the track sits on the sidebar's edge, not
-                // on the plate's 8 px inset.
-                x: -8
-                y: 6
-                width: 3
-                height: 16
-                radius: 1
-                color: Theme.accent
-            }
-
             Glyph {
                 x: 10
-                y: 7
+                y: 9
                 width: 14
                 height: 14
                 kind: "trash"
-                tint: root.trashActive || trashMouse.containsMouse
-                    ? Theme.ink : Theme.inkSecondary
+                tint: root.trashActive ? Theme.selectionInk
+                    : (trashMouse.containsMouse ? Theme.ink : Theme.inkSecondary)
             }
 
             Text {
                 x: 32
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.trashLabel
-                color: root.trashActive || trashMouse.containsMouse
-                    ? Theme.ink : Theme.inkSecondary
+                color: root.trashActive ? Theme.selectionInk
+                    : (trashMouse.containsMouse ? Theme.ink : Theme.inkSecondary)
                 font.pixelSize: Theme.typeBody
+                font.weight: root.trashActive ? Theme.weightEmphasis : Font.Normal
             }
 
             Text {
@@ -1358,7 +1351,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.trashCount > 0
                 text: qsTr("%1 项").arg(root.trashCount)
-                color: Theme.inkTertiary
+                color: root.trashActive ? Theme.selectionInk : Theme.inkTertiary
                 font.pixelSize: Theme.typeMicro
                 font.features: { "tnum": 1 }
             }

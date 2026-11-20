@@ -34,6 +34,7 @@ const SAVED_SEARCH_LIMIT: usize = 40;
 const COLUMN_IDS: &[&str] = &["type", "size", "modified", "created", "tags"];
 
 const VIEW_MODES: &[&str] = &["list", "grid", "column"];
+const MOTION_SCHEMES: &[&str] = &["expressive", "standard"];
 const DENSITIES: &[&str] = &["compact", "comfortable", "spacious"];
 const SORT_KEYS: &[&str] = &["name", "modified", "created", "type", "size", "path", "tag"];
 const FOLDER_ORDERS: &[&str] = &["foldersFirst", "filesFirst", "mixed"];
@@ -101,6 +102,7 @@ struct StoredPrefs {
     folded_sidebar_sections: String,
     split_enabled: bool,
     reduce_motion: bool,
+    motion_scheme: String,
     sync_layout: bool,
     adaptive_layout: bool,
     preview_width: i32,
@@ -149,6 +151,7 @@ impl Default for StoredPrefs {
             folded_sidebar_sections: String::new(),
             split_enabled: false,
             reduce_motion: false,
+            motion_scheme: "expressive".to_owned(),
             sync_layout: true,
             adaptive_layout: false,
             preview_width: 300,
@@ -255,6 +258,7 @@ impl StoredPrefs {
         }
         boolean("splitEnabled", &mut self.split_enabled);
         boolean("reduceMotion", &mut self.reduce_motion);
+        string("motionScheme", MOTION_SCHEMES, &mut self.motion_scheme);
         boolean("syncLayout", &mut self.sync_layout);
         boolean("adaptiveLayout", &mut self.adaptive_layout);
         number("previewWidth", &mut self.preview_width);
@@ -338,6 +342,7 @@ impl StoredPrefs {
         );
         write(&mut out, "splitEnabled", bool_text(self.split_enabled));
         write(&mut out, "reduceMotion", bool_text(self.reduce_motion));
+        write(&mut out, "motionScheme", &self.motion_scheme);
         write(&mut out, "syncLayout", bool_text(self.sync_layout));
         write(&mut out, "adaptiveLayout", bool_text(self.adaptive_layout));
         write(&mut out, "previewWidth", &self.preview_width.to_string());
@@ -601,6 +606,7 @@ pub struct ExplorerPrefs {
     folded_sidebar_sections: String,
     split_enabled: bool,
     reduce_motion: bool,
+    motion_scheme: String,
     sync_layout: bool,
     adaptive_layout: bool,
     preview_width: i32,
@@ -655,6 +661,7 @@ impl ExplorerPrefs {
             ),
             split_enabled: prefs.split_enabled,
             reduce_motion: prefs.reduce_motion,
+            motion_scheme: String::from(prefs.motion_scheme.as_str()),
             sync_layout: prefs.sync_layout,
             adaptive_layout: prefs.adaptive_layout,
             preview_width: prefs.preview_width,
@@ -706,6 +713,7 @@ impl ExplorerPrefs {
             folded_sidebar_sections: self.folded_sidebar_sections.clone(),
             split_enabled: self.split_enabled,
             reduce_motion: self.reduce_motion,
+            motion_scheme: self.motion_scheme.clone(),
             sync_layout: self.sync_layout,
             adaptive_layout: self.adaptive_layout,
             preview_width: self.preview_width,
@@ -862,6 +870,7 @@ impl ExplorerPrefs {
         set_folded_sidebar_sections(String) => folded_sidebar_sections, folded_sidebar_sections_changed;
         set_split_enabled(bool) => split_enabled, split_enabled_changed;
         set_reduce_motion(bool) => reduce_motion, reduce_motion_changed;
+        set_motion_scheme(String) => motion_scheme, motion_scheme_changed;
         set_preview_width(i32) => preview_width, preview_width_changed;
         set_sidebar_width(i32) => sidebar_width, sidebar_width_changed;
         set_terminal_shell(String) => terminal_shell, terminal_shell_changed;
@@ -978,6 +987,11 @@ impl ExplorerPrefs {
         Notify = reduce_motion_changed
     );
     qproperty!(
+        "motionScheme",
+        Member = motion_scheme,
+        Notify = motion_scheme_changed
+    );
+    qproperty!(
         "previewWidth",
         Member = preview_width,
         Notify = preview_width_changed
@@ -1078,6 +1092,8 @@ impl ExplorerPrefs {
     fn split_enabled_changed(&mut self);
     #[qsignal]
     fn reduce_motion_changed(&mut self);
+    #[qsignal]
+    fn motion_scheme_changed(&mut self);
     #[qsignal]
     fn preview_width_changed(&mut self);
     #[qsignal]
@@ -1243,6 +1259,7 @@ impl ExplorerPrefs {
 
         let allowed: &[&str] = match key.as_str() {
             "viewMode" => VIEW_MODES,
+            "motionScheme" => MOTION_SCHEMES,
             "density" => DENSITIES,
             "sortKey" => SORT_KEYS,
             "sortOrder" => SORT_ORDERS,
@@ -1267,6 +1284,14 @@ impl ExplorerPrefs {
                     return;
                 }
                 self.set_view_mode(next);
+                true
+            }
+            "motionScheme" => {
+                let next = String::from(value.as_str());
+                if self.motion_scheme == next {
+                    return;
+                }
+                self.set_motion_scheme(next);
                 true
             }
             "density" => {

@@ -5,9 +5,9 @@ import QtQuick
 //
 // The context menu, the view menu and the filter menu used to be three copies
 // of the same overlay — three panel radii, three row heights and two border
-// colours. §6.5 and §7.5 fix what a menu is: a `raised` plate, a 1 px
-// `overlayLine` edge, `md` corners, 28 dp rows, one shadow, one level of
-// submenu. This file owns that arrangement; `MenuList` still paints the rows.
+// colours. This file owns the one M3 Expressive definition: a
+// `surfaceContainerHigh` rounded plate (12 dp) with no stroke, 32 dp rows,
+// one shadow and one level of submenu. `MenuList` paints the rows.
 //
 // A caller fills it one of two ways:
 //
@@ -260,9 +260,25 @@ Item {
             YAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
         }
         radius: Theme.radiusMd
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.overlayLine
+        color: "transparent"
+        border.width: 0
+
+        /// M3 Expressive menus grow out of their anchor on the spatial spring:
+        /// a short scale from the corner nearest the click that overshoots a
+        /// hair into place, paired with the opacity fade and the 2 dp lift
+        /// above. Hiding stays instant for the same reason the opacity does.
+        scale: root.visible ? 1 : 0.96
+        transformOrigin: root.above ? Item.BottomLeft : Item.TopLeft
+        Behavior on scale {
+            enabled: Theme.motion && root.visible
+            SpringAnimation {
+                spring: Theme.springSpatial
+                damping: Theme.dampSpatial
+                epsilon: 0.005
+            }
+        }
+
+        Glass { radius: Theme.radiusMd }
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise
@@ -327,9 +343,22 @@ Item {
         x: Math.max(8, Math.min(root.submenuX, root.width - width - 8))
         y: Math.max(8, Math.min(root.submenuY, root.height - height - 8))
         radius: Theme.radiusMd
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.overlayLine
+        color: "transparent"
+        border.width: 0
+
+        /// The submenu grows from the row it belongs to, like the parent panel.
+        scale: submenuPanel.visible ? 1 : 0.96
+        transformOrigin: Item.TopLeft
+        Behavior on scale {
+            enabled: Theme.motion && submenuPanel.visible
+            SpringAnimation {
+                spring: Theme.springSpatial
+                damping: Theme.dampSpatial
+                epsilon: 0.005
+            }
+        }
+
+        Glass { radius: Theme.radiusMd }
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise

@@ -116,9 +116,9 @@ Item {
     readonly property int tabHeightValue: 30
     readonly property int tabTop: 4
     readonly property int tabGap: 2
-    /// The strip starts where the mark ends (14 + 17 + 13); on macOS it starts
+    /// The strip starts where the mark ends (14 + 19 + 13); on macOS it starts
     /// after the three traffic lights.
-    readonly property int tabLeft: isMac ? 78 : 44
+    readonly property int tabLeft: isMac ? 78 : 46
     /// The `+` column. It is pinned to the right of the strip rather than
     /// following the last chip, so opening a tab never depends on scrolling
     /// the strip all the way to its end.
@@ -417,21 +417,21 @@ Item {
         id: logo
         x: 14
         anchors.verticalCenter: parent.verticalCenter
-        width: 17
-        height: 17
-        radius: Theme.radiusXs
-        // The mark is the brand, not an interactive control: keeping it on
-        // `accent` means a system accent cannot turn the window's identity a
-        // second colour while every selection track stays on the theme accent.
+        width: 19
+        height: 19
+        radius: Theme.radiusSm
+        // The mark is the brand, not an interactive control. M3 Expressive
+        // keeps the product colour at the top of the hierarchy, so it stays on
+        // `primary` even when a system accent moves every selection role.
         color: Theme.accent
         visible: !root.isMac
 
         Text {
             anchors.centerIn: parent
             text: "D"
-            color: Theme.onAccent
-            font.pixelSize: Theme.typeMicro
-            font.weight: Font.Medium
+            color: Theme.inkOnAccent
+            font.pixelSize: Theme.typeCaption
+            font.weight: Theme.weightEmphasis
         }
     }
 
@@ -598,12 +598,12 @@ Item {
 
                     width: root.tabWidthValue
                     height: root.tabHeightValue
-                    radius: Theme.radiusSm
-                    // Active reads as content (§7.3.1): canvas fill, no
-                    // underline, no accent bar. It is the surface the tab
-                    // reveals, not a highlighted control.
+                    radius: Theme.radiusFull
+                    // M3 Expressive tabs are tonal pills: the active tab is a
+                    // `secondaryContainer` block, not the same colour as the
+                    // content below it.
                     color: root.activeIndex === index
-                        ? Theme.canvas
+                        ? Theme.selection
                         : (tabHover.hovered ? Theme.hover : "transparent")
                     opacity: root.dragging && root.dragIndex === index ? 0.45 : 1.0
 
@@ -703,14 +703,14 @@ Item {
                         }
                     }
 
-                    /// The drop feedback the whole window uses: 12 % accent
-                    /// fill and a 1.5 dp accent frame (§10.3).
+                    /// The drop feedback the whole window uses: a soft primary
+                    /// wash and a 2 dp accent frame, carried on the pill.
                     Rectangle {
                         anchors.fill: parent
                         visible: tabItem.fileDropTarget
-                        radius: Theme.radiusSm
-                        color: Theme.accentSoft
-                        border.width: 1.5
+                        radius: Theme.radiusFull
+                        color: Theme.accentSoftStrong
+                        border.width: 2
                         border.color: Theme.accent
                         z: 3
                     }
@@ -718,7 +718,7 @@ Item {
                     /// A tab is the first thing Tab should reach, and Enter is
                     /// the keyboard's click.
                     activeFocusOnTab: true
-                    border.width: tabItem.activeFocus ? 1 : 0
+                    border.width: tabItem.activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Accessible.role: Accessible.PageTab
                     Accessible.name: tabItem.modelData
@@ -734,45 +734,50 @@ Item {
                             ? tabItem.modelData.pinned === true : false
                         visible: pinned
                         x: 10
-                        width: 5
-                        height: 5
-                        radius: 2.5
+                        width: 6
+                        height: 6
+                        radius: 3
                         anchors.verticalCenter: parent.verticalCenter
-                        color: Theme.accent
+                        color: Theme.tertiary
                     }
 
                     Text {
                         anchors.left: parent.left
                         anchors.leftMargin: tabItem.modelData
-                            && tabItem.modelData.pinned ? 19 : 10
+                            && tabItem.modelData.pinned ? 20 : 12
                         anchors.right: closeButton.left
                         anchors.rightMargin: 4
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.tabLabel(tabItem.index)
                         color: root.activeIndex === tabItem.index
-                            ? Theme.ink
+                            ? Theme.selectionInk
                             : (tabHover.hovered ? Theme.ink : Theme.inkSecondary)
                         font.pixelSize: Theme.typeCaption
                         font.weight: root.activeIndex === tabItem.index
-                            ? Font.Medium : Font.Normal
+                            ? Theme.weightEmphasis : Font.Normal
                         elide: Text.ElideMiddle
                     }
 
                     Item {
                         id: closeButton
                         anchors.right: parent.right
-                        anchors.rightMargin: 5
+                        anchors.rightMargin: 6
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 18
-                        height: Theme.controlXs
+                        width: 20
+                        height: 20
                         visible: root.activeIndex === tabItem.index
                             || tabHover.hovered
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: Theme.radiusXs
+                            radius: Theme.radiusFull
                             color: closeMouse.containsMouse
-                                ? Theme.hover : "transparent"
+                                ? (root.activeIndex === tabItem.index
+                                    ? Qt.rgba(Theme.selectionInk.r,
+                                              Theme.selectionInk.g,
+                                              Theme.selectionInk.b, 0.10)
+                                    : Theme.hover)
+                                : "transparent"
                         }
 
                         Glyph {
@@ -781,7 +786,10 @@ Item {
                             height: 12
                             kind: "close"
                             tint: closeMouse.containsMouse
-                                ? Theme.ink : Theme.inkSecondary
+                                ? (root.activeIndex === tabItem.index
+                                    ? Theme.selectionInk : Theme.ink)
+                                : (root.activeIndex === tabItem.index
+                                    ? Theme.selectionInk : Theme.inkSecondary)
                         }
 
                         Accessible.role: Accessible.Button
@@ -884,7 +892,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusSm
+            radius: Theme.radiusFull
             color: scrollLeftMouse.containsMouse && scrollLeftButton.canScroll
                 ? Theme.hover : "transparent"
         }
@@ -926,7 +934,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusSm
+            radius: Theme.radiusFull
             color: scrollRightMouse.containsMouse && scrollRightButton.canScroll
                 ? Theme.hover : "transparent"
         }
@@ -965,7 +973,16 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusSm
+            property real morph: plusMouse.pressed ? 1 : 0
+            radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+            Behavior on morph {
+                enabled: Theme.motion
+                SpringAnimation {
+                    spring: Theme.springSpatialFast
+                    damping: Theme.dampSpatialFast
+                    epsilon: 0.005
+                }
+            }
             color: plusMouse.containsMouse ? Theme.hover : "transparent"
         }
 
@@ -1051,7 +1068,7 @@ Item {
                     height: 14
 
                     readonly property color ink: button.isClose && button.hovered
-                        ? Theme.onSolid : root.textColor
+                        ? Theme.inkOnSolid : root.textColor
 
                     Rectangle {
                         visible: button.index === 0

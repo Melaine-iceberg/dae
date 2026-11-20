@@ -86,9 +86,10 @@ Item {
             width: plate.width
             height: plate.height
             radius: Theme.radiusMd
-            color: Theme.raised
-            border.width: 1
-            border.color: Theme.overlayLine
+            color: "transparent"
+            border.width: 0
+
+            Glass { radius: Theme.radiusMd }
         }
 
         Text {

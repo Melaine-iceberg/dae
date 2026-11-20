@@ -54,7 +54,7 @@ Item {
             text: root.title
             color: Theme.ink
             font.pixelSize: Theme.typeHeading
-            font.weight: Font.Medium
+            font.weight: Theme.weightEmphasis
             elide: Text.ElideRight
         }
 
@@ -74,8 +74,8 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
-        width: 20
-        height: Theme.controlXs
+        width: Theme.controlMd
+        height: Theme.controlMd
         visible: root.showClose
 
         Accessible.role: Accessible.Button
@@ -84,7 +84,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusSm
+            radius: Theme.radiusFull
             color: closeMouse.containsMouse ? Theme.hover : "transparent"
         }
 

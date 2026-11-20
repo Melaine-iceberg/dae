@@ -67,17 +67,42 @@ Item {
         }
     }
 
+    Shadow {
+        target: panel
+    }
+
     Rectangle {
         id: panel
 
         anchors.centerIn: parent
         width: Math.min(760, parent.width - 96)
         height: Math.min(parent.height - 96, 680)
-        radius: Theme.radiusMd
-        color: Theme.canvas
-        border.width: 1
-        border.color: Theme.overlayLine
+        /// The preview is a large floating sheet, so it wears the dialog corner
+        /// and the high container instead of a hairline outline.
+        radius: Theme.radiusXl
+        color: "transparent"
+        border.width: 0
         focus: true
+
+        opacity: root.visible ? 1 : 0
+        Behavior on opacity {
+            enabled: Theme.motion && root.visible
+            OpacityAnimator {
+                duration: Theme.motionOverlay
+                easing.type: Easing.OutCubic
+            }
+        }
+        scale: root.visible ? 1 : 0.96
+        Behavior on scale {
+            enabled: Theme.motion && root.visible
+            SpringAnimation {
+                spring: Theme.springSpatial
+                damping: Theme.dampSpatial
+                epsilon: 0.005
+            }
+        }
+
+        Glass { radius: Theme.radiusXl }
 
         // A click inside the plate must not close it; the scrim is behind.
         MouseArea {

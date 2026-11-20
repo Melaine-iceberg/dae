@@ -284,8 +284,10 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(620, root.width - 40)
         height: Math.min(600, root.height - 48)
-        radius: Theme.radiusLg
-        color: Theme.raised
+        radius: Theme.radiusXl
+        color: "transparent"
+
+        Glass { radius: Theme.radiusXl }
         border.width: 1
         border.color: Theme.overlayLine
 
@@ -679,7 +681,7 @@ FocusScope {
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("重命名")
-                        color: root.canApply ? Theme.onAccent : root.mutedColor
+                        color: root.canApply ? Theme.inkOnAccent : root.mutedColor
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -732,7 +734,7 @@ FocusScope {
             verticalAlignment: TextInput.AlignVCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: Theme.onAccent
+            selectedTextColor: Theme.inkOnAccent
             font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
@@ -790,7 +792,7 @@ FocusScope {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onAccent
+                selectedTextColor: Theme.inkOnAccent
                 font.pixelSize: Theme.typeCaption
                 selectByMouse: true
                 clip: true
@@ -839,7 +841,7 @@ FocusScope {
                 anchors.centerIn: parent
                 visible: toggle.checked
                 text: "\u2713"
-                color: Theme.onAccent
+                color: Theme.inkOnAccent
                 font.pixelSize: Theme.typeMicro
             }
         }

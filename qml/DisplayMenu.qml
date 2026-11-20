@@ -197,49 +197,14 @@ Menu {
                     font.pixelSize: Theme.typeMicro
                 }
 
-                Item {
+                M3Slider {
                     id: iconSlider
                     width: Math.max(80, parent.width - 120)
-                    height: 20
                     anchors.verticalCenter: parent.verticalCenter
-
-                    readonly property real ratio: (ExplorerPrefs.iconSize - 24) / 72
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        height: 2
-                        radius: 1
-                        color: Theme.line
-                    }
-
-                    Rectangle {
-                        x: Math.max(0, Math.min(iconSlider.width - 10,
-                                                iconSlider.ratio * iconSlider.width - 5))
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 10
-                        height: 10
-                        radius: 5
-                        color: Theme.accent
-                    }
-
-                    MouseArea {
-                        /// A drag dot for the pointer. Its value is set from the menu around
-                        /// it, so the dot would only add a nameless target to the tree.
-                        Accessible.ignored: true
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onPositionChanged: function (mouse) {
-                            if (!pressed)
-                                return
-                            const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
-                            ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
-                        }
-                        onPressed: function (mouse) {
-                            const ratio = Math.max(0, Math.min(1, mouse.x / iconSlider.width))
-                            ExplorerPrefs.setNumber("iconSize", Math.round(24 + ratio * 72))
-                        }
+                    value: (ExplorerPrefs.iconSize - 24) / 72
+                    step: 1 / 72
+                    onMoved: function (value) {
+                        ExplorerPrefs.setNumber("iconSize", Math.round(24 + value * 72))
                     }
                 }
 

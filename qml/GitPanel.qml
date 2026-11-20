@@ -228,9 +228,10 @@ Item {
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
         radius: Theme.radiusLg
-        color: root.panelColor
-        border.width: 1
-        border.color: root.borderColor
+        color: "transparent"
+        border.width: 0
+
+        Glass { radius: Theme.radiusLg }
         clip: true
 
         // A click on blank panel space must not reach the backdrop. Children
@@ -314,7 +315,7 @@ Item {
                         y: 5
                         width: 53
                         height: Theme.controlSm
-                        radius: Theme.radiusSm
+                        radius: Theme.radiusFull
                         readonly property bool actionEnabled: !root.busy
                             && (modelData.action === "create" || root.canNetwork)
                         color: actionMouse.containsMouse && actionEnabled
@@ -362,7 +363,7 @@ Item {
                     height: Theme.controlSm
                     radius: Theme.radiusSm
                     color: root.fieldColor
-                    border.width: 1
+                    border.width: branchInput.activeFocus ? 2 : 1
                     border.color: branchInput.activeFocus
                         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.65)
                         : root.borderColor
@@ -409,7 +410,7 @@ Item {
                     y: 5
                     width: 52
                     height: Theme.controlSm
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: root.createPending || branchInput.text.trim() === ""
                         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.10)
                         : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
@@ -443,7 +444,7 @@ Item {
                         x: 0
                         width: 12
                         height: 12
-                        radius: Theme.radiusSm
+                        radius: 2
                         anchors.verticalCenter: parent.verticalCenter
                         color: root.createCheckout
                             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
@@ -455,7 +456,7 @@ Item {
                             anchors.centerIn: parent
                             width: 6
                             height: 6
-                            radius: Theme.radiusSm
+                            radius: Theme.radiusFull
                             visible: root.createCheckout
                             color: root.accent
                         }

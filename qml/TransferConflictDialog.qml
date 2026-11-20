@@ -93,10 +93,11 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(520, root.width - 48)
         height: content.implicitHeight + 36
-        radius: Theme.radiusLg
-        color: root.panelColor
-        border.width: 1
-        border.color: root.panelBorder
+        radius: Theme.radiusXl
+        color: "transparent"
+        border.width: 0
+
+        Glass { radius: Theme.radiusXl }
 
         // Wheel events must not scroll the listing behind the dialog.
         MouseArea {
@@ -193,17 +194,17 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 14
                     height: 14
-                    radius: Theme.radiusSm
+                    radius: 2
                     color: root.applyToAll ? root.accent : "transparent"
                     border.width: 1
                     border.color: root.applyToAll ? root.accent
-                        : Theme.scrim
+                        : Theme.outline
 
                     Text {
                         anchors.centerIn: parent
                         visible: root.applyToAll
                         text: "\u2713"
-                        color: Theme.onAccent
+                        color: Theme.inkOnAccent
                         font.pixelSize: Theme.typeMicro
                     }
                 }
@@ -238,11 +239,11 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: cancelLabel.implicitWidth + 24
                     height: Theme.controlMd
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: cancelMouse.containsMouse
                         ? Theme.hover : "transparent"
                     border.width: 1
-                    border.color: Theme.hairline
+                    border.color: Theme.outlineVariant
 
                     Accessible.role: Accessible.Button
                     Accessible.name: cancelLabel.text
@@ -275,10 +276,10 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: skipSegment.width + keepSegment.width + replaceSegment.width
                     height: Theme.controlMd
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: "transparent"
                     border.width: 1
-                    border.color: Theme.hairline
+                    border.color: Theme.outlineVariant
                     clip: true
 
                     Row {
@@ -360,7 +361,7 @@ FocusScope {
                                 id: replaceLabel
                                 anchors.centerIn: parent
                                 text: qsTr("替换")
-                                color: root.applyToAll ? Theme.onDanger : Theme.onAccent
+                                color: root.applyToAll ? Theme.inkOnDanger : Theme.inkOnAccent
                                 font.pixelSize: Theme.typeCaption
                             }
 

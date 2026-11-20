@@ -102,7 +102,7 @@ Item {
                 required property bool loaded
 
                 width: content.width
-                height: Theme.controlMd
+                height: 32
 
                 readonly property bool current: root.pathEquals(node.treePath, root.activePath)
                 readonly property int indent: 16 + node.depth * 13
@@ -123,20 +123,10 @@ Item {
                     x: 8
                     width: parent.width - 16
                     height: parent.height
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusFull
                     color: node.current
-                        ? Theme.accentSoft
+                        ? Theme.selection
                         : (nodeMouse.containsMouse ? Theme.hover : "transparent")
-                }
-
-                Rectangle {
-                    visible: node.current
-                    x: 0
-                    y: 6
-                    width: 3
-                    height: parent.height - 12
-                    radius: 1
-                    color: Theme.accent
                 }
 
                 Item {
@@ -181,8 +171,8 @@ Item {
                     width: 14
                     height: 14
                     kind: "folder"
-                    tint: node.current || nodeMouse.containsMouse
-                        ? Theme.ink : Theme.inkSecondary
+                    tint: node.current ? Theme.selectionInk
+                        : (nodeMouse.containsMouse ? Theme.ink : Theme.inkSecondary)
                 }
 
                 Text {
@@ -192,8 +182,9 @@ Item {
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: node.treeName
-                    color: Theme.inkSecondary
+                    color: node.current ? Theme.selectionInk : Theme.inkSecondary
                     font.pixelSize: Theme.typeBody
+                    font.weight: node.current ? Theme.weightEmphasis : Font.Normal
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                 }

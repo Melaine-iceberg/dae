@@ -347,8 +347,9 @@ Item {
                     readonly property bool current: pill.index === root.activeIndex
                     width: pillRow.implicitWidth + 14
                     height: Theme.controlXs
+                    radius: Theme.radiusFull
                     color: pillMouse.containsMouse ? Theme.hover
-                        : (pill.current ? Theme.inset : "transparent")
+                        : (pill.current ? Theme.selection : "transparent")
 
                     Row {
                         id: pillRow
@@ -386,7 +387,7 @@ Item {
             Rectangle {
                 width: 22
                 height: Theme.controlXs
-                radius: Theme.radiusXs
+                radius: Theme.radiusFull
                 color: newMouse.containsMouse ? Theme.hover : "transparent"
 
                 Text {
@@ -415,7 +416,7 @@ Item {
             Rectangle {
                 width: 22
                 height: Theme.controlXs
-                radius: Theme.radiusXs
+                radius: Theme.radiusFull
                 visible: root.sessions.length > 0
                 color: closeSessionMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -454,7 +455,7 @@ Item {
             Rectangle {
                 width: 44
                 height: Theme.controlXs
-                radius: Theme.radiusXs
+                radius: Theme.radiusFull
                 visible: root.running
                 color: clearMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -483,7 +484,7 @@ Item {
             Rectangle {
                 width: 44
                 height: Theme.controlXs
-                radius: Theme.radiusXs
+                radius: Theme.radiusFull
                 visible: root.running
                 color: jumpMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -514,7 +515,7 @@ Item {
             Rectangle {
                 width: 56
                 height: Theme.controlXs
-                radius: Theme.radiusXs
+                radius: Theme.radiusFull
                 visible: root.sessions.length > 0 && !root.running
                 color: restartMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -551,7 +552,7 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusFull
                     color: closeMouse.containsMouse ? Theme.hover : "transparent"
                 }
 
@@ -583,9 +584,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: barRow.implicitWidth + 16
             height: Theme.controlXs
-            radius: Theme.radiusXs
+            radius: Theme.radiusFull
             color: Theme.terminalHeader
-            border.width: 1
+            border.width: 2
             border.color: searchField.activeFocus ? Theme.accent : Theme.hairline
             z: 1
 
@@ -647,7 +648,7 @@ Item {
                 Rectangle {
                     width: 22
                     height: Theme.controlXs
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusFull
                     color: prevMouse.containsMouse ? Theme.hover : "transparent"
 
                     Text {
@@ -673,7 +674,7 @@ Item {
                 Rectangle {
                     width: 22
                     height: Theme.controlXs
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusFull
                     color: nextMouse.containsMouse ? Theme.hover : "transparent"
 
                     Text {
@@ -699,7 +700,7 @@ Item {
                 Rectangle {
                     width: 22
                     height: Theme.controlXs
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusFull
                     color: barCloseMouse.containsMouse ? Theme.hover : "transparent"
 
                     Glyph {

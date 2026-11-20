@@ -1,13 +1,12 @@
 import QtQuick
 
-// The one empty state (§10.8): a left-aligned sentence, an optional reason,
-// and one or two text actions.
+// The one empty state: an emphasized sentence, an optional quiet reason, and
+// one or two actions.
 //
-// The icon, the centred headline and the decorative glyph that used to live
-// here are gone. A file manager's empty folder is not a moment to illustrate;
-// it is a place to say what happened and offer the next step. The block sits
-// at the content's top-left rather than the middle of the viewport so the
-// blank area below it does not become the subject.
+// M3 Expressive gives the empty moment typographic weight instead of an
+// illustration: the sentence is `titleLarge`, the reason is body-small, and
+// the primary action is a tonal pill. The block stays at the content's
+// top-left so the blank area below it does not become the subject.
 Item {
     id: root
 
@@ -27,18 +26,19 @@ Item {
 
         x: 24
         y: 24
-        width: Math.max(0, Math.min(parent.width - 48, 420))
-        spacing: 8
+        width: Math.max(0, Math.min(parent.width - 48, 440))
+        spacing: 10
 
         Text {
             width: parent.width
             visible: root.title !== ""
             text: root.title
-            color: Theme.inkSecondary
-            font.pixelSize: Theme.typeBody
+            color: Theme.ink
+            font.pixelSize: Theme.typeTitleLarge
+            font.weight: Theme.weightEmphasis
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            lineHeight: Theme.leadingBody
+            lineHeight: Theme.leadingTight
         }
 
         Text {
@@ -61,7 +61,7 @@ Item {
         Row {
             id: actions
 
-            spacing: 18
+            spacing: 8
             visible: root.primaryLabel !== "" || root.secondaryLabel !== ""
 
             TextButton {
@@ -79,7 +79,7 @@ Item {
         }
     }
 
-    component TextButton: Item {
+    component TextButton: Rectangle {
         id: button
 
         property string label: ""
@@ -87,8 +87,20 @@ Item {
 
         signal clicked()
 
-        implicitWidth: labelText.implicitWidth + 4
-        implicitHeight: Theme.controlSm
+        width: labelText.implicitWidth + 28
+        height: Theme.controlLg
+        radius: Theme.radiusFull
+        color: {
+            if (button.primary)
+                return buttonMouse.containsMouse
+                    ? Qt.rgba(Theme.secondaryContainer.r,
+                              Theme.secondaryContainer.g,
+                              Theme.secondaryContainer.b, 0.82)
+                    : Theme.secondaryContainer
+            return buttonMouse.containsMouse
+                ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
+                : "transparent"
+        }
 
         Accessible.role: Accessible.Button
         Accessible.name: button.label
@@ -97,9 +109,9 @@ Item {
             id: labelText
             anchors.centerIn: parent
             text: button.label
-            color: button.primary ? Theme.accent : Theme.inkSecondary
-            font.pixelSize: Theme.typeCaption
-            font.underline: buttonMouse.containsMouse
+            color: button.primary ? Theme.inkOnSecondaryContainer : Theme.accent
+            font.pixelSize: Theme.typeBody
+            font.weight: Theme.weightStrong
             textFormat: Text.PlainText
         }
 

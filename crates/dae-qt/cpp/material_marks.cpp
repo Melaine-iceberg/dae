@@ -1,4 +1,4 @@
-#include "solar_marks.h"
+#include "material_marks.h"
 
 #include <QFile>
 #include <QJsonArray>
@@ -17,13 +17,9 @@ namespace dae_qt {
 
 namespace {
 
-/// Solar's grid. Every path in the table is drawn in a 24-unit square and
-/// scaled to the item, so one table serves an 8 px menu mark and a 38 px tile.
-constexpr qreal kGrid = 24.0;
-
 /// Where the mark table lives inside the binary. `apps/dae/build.rs` mounts
-/// `qml/solar-marks.json` under this prefix.
-constexpr auto kMarkResource = ":/qt/qml/dae/qml/solar-marks.json";
+/// `qml/material-marks.json` under this prefix.
+constexpr auto kMarkResource = ":/qt/qml/dae/qml/material-marks.json";
 
 /// The parsed table. Read once, on whichever image-loading thread asks first;
 /// a function-local static is initialised exactly once and the `QJsonObject`
@@ -33,7 +29,7 @@ const QJsonObject& markTable()
     static const QJsonObject table = [] {
         QFile file(QString::fromUtf8(kMarkResource));
         if (!file.open(QIODevice::ReadOnly)) {
-            qWarning("solar marks: cannot open %s", kMarkResource);
+            qWarning("material marks: cannot open %s", kMarkResource);
             return QJsonObject();
         }
         return QJsonDocument::fromJson(file.readAll()).object();
@@ -46,7 +42,7 @@ const QJsonObject& markTable()
 /// Endpoint-to-centre conversion is the spec's own (F.6.5); the sweep is then
 /// cut into quarters and each quarter approximated by a cubic, which is within
 /// a thousandth of a pixel at every size the shell draws. Rounded corners
-/// arrive here — every Solar mark is built from them.
+/// arrive here — Material's rounded style is built from them.
 void appendArc(QPainterPath& path, qreal fromX, qreal fromY, qreal rx, qreal ry,
                qreal rotation, bool largeArc, bool sweep, qreal toX, qreal toY)
 {
@@ -125,16 +121,18 @@ void appendArc(QPainterPath& path, qreal fromX, qreal fromY, qreal rx, qreal ry,
 
 /// One SVG path string, as a `QPainterPath`.
 ///
-/// The whole grammar has to be read: `A` arcs (every rounded corner), the
-/// relative forms, and the implicit repetition that lets one command carry
-/// many parameter sets. A mark is parsed once per raster, not per frame, so a
-/// hand-written tokenizer beats pulling in a parser dependency.
+/// The whole grammar has to be read: `A` arcs, the relative forms, and the
+/// implicit repetition that lets one command carry many parameter sets. A mark
+/// is parsed once per raster, not per frame, so a hand-written tokenizer beats
+/// pulling in a parser dependency. The fill rule is the SVG default (nonzero):
+/// Material's outlined glyphs carry their holes as wound subpaths.
 QPainterPath svgPath(const QString& data)
 {
     static const QRegularExpression tokenPattern(QStringLiteral(
         "[A-Za-z]|[-+]?(?:\\d*\\.\\d+|\\d+)(?:[eE][-+]?\\d+)?"));
 
     QPainterPath path;
+    path.setFillRule(Qt::WindingFill);
 
     QStringList tokens;
     for (auto it = tokenPattern.globalMatch(data); it.hasNext();)
@@ -256,8 +254,27 @@ QPainterPath svgPath(const QString& data)
 
 } // namespace
 
-QImage renderSolarMark(const QString& kind, int edge, int dp, const QColor& ink,
-                       qreal wash)
+qreal materialMarkGrid(const QString& kind)
+{
+    const QJsonObject& table = markTable();
+    const QJsonArray legacy = table.value(QStringLiteral("_legacy24")).toArray();
+    for (const QJsonValue& entry : legacy) {
+        if (entry.toString() == kind)
+            return 24.0;
+    }
+    return table.value(QStringLiteral("_grid")).toDouble(960.0);
+}
+
+QPainterPath materialMarkPath(const QString& kind)
+{
+    const QJsonArray parts = markTable().value(kind).toArray();
+    if (parts.isEmpty())
+        return QPainterPath();
+    return svgPath(parts.at(0).toObject().value(QStringLiteral("d")).toString());
+}
+
+QImage renderMaterialMark(const QString& kind, int edge, int dp, const QColor& ink,
+                          qreal wash)
 {
     QImage image(edge, edge, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -268,13 +285,22 @@ QImage renderSolarMark(const QString& kind, int edge, int dp, const QColor& ink,
 
     // One grid unit in dp, so the pen can be stated in the units the optical
     // correction was designed in and still land on the device pixels the
-    // painter writes.
-    const qreal unit = qMax(1, dp) / kGrid;
+    // painter writes. The rule is grid-independent: a 1.2 dp stroke is 1.2
+    // device pixels at dpr 1 whether the grid is 24 or 960.
+    const qreal grid = materialMarkGrid(kind);
+    const qreal unit = qMax(1, dp) / grid;
     const qreal boost = qMax(1.0, qreal(qMax(1, dp)) / 16.0);
 
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.scale(edge / kGrid, edge / kGrid);
+    if (grid == 960.0) {
+        // Material's viewBox is `0 -960 960 960`: y runs -960..0, so a +960
+        // shift lands it on 0..960 before the scale onto the item.
+        painter.scale(edge / grid, edge / grid);
+        painter.translate(0, grid);
+    } else {
+        painter.scale(edge / grid, edge / grid);
+    }
 
     for (const QJsonValue& entry : parts) {
         const QJsonObject part = entry.toObject();

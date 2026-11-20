@@ -2,13 +2,13 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 
-// The navigation row's one input control: a breadcrumb trail, a path editor
-// and a search field sharing a single 32 dp frame (proposal §7.2).
+// The navigation row's one input control: an M3 search-bar pill that becomes a
+// breadcrumb trail, a path editor or a search field.
 //
 // The modes are states of this bar, not three widgets:
 //
-//   breadcrumb  every ancestor is a destination; the current folder is the one
-//               name the bar must keep. Clicking the empty part types a path.
+//   breadcrumb  every ancestor is a destination; the current folder is a
+//               `secondaryContainer` pill, exactly like a selected list row.
 //   address     the whole frame becomes a mono text field seeded with the
 //               current path, all selected, Enter navigates, Escape returns.
 //   search      the frame holds the query. The filter row below it carries the
@@ -78,8 +78,8 @@ Item {
     /// Escape on an empty search field; the shell collapses search mode.
     signal searchDismissed()
 
-    implicitHeight: Theme.controlLg
-    height: Theme.controlLg
+    implicitHeight: Theme.controlXl
+    height: Theme.controlXl
 
     readonly property bool editing: mode === "address"
     readonly property bool searching: mode === "search"
@@ -127,13 +127,12 @@ Item {
         id: well
         anchors.fill: parent
         visible: bar.framed
-        radius: Theme.radiusSm
+        radius: Theme.radiusFull
         color: Theme.field
-        /// The bar is an input control in all three modes (§7.2), so it always
-        /// carries a 1 px edge; only its colour says whether this pane is the
-        /// active one and whether the field has the keyboard.
-        border.width: 1
-        border.color: bar.inputFocused || bar.paneFocused ? bar.accent : Theme.line
+        /// M3 filled fields carry no stroke at rest; the 2 px primary ring
+        /// appears with the keyboard or the active split pane.
+        border.width: bar.inputFocused || bar.paneFocused ? 2 : 0
+        border.color: bar.accent
     }
 
     // ── Breadcrumb ──────────────────────────────────────────────────────────
@@ -142,11 +141,11 @@ Item {
     // decided whether they fit.
     readonly property real fontSize: Theme.typeBody
     readonly property real crumbGap: 3
-    readonly property real crumbPad: 5
+    readonly property real crumbPad: 8
     /// The `⌄` between a segment's name and the next separator (§7.2). It is
     /// part of the measured width, so the fold decision accounts for it.
     readonly property real chevronWidth: 12
-    readonly property real plateHeight: Theme.controlSm
+    readonly property real plateHeight: Theme.controlMd
     readonly property real ellipsisWidth: 22
     readonly property real maxAncestorWidth: 160
     readonly property real maxCurrentWidth: 256
@@ -384,15 +383,15 @@ Item {
                     }
                 }
 
-                /// Same feedback as a row: 12 % accent fill, 1.5 dp accent
-                /// frame (§10.3). It sits above the plate and below the mouse
-                /// areas, so a drop never turns into a click.
+                /// Same feedback as a row: a primary wash and a 2 dp accent
+                /// frame. It sits above the plate and below the mouse areas,
+                /// so a drop never turns into a click.
                 Rectangle {
                     anchors.fill: parent
                     visible: slot.dropActive
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusFull
                     color: Theme.accentSoft
-                    border.width: 1.5
+                    border.width: 2
                     border.color: Theme.accent
                     z: 5
                     Accessible.ignored: true
@@ -413,13 +412,14 @@ Item {
                 Rectangle {
                     id: plate
                     anchors.fill: parent
-                    radius: Theme.radiusXs
-                    // The trail is structure, not a signal (§7.2): hover is the
-                    // only state, and the current segment is distinguished by
-                    // ink alone — no weight change, no icon.
-                    color: slot.modelData.current !== true
-                        && (plateMouse.containsMouse || siblingMouse.containsMouse)
-                        ? Theme.hover : "transparent"
+                    radius: Theme.radiusFull
+                    // The current folder is a selected destination, so it takes
+                    // the same `secondaryContainer` pill as the sidebar; the
+                    // ancestors only gain the hover state layer.
+                    color: slot.modelData.current === true
+                        ? Theme.selection
+                        : ((plateMouse.containsMouse || siblingMouse.containsMouse)
+                            ? Theme.hover : "transparent")
 
                     Text {
                         anchors.left: parent.left
@@ -430,10 +430,12 @@ Item {
                         text: slot.modelData.ellipsis === true
                             ? "\u2026" : slot.modelData.name
                         color: slot.modelData.current === true
-                            ? bar.textColor
+                            ? Theme.selectionInk
                             : ((plateMouse.containsMouse || siblingMouse.containsMouse)
                                 ? bar.textColor : bar.mutedColor)
                         font.pixelSize: bar.fontSize
+                        font.weight: slot.modelData.current === true
+                            ? Theme.weightEmphasis : Font.Normal
                         elide: Text.ElideMiddle
                     }
 
@@ -457,7 +459,9 @@ Item {
                             height: 10
                             kind: "chevronDown"
                             tint: siblingMouse.containsMouse
-                                ? bar.textColor : Theme.inkTertiary
+                                ? bar.textColor
+                                : (slot.modelData.current === true
+                                    ? Theme.selectionInk : Theme.inkTertiary)
                         }
 
                         Accessible.role: Accessible.Button
@@ -521,15 +525,15 @@ Item {
         Accessible.name: qsTr("路径")
 
         anchors.fill: parent
-        anchors.leftMargin: 8
-        anchors.rightMargin: 8
+        anchors.leftMargin: 16
+        anchors.rightMargin: 16
         visible: bar.editing
         enabled: bar.interactive
         verticalAlignment: TextInput.AlignVCenter
         text: ""
         color: bar.textColor
         selectionColor: bar.accent
-        selectedTextColor: Theme.onAccent
+        selectedTextColor: Theme.inkOnAccent
         font.family: Theme.monoFamily
         font.pixelSize: Theme.typeCaption
         selectByMouse: true
@@ -686,10 +690,10 @@ Item {
         return true
     }
 
-    /// The list itself: 24 dp rows on a `raised` plate, drawn above the well
-    /// and outside the bar's box, so it reads as an attachment to the field
-    /// rather than a second control. The shadow is declared before the plate
-    /// and in the same coordinate space, as `Shadow` requires.
+    /// The list itself: 28 dp rows on a `surfaceContainerHigh` plate, drawn
+    /// above the well and outside the bar's box, so it reads as an attachment
+    /// to the field rather than a second control. The shadow is declared before
+    /// the plate and in the same coordinate space, as `Shadow` requires.
     Shadow {
         target: completionPopup
         z: 59
@@ -703,11 +707,12 @@ Item {
         y: bar.height + 4
         width: bar.width
         height: completionColumn.implicitHeight + 8
-        radius: Theme.radiusSm
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.line
+        radius: Theme.radiusMd
+        color: "transparent"
+        border.width: 0
         z: 60
+
+        Glass { radius: Theme.radiusMd }
         Accessible.role: Accessible.List
 
         Column {
@@ -727,8 +732,8 @@ Item {
                     required property string modelData
 
                     width: completionColumn.width
-                    height: 24
-                    radius: Theme.radiusXs
+                    height: 28
+                    radius: Theme.radiusSm
                     color: bar.completionIndex === completionRow.index ? Theme.selection
                         : (itemMouse.containsMouse ? Theme.hover : "transparent")
 
@@ -748,9 +753,12 @@ Item {
                         anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
                         text: completionRow.modelData
-                        color: bar.textColor
+                        color: bar.completionIndex === completionRow.index
+                            ? Theme.selectionInk : bar.textColor
                         font.family: Theme.monoFamily
                         font.pixelSize: Theme.typeCaption
+                        font.weight: bar.completionIndex === completionRow.index
+                            ? Theme.weightEmphasis : Font.Normal
                         elide: Text.ElideMiddle
                     }
 
@@ -771,7 +779,7 @@ Item {
     // ── Search ──────────────────────────────────────────────────────────────
     Glyph {
         id: searchLeading
-        x: 8
+        x: 14
         width: 14
         height: 14
         anchors.verticalCenter: parent.verticalCenter
@@ -804,7 +812,7 @@ Item {
         enabled: bar.interactive
         color: bar.textColor
         selectionColor: bar.accent
-        selectedTextColor: Theme.onAccent
+        selectedTextColor: Theme.inkOnAccent
         font.pixelSize: Theme.typeBody
         selectByMouse: true
         clip: true
@@ -849,12 +857,12 @@ Item {
             bar.searchCleared()
         }
 
-        Text {
+        M3Loader {
             anchors.centerIn: parent
             visible: bar.searchBusy
-            text: "\u2026"
-            color: bar.mutedColor
-            font.pixelSize: Theme.typeBody
+            width: 14
+            height: 14
+            running: bar.searchBusy
         }
 
         Glyph {

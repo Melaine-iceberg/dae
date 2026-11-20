@@ -5572,16 +5572,16 @@
         <translation>界面字体</translation>
     </message>
     <message>
-        <source>留空使用内置 Mona Sans VF；中文回退到系统字体。</source>
-        <translation>留空使用内置 Mona Sans VF；中文回退到系统字体。</translation>
+        <source>留空使用内置 Google Sans Flex；中文回退到系统字体。</source>
+        <translation>留空使用内置 Google Sans Flex；中文回退到系统字体。</translation>
     </message>
     <message>
         <source>等宽字体</source>
         <translation>等宽字体</translation>
     </message>
     <message>
-        <source>留空使用内置 Mona Sans Mono VF；终端、大小、速率与代码预览共用。</source>
-        <translation>留空使用内置 Mona Sans Mono VF；终端、大小、速率与代码预览共用。</translation>
+        <source>留空使用内置 Google Sans Code；终端、大小、速率与代码预览共用。</source>
+        <translation>留空使用内置 Google Sans Code；终端、大小、速率与代码预览共用。</translation>
     </message>
     <message>
         <source>已安装的字体族可在此输入；切换界面字体不会改变等宽区域。</source>

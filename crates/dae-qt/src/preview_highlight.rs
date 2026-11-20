@@ -341,7 +341,7 @@ fn pre_open(dark: bool) -> String {
     };
     format!(
         "<pre style=\"margin:0; background-color:{background}; color:{foreground}; \
-         font-family:'Mona Sans Mono VF','Mona Sans Mono','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
+         font-family:'Google Sans Code','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
          white-space:pre;\">"
     )
 }

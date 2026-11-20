@@ -218,14 +218,14 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: Theme.controlSm
-        radius: Theme.radiusSm
+        radius: Theme.radiusFull
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? Theme.inset : "transparent")
+                ? Theme.hover : "transparent")
         border.width: danger ? 0 : 1
-        border.color: root.hairline
+        border.color: Theme.outlineVariant
 
         /// The label is the button's name; a destructive button says so in its
         /// description instead of relying on the colour.
@@ -241,7 +241,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? Theme.onDanger
+            color: button.danger ? Theme.inkOnDanger
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: Theme.typeMicro
         }

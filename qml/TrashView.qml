@@ -403,9 +403,9 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 14
                     height: 14
-                    radius: Theme.radiusXs
+                    radius: 2
                     border.width: 1
-                    border.color: root.allSelected ? Theme.accent : Theme.line
+                    border.color: root.allSelected ? Theme.accent : Theme.outline
                     color: root.allSelected ? Theme.accent : "transparent"
 
                     Glyph {
@@ -414,7 +414,7 @@ Item {
                         width: 9
                         height: 9
                         kind: "check"
-                        tint: Theme.onAccent
+                        tint: Theme.inkOnAccent
                     }
 
                     MouseArea {
@@ -574,9 +574,9 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 14
                     height: 14
-                    radius: Theme.radiusXs
+                    radius: 2
                     border.width: 1
-                    border.color: row.selected ? Theme.accent : Theme.line
+                    border.color: row.selected ? Theme.accent : Theme.outline
                     color: row.selected ? Theme.accent : "transparent"
 
                     Glyph {
@@ -585,7 +585,7 @@ Item {
                         width: 9
                         height: 9
                         kind: "check"
-                        tint: Theme.onAccent
+                        tint: Theme.inkOnAccent
                     }
 
                     MouseArea {
@@ -716,14 +716,14 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: Theme.controlSm
-        radius: Theme.radiusSm
+        radius: Theme.radiusFull
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? Theme.inset : "transparent")
+                ? Theme.hover : "transparent")
         border.width: danger ? 0 : 1
-        border.color: root.hairline
+        border.color: Theme.outlineVariant
 
         /// The label is the button's name; `danger` is the reason it exists in
         /// red, so it belongs in the description rather than the name.
@@ -739,7 +739,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? Theme.onDanger
+            color: button.danger ? Theme.inkOnDanger
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: Theme.typeMicro
         }

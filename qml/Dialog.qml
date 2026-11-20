@@ -3,12 +3,11 @@ import QtQuick
 
 // The one dialog plate in the shell.
 //
-// Eleven dialogs used to lay out the same surface by hand — scrim, shadow,
-// 440-wide raised plate, 44 px head, foot row — with drift in the border
-// colour, the corner radius and the foot height. §6.5 elevation 2 and §7.5
-// fix what a dialog is: `raised` under a scrim, a 1 px `overlayLine` edge,
-// `lg` corners, a 15 px heading, a 28 px button row at the bottom right.
-// This file owns that; a dialog supplies a body and a footer.
+// The M3 Expressive dialog: a `surfaceContainerHigh` plate on the 32 % scrim,
+// a 28 dp extra-large corner, no stroke (tone and elevation separate it), a
+// 17 px emphasized heading and a pill button row at the bottom right. Dialogs
+// used to lay this out by hand with drift in radius and foot height; this file
+// owns the one definition, and a dialog supplies a body and a footer.
 //
 //     Dialog {
 //         heading: qsTr("新建文件夹")
@@ -98,11 +97,33 @@ FocusScope {
         y: 64
         width: Math.min(root.panelWidth, root.width - 32)
         height: head.height + 12 + root.bodyHeight + 12
-            + (root.footerHeight > 0 ? root.footerHeight + 12 : 0)
-        radius: Theme.radiusLg
-        color: Theme.raised
-        border.width: 1
-        border.color: Theme.overlayLine
+            + (root.footerHeight > 0 ? root.footerHeight + 16 : 0)
+        radius: Theme.radiusXl
+        color: "transparent"
+        border.width: 0
+
+        /// M3 Expressive confirmation is springy: the plate scales up a hair
+        /// past its resting size while the scrim fades. Hiding stays instant so
+        /// the next dialog never opens on top of a departing one.
+        opacity: root.visible ? 1 : 0
+        Behavior on opacity {
+            enabled: Theme.motion && root.visible
+            OpacityAnimator {
+                duration: Theme.motionOverlay
+                easing.type: Easing.OutCubic
+            }
+        }
+        scale: root.visible ? 1 : 0.94
+        Behavior on scale {
+            enabled: Theme.motion && root.visible
+            SpringAnimation {
+                spring: Theme.springSpatial
+                damping: Theme.dampSpatial
+                epsilon: 0.005
+            }
+        }
+
+        Glass { radius: Theme.radiusXl }
 
         // The plate is not an input item, so a press on its padding would
         // otherwise reach the scrim behind it and close the dialog. This is
@@ -138,7 +159,7 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 12
+            anchors.bottomMargin: 16
             sourceComponent: root.footer
         }
     }

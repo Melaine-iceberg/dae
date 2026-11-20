@@ -15,7 +15,7 @@ use qtbridge::{QmlElement, qobject};
 const FILE_NAME: &str = "appearance-qt.ini";
 
 const THEMES: &[&str] = &["system", "light", "dark"];
-const ACCENTS: &[&str] = &["system", "brand"];
+const ACCENTS: &[&str] = &["system", "brand", "custom"];
 const LANGUAGES: &[&str] = dae_core::settings::LANGUAGES;
 const MATERIALS: &[&str] = &["mica", "acrylic", "none"];
 
@@ -94,6 +94,22 @@ impl StoredAppearance {
         }
         stored
     }
+}
+
+/// A hand-edited or picker-produced colour, normalized to `#rrggbb`. Three
+/// digit shorthand expands; anything else is rejected so the UI never binds a
+/// string Qt cannot read as a colour.
+fn normalize_hex(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_start_matches('#');
+    let expanded = match trimmed.len() {
+        3 => trimmed.chars().flat_map(|c| [c, c]).collect::<String>(),
+        6 => trimmed.to_owned(),
+        _ => return None,
+    };
+    if !expanded.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(format!("#{}", expanded.to_ascii_lowercase()))
 }
 
 fn preferences_path() -> Option<PathBuf> {
@@ -198,19 +214,21 @@ fn save(change: impl FnOnce(&mut dae_core::settings::AppSettings)) {
 pub struct Appearance {
     theme: String,
     accent: String,
+    custom_accent: String,
     language: String,
     blur_enabled: bool,
+    frosted_glass: bool,
     window_material: String,
     /// Whether the next launch presents a text-free window while the QML
     /// tree is still being built (`docs/qml-aot.md` §16). Read by `main`
     /// before the engine exists, so it cannot live in QML state.
     shell_first: bool,
-    /// The UI family chosen in settings. Empty keeps the bundled Mona Sans VF.
-    /// This is the saved preference, not necessarily the family this process
-    /// started with.
+    /// The UI family chosen in settings. Empty keeps the bundled Google Sans
+    /// Flex. This is the saved preference, not necessarily the family this
+    /// process started with.
     ui_font_family: String,
     /// The fixed-pitch family chosen in settings. Empty keeps the bundled
-    /// Mona Sans Mono VF. QML binds this live, so no restart is needed.
+    /// Google Sans Code. QML binds this live, so no restart is needed.
     mono_font_family: String,
     /// The UI family this process applied before QML started. `Theme` reads
     /// this instead of `ui_font_family`: `QQuickText` copies the application
@@ -226,8 +244,10 @@ impl Default for Appearance {
         Self {
             theme: stored.theme,
             accent: stored.accent,
+            custom_accent: stored.custom_accent,
             language: stored.language,
             blur_enabled: stored.blur,
+            frosted_glass: stored.frosted_glass,
             window_material: stored.window_material,
             shell_first: stored.shell_first,
             applied_ui_font: ui_font_family.clone(),
@@ -241,8 +261,10 @@ impl Default for Appearance {
 impl Appearance {
     qproperty!("theme", Member = theme, Notify = theme_changed);
     qproperty!("accent", Member = accent, Notify = accent_changed);
+    qproperty!("customAccent", Member = custom_accent, Notify = custom_accent_changed);
     qproperty!("language", Member = language, Notify = language_changed);
     qproperty!("blurEnabled", Member = blur_enabled, Notify = blur_enabled_changed);
+    qproperty!("frostedGlass", Member = frosted_glass, Notify = frosted_glass_changed);
     qproperty!(
         "windowMaterial",
         Member = window_material,
@@ -258,9 +280,13 @@ impl Appearance {
     #[qsignal]
     fn accent_changed(&mut self);
     #[qsignal]
+    fn custom_accent_changed(&mut self);
+    #[qsignal]
     fn language_changed(&mut self);
     #[qsignal]
     fn blur_enabled_changed(&mut self);
+    #[qsignal]
+    fn frosted_glass_changed(&mut self);
     #[qsignal]
     fn window_material_changed(&mut self);
     #[qsignal]
@@ -314,6 +340,42 @@ impl Appearance {
         self.blur_enabled = enabled;
         self.blur_enabled_changed();
         save(|settings| settings.blur = enabled);
+    }
+
+    /// The in-app frost on floating surfaces. Independent of the window
+    /// backdrop (`blur`): a machine can composite Mica yet still want solid
+    /// menus, or vice versa.
+    #[qslot]
+    fn choose_frosted_glass(&mut self, enabled: bool) {
+        if self.frosted_glass == enabled {
+            return;
+        }
+        self.frosted_glass = enabled;
+        self.frosted_glass_changed();
+        save(|settings| settings.frosted_glass = enabled);
+    }
+
+    /// Stores a picked seed colour and switches the accent source to it, so
+    /// choosing a swatch applies immediately. An unreadable colour is ignored
+    /// rather than half-applied.
+    #[qslot]
+    fn choose_custom_accent(&mut self, value: String) {
+        let Some(hex) = normalize_hex(&value) else {
+            return;
+        };
+        let changed = self.custom_accent != hex;
+        if changed {
+            self.custom_accent.clone_from(&hex);
+            self.custom_accent_changed();
+        }
+        if self.accent != "custom" {
+            self.accent = "custom".to_owned();
+            self.accent_changed();
+        }
+        save(|settings| {
+            settings.custom_accent = hex.clone();
+            settings.accent = "custom".to_owned();
+        });
     }
 
     #[qslot]

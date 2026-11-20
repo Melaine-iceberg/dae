@@ -303,8 +303,10 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(600, root.width - 40)
         height: Math.min(620, root.height - 48)
-        radius: Theme.radiusLg
-        color: Theme.raised
+        radius: Theme.radiusXl
+        color: "transparent"
+
+        Glass { radius: Theme.radiusXl }
         border.width: 1
         border.color: Theme.overlayLine
 
@@ -376,8 +378,8 @@ FocusScope {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
-                            height: 2
-                            radius: Theme.radiusSm
+                            height: 3
+                            radius: Theme.radiusFull
                             // The current tab is a position, not a control: it
                             // keeps the same signal track as the window's tabs
                             // instead of following the system accent.
@@ -492,17 +494,18 @@ FocusScope {
                             Rectangle {
                                 width: 96
                                 height: Theme.controlSm
-                                radius: Theme.radiusSm
+                                radius: Theme.radiusFull
                                 color: scanMouse.containsMouse
                                     ? Theme.hover : "transparent"
                                 border.width: 1
-                                border.color: root.hairline
+                                border.color: Theme.outlineVariant
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
-                                    color: root.textColor
+                                    color: root.accent
                                     font.pixelSize: Theme.typeMicro
+                                    font.weight: Theme.weightStrong
                                 }
 
                                 MouseArea {
@@ -734,7 +737,7 @@ FocusScope {
                                 Text {
                                     anchors.centerIn: parent
                                     text: qsTr("添加")
-                                    color: aclAddMouse.enabled ? Theme.onAccent : root.mutedColor
+                                    color: aclAddMouse.enabled ? Theme.inkOnAccent : root.mutedColor
                                     font.pixelSize: Theme.typeCaption
                                 }
 
@@ -914,7 +917,7 @@ FocusScope {
                             verticalAlignment: TextInput.AlignVCenter
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onAccent
+                            selectedTextColor: Theme.inkOnAccent
                             font.pixelSize: Theme.typeCaption
                             font.family: Theme.monoFamily
                             selectByMouse: true
@@ -994,7 +997,7 @@ FocusScope {
                             Text {
                                 anchors.centerIn: parent
                                 text: controller.hashing ? qsTr("取消") : qsTr("开始校验")
-                                color: Theme.onAccent
+                                color: Theme.inkOnAccent
                                 font.pixelSize: Theme.typeCaption
                             }
 
@@ -1087,7 +1090,7 @@ FocusScope {
                     Text {
                         anchors.centerIn: parent
                         text: controller.saving ? qsTr("保存中…") : qsTr("确定")
-                        color: root.canSave ? Theme.onAccent : root.mutedColor
+                        color: root.canSave ? Theme.inkOnAccent : root.mutedColor
                         font.pixelSize: Theme.typeCaption
                     }
 
@@ -1226,16 +1229,16 @@ FocusScope {
             width: 15
             height: 15
             anchors.verticalCenter: parent.verticalCenter
-            radius: Theme.radiusSm
+            radius: 3
             color: toggle.checked ? root.accent : "transparent"
             border.width: 1
-            border.color: toggle.checked ? root.accent : Theme.scrim
+            border.color: toggle.checked ? root.accent : Theme.outline
 
             Text {
                 anchors.centerIn: parent
                 visible: toggle.checked
                 text: "\u2713"
-                color: Theme.onAccent
+                color: Theme.inkOnAccent
                 font.pixelSize: Theme.typeMicro
             }
         }
@@ -1278,20 +1281,20 @@ FocusScope {
         height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
-        border.width: fieldInput.activeFocus ? 1.5 : 1
+        border.width: fieldInput.activeFocus ? 2 : 1
         border.color: fieldInput.activeFocus
             ? Theme.accent
-            : root.hairline
+            : Theme.outlineVariant
 
         TextInput {
             id: fieldInput
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
             verticalAlignment: TextInput.AlignVCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: Theme.onAccent
+            selectedTextColor: Theme.inkOnAccent
             font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
@@ -1304,7 +1307,7 @@ FocusScope {
 
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: 9
+            anchors.leftMargin: 13
             anchors.verticalCenter: parent.verticalCenter
             visible: fieldInput.text.length === 0
             text: field.placeholder
@@ -1327,16 +1330,15 @@ FocusScope {
 
         width: aclChipLabel.implicitWidth + 16
         height: Theme.controlSm
-        radius: Theme.radiusSm
+        radius: Theme.radiusFull
         opacity: enabled ? 1 : 0.55
         color: aclChip.selected
             ? (aclChip.danger
                 ? Qt.rgba(root.dangerColor.r, root.dangerColor.g, root.dangerColor.b, 0.15)
-                : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
+                : Theme.selection)
             : (aclChipMouse.containsMouse ? Theme.hover : "transparent")
-        border.width: 1
-        border.color: aclChip.selected
-            ? (aclChip.danger ? root.dangerColor : root.accent) : root.hairline
+        border.width: aclChip.selected ? 0 : 1
+        border.color: aclChip.danger ? root.dangerColor : Theme.outlineVariant
 
         Accessible.role: Accessible.RadioButton
         Accessible.name: aclChip.label
@@ -1349,8 +1351,9 @@ FocusScope {
             anchors.centerIn: parent
             text: aclChip.label
             color: aclChip.selected
-                ? (aclChip.danger ? root.dangerColor : root.textColor) : root.mutedColor
+                ? (aclChip.danger ? root.dangerColor : Theme.selectionInk) : root.mutedColor
             font.pixelSize: Theme.typeMicro
+            font.weight: aclChip.selected ? Theme.weightStrong : Font.Normal
         }
 
         MouseArea {

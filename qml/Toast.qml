@@ -1,17 +1,13 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 
-// The outcome line: one bubble per finished operation, stacked at the bottom
-// centre of the content area.
+// The outcome line: one M3 snackbar per finished operation, stacked at the
+// bottom centre of the content area.
 //
-// §7.5 fixes the geometry: 36 dp tall, `raised` under the one shadow,
-// `md` corners, above the action bar by 8 dp, at most three at once, 4.5 s
-// each (8 s when it offers an undo). The stack is bounded because four lines
-// of feedback is a log, and a log belongs in the status centre.
-//
-// Nothing here is animated. A toast that fades out is a toast that keeps
-// swallowing clicks aimed at the window behind it, and the plate has no
-// reason to be in the way for longer than it is readable.
+// The snackbar is `inverseSurface` with `inverseOnSurface` text, a 12 dp
+// corner and a pill undo action in `inversePrimary`; the error mark borrows
+// the error container so it stays legible on both inverse surfaces. At most
+// three at once, 4.5 s each (8 s when it offers an undo).
 Item {
     id: root
 
@@ -102,19 +98,24 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     /// Long enough for a sentence, bounded so an error's stack
                     /// trace does not become the window.
-                    width: Math.min(420, row.implicitWidth + 20)
-                    height: Theme.controlXl
+                    width: Math.min(440, row.implicitWidth + 24)
+                    height: 40
                     radius: Theme.radiusMd
-                    color: Theme.raised
-                    border.width: 1
-                    border.color: Theme.overlayLine
+                    color: "transparent"
+
+                    Glass {
+                        radius: Theme.radiusMd
+                        veil: Qt.rgba(Theme.inverseSurface.r, Theme.inverseSurface.g,
+                                      Theme.inverseSurface.b, 0.85)
+                        solidVeil: Theme.inverseSurface
+                    }
 
                     Row {
                         id: row
 
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: parent.left
-                        anchors.leftMargin: 10
+                        anchors.leftMargin: 12
                         spacing: 8
 
                         Glyph {
@@ -123,7 +124,8 @@ Item {
                             width: 14
                             height: 14
                             kind: slot.isError ? "close" : "check"
-                            tint: slot.isError ? Theme.danger : Theme.success
+                            tint: slot.isError ? Theme.errorContainer
+                                               : Theme.inversePrimary
                         }
 
                         Text {
@@ -132,7 +134,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             width: Math.min(320, implicitWidth)
                             text: slot.message
-                            color: Theme.ink
+                            color: Theme.inverseOnSurface
                             font.pixelSize: Theme.typeCaption
                             elide: Text.ElideRight
                             Accessible.role: Accessible.StaticText
@@ -141,10 +143,13 @@ Item {
 
                         Rectangle {
                             visible: slot.undoable
-                            width: visible ? undoLabel.implicitWidth + 12 : 0
+                            width: visible ? undoLabel.implicitWidth + 20 : 0
                             height: Theme.controlSm
-                            radius: Theme.radiusSm
-                            color: undoMouse.containsMouse ? Theme.hover
+                            radius: Theme.radiusFull
+                            color: undoMouse.containsMouse
+                                ? Qt.rgba(Theme.inverseOnSurface.r,
+                                          Theme.inverseOnSurface.g,
+                                          Theme.inverseOnSurface.b, 0.10)
                                 : "transparent"
 
                             Accessible.role: Accessible.Button
@@ -158,8 +163,9 @@ Item {
                                 id: undoLabel
                                 anchors.centerIn: parent
                                 text: qsTr("撤销")
-                                color: Theme.accent
+                                color: Theme.inversePrimary
                                 font.pixelSize: Theme.typeCaption
+                                font.weight: Theme.weightStrong
                             }
 
                             MouseArea {
@@ -188,8 +194,11 @@ Item {
 
                             Rectangle {
                                 anchors.fill: parent
-                                radius: Theme.radiusSm
-                                color: closeMouse.containsMouse ? Theme.hover
+                                radius: Theme.radiusFull
+                                color: closeMouse.containsMouse
+                                    ? Qt.rgba(Theme.inverseOnSurface.r,
+                                              Theme.inverseOnSurface.g,
+                                              Theme.inverseOnSurface.b, 0.10)
                                     : "transparent"
                             }
 
@@ -198,8 +207,11 @@ Item {
                                 width: 10
                                 height: 10
                                 kind: "close"
-                                tint: closeMouse.containsMouse ? Theme.inkSecondary
-                                    : Theme.inkTertiary
+                                tint: closeMouse.containsMouse
+                                    ? Theme.inverseOnSurface
+                                    : Qt.rgba(Theme.inverseOnSurface.r,
+                                              Theme.inverseOnSurface.g,
+                                              Theme.inverseOnSurface.b, 0.7)
                             }
 
                             MouseArea {

@@ -102,8 +102,10 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(420, root.width - 48)
         height: Math.max(236, contentColumn.implicitHeight + 78)
-        radius: Theme.radiusLg
-        color: Theme.raised
+        radius: Theme.radiusXl
+        color: "transparent"
+
+        Glass { radius: Theme.radiusXl }
         border.width: 1
         border.color: Theme.overlayLine
 
@@ -163,7 +165,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.ink
                     selectionColor: Theme.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeBody
                     echoMode: TextInput.Password
                     selectByMouse: true
@@ -210,7 +212,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.ink
                     selectionColor: Theme.accent
-                    selectedTextColor: Theme.onAccent
+                    selectedTextColor: Theme.inkOnAccent
                     font.pixelSize: Theme.typeBody
                     echoMode: TextInput.Password
                     selectByMouse: true
@@ -293,7 +295,7 @@ FocusScope {
                 id: submitLabel
                 anchors.centerIn: parent
                 text: root.compressMode ? qsTr("压缩") : qsTr("解压")
-                color: Theme.onAccent
+                color: Theme.inkOnAccent
                 font.pixelSize: Theme.typeCaption
             }
 

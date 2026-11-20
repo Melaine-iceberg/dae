@@ -16,11 +16,12 @@ Rectangle {
     /// Where the queue panel should open, in window coordinates.
     signal openRequested(real x, real y)
 
-    width: transferRow.implicitWidth + 14
+    width: transferRow.implicitWidth + 16
     height: Theme.controlSm
-    radius: Theme.radiusXs
+    radius: Theme.radiusFull
     visible: chip.count > 0
-    color: transferMouse.containsMouse ? Theme.raised : Theme.canvas
+    color: transferMouse.containsMouse ? Theme.surfaceContainerHigh
+                                       : Theme.surfaceContainerLow
     border.width: 1
 
     // QStringList exposes `.length` to QML; qmllint's type model
@@ -63,7 +64,7 @@ Rectangle {
     /// to show in its panel. The border it already carries turns into the
     /// focus ring rather than gaining a second one.
     activeFocusOnTab: chip.visible
-    border.color: chip.activeFocus ? Theme.accent : Theme.hairline
+    border.color: chip.activeFocus ? Theme.accent : Theme.outlineVariant
     Keys.onReturnPressed: chip.openPanel()
     Keys.onSpacePressed: chip.openPanel()
 
@@ -79,17 +80,13 @@ Rectangle {
             font.pixelSize: Theme.typeMicro
         }
 
-        Rectangle {
+        M3Progress {
             anchors.verticalCenter: parent.verticalCenter
             width: 32
-            height: 2
-            color: Theme.line
-
-            Rectangle {
-                width: parent.width * chip.percent / 100
-                height: parent.height
-                color: Theme.accent
-            }
+            height: 3
+            thickness: 3
+            wavy: false
+            value: chip.percent / 100
         }
 
         Text {

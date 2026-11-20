@@ -57,17 +57,17 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_blur_supported() -> bool;
 
-        /// Loads the bundled UI faces and selects the application font: Mona
-        /// Sans VF for Latin and numbers with the platform face behind it for
-        /// Chinese, Mona Sans Mono VF for fixed pitch, and the platform's own
+        /// Loads the bundled UI faces and selects the application font: Google
+        /// Sans Flex for Latin and numbers with the platform face behind it for
+        /// Chinese, Google Sans Code for fixed pitch, and the platform's own
         /// faces behind them (proposal §6.2.1, §9.2).
         #[namespace = "dae_qt"]
         fn dae_qt_apply_fonts();
 
         /// Replaces the application font's first family with the user's choice
-        /// from settings.toml. Empty keeps the bundled Mona Sans VF. Existing
-        /// QML `Text` items keep their font; the shell applies this before the
-        /// first document is created.
+        /// from settings.toml. Empty keeps the bundled Google Sans Flex.
+        /// Existing QML `Text` items keep their font; the shell applies this
+        /// before the first document is created.
         #[namespace = "dae_qt"]
         fn dae_qt_set_ui_font(family: &QString);
 
@@ -265,7 +265,8 @@ pub fn apply_fonts() {
 }
 
 /// Applies the user's UI family before the first QML document exists. Empty
-/// keeps the bundled Mona Sans VF; a later change applies on the next launch.
+/// keeps the bundled Google Sans Flex; a later change applies on the next
+/// launch.
 pub fn set_ui_font(family: &str) {
     qobject::dae_qt_set_ui_font(&QString::from(family));
 }

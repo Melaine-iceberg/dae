@@ -146,8 +146,10 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(520, root.width - 40)
         height: Math.min(480, root.height - 48)
-        radius: Theme.radiusLg
-        color: Theme.raised
+        radius: Theme.radiusXl
+        color: "transparent"
+
+        Glass { radius: Theme.radiusXl }
         border.width: 1
         border.color: Theme.overlayLine
 
@@ -222,7 +224,7 @@ FocusScope {
                         verticalAlignment: TextInput.AlignVCenter
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: Theme.onAccent
+                        selectedTextColor: Theme.inkOnAccent
                         font.pixelSize: Theme.typeCaption
                         selectByMouse: true
                         clip: true
@@ -381,7 +383,7 @@ FocusScope {
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("移动")
-                        color: Theme.onAccent
+                        color: Theme.inkOnAccent
                         font.pixelSize: Theme.typeCaption
                     }
 

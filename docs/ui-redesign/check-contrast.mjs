@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// Verifies the colour tokens proposed in docs/ui-redesign/proposal.md §6.
+// Verifies the Material 3 Expressive colour roles in `qml/Theme.qml`.
 //
-//   node docs/ui-redesign/contrast.mjs
+//   node docs/ui-redesign/check-contrast.mjs
 //
-// No dependencies. Every hex value below is the one written in the proposal;
-// what this script adds is the measured WCAG ratio for every pair the proposal
-// makes a claim about, plus the hue distance between the accent and the file
-// categories. Change a token and this prints whether the change still passes.
+// No dependencies. Every hex value below mirrors the resolved light/dark token
+// in Theme.qml; what this script adds is the measured WCAG ratio for every pair
+// the token layer makes a claim about, plus the derived selection container
+// (`secondaryContainer` / `onSecondaryContainer`) that Theme builds from the
+// seed with HSL. Change a token and this prints whether it still passes.
 
 // ── OKLCH → sRGB (for regenerating the ramp from L/C/h) ────────────────────
 function oklchToRgb(L, C, hDeg) {
@@ -50,24 +51,76 @@ const mix = (fg, bg, alpha) =>
     .map((v, i) => Math.round((v * alpha + parse(bg)[i] * (1 - alpha)) * 255).toString(16).padStart(2, "0"))
     .join("");
 
-// ── The tokens (proposal §6.1) ─────────────────────────────────────────────
+// ── HSL helpers, mirroring Theme.qml ──────────────────────────────────────
+function rgbToHsl(value) {
+  const [r, g, b] = parse(value);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const delta = max - min;
+  let h = 0;
+  let s = 0;
+  if (delta > 0.00001) {
+    s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+    if (max === r) h = ((g - b) / delta + (g < b ? 6 : 0)) * 60;
+    else if (max === g) h = ((b - r) / delta + 2) * 60;
+    else h = ((r - g) / delta + 4) * 60;
+  }
+  return { h, s, l };
+}
+
+function hslToHex(hue, saturation, lightness) {
+  const h = (((hue % 360) + 360) % 360) / 360;
+  const s = Math.max(0, Math.min(1, saturation));
+  const l = Math.max(0, Math.min(1, lightness));
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t) => {
+    let v = t;
+    if (v < 0) v += 1;
+    if (v > 1) v -= 1;
+    if (v < 1 / 6) return p + (q - p) * 6 * v;
+    if (v < 1 / 2) return q;
+    if (v < 2 / 3) return p + (q - p) * (2 / 3 - v) * 6;
+    return p;
+  };
+  return (
+    "#" +
+    [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)]
+      .map((v) => Math.round(v * 255).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+const secondaryContainer = (accent, isDark) =>
+  hslToHex(rgbToHsl(accent).h, 0.34, isDark ? 0.24 : 0.86);
+const onSecondaryContainer = (accent, isDark) =>
+  hslToHex(rgbToHsl(accent).h, 0.55, isDark ? 0.93 : 0.13);
+
+function readableInk(background, preferred) {
+  const candidate = preferred;
+  if (ratio(background, candidate) >= 4.5) return candidate;
+  return luminance(parse(background)) > 0.45 ? "#101413" : "#ffffff";
+}
+
+// ── The tokens (qml/Theme.qml) ────────────────────────────────────────────
 const NEUTRAL_HUE = 264;
 const ACCENT_HUE = 195;
 const CATEGORY_HUE = { l: 0.5, c: 0.075, lDark: 0.79, cDark: 0.06 };
 
 const light = {
-  window: "#eff0f2",
-  chrome: "#f7f7f9",
-  canvas: "#fdfdfd",
-  raised: "#fdfdfd",
-  field: "#eff0f2",
-  inset: "#f7f7f9",
-  hairline: "#e5e6e9",
-  line: "#d7d9dc",
-  lineStrong: "#bcbec2",
-  ink: "#1c1e23",
-  inkSecondary: "#505358",
-  inkTertiary: "#6b6d72",
+  window: "#d9dedc",
+  chrome: "#f1f5f3",
+  canvas: "#f7faf9",
+  raised: "#e4e9e7",
+  field: "#dee4e2",
+  inset: "#f1f5f3",
+  hairline: "#bec9c6",
+  line: "#6f7977",
+  lineStrong: "#3f4947",
+  ink: "#181c1b",
+  inkSecondary: "#3f4947",
+  inkTertiary: "#5c6664",
   accent: "#007a7b",
   danger: "#ba2b2e",
   warning: "#8d5a00",
@@ -75,18 +128,18 @@ const light = {
 };
 
 const dark = {
-  window: "#090b0f",
-  chrome: "#15171c",
-  canvas: "#101216",
-  raised: "#292b30",
-  field: "#1c1e23",
-  inset: "#15171c",
-  hairline: "#1c1e23",
-  line: "#292b30",
-  lineStrong: "#3a3d43",
-  ink: "#f7f7f9",
-  inkSecondary: "#bcbec2",
-  inkTertiary: "#96989d",
+  window: "#0a0e0d",
+  chrome: "#171c1b",
+  canvas: "#0f1413",
+  raised: "#252a29",
+  field: "#303534",
+  inset: "#171c1b",
+  hairline: "#3f4947",
+  line: "#889390",
+  lineStrong: "#bec9c6",
+  ink: "#dfe4e2",
+  inkSecondary: "#bec9c6",
+  inkTertiary: "#a3afac",
   accent: "#6bcac9",
   danger: "#f47b74",
   warning: "#e6b55d",
@@ -142,8 +195,10 @@ for (const [name, t] of [["LIGHT", light], ["DARK", dark]]) {
 
   console.log(`\n${name} — accent`);
   check("accent / canvas (non-text ≥3)", t.accent, t.canvas, 3);
-  console.log(`  ${pad("accent / selected row (ink)", 34)} ${ratio(t.ink, mix(t.accent, t.canvas, name === "LIGHT" ? 0.1 : 0.13)).toFixed(2).padStart(6)}:1`);
-  check("selected row keeps ink ≥ 4.5", t.ink, mix(t.accent, t.canvas, name === "LIGHT" ? 0.1 : 0.13), 4.5);
+  const container = secondaryContainer(t.accent, name === "DARK");
+  const containerInk = readableInk(container, onSecondaryContainer(t.accent, name === "DARK"));
+  console.log(`  ${pad("selection container", 34)} ${container}  ink ${containerInk}`);
+  check("selectionInk / selection ≥ 4.5", containerInk, container, 4.5);
 
   console.log(`\n${name} — semantic text`);
   for (const role of ["danger", "warning", "success"]) check(`${role} / canvas`, t[role], t.canvas, 4.5);

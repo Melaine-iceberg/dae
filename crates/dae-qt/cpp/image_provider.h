@@ -83,12 +83,12 @@ private:
 // The interface glyph provider (proposal §12.3).
 //
 // QML asks for `image://glyph/<kind>?size=<px>&dp=<dp>&ink=AARRGGBB&wash=0.3`.
-// The Solar path data lives in `qml/solar-marks.json` and `solar_marks.cpp`
-// turns one entry into a raster; each (kind, pixel edge, dp, ink, wash) is
-// painted once and cached, so a sidebar row, a menu item and a toolbar button
-// share the same texture and no delegate owns a `Canvas`. Tint changes (hover,
-// selection) land on a new URL and a new entry; theme-coloured tints are a
-// small, fixed set, so the cache does not grow with the listing.
+// The Material path data lives in `qml/material-marks.json` and
+// `material_marks.cpp` turns one entry into a raster; each (kind, pixel edge,
+// dp, ink, wash) is painted once and cached, so a sidebar row, a menu item and
+// a toolbar button share the same texture and no delegate owns a `Canvas`. Tint
+// changes (hover, selection) land on a new URL and a new entry; theme-coloured
+// tints are a small, fixed set, so the cache does not grow with the listing.
 class GlyphImageProvider : public QQuickImageProvider
 {
 public:

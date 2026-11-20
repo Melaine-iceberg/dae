@@ -5572,16 +5572,16 @@
         <translation>UI font</translation>
     </message>
     <message>
-        <source>留空使用内置 Mona Sans VF；中文回退到系统字体。</source>
-        <translation>Leave empty to use bundled Mona Sans VF; Chinese falls back to the system face.</translation>
+        <source>留空使用内置 Google Sans Flex；中文回退到系统字体。</source>
+        <translation>Leave empty to use bundled Google Sans Flex; Chinese falls back to the system face.</translation>
     </message>
     <message>
         <source>等宽字体</source>
         <translation>Monospace font</translation>
     </message>
     <message>
-        <source>留空使用内置 Mona Sans Mono VF；终端、大小、速率与代码预览共用。</source>
-        <translation>Leave empty to use bundled Mona Sans Mono VF; shared by the terminal, sizes, rates and code previews.</translation>
+        <source>留空使用内置 Google Sans Code；终端、大小、速率与代码预览共用。</source>
+        <translation>Leave empty to use bundled Google Sans Code; shared by the terminal, sizes, rates and code previews.</translation>
     </message>
     <message>
         <source>已安装的字体族可在此输入；切换界面字体不会改变等宽区域。</source>

@@ -51,11 +51,19 @@ pub struct AppSettings {
     pub terminal: TerminalSettings,
     pub theme: String,
     pub accent: String,
+    /// The user's custom seed colour as `#rrggbb`; empty means none. Read only
+    /// when `accent` is `custom`, so switching back to system/brand keeps the
+    /// picked colour for later.
+    pub custom_accent: String,
     pub language: String,
     /// Whether the window may composite a backdrop (Mica/Acrylic on Windows,
     /// a Wayland background effect on Linux). When off the shell paints the
     /// solid chrome colour instead.
     pub blur: bool,
+    /// Whether floating surfaces (menus, dialogs, the palette, sheets) frost
+    /// the scene behind them. Off paints them solid and skips the grab/blur
+    /// passes entirely, for machines whose GPU cannot afford them.
+    pub frosted_glass: bool,
     /// The Windows backdrop the user asked for: `mica`, `acrylic` or `none`.
     /// Other platforms ignore it; they either have one effect or none.
     pub window_material: String,
@@ -78,7 +86,7 @@ pub struct AppSettings {
     /// Copy and move behaviour that outlives a launch.
     pub transfer: TransferSettings,
     /// User-chosen families for the shell's two faces. `None` keeps the
-    /// bundled Mona Sans VF / Mona Sans Mono VF pair.
+    /// bundled Google Sans Flex / Google Sans Code pair.
     pub fonts: FontSettings,
     /// Where "new from template" reads its templates. An absent directory
     /// means the app-owned `templates` folder under the config directory.
@@ -204,12 +212,16 @@ impl Default for AppSettings {
             terminal: TerminalSettings::default(),
             theme: "system".to_string(),
             accent: "brand".to_string(),
+            custom_accent: String::new(),
             language: "system".to_string(),
             // Decision 1 of the Graphite proposal: the shell starts opaque.
             // Window material is a capability the user turns on, not the
             // default, so a fresh document asks for neither a backdrop nor
             // the blur that would expose it.
             blur: false,
+            // The in-app frost is cheap on any modern GPU and is the shell's
+            // default look; weak machines turn it off in settings.
+            frosted_glass: true,
             window_material: "none".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
             actions: default_actions(),
@@ -668,8 +680,8 @@ mod tests {
         settings.blur = false;
         settings.window_material = "acrylic".to_string();
         settings.shell_first = false;
-        settings.fonts.ui_family = Some("Mona Sans".to_string());
-        settings.fonts.mono_family = Some("Mona Sans Mono VF".to_string());
+        settings.fonts.ui_family = Some("Google Sans Flex".to_string());
+        settings.fonts.mono_family = Some("Google Sans Code".to_string());
 
         let saved = save_settings(settings.clone()).expect("save");
         assert_eq!(saved.terminal.font_size, 16);
@@ -679,11 +691,11 @@ mod tests {
         assert!(!saved.blur);
         assert_eq!(saved.window_material, "acrylic");
         assert!(!saved.shell_first);
-        assert_eq!(saved.fonts.ui_family.as_deref(), Some("Mona Sans"));
         assert_eq!(
-            saved.fonts.mono_family.as_deref(),
-            Some("Mona Sans Mono VF")
+            saved.fonts.ui_family.as_deref(),
+            Some("Google Sans Flex")
         );
+        assert_eq!(saved.fonts.mono_family.as_deref(), Some("Google Sans Code"));
         assert!(settings_path(&dir).exists(), "settings.toml written");
 
         use_config_dir_for_tests(dir.clone()).expect("reload");
@@ -778,14 +790,11 @@ mod tests {
 
         let mut settings = AppSettings::default();
         settings.fonts.ui_family = Some("   ".to_string());
-        settings.fonts.mono_family = Some("  Mona Sans Mono VF  ".to_string());
+        settings.fonts.mono_family = Some("  Google Sans Code  ".to_string());
 
         let saved = save_settings(settings).expect("save");
         assert_eq!(saved.fonts.ui_family, None);
-        assert_eq!(
-            saved.fonts.mono_family.as_deref(),
-            Some("Mona Sans Mono VF")
-        );
+        assert_eq!(saved.fonts.mono_family.as_deref(), Some("Google Sans Code"));
 
         fs::remove_dir_all(&dir).ok();
     }

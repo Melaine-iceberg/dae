@@ -695,10 +695,24 @@ Item {
         y: Math.round(root.height * 0.15)
         width: Math.min(560, root.width - 32)
         height: Math.min(430, root.height - y - 96)
-        radius: Theme.radiusLg
-        color: root.panelColor
-        border.width: 1
-        border.color: Theme.overlayLine
+        radius: Theme.radiusXl
+        color: "transparent"
+        border.width: 0
+
+        /// The palette drops in on the spatial spring, overshooting a hair
+        /// into place; hiding stays instant so the next open never stacks.
+        scale: root.visible ? 1 : 0.96
+        transformOrigin: Item.Top
+        Behavior on scale {
+            enabled: Theme.motion && root.visible
+            SpringAnimation {
+                spring: Theme.springSpatial
+                damping: Theme.dampSpatial
+                epsilon: 0.005
+            }
+        }
+
+        Glass { radius: Theme.radiusXl }
 
         MouseArea {
             anchors.fill: parent
@@ -706,21 +720,37 @@ Item {
             onWheel: function (wheel) { wheel.accepted = true }
         }
 
-        // Search field: a mark, the query, and the way out. The palette's own
-        // chord used to sit here as text; it is stated by the footer now, so
-        // the band belongs to the query.
+        // Search bar: an M3 search pill (40 dp, full radius, container-high
+        // fill) inset from the panel's top edge. The palette's own chord is
+        // stated by the footer; the band belongs to the query.
         Item {
             id: field
 
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: Theme.shellTitle
+            anchors.topMargin: 10
+            height: 40
+
+            Rectangle {
+                id: fieldWell
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                height: parent.height
+                radius: Theme.radiusFull
+                color: Theme.field
+                border.width: input.activeFocus ? 2 : 0
+                border.color: Theme.accent
+            }
 
             Glyph {
-                x: 12
-                width: 14
-                height: 14
+                x: 25
+                width: 15
+                height: 15
                 anchors.verticalCenter: parent.verticalCenter
                 kind: "search"
                 tint: Theme.inkSecondary
@@ -730,14 +760,14 @@ Item {
                 id: input
 
                 anchors.left: parent.left
-                anchors.leftMargin: 37
+                anchors.leftMargin: 49
                 anchors.right: escChip.left
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                height: Theme.controlSm
+                height: Theme.controlLg
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: Theme.onAccent
+                selectedTextColor: Theme.inkOnAccent
                 font.pixelSize: Theme.typeInput
                 verticalAlignment: TextInput.AlignVCenter
                 focus: true
@@ -797,7 +827,7 @@ Item {
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: 37
+                anchors.leftMargin: 49
                 anchors.verticalCenter: parent.verticalCenter
                 visible: input.text.length === 0
                 text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
@@ -811,14 +841,14 @@ Item {
                 id: escChip
 
                 anchors.right: parent.right
-                anchors.rightMargin: 12
+                anchors.rightMargin: 24
                 anchors.verticalCenter: parent.verticalCenter
-                width: 24
+                width: 26
                 height: Theme.controlXs
-                radius: Theme.radiusXs
+                radius: Theme.radiusSm
                 color: "transparent"
                 border.width: 1
-                border.color: root.hairline
+                border.color: Theme.outlineVariant
 
                 Text {
                     anchors.centerIn: parent
@@ -835,6 +865,8 @@ Item {
 
             anchors.left: parent.left
             anchors.right: parent.right
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
             anchors.top: field.bottom
             height: Theme.ruleWidth(Screen.devicePixelRatio)
             color: root.hairline
@@ -872,16 +904,16 @@ Item {
                 required property string section
 
                 width: list.width
-                height: Theme.controlSm
+                height: 28
 
                 Text {
-                    x: 10
+                    x: 12
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 3
+                    anchors.bottomMargin: 4
                     text: sectionRow.section
-                    color: Theme.inkTertiary
+                    color: Theme.inkSecondary
                     font.pixelSize: Theme.typeMicro
-                    font.weight: Font.Medium
+                    font.weight: Theme.weightEmphasis
                 }
             }
 
@@ -897,7 +929,7 @@ Item {
                 required property string value
 
                 width: list.width
-                height: Theme.controlLg
+                height: Theme.controlXl
 
                 readonly property bool current: list.currentIndex === row.index
 
@@ -914,47 +946,39 @@ Item {
                     root.activateCurrent()
                 }
 
-                // The active row is the shell's selection wash plus a 3 px
-                // rail, the same pair the listing uses: hover alone is too
-                // weak for the row Enter is about to run.
+                // M3 Expressive selection: a `secondaryContainer` block, not a
+                // wash plus a rail. The same block marks the row Enter will run.
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.radiusSm
-                    color: row.current ? Theme.accentSoft
+                    anchors.leftMargin: 4
+                    anchors.rightMargin: 4
+                    anchors.topMargin: 1
+                    anchors.bottomMargin: 1
+                    radius: Theme.radiusMd
+                    color: row.current ? Theme.selection
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
-
-                    Rectangle {
-                        visible: row.current
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        anchors.topMargin: 6
-                        anchors.bottomMargin: 6
-                        width: 3
-                        radius: Theme.radiusXs
-                        color: Theme.accent
-                    }
                 }
 
                 Glyph {
-                    x: 9
+                    x: 13
                     width: 14
                     height: 14
                     anchors.verticalCenter: parent.verticalCenter
                     kind: row.glyph
-                    tint: row.current ? Theme.inkSecondary : Theme.inkTertiary
+                    tint: row.current ? Theme.selectionInk : Theme.inkTertiary
                 }
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 32
+                    anchors.leftMargin: 36
                     anchors.right: hintText.left
                     anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.styledLabel
                     textFormat: Text.StyledText
-                    color: root.textColor
+                    color: row.current ? Theme.selectionInk : root.textColor
                     font.pixelSize: Theme.typeBody
+                    font.weight: row.current ? Theme.weightStrong : Font.Normal
                     elide: Text.ElideRight
                 }
 
@@ -962,11 +986,11 @@ Item {
                     id: hintText
 
                     anchors.right: parent.right
-                    anchors.rightMargin: 9
+                    anchors.rightMargin: 13
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(220, implicitWidth)
                     text: row.hint
-                    color: Theme.inkTertiary
+                    color: row.current ? Theme.selectionInk : Theme.inkTertiary
                     font.pixelSize: Theme.typeMicro
                     font.family: Theme.monoFamily
                     elide: Text.ElideMiddle
@@ -1001,6 +1025,14 @@ Item {
             anchors.topMargin: 16
             spacing: 6
             visible: results.count === 0
+
+            M3Loader {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.searchingFiles
+                width: 32
+                height: 32
+                running: root.searchingFiles
+            }
 
             Text {
                 width: parent.width

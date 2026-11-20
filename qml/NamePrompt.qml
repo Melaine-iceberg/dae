@@ -86,7 +86,7 @@ Dialog {
             verticalAlignment: TextInput.AlignVCenter
             color: Theme.ink
             selectionColor: Theme.accent
-            selectedTextColor: Theme.onAccent
+            selectedTextColor: Theme.inkOnAccent
             font.pixelSize: Theme.typeBody
             selectByMouse: true
             clip: true

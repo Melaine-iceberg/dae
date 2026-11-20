@@ -131,9 +131,9 @@ Item {
         color: Theme.hairline
     }
 
-    /// One chip: 24 high, 11 px, corner 4. A chip is a switch, not a button.
-    /// Its active state uses the same quiet accent wash as the rest of the
-    /// shell's toggles; hover is a separate, lighter step.
+    /// One M3 filter chip: 28 high, pill, label 11. Unselected is outlined;
+    /// selected is a filled `secondaryContainer` chip with emphasized ink,
+    /// which is the same selection language as rows and navigation.
     component Chip: Rectangle {
         id: chip
 
@@ -146,14 +146,13 @@ Item {
 
         signal clicked()
 
-        height: Theme.controlSm
-        width: chip.square ? 28 : Math.ceil(chipLabel.implicitWidth) + 14
-        radius: Theme.radiusXs
-        color: chip.active ? Theme.accentSoft
+        height: Theme.controlMd
+        width: chip.square ? 32 : Math.ceil(chipLabel.implicitWidth) + 18
+        radius: Theme.radiusFull
+        color: chip.active ? Theme.selection
             : (chipMouse.containsMouse ? Theme.hover : "transparent")
-        border.width: chip.activeFocus ? 1.5 : 1
-        border.color: chip.activeFocus ? Theme.accent
-            : (chip.active ? Theme.accentSoftStrong : Theme.hairline)
+        border.width: chip.activeFocus ? 2 : (chip.active ? 0 : 1)
+        border.color: chip.activeFocus ? Theme.accent : Theme.outlineVariant
         opacity: chip.available ? 1 : 0.45
 
         Accessible.role: Accessible.Button
@@ -173,8 +172,9 @@ Item {
             id: chipLabel
             anchors.centerIn: parent
             text: chip.label
-            color: chip.active ? Theme.ink : Theme.inkSecondary
+            color: chip.active ? Theme.selectionInk : Theme.inkSecondary
             font.pixelSize: Theme.typeMicro
+            font.weight: chip.active ? Theme.weightStrong : Font.Normal
         }
 
         ToolTip {
@@ -198,7 +198,7 @@ Item {
         anchors.right: summaryRow.left
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        height: Theme.controlSm
+        height: Theme.controlMd
         contentWidth: row.width
         contentHeight: height
         clip: true
@@ -308,13 +308,12 @@ Item {
             visible: root.contentMode
             readonly property bool filtered: root.typeId !== "all"
             width: visible ? typeRow.implicitWidth + 28 : 0
-            height: Theme.controlSm
-            radius: Theme.radiusXs
-            color: filtered ? Theme.accentSoft
+            height: Theme.controlMd
+            radius: Theme.radiusFull
+            color: filtered ? Theme.selection
                 : (typeMouse.containsMouse ? Theme.hover : "transparent")
-            border.width: typeChip.activeFocus ? 1.5 : 1
-            border.color: typeChip.activeFocus ? Theme.accent
-                : (filtered ? Theme.accentSoftStrong : Theme.hairline)
+            border.width: typeChip.activeFocus ? 2 : (filtered ? 0 : 1)
+            border.color: typeChip.activeFocus ? Theme.accent : Theme.outlineVariant
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("按类型筛选：%1").arg(root.typeLabel(root.typeId))
@@ -343,12 +342,12 @@ Item {
                     width: 14
                     height: 14
                     kind: "file"
-                    tint: Theme.inkSecondary
+                    tint: typeChip.filtered ? Theme.selectionInk : Theme.inkSecondary
                 }
 
                 Text {
                     text: root.typeLabel(root.typeId)
-                    color: Theme.ink
+                    color: typeChip.filtered ? Theme.selectionInk : Theme.ink
                     font.pixelSize: Theme.typeMicro
                 }
             }

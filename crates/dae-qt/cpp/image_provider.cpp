@@ -1,7 +1,7 @@
 #include "image_provider.h"
 
 #include "dae-qt/src/icons.cxxqt.h"
-#include "solar_marks.h"
+#include "material_marks.h"
 
 #include <QFileInfo>
 #include <QColor>
@@ -13,6 +13,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPolygonF>
+#include <QTransform>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QtGlobal>
@@ -278,92 +279,77 @@ QColor glyphColor(const QUrlQuery& query, const QString& name, const QColor& fal
     return color.isValid() ? color : fallback;
 }
 
-/// The mark inside the page. The geometry is the 20-grid in
-/// `docs/ui-redesign/figures/icons-light.svg`; the row paints it at 18 px,
-/// where the mark is still the quickest way to tell a QML file from a PDF.
+/// A Material mark mapped into `target` (in the painter's current 20-grid
+/// space) and filled solid. Material Symbols live on the 960 grid with y running
+/// -960..0, so the +960 shift lands them on 0..960 before the scale into the
+/// target box. The same mapping the interface glyph renderer uses.
+void drawMaterialInto(QPainter& painter, const QString& kind, const QRectF& target,
+                      const QColor& color)
+{
+    const QPainterPath path = materialMarkPath(kind);
+    if (path.isEmpty())
+        return;
+    const qreal grid = materialMarkGrid(kind);
+    painter.save();
+    painter.translate(target.topLeft());
+    painter.scale(target.width() / grid, target.height() / grid);
+    if (grid == 960.0)
+        painter.translate(0, grid);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawPath(path);
+    painter.restore();
+}
+
+/// The same mapping, as a path the caller can clip to (the paper's body).
+QPainterPath materialInto(const QString& kind, const QRectF& target)
+{
+    const QPainterPath path = materialMarkPath(kind);
+    const qreal grid = materialMarkGrid(kind);
+    QTransform transform;
+    transform.translate(target.x(), target.y());
+    transform.scale(target.width() / grid, target.height() / grid);
+    if (grid == 960.0)
+        transform.translate(0, grid);
+    return transform.map(path);
+}
+
+/// The mark inside the page. One Material symbol per family, scaled into the
+/// paper body; the family colour is what separates the text-bearing families,
+/// exactly as the hand-drawn marks did. The caller clips to the paper.
 void drawFamilyMark(QPainter& painter, const QString& family, const QColor& tint)
 {
-    QPen mark(tint);
-    mark.setWidthF(1.3);
-    mark.setCapStyle(Qt::RoundCap);
-    mark.setJoinStyle(Qt::RoundJoin);
-    painter.setPen(mark);
-    painter.setBrush(Qt::NoBrush);
-
-    if (family == QLatin1String("code")) {
-        QPainterPath left;
-        left.moveTo(10.4, 9.9);
-        left.lineTo(8.7, 12.1);
-        left.lineTo(10.4, 14.3);
-        painter.drawPath(left);
-        QPainterPath right;
-        right.moveTo(11.7, 9.9);
-        right.lineTo(13.4, 12.1);
-        right.lineTo(11.7, 14.3);
-        painter.drawPath(right);
-    } else if (family == QLatin1String("image")) {
+    QString kind;
+    if (family == QLatin1String("code"))
+        kind = QStringLiteral("famCode");
+    else if (family == QLatin1String("image"))
+        kind = QStringLiteral("famImage");
+    else if (family == QLatin1String("video"))
+        kind = QStringLiteral("famVideo");
+    else if (family == QLatin1String("audio"))
+        kind = QStringLiteral("famAudio");
+    else if (family == QLatin1String("archive"))
+        kind = QStringLiteral("famArchive");
+    else if (family == QLatin1String("spreadsheet"))
+        kind = QStringLiteral("famSpreadsheet");
+    else if (family == QLatin1String("font"))
+        kind = QStringLiteral("famFont");
+    else if (family == QLatin1String("executable"))
+        kind = QStringLiteral("famExecutable");
+    else if (family == QLatin1String("link"))
+        kind = QStringLiteral("famLink");
+    else if (family == QLatin1String("file") || family == QLatin1String("other")) {
+        // A plain dot, the shape the instrument keeps for an unknown type.
         painter.setPen(Qt::NoPen);
         painter.setBrush(tint);
-        painter.drawEllipse(QPointF(9.0, 11.0), 1.2, 1.2);
-        QPainterPath hills;
-        hills.moveTo(6.6, 15.7);
-        hills.lineTo(9.7, 12.6);
-        hills.lineTo(11.5, 14.3);
-        hills.lineTo(12.9, 12.9);
-        hills.lineTo(14.1, 15.7);
-        painter.setPen(mark);
-        painter.setBrush(Qt::NoBrush);
-        painter.drawPath(hills);
-    } else if (family == QLatin1String("video")) {
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(tint);
-        QPolygonF play;
-        play << QPointF(8.5, 9.6) << QPointF(8.5, 15.2) << QPointF(14.0, 12.4);
-        painter.drawPolygon(play);
-    } else if (family == QLatin1String("audio")) {
-        const qreal heights[] = {1.5, 2.9, 4.0, 2.9, 1.5};
-        for (int index = 0; index < 5; ++index) {
-            const qreal x = 7.2 + index * 1.475;
-            painter.drawLine(QPointF(x, 12.3 - heights[index]),
-                             QPointF(x, 12.3 + heights[index]));
-        }
-    } else if (family == QLatin1String("archive")) {
-        painter.drawRoundedRect(QRectF(6.9, 10.0, 7.4, 5.2), 0.6, 0.6);
-        painter.drawLine(QPointF(6.9, 11.7), QPointF(14.3, 11.7));
-    } else if (family == QLatin1String("spreadsheet")) {
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(tint);
-        painter.drawRoundedRect(QRectF(6.8, 9.7, 3.0, 2.9), 0.5, 0.5);
-        painter.drawRoundedRect(QRectF(10.5, 9.7, 3.0, 2.9), 0.5, 0.5);
-        painter.drawRoundedRect(QRectF(6.8, 13.0, 3.0, 2.9), 0.5, 0.5);
-        painter.drawRoundedRect(QRectF(10.5, 13.0, 3.0, 2.9), 0.5, 0.5);
-    } else if (family == QLatin1String("font")) {
-        QFont glyph = painter.font();
-        glyph.setPixelSize(7.6);
-        glyph.setBold(true);
-        painter.setFont(glyph);
-        painter.drawText(QRectF(6.2, 8.2, 8.4, 8.0), Qt::AlignCenter,
-                         QStringLiteral("Aa"));
-    } else if (family == QLatin1String("executable")) {
-        painter.drawEllipse(QPointF(10.2, 12.3), 3.3, 3.3);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(tint);
-        painter.drawEllipse(QPointF(10.2, 12.3), 1.1, 1.1);
-    } else if (family == QLatin1String("file") || family == QLatin1String("other")
-               || family == QLatin1String("link")) {
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(tint);
-        painter.drawEllipse(QPointF(10.2, 12.3), 1.1, 1.1);
+        painter.drawEllipse(QPointF(10.0, 11.6), 1.3, 1.3);
+        return;
     } else {
-        // Text-bearing families: document, text, pdf, presentation. Three
-        // lines is the shape the icon figure uses for all of them; the family
-        // colour is what separates one from another.
-        for (int index = 0; index < 3; ++index) {
-            const qreal y = 10.2 + index * 2.0;
-            const qreal right = index == 2 ? 11.4 : 13.9;
-            painter.drawLine(QPointF(6.9, y), QPointF(right, y));
-        }
+        // Text-bearing families: document, text, pdf, presentation. One lines
+        // mark for all of them; the family colour tells them apart.
+        kind = QStringLiteral("famText");
     }
+    drawMaterialInto(painter, kind, QRectF(5.6, 6.6, 8.8, 8.8), tint);
 }
 
 QImage renderFileGlyph(int edge, const QString& family, const QColor& ink,
@@ -377,47 +363,27 @@ QImage renderFileGlyph(int edge, const QString& family, const QColor& ink,
     const qreal scale = edge / 20.0;
     painter.scale(scale, scale);
 
-    QPen outline(ink);
-    outline.setWidthF(1.3);
-    outline.setJoinStyle(Qt::RoundJoin);
-    outline.setCapStyle(Qt::RoundCap);
-    painter.setPen(outline);
-    painter.setBrush(Qt::NoBrush);
+    // The whole 20-grid box the Material page/folder is mapped into.
+    const QRectF sheet(0, 0, 20, 20);
 
     if (family == QLatin1String("folder")) {
-        QPainterPath folder;
-        folder.moveTo(1.6, 5.4);
-        folder.lineTo(7.0, 5.4);
-        folder.lineTo(8.7, 7.4);
-        folder.lineTo(18.4, 7.4);
-        folder.lineTo(18.4, 16.6);
-        folder.lineTo(1.6, 16.6);
-        folder.closeSubpath();
-        painter.drawPath(folder);
+        // A silhouette: the family wash carries the shape, the Material outline
+        // keeps the edge — the same treatment the interface folder gets.
+        QColor wash = tint;
+        wash.setAlphaF(tint.alphaF() * 0.3);
+        drawMaterialInto(painter, QStringLiteral("fileFolderFill"), sheet, wash);
+        drawMaterialInto(painter, QStringLiteral("fileFolder"), sheet, ink);
         painter.setPen(Qt::NoPen);
         painter.setBrush(tint);
-        painter.drawRoundedRect(QRectF(2.4, 7.9, 7.2, 1.6), 0.8, 0.8);
+        painter.drawRoundedRect(QRectF(3.0, 12.6, 7.0, 1.6), 0.8, 0.8);
         return image;
     }
 
-    // The page and its folded corner: the one shape every file shares.
-    QPainterPath page;
-    page.moveTo(3.6, 1.4);
-    page.lineTo(13.0, 1.4);
-    page.lineTo(16.6, 5.0);
-    page.lineTo(16.6, 18.6);
-    page.lineTo(3.6, 18.6);
-    page.closeSubpath();
-    painter.drawPath(page);
-
-    QPainterPath fold;
-    fold.moveTo(13.0, 1.4);
-    fold.lineTo(13.0, 5.0);
-    fold.lineTo(16.6, 5.0);
-    painter.drawPath(fold);
+    // The page: Material's `draft` outline, the one shape every file shares.
+    drawMaterialInto(painter, QStringLiteral("filePage"), sheet, ink);
 
     painter.save();
-    painter.setClipPath(page);
+    painter.setClipPath(materialInto(QStringLiteral("filePageFill"), sheet));
     drawFamilyMark(painter, family, tint);
     painter.restore();
 
@@ -429,7 +395,7 @@ QImage renderFileGlyph(int edge, const QString& family, const QColor& ink,
         bar.setWidthF(2.0 / scale);
         bar.setCapStyle(Qt::RoundCap);
         painter.setPen(bar);
-        painter.drawLine(QPointF(5.2, 17.4), QPointF(15.0, 17.4));
+        painter.drawLine(QPointF(5.2, 17.6), QPointF(14.8, 17.6));
     }
     return image;
 }
@@ -586,7 +552,7 @@ QImage GlyphImageProvider::requestImage(const QString& id, QSize* size,
 
     QElapsedTimer timer;
     timer.start();
-    const QImage image = renderSolarMark(kind, edge, dp, ink, wash);
+    const QImage image = renderMaterialMark(kind, edge, dp, ink, wash);
     const qint64 micros = timer.nsecsElapsed() / 1000;
     const quint64 raster = glyphRasters.fetch_add(1) + 1;
     if (kGlyphPerf) {

@@ -450,12 +450,12 @@ Window {
             color: "transparent"
             border.width: 1
             border.color: Theme.accent
-            radius: Theme.radiusXs
+            radius: Theme.radiusFull
         }
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusXs
+            radius: Theme.radiusFull
             color: chipMouse.containsMouse ? Theme.hover : "transparent"
         }
 
@@ -4215,6 +4215,17 @@ Window {
         }
     }
 
+    // Everything the floating surfaces frost over: the canvas, the optional
+    // wallpaper and the whole chrome-and-content column. `Glass.qml` grabs this
+    // item by name to blur the scene behind a dialog or menu, so it must hold
+    // the visible scene and *not* the overlays that sit above it — grabbing an
+    // overlay would feed the frost its own output. The resize border, the tab
+    // drop area and every overlay stay outside it.
+    Item {
+        id: glassScene
+        objectName: "daeGlassScene"
+        anchors.fill: parent
+
     // The frameless window keeps an alpha buffer for the native frame. When a
     // material is active, the canvas must stay transparent or it would paint
     // over the backdrop; every pane and chrome band paints its own colour, so
@@ -4384,8 +4395,9 @@ Window {
                 anchors.right: trailingToolbar.left
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                // §7.2: the one input control in the row is 32 dp tall.
-                height: Theme.controlLg
+                // M3 Expressive control cluster: a 36 dp search pill between
+                // round icon buttons.
+                height: Theme.controlXl
 
                 // One frame, three modes. The trail navigates, a click on its
                 // empty part or Mod+L becomes the path editor, Mod+F becomes
@@ -4525,7 +4537,16 @@ Window {
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
-                    radius: Theme.radiusSm
+                    property real morph: backMouse.pressed ? 1 : 0
+                    radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+                    Behavior on morph {
+                        enabled: Theme.motion
+                        SpringAnimation {
+                            spring: Theme.springSpatialFast
+                            damping: Theme.dampSpatialFast
+                            epsilon: 0.005
+                        }
+                    }
                     color: root.canGoBack && backMouse.containsMouse
                         ? Theme.hover : "transparent"
                     opacity: root.canGoBack ? 1 : 0.32
@@ -4548,7 +4569,7 @@ Window {
                     /// ring is drawn inside the 28 px box so the button does
                     /// not move when it takes focus.
                     activeFocusOnTab: canGo
-                    border.width: activeFocus ? 1 : 0
+                    border.width: activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: {
                         if (canGo)
@@ -4578,7 +4599,16 @@ Window {
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
-                    radius: Theme.radiusSm
+                    property real morph: forwardMouse.pressed ? 1 : 0
+                    radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+                    Behavior on morph {
+                        enabled: Theme.motion
+                        SpringAnimation {
+                            spring: Theme.springSpatialFast
+                            damping: Theme.dampSpatialFast
+                            epsilon: 0.005
+                        }
+                    }
                     color: root.canGoForward && forwardMouse.containsMouse
                         ? Theme.hover : "transparent"
                     opacity: root.canGoForward ? 1 : 0.32
@@ -4598,7 +4628,7 @@ Window {
                     Accessible.name: qsTr("前进")
 
                     activeFocusOnTab: canGo
-                    border.width: activeFocus ? 1 : 0
+                    border.width: activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: {
                         if (canGo)
@@ -4628,7 +4658,16 @@ Window {
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
-                    radius: Theme.radiusSm
+                    property real morph: upMouse.pressed ? 1 : 0
+                    radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+                    Behavior on morph {
+                        enabled: Theme.motion
+                        SpringAnimation {
+                            spring: Theme.springSpatialFast
+                            damping: Theme.dampSpatialFast
+                            epsilon: 0.005
+                        }
+                    }
                     color: root.folderActive && upMouse.containsMouse
                         ? Theme.hover : "transparent"
                     opacity: root.folderActive ? 1 : 0.32
@@ -4646,7 +4685,7 @@ Window {
                     Accessible.name: qsTr("上一级")
 
                     activeFocusOnTab: root.folderActive
-                    border.width: activeFocus ? 1 : 0
+                    border.width: activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: {
                         if (root.folderActive)
@@ -4695,10 +4734,19 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusSm
+                        property real morph: searchIconMouse.pressed ? 1 : 0
+                        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+                        Behavior on morph {
+                            enabled: Theme.motion
+                            SpringAnimation {
+                                spring: Theme.springSpatialFast
+                                damping: Theme.dampSpatialFast
+                                epsilon: 0.005
+                            }
+                        }
                         color: root.searchOpen || searchIconMouse.containsMouse
                             ? Theme.hover : "transparent"
-                        border.width: searchSlot.activeFocus ? 1 : 0
+                        border.width: searchSlot.activeFocus ? 2 : 0
                         border.color: Theme.accent
 
                         Glyph {
@@ -4738,7 +4786,7 @@ Window {
                     height: Theme.controlSm
                     implicitWidth: width
                     implicitHeight: height
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusFull
                     visible: root.trashActive && trashModel.count > 0
                     color: trashClearMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -4753,7 +4801,7 @@ Window {
                     Accessible.name: qsTr("清空回收站")
 
                     activeFocusOnTab: trashClear.visible
-                    border.width: trashClear.activeFocus ? 1 : 0
+                    border.width: trashClear.activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: root.requestEmptyTrash()
                     Keys.onSpacePressed: root.requestEmptyTrash()
@@ -4768,58 +4816,86 @@ Window {
             }
 
             // ── View ──────────────────────────────────────────────────────
-            // One button showing the view that is on, opening the one display
-            // menu.
+            // An M3 Expressive connected button group switches the view
+            // directly (list / grid / column), the way Finder and Files put a
+            // segmented view switcher in the toolbar; the trailing chevron
+            // opens the full display menu (sort, group, density, columns).
             Component {
                 id: viewToolbarComponent
                 Item {
                     id: viewSlot
-                    width: 28
+                    width: viewGroup.implicitWidth + 22
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
                     visible: root.folderActive
 
-                    /// The slot takes focus, the plate inside draws the ring: the
-                    /// 28 px box is the button even though the visible plate is
-                    /// one rectangle deeper.
-                    activeFocusOnTab: root.folderActive
-                    Keys.onReturnPressed: viewSlot.openMenu()
-                    Keys.onSpacePressed: viewSlot.openMenu()
-
-                    function openMenu() {
-                        root.openDisplayMenu()
+                    ButtonGroup {
+                        id: viewGroup
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        segmentHeight: Theme.controlMd
+                        iconEdge: 15
+                        model: [
+                            { id: "list", glyph: "list" },
+                            { id: "grid", glyph: "grid" },
+                            { id: "column", glyph: "column" }
+                        ]
+                        currentId: ExplorerPrefs.viewMode
+                        onSelected: function (id) { ExplorerPrefs.setString("viewMode", id) }
                     }
 
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Theme.radiusSm
-                        color: viewMouse.containsMouse || displayMenu.visible
-                            ? Theme.hover : "transparent"
-                        border.width: viewSlot.activeFocus ? 1 : 0
-                        border.color: Theme.accent
+                    Item {
+                        id: viewMenuButton
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 20
+                        height: Theme.controlMd
 
-                        Glyph {
-                            anchors.centerIn: parent
-                            kind: ExplorerPrefs.viewMode === "grid" ? "grid"
-                                : ExplorerPrefs.viewMode === "column" ? "column" : "list"
-                            tint: viewMouse.containsMouse || displayMenu.visible
-                                ? root.textColor : root.mutedColor
+                        activeFocusOnTab: root.folderActive
+                        Keys.onReturnPressed: root.openDisplayMenu()
+                        Keys.onSpacePressed: root.openDisplayMenu()
+
+                        Rectangle {
+                            anchors.fill: parent
+                            property real morph: viewMenuMouse.pressed ? 1 : 0
+                            radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+                            Behavior on morph {
+                                enabled: Theme.motion
+                                SpringAnimation {
+                                    spring: Theme.springSpatialFast
+                                    damping: Theme.dampSpatialFast
+                                    epsilon: 0.005
+                                }
+                            }
+                            color: viewMenuMouse.containsMouse || displayMenu.visible
+                                ? Theme.hover : "transparent"
+                            border.width: viewMenuButton.activeFocus ? 2 : 0
+                            border.color: Theme.accent
+
+                            Glyph {
+                                anchors.centerIn: parent
+                                width: 11
+                                height: 11
+                                kind: "chevronDown"
+                                tint: viewMenuMouse.containsMouse || displayMenu.visible
+                                    ? root.textColor : root.mutedColor
+                            }
                         }
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("显示菜单")
+
+                        MouseArea {
+                            id: viewMenuMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.openDisplayMenu()
+                        }
+
+                        ToolTip { text: qsTr("排序、分组与密度") }
                     }
-
-                    Accessible.role: Accessible.Button
-                    Accessible.name: qsTr("切换视图")
-
-                    MouseArea {
-                        id: viewMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: viewSlot.openMenu()
-                    }
-
-                    ToolTip { text: qsTr("视图") }
                 }
             }
 
@@ -4848,10 +4924,19 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusSm
+                        property real morph: moreMouse.pressed ? 1 : 0
+                        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
+                        Behavior on morph {
+                            enabled: Theme.motion
+                            SpringAnimation {
+                                spring: Theme.springSpatialFast
+                                damping: Theme.dampSpatialFast
+                                epsilon: 0.005
+                            }
+                        }
                         color: moreMouse.containsMouse || moreMenu.visible
                             ? Theme.hover : "transparent"
-                        border.width: moreSlot.activeFocus ? 1 : 0
+                        border.width: moreSlot.activeFocus ? 2 : 0
                         border.color: Theme.accent
 
                         Glyph {
@@ -5183,10 +5268,10 @@ Window {
                                             width: Math.min(176,
                                                 Math.max(88, splitChipText.implicitWidth + 32))
                                             height: 24
-                                            radius: Theme.radiusSm
-                                            color: active ? Theme.canvas
+                                            radius: Theme.radiusFull
+                                            color: active ? Theme.selection
                                                 : (chipMouse.containsMouse ? Theme.hover : "transparent")
-                                            border.width: splitChip.activeFocus ? 1 : 0
+                                            border.width: splitChip.activeFocus ? 2 : 0
                                             border.color: Theme.accent
 
                                             Accessible.role: Accessible.PageTab
@@ -5216,10 +5301,10 @@ Window {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 text: splitChip.label
                                                 color: splitChip.active
-                                                    ? root.textColor : root.mutedColor
+                                                    ? Theme.selectionInk : root.mutedColor
                                                 font.pixelSize: Theme.typeCaption
                                                 font.weight: splitChip.active
-                                                    ? Font.Medium : Font.Normal
+                                                    ? Theme.weightEmphasis : Font.Normal
                                                 elide: Text.ElideMiddle
                                             }
 
@@ -5239,7 +5324,7 @@ Window {
 
                                                 Rectangle {
                                                     anchors.fill: parent
-                                                    radius: Theme.radiusXs
+                                                    radius: Theme.radiusFull
                                                     color: splitChipCloseMouse.containsMouse
                                                         ? Theme.hover : "transparent"
                                                 }
@@ -5312,7 +5397,7 @@ Window {
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: Theme.radiusXs
+                                    radius: Theme.radiusFull
                                     color: splitPlusMouse.containsMouse
                                         ? Theme.hover : "transparent"
                                     border.width: splitTabPlus.activeFocus ? 1 : 0
@@ -5380,10 +5465,10 @@ Window {
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: Theme.radiusSm
+                                    radius: Theme.radiusFull
                                     color: splitCloseMouse.containsMouse ? Theme.hover
                                         : "transparent"
-                                    border.width: splitClose.activeFocus ? 1 : 0
+                                    border.width: splitClose.activeFocus ? 2 : 0
                                     border.color: Theme.accent
                                 }
 
@@ -5993,7 +6078,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                         color: historyMouse.containsMouse || statusCenter.visible
                             ? Theme.hover : "transparent"
                     }
@@ -6052,7 +6137,7 @@ Window {
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                     }
 
                     function openPanel() {
@@ -6062,7 +6147,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                         color: gitStatusMouse.containsMouse || gitPanel.shown
                             ? Theme.hover : "transparent"
                     }
@@ -6174,12 +6259,12 @@ Window {
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                     }
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                         color: inspectorToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }
@@ -6234,12 +6319,12 @@ Window {
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                     }
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusXs
+                        radius: Theme.radiusFull
                         color: terminalToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }
@@ -6296,6 +6381,7 @@ Window {
             onMenuRequested: function (kind, x, y) { root.openActionBarMenu(kind, x, y) }
             onTransferRequested: function (x, y) { transferQueue.openAbove(x, y) }
         }
+    }
     }
 
     // The native resize border Windows gets from its hit test. Invisible there,

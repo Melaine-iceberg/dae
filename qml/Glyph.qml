@@ -3,21 +3,23 @@ import QtQuick.Window
 
 // A drawn mark, keyed by what it means (proposal §6.3.1, §12.3).
 //
-// The geometry is Solar Icons' linear set — `solar-marks.json` carries the path
-// data, its provenance and the six marks that are still dae's own. This file is
-// only the seam: the mark is rasterised by the `glyph://` provider and painted
-// as a plain `Image`, so nothing in the shell owns a `Canvas` and a listing row
-// or a column-view delegate never re-parses a path.
+// The geometry is Google's Material Symbols — `material-marks.json` carries the
+// path data, its provenance and the six marks that are still dae's own. This
+// file is only the seam: the mark is rasterised by the `glyph://` provider and
+// painted as a plain `Image`, so nothing in the shell owns a `Canvas` and a
+// listing row or a column-view delegate never re-parses a path.
 //
 // Three rules the renderer keeps, because they are what the marks look like:
 //
-//  * The stroke is held at 1.2 device pixels rather than 1.2 *units*. The shell
-//    draws marks at 8, 12 and 14 dp as well as 16, and a uniform unit stroke
-//    shrinks to 0.75 px at 10 — every edge lands between pixels and the mark
-//    reads as grey haze instead of a line. Below 16 dp the geometry is scaled
-//    up in stroke only, which is the usual optical correction for a small icon.
-//  * A silhouette (`s` in the mark table) is filled at `wash` and stroked, so a
-//    folder reads as a shape rather than a block.
+//  * Material's outlined glyphs are filled outlines; the silhouette marks
+//    (`s` in the mark table — folder, tag) and the six legacy marks are stroked
+//    at 1.2 device pixels rather than 1.2 *units*. The shell draws marks at 8,
+//    12 and 14 dp as well as 16, and a uniform unit stroke shrinks to 0.75 px at
+//    10 — every edge lands between pixels and the mark reads as grey haze
+//    instead of a line. Below 16 dp the geometry is scaled up in stroke only,
+//    which is the usual optical correction for a small icon.
+//  * A silhouette is filled at `wash` and stroked, so a folder reads as a shape
+//    rather than a block.
 //  * The cache key is (kind, edge, dp, ink, wash): a tinted mark is a different
 //    raster, not a repaint, and twenty rows of the same mark share one texture.
 Item {

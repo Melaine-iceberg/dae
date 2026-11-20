@@ -2152,21 +2152,21 @@ Item {
                 Accessible.selected: row.selected
                 Accessible.onPressAction: root.handleActivate(row.index)
 
-                /// Hover is a 4% ink wash, selection a 10% accent wash and the
-                /// drop target 12% accent (§7.1.7). The text never inverts:
-                /// the pale masks keep the name the strongest mark in the row.
+                /// Hover is the 8 % on-surface state layer, selection a
+                /// `secondaryContainer` block inset from the row's edges, and
+                /// the drop target the accent wash. Text keeps its ink: the
+                /// M3 container is chosen to stay legible under it.
                 Rectangle {
                     id: rowMask
                     anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 1
+                    anchors.bottomMargin: 1
+                    radius: Theme.radiusMd
                     color: row.selected ? Theme.selection
                         : row.dropTarget ? Theme.accentSoft
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
-                    /// A contiguous block rounds its outer corners and stays
-                    /// square along shared edges (§6.4.2).
-                    topLeftRadius: row.selected && row.previousSelected ? 0 : Theme.radiusSm
-                    topRightRadius: row.selected && row.previousSelected ? 0 : Theme.radiusSm
-                    bottomLeftRadius: row.selected && row.nextSelected ? 0 : Theme.radiusSm
-                    bottomRightRadius: row.selected && row.nextSelected ? 0 : Theme.radiusSm
                 }
 
                 /// The one-shot paste/create highlight, a 160 ms fade (§7.1.7).
@@ -2177,47 +2177,52 @@ Item {
                 /// until the animation lands on 0.
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.radiusSm
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 1
+                    anchors.bottomMargin: 1
+                    radius: Theme.radiusMd
                     color: Theme.accentSoftStrong
                     opacity: row.flash ? 1 : 0
                     visible: row.flash || opacity > 0
                     Accessible.ignored: true
                     Behavior on opacity {
                         enabled: Theme.motion
-                        OpacityAnimator { duration: 160; easing.type: Easing.OutCubic }
+                        OpacityAnimator {
+                            duration: Theme.motionEffects
+                            easing.type: Theme.motionEaseEffects
+                        }
                     }
                 }
 
-                /// A drop target is a solid 1.5 dp accent border, never a
-                /// dashed one (§6.7).
+                /// A drop target is a solid 2 dp accent border, never a dashed
+                /// one, on the same rounded block as selection.
                 Rectangle {
                     anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 1
+                    anchors.bottomMargin: 1
                     visible: row.dropTarget
                     color: "transparent"
-                    radius: Theme.radiusSm
-                    border.width: 1.5
+                    radius: Theme.radiusMd
+                    border.width: 2
                     border.color: Theme.accent
                 }
 
-                /// The keyboard cursor (§7.1.8): on a selected row the signal
-                /// is a 2 dp accent track on the left; on an unselected row a
-                /// 1.5 dp inner stroke. Only keyboard navigation paints it.
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 2
-                    visible: row.focusedCursor && row.selected
-                    color: Theme.accent
-                    Accessible.ignored: true
-                }
-
+                /// The keyboard cursor is one 2 dp inner ring on the same block;
+                /// a selected row needs no extra rail because the container
+                /// already carries the state.
                 Rectangle {
                     anchors.fill: parent
-                    visible: row.focusedCursor && !row.selected
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 1
+                    anchors.bottomMargin: 1
+                    visible: row.focusedCursor
                     color: "transparent"
-                    radius: Theme.radiusSm
-                    border.width: 1.5
+                    radius: Theme.radiusMd
+                    border.width: 2
                     border.color: Theme.accent
                 }
 
@@ -2641,10 +2646,10 @@ Item {
 
                                         width: Math.min(48, tagPill.implicitWidth + 12)
                                         height: 16
-                                        radius: Theme.radiusXs
+                                        radius: Theme.radiusFull
                                         color: "transparent"
                                         border.width: 1
-                                        border.color: Theme.hairline
+                                        border.color: Theme.outlineVariant
 
                                         Row {
                                             id: tagPill
@@ -2743,9 +2748,9 @@ Item {
                     width: nameCell.width
                     height: Theme.controlSm
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: Theme.radiusXs
+                    radius: Theme.radiusSm
                     color: Theme.field
-                    border.width: 1.5
+                    border.width: 2
                     border.color: root.renameError !== "" ? Theme.danger : Theme.accent
                     z: 4
 
@@ -2758,7 +2763,7 @@ Item {
                         verticalAlignment: TextInput.AlignVCenter
                         color: Theme.ink
                         selectionColor: Theme.accent
-                        selectedTextColor: Theme.onAccent
+                        selectedTextColor: Theme.inkOnAccent
                         font.family: Theme.uiFamily
                         font.pixelSize: Theme.typeBody
                         selectByMouse: true
@@ -2846,7 +2851,7 @@ Item {
             visible: root.showSectionHeaders && root.viewMode === "list"
                 && root.stickyGroupLabel !== "" && !root.emptyVisible
             x: 0
-            y: root.loadingLineVisible ? 2 : 0
+            y: root.loadingLineVisible ? 10 : 0
             width: root.contentWidth
             height: 28
             color: root.contentColor
@@ -2890,38 +2895,19 @@ Item {
         }
 
         /// The loading line waits for 300 ms so a fast directory never flashes
-        /// it; its 2 dp height is the whole signal (§10.8).
-        Rectangle {
+        /// it (§10.8). It is the M3 Expressive wavy indeterminate indicator: a
+        /// squiggle travelling the track, the flat track behind it.
+        M3Progress {
             id: loadingLine
 
             visible: root.loadingLineVisible && root.viewMode === "list"
             x: 0
             y: 0
             width: root.contentWidth
-            height: 2
-            color: "transparent"
-            clip: true
+            height: 10
+            indeterminate: true
             z: 13
             Accessible.ignored: true
-
-            Rectangle {
-                id: loadingBar
-
-                width: Math.max(48, root.contentWidth * 0.25)
-                height: 2
-                color: Theme.accent
-
-                SequentialAnimation on x {
-                    running: root.loadingLineVisible && Theme.motion
-                    loops: Animation.Infinite
-                    NumberAnimation {
-                        from: -1 * loadingBar.width
-                        to: root.contentWidth
-                        duration: 1100
-                        easing.type: Easing.InOutQuad
-                    }
-                }
-            }
         }
 
         /// The grid and the column view are built the first time their mode is
@@ -3158,7 +3144,7 @@ Item {
                 color: Theme.accentSoft
                 border.width: 1
                 border.color: Theme.accent
-                radius: Theme.radiusXs
+                radius: Theme.radiusSm
             }
         }
 
@@ -3261,7 +3247,7 @@ Item {
             anchors.fill: parent
             visible: dropArea.containsDrag && root.dropTargetPath !== ""
             color: Theme.accentSoft
-            radius: Theme.radiusSm
+            radius: Theme.radiusLg
 
             Text {
                 anchors.centerIn: parent
@@ -3286,7 +3272,8 @@ Item {
             anchors.fill: dropPlate
             visible: dropPlate.visible
             color: "transparent"
-            border.width: 1.5
+            radius: dropPlate.radius
+            border.width: 2
             border.color: Theme.accent
         }
     }

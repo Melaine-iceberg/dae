@@ -303,6 +303,10 @@ Item {
         required property string path
         required property string activeChildPath
         property bool dimmed: false
+        /// The column that owns the keyboard. Miller columns need this: three
+        /// panes can show a selection, but only one of them is the one the
+        /// arrow keys will move.
+        readonly property bool activePane: root.activePaneIndex === pane.depth
         property var tab: null
         property int rowHeight: Theme.controlLg
         property bool keyboardCursor: false
@@ -536,6 +540,15 @@ Item {
             anchors.top: parent.top
             height: root.headerHeight
 
+            /// The active column lifts onto surfaceContainerLow and wears a
+            /// primary rule, the same "this is where the keyboard is" idea as
+            /// the navigation drawer's active indicator.
+            Rectangle {
+                anchors.fill: parent
+                color: pane.activePane ? Theme.surfaceContainerLow : "transparent"
+                Accessible.ignored: true
+            }
+
             Row {
                 anchors.left: parent.left
                 anchors.leftMargin: 10
@@ -548,14 +561,15 @@ Item {
                     width: 14
                     height: 14
                     kind: "folder"
-                    tint: Theme.inkSecondary
+                    tint: pane.activePane ? Theme.ink : Theme.inkSecondary
                 }
 
                 Text {
                     width: Math.max(0, parent.width - 21)
                     text: pane.title
-                    color: Theme.inkSecondary
+                    color: pane.activePane ? Theme.ink : Theme.inkSecondary
                     font.pixelSize: Theme.typeCaption
+                    font.weight: pane.activePane ? Theme.weightStrong : Font.Normal
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
@@ -565,8 +579,10 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: Theme.ruleWidth(Screen.devicePixelRatio)
-                color: Theme.hairline
+                height: pane.activePane ? 2 : Theme.ruleWidth(Screen.devicePixelRatio)
+                radius: pane.activePane ? 1 : 0
+                color: pane.activePane ? Theme.accent : Theme.hairline
+                Accessible.ignored: true
             }
         }
 

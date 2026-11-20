@@ -16,10 +16,12 @@ use dae_core::pty::{
     SnapshotKind, TerminalEvent, TerminalSession as CoreSession, TerminalSnapshot,
 };
 
-/// Registers the C++ painter as the `dae.terminal/TerminalItem` QML type.
-/// Must run before the engine loads a file that imports it.
+/// Registers the C++ painter as the `dae.terminal/TerminalItem` QML type and
+/// the two M3 Expressive indicators as `dae.m3`. Must run before the engine
+/// loads a file that imports them.
 pub fn register_item() {
     qobject::register_terminal_item();
+    qobject::register_m3_items();
 }
 
 const FRAME_MAGIC: &[u8; 4] = b"DAET";
@@ -42,6 +44,11 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         #[rust_name = "register_terminal_item"]
         fn dae_qt_register_terminal_item();
+
+        include!("m3_items.h");
+        #[namespace = "dae_qt"]
+        #[rust_name = "register_m3_items"]
+        fn dae_qt_register_m3_items();
     }
 
     unsafe extern "RustQt" {

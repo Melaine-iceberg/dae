@@ -1,9 +1,11 @@
 import QtQuick
 
-/// The shell's scrollbar (proposal §9.2): a 6 dp capsule that grows to 8 dp
-/// under the pointer, no arrows, and no gutter reserved for it. It is an
-/// overlay: it covers the last few dp of the content rather than shrinking it,
-/// because a file manager's column widths are the user's, not the bar's.
+/// The shell's scrollbar: a 6 dp capsule that grows to 8 dp under the pointer,
+/// no arrows, and no gutter reserved for it. It is an overlay: it covers the
+/// last few dp of the content rather than shrinking it, because a file
+/// manager's column widths are the user's, not the bar's. The thumb uses the
+/// M3 `outline` / `onSurfaceVariant` roles so it belongs to the surface regardless
+/// of which tonal step it sits on.
 ///
 /// One bar serves a `Flickable` or any `ListView`/`GridView`: all three expose
 /// `contentY`, `contentHeight` and `height`, which is the whole contract. The
@@ -49,7 +51,7 @@ Item {
 
         readonly property bool lit: pointer.containsMouse || pointer.pressed
 
-        /// §6.6: hover is a 6 → 8 dp growth in `inkTertiary`. Qt Quick has no
+        /// Hover is a 6 → 8 dp growth in `onSurfaceVariant`. Qt Quick has no
         /// width animator and no `ColorAnimator`, so both are two capsules
         /// crossfading — the narrow one in the rest colour, the wide one in the
         /// lit colour — and each fade is an `OpacityAnimator` inside the
@@ -67,7 +69,7 @@ Item {
             width: 6
             height: parent.height
             radius: width / 2
-            color: Theme.lineStrong
+            color: Theme.outline
             opacity: thumb.lit ? 0 : 1
             Accessible.ignored: true
 
@@ -75,7 +77,7 @@ Item {
                 enabled: Theme.motion
                 OpacityAnimator {
                     duration: Theme.motionFast
-                    easing.type: Easing.OutQuad
+                    easing.type: Theme.motionEaseEffects
                 }
             }
         }
@@ -85,7 +87,7 @@ Item {
             width: 8
             height: parent.height
             radius: width / 2
-            color: Theme.inkTertiary
+            color: Theme.inkOnSurfaceVariant
             opacity: thumb.lit ? 1 : 0
             Accessible.ignored: true
 
@@ -93,7 +95,7 @@ Item {
                 enabled: Theme.motion
                 OpacityAnimator {
                     duration: Theme.motionFast
-                    easing.type: Easing.OutQuad
+                    easing.type: Theme.motionEaseEffects
                 }
             }
         }

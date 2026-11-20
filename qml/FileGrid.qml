@@ -359,16 +359,16 @@ Item {
             readonly property int glyphEdge: Math.max(24,
                 Math.min(44, Math.round(thumb.width * 0.42)))
 
-            /// Hover and selection are quiet fills on the whole tile; the
-            /// thumbnail itself keeps its natural contrast. This makes the
-            /// hit area visible without turning every file into a card.
+            /// Hover and selection are M3 state layers on the whole tile; the
+            /// thumbnail itself keeps its natural contrast. The selected tile
+            /// is a `secondaryContainer` card with a check dot, not a ring.
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusSm
+                radius: Theme.radiusLg
                 color: cell.dropTarget ? Theme.accentSoft
                     : cell.selected ? Theme.selection
                     : (hover.containsMouse ? Theme.hover : "transparent")
-                border.width: cell.dropTarget ? 1.5 : 0
+                border.width: cell.dropTarget ? 2 : 0
                 border.color: Theme.accent
                 Accessible.ignored: true
             }
@@ -386,29 +386,44 @@ Item {
 
                 Behavior on y {
                     enabled: Theme.motion
-                    YAnimator { duration: Theme.motionFast; easing.type: Easing.OutCubic }
+                    YAnimator {
+                        duration: Theme.motionSelect
+                        easing.type: Theme.motionEaseSpatial
+                    }
                 }
 
+                /// Expressive media card: a rounded tonal frame holds an inset
+                /// preview well, so photographs read as cards rather than as
+                /// raw rectangles pasted on the canvas.
                 Rectangle {
                     anchors.fill: parent
-                    color: Theme.inset
+                    radius: Theme.radiusMd
+                    color: Theme.surfaceContainerLow
                     border.width: Theme.edgeWidth
                     border.color: Theme.line
                     Accessible.ignored: true
                 }
 
-                Image {
-                    id: thumbImage
+                Rectangle {
                     anchors.fill: parent
-                    visible: cell.showImage
-                    source: cell.hasThumbnail ? cell.thumbnailSource : ""
-                    sourceSize.width: Math.round(root.thumbWidth * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(root.thumbHeight * Screen.devicePixelRatio)
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    smooth: true
-                    cache: true
+                    anchors.margins: 4
+                    radius: Theme.radiusSm
+                    color: Theme.inset
                     Accessible.ignored: true
+
+                    Image {
+                        id: thumbImage
+                        anchors.fill: parent
+                        visible: cell.showImage
+                        source: cell.hasThumbnail ? cell.thumbnailSource : ""
+                        sourceSize.width: Math.round(root.thumbWidth * Screen.devicePixelRatio)
+                        sourceSize.height: Math.round(root.thumbHeight * Screen.devicePixelRatio)
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        smooth: true
+                        cache: true
+                        Accessible.ignored: true
+                    }
                 }
 
                 /// The family mark sits on the inset like a stamp on paper.
@@ -422,18 +437,19 @@ Item {
                 }
 
                 /// §11.2: a 16 dp accent dot with a white check marks the
-                /// chosen tile; the ring says it again without moving the name.
+                /// chosen tile; the tonal container says it again without
+                /// moving the name.
                 Rectangle {
-                    width: 16
-                    height: 16
-                    radius: 8
+                    width: 18
+                    height: 18
+                    radius: 9
                     anchors.right: parent.right
                     anchors.top: parent.top
                     anchors.rightMargin: 6
                     anchors.topMargin: 6
                     color: Theme.accent
-                    border.width: 1
-                    border.color: Theme.content
+                    border.width: 2
+                    border.color: Theme.selection
                     visible: cell.selected
                     Accessible.ignored: true
 
@@ -442,29 +458,18 @@ Item {
                         width: 9
                         height: 9
                         kind: "check"
-                        tint: Theme.onAccent
+                        tint: Theme.inkOnAccent
                     }
                 }
-            }
-
-            /// Selection is an sm-radius ring around the cell, not a fill.
-            Rectangle {
-                anchors.fill: parent
-                radius: Theme.radiusSm
-                color: "transparent"
-                visible: cell.selected
-                border.width: 1.5
-                border.color: Theme.accent
-                Accessible.ignored: true
             }
 
             /// The keyboard cursor on an unselected cell (§7.1.8).
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusSm
+                radius: Theme.radiusLg
                 color: "transparent"
                 visible: cell.focusedCursor && !cell.selected && !cell.dropTarget
-                border.width: 1.5
+                border.width: 2
                 border.color: Theme.accent
                 Accessible.ignored: true
             }
@@ -491,8 +496,10 @@ Item {
                         return cell.fileName.endsWith(suffix)
                             ? cell.fileName.slice(0, -suffix.length) : cell.fileName
                     }
-                    color: cell.hidden ? Theme.inkTertiary : Theme.ink
+                    color: cell.hidden ? Theme.inkTertiary
+                        : (cell.selected ? Theme.selectionInk : Theme.ink)
                     font.pixelSize: Theme.typeBody
+                    font.weight: cell.selected ? Theme.weightStrong : Font.Normal
                     lineHeight: Theme.leadingTight
                     horizontalAlignment: Text.AlignHCenter
                     textFormat: Text.PlainText
@@ -697,7 +704,7 @@ Item {
             color: Theme.accentSoft
             border.width: 1
             border.color: Theme.accent
-            radius: Theme.radiusXs
+            radius: Theme.radiusSm
         }
     }
 

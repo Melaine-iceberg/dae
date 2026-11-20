@@ -2,18 +2,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 
-// The status strip's second state (proposal §7.3.3): as soon as the listing has
-// a selection the 28 dp status bar becomes a 36 dp row of named actions **in
-// place**. Nothing floats: the eight extra dp come out of the listing above, so
-// the first selected row never jumps behind a bar and nothing covers the last
-// rows. An empty action bar does not exist — the shell hides this component
-// when nothing is selected.
-//
-// The buttons pair a mark with the verb, because a footer of ten words reads
-// as a paragraph and a footer of ten glyphs makes the user learn an alphabet.
-// Order follows how often the action is used. On a narrow window the tail
-// folds away, but 更多 always opens the complete row menu, so no command has a
-// width-dependent dead end.
+// The status strip's second state: as soon as the listing has a selection the
+// 28 dp status bar becomes a 36 dp row of named actions **in place**. The bar
+// is an M3 Expressive toolbar: pill actions on the chrome surface, one filled
+// `primary` pill for the primary verb, and 8 % state layers for hover/press.
 Item {
     id: bar
 
@@ -154,7 +146,7 @@ Item {
         Row {
             id: actions
             height: Theme.controlMd
-            spacing: 3
+            spacing: 2
 
             Repeater {
                 model: bar.visibleItems
@@ -162,15 +154,33 @@ Item {
                     id: button
                     required property var modelData
 
-                    width: buttonRow.implicitWidth + 18
+                    readonly property bool filled: modelData.id === "open"
+
+                    width: buttonRow.implicitWidth + (filled ? 24 : 20)
                     height: Theme.controlMd
-                    radius: Theme.radiusSm
-                    color: buttonMouse.pressed && modelData.enabled ? Theme.selection
-                        : (buttonMouse.containsMouse && modelData.enabled
-                            ? Theme.hover : "transparent")
+                    /// Press shape morph: pill → 12 dp corner, spring back.
+                    property real morph: buttonMouse.pressed ? 1 : 0
+                    readonly property real restRadius: height / 2
+                    radius: restRadius + (Theme.radiusMorphPress - restRadius) * morph
+                    Behavior on morph {
+                        enabled: Theme.motion
+                        SpringAnimation {
+                            spring: Theme.springSpatialFast
+                            damping: Theme.dampSpatialFast
+                            epsilon: 0.005
+                        }
+                    }
+                    color: filled
+                        ? (buttonMouse.pressed ? Theme.accentHover
+                            : (buttonMouse.containsMouse ? Theme.accentHover
+                                                         : Theme.accent))
+                        : (buttonMouse.pressed && modelData.enabled
+                            ? Theme.selection
+                            : (buttonMouse.containsMouse && modelData.enabled
+                                ? Theme.hover : "transparent"))
                     opacity: modelData.enabled ? 1 : 0.38
-                    border.width: button.activeFocus ? 1 : 0
-                    border.color: Theme.accent
+                    border.width: button.activeFocus ? 2 : 0
+                    border.color: filled ? Theme.inkOnAccent : Theme.accent
 
                     Accessible.role: Accessible.Button
                     Accessible.name: modelData.label
@@ -202,14 +212,20 @@ Item {
                             width: 14
                             height: 14
                             kind: button.modelData.glyph
-                            tint: button.modelData.id === "trash" ? Theme.danger : Theme.inkSecondary
+                            tint: button.filled ? Theme.inkOnAccent
+                                : (button.modelData.id === "trash"
+                                    ? Theme.danger : Theme.inkSecondary)
                         }
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: button.modelData.label
-                            color: button.modelData.id === "trash" ? Theme.danger : Theme.ink
+                            color: button.filled ? Theme.inkOnAccent
+                                : (button.modelData.id === "trash"
+                                    ? Theme.danger : Theme.ink)
                             font.pixelSize: Theme.typeBody
+                            font.weight: button.filled
+                                ? Theme.weightStrong : Font.Normal
                         }
                     }
 

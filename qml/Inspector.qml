@@ -375,14 +375,25 @@ Item {
         /// The pane keeps the previous entry on screen while the next one
         /// loads, so the wait is reported here instead of collapsing the
         /// content and then expanding it again.
-        Text {
+        Row {
             anchors.right: closeButton.left
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
             visible: controller.loading && !root.empty
-            text: qsTr("读取中…")
-            color: root.faintColor
-            font.pixelSize: Theme.typeMicro
+            spacing: 6
+
+            M3Loader {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 12
+                height: 12
+                running: controller.loading
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("读取中…")
+                color: root.faintColor
+                font.pixelSize: Theme.typeMicro
+            }
         }
 
         Item {
@@ -402,7 +413,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusXs
+                radius: Theme.radiusFull
                 color: closeMouse.containsMouse ? Theme.hover : "transparent"
             }
 
@@ -750,10 +761,8 @@ Item {
                     visible: root.showsThumbnail
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: root.wellColor
-                    border.width: 1
-                    border.color: root.hairline
                     clip: true
 
                     /// True while the card has a frame to paint: the current
@@ -778,10 +787,17 @@ Item {
                         onSourceChanged: if (source === "") hadImage = false
                     }
 
+                    M3Loader {
+                        anchors.centerIn: parent
+                        visible: !thumbnailCard.showsImage && thumbnail.status !== Image.Error
+                        width: 28
+                        height: 28
+                        running: visible
+                    }
                     Text {
                         anchors.centerIn: parent
-                        visible: !thumbnailCard.showsImage
-                        text: thumbnail.status === Image.Error ? qsTr("无法生成缩略图") : qsTr("正在加载…")
+                        visible: !thumbnailCard.showsImage && thumbnail.status === Image.Error
+                        text: qsTr("无法生成缩略图")
                         color: root.faintColor
                         font.pixelSize: Theme.typeMicro
                     }
@@ -797,10 +813,8 @@ Item {
                     visible: root.showsOffice
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: root.wellColor
-                    border.width: 1
-                    border.color: root.hairline
                     clip: true
 
                     Flickable {
@@ -824,7 +838,7 @@ Item {
                                                        : Localize.message(controller.officeError)
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onAccent
+                            selectedTextColor: Theme.inkOnAccent
                             font.pixelSize: Theme.typeMicro
                             textFormat: controller.hasOffice ? TextEdit.RichText
                                                              : TextEdit.PlainText
@@ -855,10 +869,8 @@ Item {
                     visible: root.showsText
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: root.wellColor
-                    border.width: 1
-                    border.color: root.hairline
                     clip: true
 
                     Flickable {
@@ -921,10 +933,8 @@ Item {
                     visible: root.showsRich
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: root.wellColor
-                    border.width: 1
-                    border.color: root.hairline
                     clip: true
 
                     Flickable {
@@ -976,7 +986,7 @@ Item {
                             text: controller.contentHtml
                             color: root.textColor
                             selectionColor: root.accent
-                            selectedTextColor: Theme.onAccent
+                            selectedTextColor: Theme.inkOnAccent
                             font.pixelSize: Theme.typeMicro
                             textFormat: TextEdit.RichText
 
@@ -1008,10 +1018,8 @@ Item {
                     visible: root.showsFolder
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: root.wellColor
-                    border.width: 1
-                    border.color: root.hairline
                     clip: true
 
                     Column {
@@ -1050,10 +1058,8 @@ Item {
                     visible: root.showsFallback
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: root.wellColor
-                    border.width: 1
-                    border.color: root.hairline
                     clip: true
 
                     Column {
@@ -1268,10 +1274,10 @@ Item {
 
                 width: chipRow.implicitWidth + 18
                 height: Theme.controlXs + 2
-                radius: Theme.radiusXs
-                color: on ? Theme.hover : "transparent"
-                border.width: 1
-                border.color: on ? Theme.line : Theme.hairline
+                radius: Theme.radiusFull
+                color: on ? Theme.selection : "transparent"
+                border.width: on ? 0 : 1
+                border.color: Theme.outlineVariant
                 opacity: tagMouse.containsMouse ? 1 : (on ? 1 : 0.72)
 
                 Row {
@@ -1290,8 +1296,9 @@ Item {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: tagChip.modelData.name
-                        color: tagChip.on ? Theme.ink : Theme.inkSecondary
+                        color: tagChip.on ? Theme.selectionInk : Theme.inkSecondary
                         font.pixelSize: Theme.typeMicro
+                        font.weight: tagChip.on ? Theme.weightStrong : Font.Normal
                         textFormat: Text.PlainText
                     }
                 }
@@ -1435,11 +1442,11 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            anchors.margins: -4
+            anchors.margins: -6
             visible: action.activeFocus
             color: "transparent"
-            radius: Theme.radiusSm
-            border.width: 1
+            radius: Theme.radiusFull
+            border.width: 2
             border.color: Theme.accent
         }
 

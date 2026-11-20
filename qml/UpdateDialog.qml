@@ -89,8 +89,10 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(470, root.width - 40)
         height: Math.min(410, root.height - 48)
-        radius: Theme.radiusLg
-        color: Theme.raised
+        radius: Theme.radiusXl
+        color: "transparent"
+
+        Glass { radius: Theme.radiusXl }
         border.width: 1
         border.color: Theme.overlayLine
 
@@ -328,7 +330,7 @@ FocusScope {
                     Text {
                         anchors.centerIn: parent
                         text: Updater.downloading ? qsTr("下载中…") : qsTr("下载并安装")
-                        color: Theme.onAccent
+                        color: Theme.inkOnAccent
                         font.pixelSize: Theme.typeCaption
                         font.weight: Font.Medium
                     }
