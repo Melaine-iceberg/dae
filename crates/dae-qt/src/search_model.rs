@@ -355,10 +355,17 @@ impl SearchRow {
 /// The relative directory a result sits in, which is its section heading
 /// (§10.7). A hit directly in the search root answers empty.
 fn group_of(relative_path: &str) -> String {
+    group_slice(relative_path).to_owned()
+}
+
+/// The borrowed half of `group_of`: the result sort compares this on every
+/// comparison, and an owned copy per side would allocate O(n log n) strings
+/// on the Qt thread.
+fn group_slice(relative_path: &str) -> &str {
     let trimmed = relative_path.trim_end_matches(['/', '\\']);
     match trimmed.rsplit_once(['/', '\\']) {
-        Some((directory, _)) => directory.to_owned(),
-        None => String::new(),
+        Some((directory, _)) => directory,
+        None => "",
     }
 }
 
@@ -843,7 +850,7 @@ impl qobject::SearchModel {
                 // inside each directory: `sort_by_key` is stable, so the best
                 // match in a folder stays its first row.
                 rows.sort_by(|left, right| {
-                    group_of(&left.relative_path).cmp(&group_of(&right.relative_path))
+                    group_slice(&left.relative_path).cmp(group_slice(&right.relative_path))
                 });
                 let count = rows.len() as i32;
                 let groups = group_counts_json(&rows);

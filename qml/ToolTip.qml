@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // The one-line label shown when the pointer rests on a control.
@@ -89,7 +90,16 @@ Item {
             color: "transparent"
             border.width: 0
 
-            Glass { radius: Theme.radiusMd }
+            /// The frost is the expensive half of a tooltip: two scene grabs
+            /// and two blur passes, resident even while the plate is hidden.
+            /// A detail row declares one of these per time column and almost
+            /// none is ever revealed, so the material is built only while the
+            /// plate shows and released with it.
+            Loader {
+                anchors.fill: parent
+                active: plate.visible
+                sourceComponent: Glass { plate: bubble; radius: Theme.radiusMd }
+            }
         }
 
         Text {

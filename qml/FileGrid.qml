@@ -311,6 +311,15 @@ Item {
         model: root.model
         clip: true
         focus: true
+        /// Same recycling contract as the detail list: a scroll reuses the
+        /// tiles that left the viewport instead of destroying and rebuilding
+        /// them, and the buffer keeps a few rows of them warm above and below.
+        reuseItems: true
+        cacheBuffer: 1200
+        /// The grid is the startup surface when the session opens in grid
+        /// mode; the detail list marks the same stage when it is showing.
+        onContentHeightChanged: if (count > 0 && contentHeight > 0)
+            Startup.mark("qml-first-list")
         Keys.onPressed: function (event) {
             root.keyboardCursor = true
             if (root.keyHandler !== null && root.keyHandler(event))

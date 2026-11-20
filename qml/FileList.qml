@@ -508,6 +508,47 @@ Item {
     /// A reload is in flight and the viewport still has to be returned to the
     /// position `saveScroll` recorded. Cleared once the rows under it exist.
     property bool scrollPending: false
+    /// The detail list's viewport, parked while another presentation shows.
+    /// The list holds no model in grid/column mode (a reset there used to
+    /// rebuild every hidden delegate for nothing), so its position is tracked
+    /// here as it moves and restored when the reader returns to the list.
+    property real parkedContentY: 0
+    property int parkedIndex: -1
+    property bool restoringParked: false
+    function forgetParkedScroll() {
+        root.parkedContentY = 0
+        root.parkedIndex = -1
+    }
+    function restoreParkedScroll() {
+        if (root.viewMode !== "list" || root.scrollPending
+                || root.searchModel !== null || list.count <= 0)
+            return
+        if (root.parkedIndex >= 0)
+            list.currentIndex = Math.min(root.parkedIndex, list.count - 1)
+        if (root.parkedContentY > 0) {
+            const row = Math.floor(root.parkedContentY / root.rowHeight)
+            if (row >= list.count) {
+                list.contentY = Math.max(0,
+                    Math.min(root.parkedContentY, list.contentHeight - list.height))
+            } else {
+                // `Beginning` places the row; the pixel remainder keeps the
+                // listing exactly where it was inside that row.
+                list.positionViewAtIndex(row, ListView.Beginning)
+                list.contentY += root.parkedContentY - row * root.rowHeight
+            }
+        }
+        root.parkedContentY = list.contentY
+        root.parkedIndex = list.currentIndex
+    }
+    onViewModeChanged: {
+        if (viewMode !== "list")
+            return
+        root.restoringParked = true
+        Qt.callLater(function () {
+            root.restoreParkedScroll()
+            root.restoringParked = false
+        })
+    }
 
     /// A pressed row that could become a drag. The gesture becomes a native
     /// drag once it travels far enough; until then it is still a click.
@@ -689,9 +730,25 @@ Item {
                                     ExplorerPrefs.nameFilter)
     }
 
+    /// Preference writes arrive in pairs — a new sort column writes the key
+    /// and then its direction — and each signal used to push the whole set
+    /// into the model, starting two worker sorts for one click. Same-turn
+    /// writes coalesce into a single apply before the next frame.
+    property bool prefsApplyPending: false
+    function scheduleApplyViewPreferences() {
+        if (root.prefsApplyPending)
+            return
+        root.prefsApplyPending = true
+        Qt.callLater(function () {
+            root.prefsApplyPending = false
+            root.applyViewPreferences()
+        })
+    }
+
     onTabChanged: {
         applyViewPreferences()
         root.cancelRename()
+        root.forgetParkedScroll()
     }
     Component.onCompleted: applyViewPreferences()
 
@@ -716,30 +773,30 @@ Item {
     Connections {
         target: ExplorerPrefs
         function onSortKeyChanged() {
-            root.applyViewPreferences()
+            root.scheduleApplyViewPreferences()
             Qt.callLater(root.updateStickyGroup)
         }
         function onSortOrderChanged() {
-            root.applyViewPreferences()
+            root.scheduleApplyViewPreferences()
             Qt.callLater(root.updateStickyGroup)
         }
         function onFolderOrderChanged() {
-            root.applyViewPreferences()
+            root.scheduleApplyViewPreferences()
             Qt.callLater(root.updateStickyGroup)
         }
         function onGroupKeyChanged() {
-            root.applyViewPreferences()
+            root.scheduleApplyViewPreferences()
             Qt.callLater(root.updateStickyGroup)
         }
         function onGroupDateChanged() {
-            root.applyViewPreferences()
+            root.scheduleApplyViewPreferences()
             Qt.callLater(root.updateStickyGroup)
         }
-        function onShowHiddenFilesChanged() { root.applyViewPreferences() }
-        function onKindFilterChanged() { root.applyViewPreferences() }
-        function onModifiedFilterChanged() { root.applyViewPreferences() }
-        function onSizeFilterChanged() { root.applyViewPreferences() }
-        function onNameFilterChanged() { root.applyViewPreferences() }
+        function onShowHiddenFilesChanged() { root.scheduleApplyViewPreferences() }
+        function onKindFilterChanged() { root.scheduleApplyViewPreferences() }
+        function onModifiedFilterChanged() { root.scheduleApplyViewPreferences() }
+        function onSizeFilterChanged() { root.scheduleApplyViewPreferences() }
+        function onNameFilterChanged() { root.scheduleApplyViewPreferences() }
     }
 
     /// Asks the model for the tags of the rows currently on screen. The
@@ -1874,7 +1931,10 @@ Item {
             id: list
             anchors.fill: parent
             visible: root.viewMode === "list"
-            model: root.model
+            /// Only the showing presentation holds the model. A reset in grid
+            /// or column mode used to rebuild every hidden list delegate; the
+            /// parked viewport above brings the position back on return.
+            model: root.viewMode === "list" ? root.model : null
             reuseItems: true
             cacheBuffer: 2600
             clip: true
@@ -1942,6 +2002,12 @@ Item {
             onContentYChanged: {
                 tagTimer.restart()
                 root.updateStickyGroup()
+                if (root.viewMode === "list" && !root.restoringParked)
+                    root.parkedContentY = list.contentY
+            }
+            onCurrentIndexChanged: {
+                if (root.viewMode === "list" && !root.restoringParked)
+                    root.parkedIndex = list.currentIndex
             }
             onHeightChanged: {
                 tagTimer.restart()
@@ -2535,161 +2601,180 @@ Item {
                             width: root.effectiveColumnWidth(modelData)
                             height: detailsRow.height
 
+                            /// One column kind per cell. The four layouts used
+                            /// to be instantiated together and switched with
+                            /// `visible`, so every cell paid for all of them —
+                            /// including the time column's tooltip — on every
+                            /// row. A Loader builds only the kind this column
+                            /// actually is.
+
                             /// Type: the human label at inkSecondary, then the
                             /// git status as one letter hugging its right edge
                             /// (§7.1.6) — not a badge.
-                            Row {
-                                visible: cell.modelData === "type"
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 6
+                            Loader {
+                                anchors.fill: parent
+                                active: cell.modelData === "type"
+                                sourceComponent: Row {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 6
 
-                                Text {
-                                    width: Math.max(0, cell.width
-                                        - (row.hasGitStatus ? 18 : 0))
-                                    text: Localize.typeName(row.typeName)
-                                    color: Theme.inkSecondary
-                                    font.pixelSize: Theme.typeCaption
-                                    textFormat: Text.PlainText
-                                    elide: Text.ElideRight
-                                    Accessible.ignored: true
-                                }
+                                    Text {
+                                        width: Math.max(0, cell.width
+                                            - (row.hasGitStatus ? 18 : 0))
+                                        text: Localize.typeName(row.typeName)
+                                        color: Theme.inkSecondary
+                                        font.pixelSize: Theme.typeCaption
+                                        textFormat: Text.PlainText
+                                        elide: Text.ElideRight
+                                        Accessible.ignored: true
+                                    }
 
-                                Text {
-                                    visible: row.hasGitStatus
-                                    text: row.gitLetter
-                                    color: row.gitBadgeColor
-                                    font.family: Theme.monoFamily
-                                    font.pixelSize: Theme.typeMicro
-                                    font.weight: Font.Medium
-                                    textFormat: Text.PlainText
-                                    Accessible.ignored: true
+                                    Text {
+                                        visible: row.hasGitStatus
+                                        text: row.gitLetter
+                                        color: row.gitBadgeColor
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.typeMicro
+                                        font.weight: Font.Medium
+                                        textFormat: Text.PlainText
+                                        Accessible.ignored: true
+                                    }
                                 }
                             }
 
                             /// §7.1.4: the number is right-aligned on a
                             /// tabular figure, the unit sits in its own left
                             /// track so MiB and GiB share one baseline.
-                            Row {
-                                visible: cell.modelData === "size"
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 4
+                            Loader {
+                                anchors.fill: parent
+                                active: cell.modelData === "size"
+                                sourceComponent: Row {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 4
 
-                                Text {
-                                    width: 44
-                                    horizontalAlignment: Text.AlignRight
-                                    text: row.sizeParts[0]
-                                    color: Theme.inkSecondary
-                                    font.pixelSize: Theme.typeCaption
-                                    font.features: { "tnum": 1 }
-                                    textFormat: Text.PlainText
-                                    Accessible.ignored: true
-                                }
+                                    Text {
+                                        width: 44
+                                        horizontalAlignment: Text.AlignRight
+                                        text: row.sizeParts[0]
+                                        color: Theme.inkSecondary
+                                        font.pixelSize: Theme.typeCaption
+                                        font.features: { "tnum": 1 }
+                                        textFormat: Text.PlainText
+                                        Accessible.ignored: true
+                                    }
 
-                                Text {
-                                    width: 30
-                                    text: row.sizeParts[1]
-                                    color: Theme.inkTertiary
-                                    font.pixelSize: Theme.typeCaption
-                                    textFormat: Text.PlainText
-                                    Accessible.ignored: true
+                                    Text {
+                                        width: 30
+                                        text: row.sizeParts[1]
+                                        color: Theme.inkTertiary
+                                        font.pixelSize: Theme.typeCaption
+                                        textFormat: Text.PlainText
+                                        Accessible.ignored: true
+                                    }
                                 }
                             }
 
                             /// Modified and created: a relative label, right
                             /// aligned, tabular (§7.1.4). The full local stamp
                             /// stays available to a screen reader.
-                            Text {
+                            Loader {
                                 anchors.fill: parent
-                                visible: cell.modelData === "modified"
+                                active: cell.modelData === "modified"
                                     || cell.modelData === "created"
-                                horizontalAlignment: Text.AlignRight
-                                verticalAlignment: Text.AlignVCenter
-                                text: root.cellText(row, cell.modelData)
-                                color: cell.modelData === "created" && row.createdFallback
-                                    ? Theme.inkTertiary : Theme.inkSecondary
-                                font.pixelSize: Theme.typeCaption
-                                font.features: { "tnum": 1 }
-                                textFormat: Text.PlainText
-                                elide: Text.ElideRight
-                                Accessible.description: cell.modelData === "modified"
-                                    ? root.fullTimestamp(row.modifiedAt)
-                                    : root.fullTimestamp(row.createdAt)
-
-                                /// §7.1.4: the column prints a relative
-                                /// label; the absolute stamp is one hover away.
-                                ToolTip {
-                                    text: cell.modelData === "modified"
+                                sourceComponent: Text {
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: root.cellText(row, cell.modelData)
+                                    color: cell.modelData === "created" && row.createdFallback
+                                        ? Theme.inkTertiary : Theme.inkSecondary
+                                    font.pixelSize: Theme.typeCaption
+                                    font.features: { "tnum": 1 }
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    Accessible.description: cell.modelData === "modified"
                                         ? root.fullTimestamp(row.modifiedAt)
                                         : root.fullTimestamp(row.createdAt)
+
+                                    /// §7.1.4: the column prints a relative
+                                    /// label; the absolute stamp is one hover away.
+                                    ToolTip {
+                                        text: cell.modelData === "modified"
+                                            ? root.fullTimestamp(row.modifiedAt)
+                                            : root.fullTimestamp(row.createdAt)
+                                    }
                                 }
                             }
 
-                            Row {
-                                visible: cell.modelData === "tags"
+                            Loader {
                                 anchors.fill: parent
-                                anchors.leftMargin: 4
-                                spacing: 4
+                                active: cell.modelData === "tags"
+                                sourceComponent: Row {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 4
+                                    spacing: 4
 
-                                /// §7.1.2: at most two outline capsules and a
-                                /// remainder count. No coloured fill (§6.1.7),
-                                /// only the 5 dp dot and the name.
-                                Repeater {
-                                    model: row.tagNamesList.slice(0, 2)
+                                    /// §7.1.2: at most two outline capsules and a
+                                    /// remainder count. No coloured fill (§6.1.7),
+                                    /// only the 5 dp dot and the name.
+                                    Repeater {
+                                        model: row.tagNamesList.slice(0, 2)
 
-                                    Rectangle {
-                                        id: tagCapsule
-                                        required property string modelData
-                                        required property int index
+                                        Rectangle {
+                                            id: tagCapsule
+                                            required property string modelData
+                                            required property int index
 
-                                        width: Math.min(48, tagPill.implicitWidth + 12)
-                                        height: 16
-                                        radius: Theme.radiusFull
-                                        color: "transparent"
-                                        border.width: 1
-                                        border.color: Theme.outlineVariant
+                                            width: Math.min(48, tagPill.implicitWidth + 12)
+                                            height: 16
+                                            radius: Theme.radiusFull
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: Theme.outlineVariant
 
-                                        Row {
-                                            id: tagPill
-                                            anchors.centerIn: parent
-                                            spacing: 3
+                                            Row {
+                                                id: tagPill
+                                                anchors.centerIn: parent
+                                                spacing: 3
 
-                                            Rectangle {
-                                                width: 5
-                                                height: 5
-                                                radius: 2.5
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                color: Theme.tagColorFor(
-                                                    row.tagColorsList[tagCapsule.index] || "")
-                                            }
+                                                Rectangle {
+                                                    width: 5
+                                                    height: 5
+                                                    radius: 2.5
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: Theme.tagColorFor(
+                                                        row.tagColorsList[tagCapsule.index] || "")
+                                                }
 
-                                            Text {
-                                                width: Math.min(30, implicitWidth)
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                text: tagCapsule.modelData
-                                                color: Theme.inkSecondary
-                                                font.pixelSize: Theme.typeMicro
-                                                textFormat: Text.PlainText
-                                                elide: Text.ElideRight
+                                                Text {
+                                                    width: Math.min(30, implicitWidth)
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: tagCapsule.modelData
+                                                    color: Theme.inkSecondary
+                                                    font.pixelSize: Theme.typeMicro
+                                                    textFormat: Text.PlainText
+                                                    elide: Text.ElideRight
+                                                }
                                             }
                                         }
                                     }
-                                }
 
-                                Text {
-                                    visible: row.tagNamesList.length > 2
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: "+" + (row.tagNamesList.length - 2)
-                                    color: Theme.inkTertiary
-                                    font.pixelSize: Theme.typeMicro
-                                    font.features: { "tnum": 1 }
-                                    textFormat: Text.PlainText
-                                }
+                                    Text {
+                                        visible: row.tagNamesList.length > 2
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "+" + (row.tagNamesList.length - 2)
+                                        color: Theme.inkTertiary
+                                        font.pixelSize: Theme.typeMicro
+                                        font.features: { "tnum": 1 }
+                                        textFormat: Text.PlainText
+                                    }
 
-                                ToolTip {
-                                    text: row.tagNames
+                                    ToolTip {
+                                        text: row.tagNames
+                                    }
                                 }
                             }
                         }
@@ -3298,6 +3383,12 @@ Item {
 
     Connections {
         target: root.model
+
+        function onPathChanged() {
+            // A different directory invalidates the parked viewport even when
+            // the list is detached and cannot see the reset itself.
+            root.forgetParkedScroll()
+        }
 
         function onFinishedChanged() {
             if (root.model === null || !root.model.finished)

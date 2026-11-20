@@ -206,13 +206,18 @@ fn extension_of(path: &str) -> String {
 /// survives QML's URL handling and `QUrl::fromPercentEncoding` restores it
 /// byte for byte. `+` is encoded too: the decoder does not read it as a space.
 fn encode(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(value.len());
     for &byte in value.as_bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
                 out.push(byte as char);
             }
-            _ => out.push_str(&format!("%{byte:02X}")),
+            _ => {
+                out.push('%');
+                out.push(HEX[(byte >> 4) as usize] as char);
+                out.push(HEX[(byte & 0xF) as usize] as char);
+            }
         }
     }
     out
@@ -234,12 +239,22 @@ fn cache() -> &'static Mutex<Cache> {
 }
 
 fn cached(key: &str, produce: impl FnOnce() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
+    {
+        let cache = cache().lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(hit) = cache.entries.get(key) {
+            return hit.clone();
+        }
+    }
+
+    // Extraction runs outside the lock: a shell call can take tens of
+    // milliseconds, and holding the mutex would serialize every image-loading
+    // thread behind the slowest icon. Two threads may produce the same key at
+    // once; the re-check below keeps the answer (and the FIFO order) single.
+    let value = produce();
     let mut cache = cache().lock().unwrap_or_else(|error| error.into_inner());
     if let Some(hit) = cache.entries.get(key) {
         return hit.clone();
     }
-
-    let value = produce();
     if cache.entries.len() >= CACHE_ENTRIES
         && let Some(oldest) = cache.order.pop_front()
     {

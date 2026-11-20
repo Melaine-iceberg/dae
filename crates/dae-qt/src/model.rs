@@ -16,7 +16,7 @@
 //! a reload instead of waiting for F5.
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -1935,6 +1935,15 @@ struct RefreshStage {
     path: String,
 }
 
+/// A completed refresh whose rows are waiting for a worker to order them.
+/// The ticket travels with the stage: an interactive re-sort may take the
+/// request token mid-flight, and the reply must re-launch under the new order
+/// rather than drop the refresh — the re-read still has to land.
+struct RefreshSort {
+    stage: RefreshStage,
+    ticket: SortTicket,
+}
+
 /// A Git command the branch panel or status chip can start. Kept as one enum
 /// so the busy flag, failure relay and post-success refresh live in one place.
 enum GitOperation {
@@ -1999,6 +2008,9 @@ pub struct DirectoryListModelRust {
     /// `Some` while a same-directory refresh runs; the rows above are the
     /// previous listing until the stage is swapped in.
     refresh: Option<RefreshStage>,
+    /// `Some` while a completed refresh waits for its worker sort; the rows
+    /// are the replacement listing, not yet diffed against the visible one.
+    refresh_sort: Option<RefreshSort>,
     stream_id: Option<String>,
     generation: u64,
     /// Rows came from a network backend. Their `name` is the only part that
@@ -2101,6 +2113,7 @@ impl Default for DirectoryListModelRust {
             rows: Vec::new(),
             base: String::new(),
             refresh: None,
+            refresh_sort: None,
             stream_id: None,
             generation: 0,
             remote: false,
@@ -2316,6 +2329,7 @@ impl qobject::DirectoryListModel {
             // A reply from a sort started before this load describes rows that
             // are about to be replaced, even if the row count happens to match.
             rust.sort_request = rust.sort_request.wrapping_add(1);
+            rust.refresh_sort = None;
             // Same rule for tag reads, plus a definition re-read: the tag
             // manager may have changed a name since the last directory.
             rust.tag_generation = rust.tag_generation.wrapping_add(1);
@@ -2497,6 +2511,7 @@ impl qobject::DirectoryListModel {
                 rust.generation = generation;
                 rust.sorting = false;
                 rust.sort_request = rust.sort_request.wrapping_add(1);
+                rust.refresh_sort = None;
                 rust.tag_generation = rust.tag_generation.wrapping_add(1);
                 rust.tags_complete = false;
                 rust.tag_definitions = dae_core::fs::tags::definitions();
@@ -3006,14 +3021,7 @@ impl qobject::DirectoryListModel {
         if self.rows.is_empty() || self.tags_complete {
             return;
         }
-        let base = self.base.to_string();
-        let mut paths: Vec<String> = Vec::with_capacity(self.rows.len());
-        for row in &self.rows {
-            let path = row.full_path(&base);
-            if !paths.contains(&path) {
-                paths.push(path);
-            }
-        }
+        let paths = tag_load_paths(&self.rows, &self.base);
         self.as_mut().start_tag_load(paths, true);
     }
 
@@ -3882,6 +3890,7 @@ impl qobject::DirectoryListModel {
             let mut rust = self.as_mut().rust_mut();
             rust.sorting = false;
             rust.sort_request = rust.sort_request.wrapping_add(1);
+            rust.refresh_sort = None;
         }
         let Some(stage) = self.as_mut().rust_mut().refresh.take() else {
             return;
@@ -3891,8 +3900,111 @@ impl qobject::DirectoryListModel {
         // first read would, so a refresh neither resurrects a hidden row nor
         // changes the order under the user.
         let mut fresh = self.as_mut().keep_visible(rows);
+        // Same split as the completion path: a large re-read orders on a
+        // worker while the old rows keep painting, and the diff below runs
+        // once the order lands instead of blocking the Qt thread for it.
+        if fresh.len() >= WORKER_SORT_MIN_ROWS && !rows_are_sorted(&fresh, &self.order) {
+            self.as_mut().start_refresh_sort(fresh, base, path);
+            return;
+        }
         sort_rows(&mut fresh, &self.order);
+        self.as_mut().apply_refresh(generation, fresh, base, path);
+    }
 
+    /// Stages a filtered refresh for a worker sort, the refresh counterpart
+    /// of `start_worker_sort`. The staged rows are not on screen yet, so the
+    /// permutation is applied to them before the diff against the visible
+    /// rows runs.
+    fn start_refresh_sort(
+        mut self: Pin<&mut Self>,
+        fresh: Vec<StoredRow>,
+        base: String,
+        path: String,
+    ) {
+        let ticket = SortTicket {
+            generation: self.generation,
+            rows: fresh.len(),
+            order: self.order,
+            request: self.sort_request.wrapping_add(1),
+        };
+        let snapshot_started = std::time::Instant::now();
+        let entries = sort_snapshot(&fresh);
+        log::debug!(
+            target: "dae::listing",
+            "refresh sort: {} rows, snapshot {:.1} ms",
+            ticket.rows,
+            snapshot_started.elapsed().as_secs_f64() * 1e3
+        );
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.sort_request = ticket.request;
+            rust.sorting = true;
+            rust.refresh_sort = Some(RefreshSort {
+                stage: RefreshStage { rows: fresh, base, path },
+                ticket,
+            });
+        }
+        let thread = self.as_mut().qt_thread();
+        std::thread::spawn(move || {
+            let perm = sort_permutation(&entries, &ticket.order);
+            let _ = thread.queue(move |mut model| model.as_mut().apply_refresh_sort(ticket, perm));
+        });
+    }
+
+    /// Lands a worker-ordered refresh. A reply whose ticket no longer owns the
+    /// stage is ignored; one that was superseded by an interactive re-sort
+    /// re-launches under the current order, because the refresh must still
+    /// replace the visible rows.
+    fn apply_refresh_sort(mut self: Pin<&mut Self>, ticket: SortTicket, perm: Vec<u32>) {
+        let owns_stage = self
+            .refresh_sort
+            .as_ref()
+            .is_some_and(|sort| sort.ticket.request == ticket.request);
+        if !owns_stage {
+            return;
+        }
+        if self.sort_request == ticket.request {
+            self.as_mut().rust_mut().sorting = false;
+        }
+        if self.closed || self.generation != ticket.generation {
+            self.as_mut().rust_mut().refresh_sort = None;
+            return;
+        }
+        if self.sort_request != ticket.request || self.order != ticket.order {
+            let Some(sort) = self.as_mut().rust_mut().refresh_sort.take() else {
+                return;
+            };
+            self.as_mut()
+                .start_refresh_sort(sort.stage.rows, sort.stage.base, sort.stage.path);
+            return;
+        }
+        let Some(sort) = self.as_mut().rust_mut().refresh_sort.take() else {
+            return;
+        };
+        let rows = apply_permutation(sort.stage.rows, &perm).expect("validated permutation");
+        log::debug!(
+            target: "dae::listing",
+            "refresh sort: {} rows landed",
+            rows.len()
+        );
+        self.as_mut()
+            .apply_refresh(ticket.generation, rows, sort.stage.base, sort.stage.path);
+    }
+
+    /// The second half of a refresh: the ordered replacement is diffed against
+    /// the rows on screen so unchanged rows keep their delegates; a full reset
+    /// is reserved for a refresh that also changes the base or path, where the
+    /// rows would address different files.
+    fn apply_refresh(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        fresh: Vec<StoredRow>,
+        base: String,
+        path: String,
+    ) {
+        if self.generation != generation {
+            return;
+        }
         // The rows below are rebuilt, so the selection is captured by key: a
         // row that only moved keeps its flag, and one that really went away
         // leaves the count with it.
@@ -4543,6 +4655,23 @@ fn find_name_prefix(rows: &[StoredRow], start: usize, needle: &str) -> Option<us
         .find(|&index| folded_starts_with(&rows[index].name, needle))
 }
 
+/// The paths a full tag load asks for, one per distinct spelling. Dedup runs
+/// on a borrowed key: a `paths.contains` per row is O(rows²) string
+/// comparisons on the Qt thread. A row's key is its stored path when it has
+/// one, else its name — names are unique within the base, and a stored path
+/// always carries separators a name cannot contain.
+fn tag_load_paths(rows: &[StoredRow], base: &str) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::with_capacity(rows.len());
+    let mut seen: HashSet<&str> = HashSet::with_capacity(rows.len());
+    for row in rows {
+        let key = row.path.as_deref().unwrap_or(row.name.as_str());
+        if seen.insert(key) {
+            paths.push(row.full_path(base));
+        }
+    }
+    paths
+}
+
 /// The row edits a watcher patch resolves to.
 struct RowPatch {
     /// Indices of rows that no longer exist, ascending.
@@ -4583,11 +4712,22 @@ fn plan_patch(
         replacements: Vec::new(),
         insertions: Vec::new(),
     };
-    for (name, entry) in names.iter().zip(entries) {
-        let existing = rows
-            .iter()
-            .position(|row| row.name.as_str() == name.as_str());
-        match (existing, entry) {
+    // One pass over the rows resolves every requested name. A `position`
+    // scan per name is O(names × rows): 64 names over a 120k-row listing is
+    // millions of string comparisons on the Qt thread. The map holds only
+    // the request, so the pass is a cheap membership test per row.
+    let mut wanted: HashMap<&str, usize> = HashMap::with_capacity(names.len());
+    for (slot, name) in names.iter().enumerate() {
+        wanted.insert(name.as_str(), slot);
+    }
+    let mut found: Vec<Option<usize>> = vec![None; names.len()];
+    for (index, row) in rows.iter().enumerate() {
+        if let Some(&slot) = wanted.get(row.name.as_str()) {
+            found[slot] = Some(index);
+        }
+    }
+    for (slot, (name, entry)) in names.iter().zip(entries).enumerate() {
+        match (found[slot], entry) {
             (Some(index), None) => patch.removals.push(index),
             (Some(index), Some(entry)) => {
                 let row = StoredRow::from_entry(entry, base);
@@ -5349,6 +5489,39 @@ mod tests {
         let names = ["README.md".to_owned()];
         let entries = [Some(entry("K:/dae/README.md"))];
         assert!(plan_patch(&rows, "K:/dae/", &names, &entries).is_none());
+    }
+
+    #[test]
+    fn a_patch_resolves_names_given_out_of_row_order() {
+        let rows = rows(&["a.txt", "b.txt", "c.txt", "d.txt"]);
+        let names = [
+            "d.txt".to_owned(),
+            "b.txt".to_owned(),
+            "a.txt".to_owned(),
+        ];
+        let entries = [None, Some(entry("K:/dae/b.txt")), None];
+        let patch = plan_patch(&rows, "K:/dae/", &names, &entries).expect("the patch applies");
+        let mut removals = patch.removals.clone();
+        removals.sort_unstable();
+        assert_eq!(removals, vec![0, 3]);
+        assert!(patch.replacements.is_empty(), "an unchanged row is not replaced");
+        assert!(patch.insertions.is_empty());
+    }
+
+    #[test]
+    fn a_full_tag_load_asks_once_per_spelling() {
+        let mut rows = rows(&["a.txt", "b.txt"]);
+        // Two rows that spell the same outside path ask for it once.
+        rows.push(StoredRow::from_entry(&entry("K:/elsewhere/x.txt"), "K:/dae/"));
+        rows.push(StoredRow::from_entry(&entry("K:/elsewhere/x.txt"), "K:/dae/"));
+        assert_eq!(
+            tag_load_paths(&rows, "K:/dae/"),
+            vec![
+                "K:/dae/a.txt".to_owned(),
+                "K:/dae/b.txt".to_owned(),
+                "K:/elsewhere/x.txt".to_owned(),
+            ]
+        );
     }
 
     #[test]

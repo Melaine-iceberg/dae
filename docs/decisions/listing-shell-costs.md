@@ -3,7 +3,9 @@
 > **状态：审计完成；第 1 项（§2、§3）、§4 的 watcher 补丁、§5 的批量选择/前缀
 > 与 §6 的选区表示都已实施；§9 的 app 内 qmlprofiler 复测（2026-11-03）之后，
 > §10 又落地了四刀（可见视图按需、完成排序与交互式排序移出 GUI 线程、终端输出按帧合并），§7 的次级清单
-> 只记录、未动。**
+> 只记录、未动。§11（2026-11-20）再落地一轮：刷新排序移出 GUI 线程、标签全量读查重改哈希、
+> watcher 补丁单遍查找、搜索比较器借用化、图标提取出锁与编码零分配，以及 QML 侧的
+> 列种类按需、ToolTip 霜面按需、网格复用、隐藏列表去模型、偏好合并与 Inspector 门控。**
 > 枚举与 IO 不在本文范围之内——它们已经有实测与结论
 > （[`windows-directory-enumeration.md`](windows-directory-enumeration.md)、
 > [`completion-io.md`](completion-io.md)）。本文问的是另一个问题：
@@ -360,7 +362,7 @@ n 次比较，**结构推断**，未单独计时）。
 
 | 位置 | 机制 | 备注 |
 |---|---|---|
-| `FileList.qml` 的 `list` | grid/column 模式下 list 仍常驻，165 个 delegate 随 reset 重建（§10.1 只按需化了 grid/column） | 要等 `list.` 的引用面收窄（滚动恢复、框选、前缀直接读它）后再 lazy |
+| `FileList.qml` 的 `list` | **已实施（2026-11-20，§11.6）**：grid/column 模式下 `list.model` 置 null，reset 不再重建隐藏 delegate；视口位置随滚动停靠、切回列表时恢复 | 比 LazySurface 更小的面：`list.` 的引用要么已有模式守卫，要么对空模型安全 |
 | `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.6 |
 | `FileList.qml` 的 `rowIcon` | **已实施（2026-11-18）**：`asynchronous: true` 补上，行内系统图标的 provider 调用离开 GUI 线程；`visible` 原本就等到 `Image.Ready`，异步期间由 `FileIcon` Glyph 兜底 | 只在 `iconStyle == "system"` 时走 |
 | `model.rs` 的 `git_badge` | **已实施（2026-11-18）**：`adopt_git` 同时维护 ASCII 小写键的折叠表 `git_entries_folded`，`ROLE_GIT` 读干净行从 O(脏条目) 线性扫描变一次哈希查找 | 成本曾 = O(行 × 脏条目)；大小写冲突时先插入者胜，与被替换的扫描的迭代序一样不定 |
@@ -598,3 +600,81 @@ app 内实测（release，100 000 行 `1..100000`，同样是 4 s 完成）：
 - **预览去抖**：`PreviewPanel.showPaths` 只在恰好 1 项时 `open`，多选是 `clear`；
   grid 方向键只移动光标、不改选区，连按 3 s 的 CPU 增量约 0.03 s。没有量到
   帧成本，不做。
+
+## 11. 2026-11-20 的一轮（已实施）
+
+审计之外再扫了一遍模型与视图的热路径，落地八处。行为语义都由既有测试或
+新增单测钉住；app 内冒烟在 debug 构建、`DAE_LOG=debug`、12 万条语料上做过。
+
+### 11.1 刷新排序移出 GUI 线程
+
+`finish_refresh` 以前无条件在 Qt 线程 `sort_rows`（连 `rows_are_sorted`
+守卫都没有），F5 大目录就是 §9 基线里那 60–100 ms 的同一段。现在拆成
+`finish_refresh` → `start_refresh_sort` / `apply_refresh_sort` → `apply_refresh`：
+≥2048 行且无序时暂存过滤后的新行（`RefreshSort`，票据随暂存走），worker 排
+下标，回 Qt 线程复核后置换、再走原来的 diff/reset 后半段。与完成路径的区别
+是**刷新必须落地**：交互式排序拿走 request 票据时，回包不是丢弃而是按当前
+order 重新发起（`apply_refresh_sort` 的 re-launch 分支），导航/关闭/更新的
+刷新才丢弃暂存。`load()` 与管理员加载顺带清 `refresh_sort`。
+
+app 内实测（debug，12 万条，名称降序）：`refresh sort: 120000 rows,
+snapshot 6.5 ms` → 82 ms 后 `refresh sort: 120000 rows landed`；GUI 线程只
+付快照，排序在 worker。同步路径（小目录或已有序）不变。
+
+### 11.2 标签全量读的 O(n²) 查重
+
+`start_full_tag_load` 逐行 `paths.contains` 是 O(rows²) 次字符串比较，且在
+Qt 线程：标签排序/分组触发时 12 万条会冻住数秒。改为 `tag_load_paths`：
+借用键（越界行用存_path_、其余用 name）进 `HashSet`，零额外分配。单测
+`a_full_tag_load_asks_once_per_spelling`。
+
+### 11.3 watcher 补丁单遍查找
+
+`plan_patch` 每名一次 `position` 全表扫是 O(names × rows)（64 × 12 万 ≈
+770 万次比较）。改为请求名进小映射、行表单遍成员测试；removals 顺序不再
+保证升序（`apply_row_patch` 本就自排）。单测
+`a_patch_resolves_names_given_out_of_row_order`。app 内探针文件插入补丁正常。
+
+### 11.4 搜索比较器借用化
+
+`search_model.rs` 的结果排序每次比较 `group_of` 两串分配；拆出借用的
+`group_slice`，比较零分配（O(n log n) 次分配消失）。
+
+### 11.5 图标：提取出锁、编码零分配
+
+`icons.rs` 的 `cached()` 原先持全局 Mutex 做 shell 提取，所有图像线程被最慢
+的一个图标串行化；改双检：锁外生产、回锁复查再插入（FIFO 不重复记键）。
+`encode` 的逐逃逸字节 `format!("%{byte:02X}")` 改直接 push 两个 hex 字符。
+既有编码/miss 缓存单测不变通过。
+
+### 11.6 QML：delegate 与联动按需
+
+- **列种类按需**：detailsRow 每个 cell 原先同时实例化 type/size/time/tags
+  四种布局（含两个 ToolTip），通过 `visible` 切换；改为四个 Loader 按
+  `modelData` 激活，非本列零视觉对象。默认三列下每行 detailsRow 从约百个
+  对象降到约二十个。
+- **ToolTip 霜面按需**：`ToolTip.qml` 的 Glass（2×ShaderEffectSource +
+  2×MultiEffect）进 Loader，`active: plate.visible`——隐藏的行内 tooltip 不再
+  常驻离屏材质；揭示时同步创建。全 app 的 tooltip 受益。
+- **网格复用**：`FileGrid` 的 GridView 补 `reuseItems: true` +
+  `cacheBuffer: 1200`（原先滚动即建毁 delegate），并补 `qml-first-list`
+  startup mark（grid 启动会话原先缺这一站）。
+- **隐藏列表去模型**：grid/column 模式下 `list.model = null`，reset 不再
+  重建 165 个隐藏 delegate（§7 第一行）。视口随滚动停靠（`parkedContentY`/
+  `parkedIndex`），切回列表时 `restoreParkedScroll` 恢复；tab 切换与模型
+  path 变化作废停靠。冒烟：列表下滚 → grid → F5 → 回列表，顶行与选区不变；
+  column 往返 likewise。
+- **偏好合并**：`applyViewPreferences` 经 `scheduleApplyViewPreferences`
+  按事件轮合并——点新列头写 sortKey+sortOrder 两次信号原先启动两个 worker
+  排序，现在一次（日志单行 `sort:` 验证）。
+- **Inspector 门控**：选区变化只在 `inspectorVisible` 时同步预览（原先隐藏
+  面板也做 `selectedPathList` + open + preload）；`toggleInspector` 打开时
+  补同步当前选区。冒烟：Ctrl+I 打开即显示选中文件详情。
+
+### 11.7 没动的
+
+`data()` 逐次格式化（§7 已量过、两头都亏）、`set_filters` 全量重读（过滤在
+插入期丢行，内存重过滤是另一套架构）、`decorate_tags` 每批重建 by_name
+（仅标签缓存非空时，M1 已验收）、行内 TextMetrics 链与 transferSet（量级小
+或瞬态）。时间列 tooltip 被行级 MouseArea 抢 hover 是**既有行为**（ToolTip
+声明在 MouseArea 之下），本轮未改其层级。

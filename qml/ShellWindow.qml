@@ -3290,8 +3290,15 @@ Window {
         if (!root.folderActive && !root.trashActive)
             return
         root.inspectorVisible = !root.inspectorVisible
-        if (root.inspectorVisible)
+        if (root.inspectorVisible) {
+            // Selection changes while the pane is closed are not synced, so
+            // opening catches up with the selection it would have shown.
+            if (!root.trashActive && root.actionList !== null) {
+                const paths = root.actionList.selectedPathList()
+                root.syncInspector(paths, root.actionList.selectionModel(paths))
+            }
             return
+        }
         if (root.trashActive)
             trashView.takeFocus()
         else
@@ -5162,6 +5169,11 @@ Window {
                             root.showEmptyMenu(x, y)
                         }
                         onSelectionChanged: {
+                            // A closed pane's preview would read and preload
+                            // for nothing: marquee and arrow keys change the
+                            // selection far more often than the pane is open.
+                            if (!root.inspectorVisible)
+                                return
                             const paths = fileList.selectedPathList()
                             root.syncInspector(paths, fileList.selectionModel(paths))
                         }
@@ -5582,6 +5594,8 @@ Window {
                                 root.showSplitEmptyMenu(x, y)
                             }
                             onSelectionChanged: {
+                                if (!root.inspectorVisible)
+                                    return
                                 const paths = splitList.selectedPathList()
                                 root.syncInspector(paths, splitList.selectionModel(paths))
                             }
