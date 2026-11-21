@@ -18,7 +18,7 @@ Rectangle {
 
     width: transferRow.implicitWidth + 16
     height: Theme.controlSm
-    radius: Theme.radiusFull
+    radius: Theme.radiusSm
     visible: chip.count > 0
     color: transferMouse.containsMouse ? Theme.surfaceContainerHigh
                                        : Theme.surfaceContainerLow

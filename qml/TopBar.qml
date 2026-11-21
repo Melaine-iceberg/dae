@@ -99,7 +99,7 @@ Item {
     readonly property real buttonsWidth: buttonWidth * 3
 
     readonly property color chromeTint: Theme.backdropTint(material, dark, false)
-    readonly property color solidChrome: Theme.chrome
+    readonly property color solidChrome: Theme.tabStrip
     readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkSecondary
@@ -618,12 +618,12 @@ Item {
 
                     width: root.tabWidthValue
                     height: root.tabHeightValue
-                    radius: Theme.radiusFull
-                    // M3 Expressive tabs are tonal pills: the active tab is a
-                    // `secondaryContainer` block, not the same colour as the
-                    // content below it.
+                    radius: Theme.radiusSm
+                    // A desktop tab is a squared chip, not a tonal pill: the
+                    // active one is the brightest plate on a darker strip, the
+                    // way Chrome's active tab stands off its tab strip.
                     color: root.activeIndex === index
-                        ? Theme.selection
+                        ? Theme.tabActive
                         : (tabHover.hovered ? Theme.hover : "transparent")
                     opacity: root.dragging && root.dragIndex === index ? 0.45 : 1.0
 
@@ -724,11 +724,11 @@ Item {
                     }
 
                     /// The drop feedback the whole window uses: a soft primary
-                    /// wash and a 2 dp accent frame, carried on the pill.
+                    /// wash and a 2 dp accent frame, carried on the chip.
                     Rectangle {
                         anchors.fill: parent
                         visible: tabItem.fileDropTarget
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         color: Theme.accentSoftStrong
                         border.width: 2
                         border.color: Theme.accent
@@ -736,10 +736,14 @@ Item {
                     }
 
                     /// A tab is the first thing Tab should reach, and Enter is
-                    /// the keyboard's click.
+                    /// the keyboard's click. The active chip carries a hairline
+                    /// edge: with Mica behind the bar the strip can be almost
+                    /// the same tone as the chip, and a tab that dissolves into
+                    /// its strip stops reading as a tab.
                     activeFocusOnTab: true
-                    border.width: tabItem.activeFocus ? 2 : 0
-                    border.color: Theme.accent
+                    border.width: tabItem.activeFocus ? 2
+                        : (root.activeIndex === index ? 1 : 0)
+                    border.color: tabItem.activeFocus ? Theme.accent : Theme.hairline
                     Accessible.role: Accessible.PageTab
                     Accessible.name: tabItem.modelData
                         ? tabItem.modelData.title : ""
@@ -770,11 +774,11 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.tabLabel(tabItem.index)
                         color: root.activeIndex === tabItem.index
-                            ? Theme.selectionInk
+                            ? Theme.ink
                             : (tabHover.hovered ? Theme.ink : Theme.inkSecondary)
                         font.pixelSize: Theme.typeCaption
                         font.weight: root.activeIndex === tabItem.index
-                            ? Theme.weightEmphasis : Font.Normal
+                            ? Theme.weightStrong : Font.Normal
                         elide: Text.ElideMiddle
                     }
 
@@ -791,13 +795,8 @@ Item {
                         Rectangle {
                             anchors.fill: parent
                             radius: Theme.radiusFull
-                            color: closeMouse.containsMouse
-                                ? (root.activeIndex === tabItem.index
-                                    ? Qt.rgba(Theme.selectionInk.r,
-                                              Theme.selectionInk.g,
-                                              Theme.selectionInk.b, 0.10)
-                                    : Theme.hover)
-                                : "transparent"
+                            color: closeMouse.containsMouse ? Theme.hover
+                                                            : "transparent"
                         }
 
                         Glyph {
@@ -806,10 +805,8 @@ Item {
                             height: 12
                             kind: "close"
                             tint: closeMouse.containsMouse
-                                ? (root.activeIndex === tabItem.index
-                                    ? Theme.selectionInk : Theme.ink)
-                                : (root.activeIndex === tabItem.index
-                                    ? Theme.selectionInk : Theme.inkSecondary)
+                                || root.activeIndex === tabItem.index
+                                ? Theme.ink : Theme.inkSecondary
                         }
 
                         Accessible.role: Accessible.Button
@@ -993,16 +990,9 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            property real morph: plusMouse.pressed ? 1 : 0
-            radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-            Behavior on morph {
-                enabled: Theme.motion
-                SpringAnimation {
-                    spring: Theme.springSpatialFast
-                    damping: Theme.dampSpatialFast
-                    epsilon: 0.005
-                }
-            }
+            // A 26 dp icon button: the circle is its footprint, as in Chrome's
+            // toolbar. Desktop presses change the wash, not the silhouette.
+            radius: width / 2
             color: plusMouse.containsMouse ? Theme.hover : "transparent"
         }
 

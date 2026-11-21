@@ -39,8 +39,16 @@ Item {
     /// The shell's OSC 0/2 title when it reports one; the panel names the
     /// configured shell before the first report and after an integration-less
     /// shell stays with the executable's name.
-    readonly property string sessionTitle: session !== null && session.windowTitle !== ""
-        ? session.windowTitle : root.shellName
+    readonly property string sessionTitle: {
+        const reported = session !== null ? String(session.windowTitle) : ""
+        // PowerShell 7 reports its own executable path as the window title
+        // until a prompt theme replaces it. A path is not a name — and at
+        // 12 px mono it ate the working directory beside it.
+        if (reported === "" || /^[A-Za-z]:[\\/]/.test(reported)
+                || reported.charAt(0) === "/" || /\.exe$/i.test(reported))
+            return root.shellName
+        return reported
+    }
     /// The directory this panel last put the active shell in — the spawn
     /// directory, used as a fallback while the shell has not yet reported
     /// its own working directory through OSC 7/9/1337.
@@ -264,7 +272,9 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: Theme.controlMd
+        /// 36 dp: a 28 dp bar could not hold the 12 px session name and the
+        /// pills beside it without the two touching the hairlines.
+        height: 36
         color: Theme.terminalHeader
 
         Rectangle {
@@ -279,9 +289,9 @@ Item {
             anchors.left: parent.left
             anchors.leftMargin: 12
             anchors.right: sessionStrip.left
-            anchors.rightMargin: 8
+            anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 6
+            spacing: 8
 
             Glyph {
                 anchors.verticalCenter: parent.verticalCenter
@@ -305,7 +315,7 @@ Item {
                             : qsTr("终端")))
                 color: Theme.terminalInk
                 font.family: Theme.monoFamily
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
                 width: Math.min(implicitWidth, header.width * 0.4)
@@ -322,7 +332,7 @@ Item {
                 color: Theme.terminalInk
                 opacity: root.directoryReported ? 0.85 : 0.55
                 font.family: Theme.monoFamily
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText
 
@@ -354,9 +364,9 @@ Item {
                     readonly property int index: pill.modelData
                     readonly property var named: root.sessions[pill.index]
                     readonly property bool current: pill.index === root.activeIndex
-                    width: pillRow.implicitWidth + 14
-                    height: Theme.controlXs
-                    radius: Theme.radiusFull
+                    width: pillRow.implicitWidth + 16
+                    height: 22
+                    radius: Theme.radiusSm
                     color: pillMouse.containsMouse ? Theme.hover
                         : (pill.current ? Theme.selection : "transparent")
 
@@ -371,7 +381,7 @@ Item {
                                 + (pill.named.running ? root.shellOf(pill.named) : qsTr("已退出"))
                             color: pill.current ? Theme.terminalInkStrong : Theme.terminalInk
                             font.family: Theme.monoFamily
-                            font.pixelSize: Theme.typeMicro
+                            font.pixelSize: Theme.typeCaption
                             textFormat: Text.PlainText
                         }
                     }
@@ -394,8 +404,8 @@ Item {
 
             /// New session. Opens in the active tab's folder.
             Rectangle {
-                width: 22
-                height: Theme.controlXs
+                width: 24
+                height: 22
                 radius: Theme.radiusFull
                 color: newMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -405,7 +415,7 @@ Item {
                     color: newMouse.containsMouse
                         ? Theme.terminalInkStrong : Theme.terminalInk
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                 }
 
@@ -423,8 +433,8 @@ Item {
 
             /// Closes the active session; the others keep running.
             Rectangle {
-                width: 22
-                height: Theme.controlXs
+                width: 24
+                height: 22
                 radius: Theme.radiusFull
                 visible: root.sessions.length > 0
                 color: closeSessionMouse.containsMouse ? Theme.hover : "transparent"
@@ -462,9 +472,9 @@ Item {
             /// shell command rather than a grid wipe, because the scrollback the
             /// user can scroll back into is the shell's, not this panel's.
             Rectangle {
-                width: 44
-                height: Theme.controlXs
-                radius: Theme.radiusFull
+                width: 46
+                height: 22
+                radius: Theme.radiusSm
                 visible: root.running
                 color: clearMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -473,7 +483,7 @@ Item {
                     text: qsTr("清屏")
                     color: clearMouse.containsMouse
                         ? Theme.terminalInkStrong : Theme.terminalInk
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                 }
 
@@ -491,9 +501,9 @@ Item {
 
             /// 跳转: the deliberate `cd` the user asked for (G-9).
             Rectangle {
-                width: 44
-                height: Theme.controlXs
-                radius: Theme.radiusFull
+                width: 46
+                height: 22
+                radius: Theme.radiusSm
                 visible: root.running
                 color: jumpMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -502,7 +512,7 @@ Item {
                     text: qsTr("跳转")
                     color: jumpMouse.containsMouse
                         ? Theme.terminalInkStrong : Theme.terminalInk
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                 }
 
@@ -522,9 +532,9 @@ Item {
             /// 重新启动: the active session died; start it again in the
             /// folder it was born in.
             Rectangle {
-                width: 56
-                height: Theme.controlXs
-                radius: Theme.radiusFull
+                width: 62
+                height: 22
+                radius: Theme.radiusSm
                 visible: root.sessions.length > 0 && !root.running
                 color: restartMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -533,7 +543,7 @@ Item {
                     text: qsTr("重新启动")
                     color: restartMouse.containsMouse
                         ? Theme.terminalInkStrong : Theme.terminalInk
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                 }
 
@@ -550,13 +560,15 @@ Item {
                 }
             }
 
-            /// Hides the panel; sessions keep running.
+            /// Hides the panel; sessions keep running. A chevron, not a
+            /// second ✕: the strip already has one for ending a session, and
+            /// two identical crosses two centimetres apart read as a mistake.
             Item {
-                width: 20
-                height: Theme.controlXs
+                width: 24
+                height: 22
 
                 Accessible.role: Accessible.Button
-                Accessible.name: qsTr("关闭终端")
+                Accessible.name: qsTr("隐藏终端")
                 Accessible.onPressAction: root.hideRequested()
 
                 Rectangle {
@@ -567,9 +579,9 @@ Item {
 
                 Glyph {
                     anchors.centerIn: parent
-                    width: 12
-                    height: 12
-                    kind: "close"
+                    width: 14
+                    height: 14
+                    kind: "chevronDown"
                     tint: closeMouse.containsMouse ? Theme.terminalInkStrong : Theme.terminalInk
                 }
 
@@ -591,9 +603,9 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: barRow.implicitWidth + 16
-            height: Theme.controlXs
-            radius: Theme.radiusFull
+            width: barRow.implicitWidth + 18
+            height: 24
+            radius: Theme.radiusSm
             color: Theme.terminalHeader
             border.width: 2
             border.color: searchField.activeFocus ? Theme.accent : Theme.hairline
@@ -612,7 +624,7 @@ Item {
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.terminalInkStrong
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     focus: root.searchOpen
 
                     onAccepted: {
@@ -638,7 +650,7 @@ Item {
                     color: Theme.terminalInk
                     opacity: 0.7
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                 }
 
@@ -650,7 +662,7 @@ Item {
                     color: Theme.terminalInk
                     opacity: 0.7
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     textFormat: Text.PlainText
                 }
 
@@ -665,7 +677,7 @@ Item {
                         text: "↑"
                         color: prevMouse.containsMouse
                             ? Theme.terminalInkStrong : Theme.terminalInk
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     Accessible.role: Accessible.Button
@@ -691,7 +703,7 @@ Item {
                         text: "↓"
                         color: nextMouse.containsMouse
                             ? Theme.terminalInkStrong : Theme.terminalInk
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     Accessible.role: Accessible.Button
@@ -754,8 +766,11 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             height: Theme.ruleWidth(Screen.devicePixelRatio)
+            /// A seam at rest, the accent while the edge is grabbed: without
+            /// it the panel's top edge was only a jump in tone where the list
+            /// happened to be cut.
             color: heightMouse.containsMouse || heightMouse.pressed
-                ? Theme.accent : "transparent"
+                ? Theme.accent : Theme.hairline
         }
 
         MouseArea {
@@ -810,8 +825,8 @@ Item {
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
         anchors.leftMargin: 12
-        anchors.rightMargin: 8
-        anchors.topMargin: 8
+        anchors.rightMargin: 12
+        anchors.topMargin: 10
         anchors.bottomMargin: 8
         /// The native terminal consumes Tab — it has to, Tab is completion
         /// inside a shell — so it may only be part of the focus chain while the

@@ -69,7 +69,9 @@ Item {
             width: 6
             height: parent.height
             radius: width / 2
-            color: Theme.outline
+            /// At rest the thumb is a structural rule, not an outline: the
+            /// heavier `outline` role drew a dark stripe down every pane.
+            color: Theme.outlineVariant
             opacity: thumb.lit ? 0 : 1
             Accessible.ignored: true
 
@@ -87,7 +89,7 @@ Item {
             width: 8
             height: parent.height
             radius: width / 2
-            color: Theme.inkOnSurfaceVariant
+            color: Theme.outline
             opacity: thumb.lit ? 1 : 0
             Accessible.ignored: true
 

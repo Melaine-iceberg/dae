@@ -1,7 +1,8 @@
 import QtQuick
 
-// The M3 Expressive dialog button: a pill, 32 high, in three of the Material
-// button styles.
+// The desktop dialog button: 32 high with a 6 dp corner, in three of the
+// Material button styles. Chrome's dialog buttons are rectangles with a
+// modest corner, not pills; only icon buttons stay circular.
 //
 //   "quiet"    text button — no container, `primary` label, 8 % state layer
 //   "primary"  filled button — `primary` container, `inkOnPrimary` label
@@ -28,19 +29,7 @@ Rectangle {
     implicitWidth: Math.max(64, labelText.implicitWidth + 32)
     implicitHeight: Theme.controlLg
     opacity: enabled ? 1 : 0.38
-    /// Shape morph: the pill squishes toward a 12 dp corner while held and
-    /// springs back on release (m3.material.io/styles/shape/shape-morph).
-    property real morph: buttonMouse.pressed ? 1 : 0
-    readonly property real restRadius: height / 2
-    radius: restRadius + (Theme.radiusMorphPress - restRadius) * morph
-    Behavior on morph {
-        enabled: Theme.motion
-        SpringAnimation {
-            spring: Theme.springSpatialFast
-            damping: Theme.dampSpatialFast
-            epsilon: 0.005
-        }
-    }
+    radius: Theme.radiusSm
     color: {
         if (root.tone === "danger")
             return buttonMouse.containsMouse ? Theme.dangerSolidHover : Theme.dangerSolid

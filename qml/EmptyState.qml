@@ -89,7 +89,7 @@ Item {
 
         width: labelText.implicitWidth + 28
         height: Theme.controlLg
-        radius: Theme.radiusFull
+        radius: Theme.radiusSm
         color: {
             if (button.primary)
                 return buttonMouse.containsMouse

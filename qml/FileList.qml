@@ -49,19 +49,28 @@ Item {
     readonly property int headerHeight: density === "compact" ? 28
         : density === "spacious" ? 36 : 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
-    /// The name column flexes with the pane up to a cap; past it the table
-    /// keeps its width and the rest of the pane stays background, the way
-    /// Explorer's detail view reads on a wide window. Metadata columns keep
-    /// their measured widths.
-    readonly property int nameMaxWidth: 420
     readonly property int detailsWidth: {
         let used = 0
         for (let index = 0; index < shownColumns.length; index += 1)
             used += effectiveColumnWidth(shownColumns[index])
         return used
     }
-    readonly property int contentWidth: Math.min(width,
-        16 + nameMaxWidth + 8 + detailsWidth + 16)
+    /// The table fills the pane: the name column absorbs every pixel the
+    /// metadata columns do not use, so the last column lands on the pane's
+    /// right rule instead of stopping in the middle of a wide window.
+    readonly property int tableWidth: width
+    /// How much of the pane the name column actually gets at this width.
+    readonly property int nameColumnWidth: Math.max(0,
+        tableWidth - 16 - detailsWidth - 8 - 16)
+    /// Where the details block starts, measured from the pane's left edge.
+    readonly property int detailsLeft: 16 + nameColumnWidth + 8
+    /// The air between two details columns. Values stay on their column's
+    /// right rule and the gutter keeps that rule from touching the next
+    /// column's text, which is what the four columns packed at zero read as.
+    readonly property int columnGutter: 14
+    /// Rows, hover, section rules and the sticky header all use the pane's
+    /// width; only the painted table is capped.
+    readonly property int contentWidth: width
     /// The details columns as stored in preferences, padded to a stable length
     /// for positional widths.
     readonly property var columnIds: ["type", "size", "modified", "created", "tags"]
@@ -1745,6 +1754,12 @@ Item {
         property string sortKey: ""
         property string columnId: ""
         property bool alignRight: false
+        /// How far the label sits inside a left-aligned cell. The name header
+        /// uses it to line its label up with the row's name text while its hit
+        /// area still starts over the icon column, the way Explorer's does.
+        property int labelInset: 0
+        /// The air on the cell's trailing edge, matching the values below.
+        property int gutter: 0
         readonly property bool active: ExplorerPrefs.sortKey === cell.sortKey
 
         signal clicked()
@@ -1757,6 +1772,10 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: Theme.ruleWidth(Screen.devicePixelRatio)
+            /// A column rule inside a 32 dp header is a second edge next to the
+            /// one the header already has; the resize strip's cursor is the
+            /// affordance. Painted only while the strip is under the pointer.
+            visible: dividerMouse.containsMouse && cell.columnId !== ""
             color: Theme.hairline
         }
 
@@ -1806,16 +1825,20 @@ Item {
         Row {
             anchors.left: cell.alignRight ? undefined : parent.left
             anchors.right: cell.alignRight ? parent.right : undefined
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
+            anchors.leftMargin: cell.alignRight ? 0 : cell.labelInset
+            anchors.rightMargin: cell.alignRight ? cell.gutter : 0
             anchors.verticalCenter: parent.verticalCenter
+            /// Right-aligned columns keep their label's right edge on the same
+            /// rule as the values below; the caret hangs to its left instead
+            /// of pushing the label off that rule.
+            layoutDirection: cell.alignRight ? Qt.RightToLeft : Qt.LeftToRight
             spacing: 5
 
             Text {
                 text: cell.label
                 color: cell.active ? Theme.ink
                     : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeCaption
                 font.weight: Font.Medium
                 elide: Text.ElideRight
             }
@@ -1834,7 +1857,6 @@ Item {
             Accessible.name: qsTr("按%1排序").arg(cell.label)
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.rightMargin: 7
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             hoverEnabled: true
@@ -1855,7 +1877,10 @@ Item {
         anchors.top: parent.top
         height: root.headerHeight
         visible: root.listHeaderVisible
-        color: root.contentColor
+        /// The head band is one tonal step below the rows: the labels are the
+        /// table's legend, and a band separates them from the first row without
+        /// a second rule.
+        color: Theme.surfaceContainerLow
 
         /// The column track shares the row cap, so a heading never floats
         /// over blank background to the right of the rows it labels.
@@ -1874,6 +1899,7 @@ Item {
                 anchors.bottom: parent.bottom
                 width: Math.max(0, detailsHeader.x - 8 - x)
                 label: qsTr("名称")
+                labelInset: 26
                 sortKey: "name"
                 onClicked: root.applySort("name")
             }
@@ -1883,8 +1909,7 @@ Item {
             /// instead of four anchor rules that have to be edited together.
             Row {
                 id: detailsHeader
-                anchors.right: parent.right
-                anchors.rightMargin: 16
+                x: root.detailsLeft
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 spacing: 0
@@ -1899,6 +1924,7 @@ Item {
                         label: root.columnLabel(modelData)
                         sortKey: modelData
                         alignRight: modelData !== "type"
+                        gutter: root.columnGutter
                         columnId: modelData
                         onClicked: root.applySort(modelData)
                     }
@@ -1965,7 +1991,7 @@ Item {
                 required property string section
 
                 width: root.contentWidth
-                height: 28
+                height: 30
 
                 Rectangle {
                     anchors.fill: parent
@@ -1984,11 +2010,11 @@ Item {
                     anchors.left: parent.left
                     anchors.leftMargin: 16
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 4
+                    anchors.bottomMargin: 7
                     text: root.groupLabelText(sectionRow.section)
-                    color: Theme.inkTertiary
-                    font.pixelSize: Theme.typeMicro
-                    font.weight: Font.Medium
+                    color: Theme.inkSecondary
+                    font.pixelSize: Theme.typeCaption
+                    font.weight: Theme.weightStrong
                     textFormat: Text.PlainText
                 }
 
@@ -1996,13 +2022,13 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: 16
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 4
+                    anchors.bottomMargin: 7
                     text: {
                         const count = root.groupCountMap[sectionRow.section]
                         return count === undefined ? "" : String(count)
                     }
                     color: Theme.inkTertiary
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     font.features: { "tnum": 1 }
                     textFormat: Text.PlainText
                 }
@@ -2191,19 +2217,12 @@ Item {
                 readonly property real stemBudget: Math.max(0,
                     row.nameBudget - (row.separateExtension
                         ? 1 + extensionMetrics.advanceWidth : 0))
-                /// §7.1.4: number and unit are separate runs so the decimal
-                /// points can line up under a tabular figure.
-                readonly property var sizeParts: {
-                    const text = row.sizeText
-                    const cut = text.lastIndexOf(" ")
-                    return cut < 0 ? [text, ""] : [text.slice(0, cut), text.slice(cut + 1)]
-                }
 
                 TextMetrics {
                     id: stemMetrics
                     text: row.stemText
                     font.family: Theme.uiFamily
-                    font.pixelSize: Theme.typeBody
+                    font.pixelSize: Theme.typeRow
                     font.weight: 450
                 }
 
@@ -2238,7 +2257,7 @@ Item {
                     anchors.rightMargin: 6
                     anchors.topMargin: 1
                     anchors.bottomMargin: 1
-                    radius: Theme.radiusMd
+                    radius: Theme.radiusSm
                     color: row.selected ? Theme.selection
                         : row.dropTarget ? Theme.accentSoft
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
@@ -2256,7 +2275,7 @@ Item {
                     anchors.rightMargin: 6
                     anchors.topMargin: 1
                     anchors.bottomMargin: 1
-                    radius: Theme.radiusMd
+                    radius: Theme.radiusSm
                     color: Theme.accentSoftStrong
                     opacity: row.flash ? 1 : 0
                     visible: row.flash || opacity > 0
@@ -2280,7 +2299,7 @@ Item {
                     anchors.bottomMargin: 1
                     visible: row.dropTarget
                     color: "transparent"
-                    radius: Theme.radiusMd
+                    radius: Theme.radiusSm
                     border.width: 2
                     border.color: Theme.accent
                 }
@@ -2296,7 +2315,7 @@ Item {
                     anchors.bottomMargin: 1
                     visible: row.focusedCursor
                     color: "transparent"
-                    radius: Theme.radiusMd
+                    radius: Theme.radiusSm
                     border.width: 2
                     border.color: Theme.accent
                 }
@@ -2347,7 +2366,10 @@ Item {
                             || rowIcon.status !== Image.Ready)
                     category: row.category
                     path: row.filePath
-                    outline: row.isDir ? Theme.inkSecondary : Theme.inkTertiary
+                    /// A folder is one hue: its outline is the family colour
+                    /// darkened, not the neutral ink. Grey outline over a beige
+                    /// wash read as a dirty shape at 18 dp.
+                    outline: row.isDir ? Theme.folderOutline : Theme.inkTertiary
                     Accessible.ignored: true
                 }
 
@@ -2482,7 +2504,7 @@ Item {
                             ? root.highlighted(row.stemDisplay) : row.stemDisplay
                         color: row.hidden ? Theme.inkTertiary : Theme.ink
                         font.family: Theme.uiFamily
-                        font.pixelSize: Theme.typeBody
+                        font.pixelSize: Theme.typeRow
                         font.weight: 450
                         font.italic: row.category === "link"
                         textFormat: root.highlightNeedle !== ""
@@ -2577,7 +2599,7 @@ Item {
                 /// shifts the columns beside it. A broken link uses `danger`.
                 Text {
                     visible: row.category === "link"
-                    x: row.width - 16
+                    x: root.tableWidth - 16
                     width: 12
                     anchors.verticalCenter: parent.verticalCenter
                     horizontalAlignment: Text.AlignRight
@@ -2594,8 +2616,7 @@ Item {
                 /// the space.
                 Row {
                     id: detailsRow
-                    anchors.right: parent.right
-                    anchors.rightMargin: 16
+                    x: root.detailsLeft
                     anchors.verticalCenter: parent.verticalCenter
                     height: parent.height
                     spacing: 0
@@ -2626,12 +2647,19 @@ Item {
                                 sourceComponent: Row {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
+                                    anchors.rightMargin: root.columnGutter
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 6
 
                                     Text {
-                                        width: Math.max(0, cell.width
-                                            - (row.hasGitStatus ? 18 : 0))
+                                        /// Natural width, capped by the cell:
+                                        /// a fixed cell-wide run pushed the git
+                                        /// letter to the column's right edge,
+                                        /// where it read as a separate mark
+                                        /// rather than as part of the type.
+                                        width: Math.min(implicitWidth,
+                                            Math.max(0, cell.width - root.columnGutter
+                                                - (row.hasGitStatus ? 18 : 0)))
                                         text: Localize.typeName(row.typeName)
                                         color: Theme.inkSecondary
                                         font.pixelSize: Theme.typeCaption
@@ -2653,36 +2681,26 @@ Item {
                                 }
                             }
 
-                            /// §7.1.4: the number is right-aligned on a
-                            /// tabular figure, the unit sits in its own left
-                            /// track so MiB and GiB share one baseline.
+                            /// §7.1.4: the size is one right-aligned, tabular
+                            /// run. The number/unit split it used to be put the
+                            /// unit in a 30 dp track, which left the figure
+                            /// floating 34 dp off the column's right rule — the
+                            /// rule the heading above it is set on.
                             Loader {
                                 anchors.fill: parent
                                 active: cell.modelData === "size"
-                                sourceComponent: Row {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 4
-
-                                    Text {
-                                        width: 44
-                                        horizontalAlignment: Text.AlignRight
-                                        text: row.sizeParts[0]
-                                        color: Theme.inkSecondary
-                                        font.pixelSize: Theme.typeCaption
-                                        font.features: { "tnum": 1 }
-                                        textFormat: Text.PlainText
-                                        Accessible.ignored: true
-                                    }
-
-                                    Text {
-                                        width: 30
-                                        text: row.sizeParts[1]
-                                        color: Theme.inkTertiary
-                                        font.pixelSize: Theme.typeCaption
-                                        textFormat: Text.PlainText
-                                        Accessible.ignored: true
-                                    }
+                                sourceComponent: Text {
+                                    anchors.fill: parent
+                                    anchors.rightMargin: root.columnGutter
+                                    horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: row.sizeText
+                                    color: Theme.inkSecondary
+                                    font.pixelSize: Theme.typeCaption
+                                    font.features: { "tnum": 1 }
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    Accessible.ignored: true
                                 }
                             }
 
@@ -2695,6 +2713,7 @@ Item {
                                     || cell.modelData === "created"
                                 sourceComponent: Text {
                                     anchors.fill: parent
+                                    anchors.rightMargin: root.columnGutter
                                     horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
                                     text: root.cellText(row, cell.modelData)
@@ -2724,6 +2743,7 @@ Item {
                                 sourceComponent: Row {
                                     anchors.fill: parent
                                     anchors.leftMargin: 4
+                                    anchors.rightMargin: root.columnGutter
                                     spacing: 4
 
                                     /// §7.1.2: at most two outline capsules and a
@@ -2947,7 +2967,7 @@ Item {
             x: 0
             y: root.loadingLineVisible ? 10 : 0
             width: root.contentWidth
-            height: 28
+            height: 30
             color: root.contentColor
             z: 12
             Accessible.ignored: true
@@ -2964,11 +2984,11 @@ Item {
                 anchors.left: parent.left
                 anchors.leftMargin: 16
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 4
+                anchors.bottomMargin: 7
                 text: root.groupLabelText(root.stickyGroupLabel)
-                color: Theme.inkTertiary
-                font.pixelSize: Theme.typeMicro
-                font.weight: Font.Medium
+                color: Theme.inkSecondary
+                font.pixelSize: Theme.typeCaption
+                font.weight: Theme.weightStrong
                 textFormat: Text.PlainText
             }
 
@@ -2976,7 +2996,7 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: 16
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 4
+                anchors.bottomMargin: 7
                 text: {
                     const count = root.groupCountMap[root.stickyGroupLabel]
                     return count === undefined ? "" : String(count)
@@ -3341,7 +3361,7 @@ Item {
             anchors.fill: parent
             visible: dropArea.containsDrag && root.dropTargetPath !== ""
             color: Theme.accentSoft
-            radius: Theme.radiusLg
+            radius: Theme.radiusMd
 
             Text {
                 anchors.centerIn: parent

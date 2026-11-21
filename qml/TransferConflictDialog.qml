@@ -239,7 +239,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: cancelLabel.implicitWidth + 24
                     height: Theme.controlMd
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
                         ? Theme.hover : "transparent"
                     border.width: 1
@@ -276,7 +276,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: skipSegment.width + keepSegment.width + replaceSegment.width
                     height: Theme.controlMd
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: "transparent"
                     border.width: 1
                     border.color: Theme.outlineVariant

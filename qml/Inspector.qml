@@ -54,7 +54,10 @@ Item {
     property int tagRevision: 0
 
     readonly property color panelColor: root.plate ? "transparent" : Theme.chrome
-    readonly property color wellColor: Theme.inset
+    /// One tone step away from the column's own `chrome`. The well used the
+    /// same container tone as the pane, so a code preview had no edge at all
+    /// and its first line read as if it floated on the inspector.
+    readonly property color wellColor: Theme.surfaceContainerLowest
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkSecondary
     readonly property color faintColor: Theme.inkTertiary
@@ -392,7 +395,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("读取中…")
                 color: root.faintColor
-                font.pixelSize: Theme.typeMicro
+                font.pixelSize: Theme.typeCaption
             }
         }
 
@@ -500,7 +503,7 @@ Item {
                     text: root.directoryPath
                     color: root.faintColor
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     elide: Text.ElideMiddle
                     textFormat: Text.PlainText
                 }
@@ -523,7 +526,7 @@ Item {
                     text: qsTr("类型分布")
                     color: root.faintColor
                     font.family: Theme.uiFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 Column {
@@ -574,11 +577,13 @@ Item {
                         onActionClicked: root.measureDirectorySize()
                     }
 
+                    /// Only when there is a repository: a key with no value
+                    /// read as a row that had failed to load.
                     MetaRow {
                         width: content.width
+                        visible: root.directoryGitRoot !== ""
                         key: "Git"
-                        value: root.directoryGitRoot !== ""
-                            ? root.directoryGitBranch : ""
+                        value: root.directoryGitBranch
                     }
                 }
 
@@ -587,7 +592,7 @@ Item {
                     visible: root.directoryRemote
                     text: qsTr("远程位置：缩略图与文件夹大小仅支持本地路径。")
                     color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     wrapMode: Text.Wrap
                     lineHeight: Theme.leadingBody
                 }
@@ -622,7 +627,7 @@ Item {
                     width: parent.width
                     text: qsTr("选中项目查看原位置")
                     color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     wrapMode: Text.Wrap
                 }
             }
@@ -652,7 +657,7 @@ Item {
                         text: root.trashItem !== null ? root.trashItem.originalParent : ""
                         color: root.faintColor
                         font.family: Theme.monoFamily
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                         elide: Text.ElideMiddle
                         textFormat: Text.PlainText
                     }
@@ -709,7 +714,7 @@ Item {
                     text: qsTr("类型分布")
                     color: root.faintColor
                     font.family: Theme.uiFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 Column {
@@ -744,7 +749,7 @@ Item {
                     visible: root.currentTags.length === 0
                     text: qsTr("没有共同标签")
                     color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                 }
             }
 
@@ -761,7 +766,7 @@ Item {
                     visible: root.showsThumbnail
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusLg
+                    radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
@@ -799,7 +804,7 @@ Item {
                         visible: !thumbnailCard.showsImage && thumbnail.status === Image.Error
                         text: qsTr("无法生成缩略图")
                         color: root.faintColor
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                     }
                 }
 
@@ -813,7 +818,7 @@ Item {
                     visible: root.showsOffice
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusLg
+                    radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
@@ -828,10 +833,10 @@ Item {
                         TextEdit {
                             id: officeText
 
-                            x: 10
-                            y: 8
-                            width: parent.width - 20
-                            height: Math.max(contentHeight, parent.height - 16)
+                            x: 12
+                            y: 10
+                            width: parent.width - 24
+                            height: Math.max(contentHeight, parent.height - 20)
                             readOnly: true
                             selectByMouse: true
                             text: controller.hasOffice ? controller.officeHtml
@@ -839,7 +844,7 @@ Item {
                             color: root.textColor
                             selectionColor: root.accent
                             selectedTextColor: Theme.inkOnAccent
-                            font.pixelSize: Theme.typeMicro
+                            font.pixelSize: Theme.typeCaption
                             textFormat: controller.hasOffice ? TextEdit.RichText
                                                              : TextEdit.PlainText
                             wrapMode: TextEdit.Wrap
@@ -858,7 +863,7 @@ Item {
                         visible: controller.hasOffice && controller.officeTruncated
                         text: qsTr("内容过长，仅显示开头部分")
                         color: root.faintColor
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                     }
                 }
 
@@ -869,7 +874,7 @@ Item {
                     visible: root.showsText
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusLg
+                    radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
@@ -885,6 +890,8 @@ Item {
 
                         Row {
                             id: plainRows
+                            x: 8
+                            y: 6
                             spacing: 8
 
                             Text {
@@ -893,7 +900,7 @@ Item {
                                 color: root.faintColor
                                 horizontalAlignment: Text.AlignRight
                                 font.family: Theme.monoFamily
-                                font.pixelSize: Theme.typeMicro
+                                font.pixelSize: Theme.typeCaption
                                 lineHeight: Theme.leadingProse
                                 font.features: { "tnum": 1 }
                             }
@@ -905,7 +912,7 @@ Item {
                                 text: root.plainText
                                 color: root.textColor
                                 font.family: Theme.monoFamily
-                                font.pixelSize: Theme.typeMicro
+                                font.pixelSize: Theme.typeCaption
                                 lineHeight: Theme.leadingProse
                                 wrapMode: Text.NoWrap
                                 textFormat: Text.PlainText
@@ -922,7 +929,7 @@ Item {
                             ? qsTr("仅显示前 64 KB")
                             : qsTr("仅显示前 500 行")
                         color: root.faintColor
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                     }
                 }
 
@@ -933,7 +940,7 @@ Item {
                     visible: root.showsRich
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusLg
+                    radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
@@ -977,17 +984,17 @@ Item {
                             id: richPreview
                             Accessible.role: Accessible.StaticText
                             Accessible.name: qsTr("预览内容")
-                            x: 10
-                            y: 8
-                            width: Math.max(richScroller.width - 20, richPreview.contentWidth)
-                            height: Math.max(contentHeight, richScroller.height - 16)
+                            x: 12
+                            y: 10
+                            width: Math.max(richScroller.width - 24, richPreview.contentWidth)
+                            height: Math.max(contentHeight, richScroller.height - 20)
                             readOnly: true
                             selectByMouse: true
                             text: controller.contentHtml
                             color: root.textColor
                             selectionColor: root.accent
                             selectedTextColor: Theme.inkOnAccent
-                            font.pixelSize: Theme.typeMicro
+                            font.pixelSize: Theme.typeCaption
                             textFormat: TextEdit.RichText
 
                             onLinkActivated: function (link) {
@@ -1008,7 +1015,7 @@ Item {
                         visible: controller.truncated
                         text: qsTr("仅显示前 64 KB")
                         color: root.faintColor
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                     }
                 }
 
@@ -1018,7 +1025,7 @@ Item {
                     visible: root.showsFolder
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusLg
+                    radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
@@ -1058,7 +1065,7 @@ Item {
                     visible: root.showsFallback
                     width: parent.width
                     height: root.wellHeight
-                    radius: Theme.radiusLg
+                    radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
@@ -1088,7 +1095,7 @@ Item {
                             text: Localize.message(controller.kindText) !== ""
                                 ? Localize.message(controller.kindText) : qsTr("文件")
                             color: root.faintColor
-                            font.pixelSize: Theme.typeMicro
+                            font.pixelSize: Theme.typeCaption
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
                         }
@@ -1122,7 +1129,7 @@ Item {
                     visible: mediaLoader.active && mediaLoader.status === Loader.Error
                     text: qsTr("当前构建不支持媒体播放")
                     color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     wrapMode: Text.Wrap
                 }
 
@@ -1131,7 +1138,7 @@ Item {
                     visible: root.showsMedia
                     text: Localize.message(controller.mediaText)
                     color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     lineHeight: Theme.leadingBody
                     wrapMode: Text.Wrap
                 }
@@ -1153,7 +1160,7 @@ Item {
                     text: controller.path
                     color: root.faintColor
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     elide: Text.ElideMiddle
                     textFormat: Text.PlainText
                 }
@@ -1189,7 +1196,7 @@ Item {
                     visible: controller.error !== ""
                     text: Localize.message(controller.error)
                     color: Theme.danger
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     wrapMode: Text.Wrap
                 }
 
@@ -1198,7 +1205,7 @@ Item {
                     visible: controller.remote && controller.error === ""
                     text: qsTr("远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。")
                     color: root.faintColor
-                    font.pixelSize: Theme.typeMicro
+                    font.pixelSize: Theme.typeCaption
                     wrapMode: Text.Wrap
                     lineHeight: Theme.leadingBody
                 }
@@ -1274,7 +1281,7 @@ Item {
 
                 width: chipRow.implicitWidth + 18
                 height: Theme.controlXs + 2
-                radius: Theme.radiusFull
+                radius: Theme.radiusSm
                 color: on ? Theme.selection : "transparent"
                 border.width: on ? 0 : 1
                 border.color: Theme.outlineVariant
@@ -1297,7 +1304,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: tagChip.modelData.name
                         color: tagChip.on ? Theme.selectionInk : Theme.inkSecondary
-                        font.pixelSize: Theme.typeMicro
+                        font.pixelSize: Theme.typeCaption
                         font.weight: tagChip.on ? Theme.weightStrong : Font.Normal
                         textFormat: Text.PlainText
                     }

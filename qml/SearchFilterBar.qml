@@ -148,7 +148,7 @@ Item {
 
         height: Theme.controlMd
         width: chip.square ? 32 : Math.ceil(chipLabel.implicitWidth) + 18
-        radius: Theme.radiusFull
+        radius: Theme.radiusSm
         color: chip.active ? Theme.selection
             : (chipMouse.containsMouse ? Theme.hover : "transparent")
         border.width: chip.activeFocus ? 2 : (chip.active ? 0 : 1)
@@ -309,7 +309,7 @@ Item {
             readonly property bool filtered: root.typeId !== "all"
             width: visible ? typeRow.implicitWidth + 28 : 0
             height: Theme.controlMd
-            radius: Theme.radiusFull
+            radius: Theme.radiusSm
             color: filtered ? Theme.selection
                 : (typeMouse.containsMouse ? Theme.hover : "transparent")
             border.width: typeChip.activeFocus ? 2 : (filtered ? 0 : 1)

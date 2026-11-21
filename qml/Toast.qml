@@ -145,7 +145,7 @@ Item {
                             visible: slot.undoable
                             width: visible ? undoLabel.implicitWidth + 20 : 0
                             height: Theme.controlSm
-                            radius: Theme.radiusFull
+                            radius: Theme.radiusSm
                             color: undoMouse.containsMouse
                                 ? Qt.rgba(Theme.inverseOnSurface.r,
                                           Theme.inverseOnSurface.g,

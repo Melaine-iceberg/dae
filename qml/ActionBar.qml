@@ -158,18 +158,7 @@ Item {
 
                     width: buttonRow.implicitWidth + (filled ? 24 : 20)
                     height: Theme.controlMd
-                    /// Press shape morph: pill → 12 dp corner, spring back.
-                    property real morph: buttonMouse.pressed ? 1 : 0
-                    readonly property real restRadius: height / 2
-                    radius: restRadius + (Theme.radiusMorphPress - restRadius) * morph
-                    Behavior on morph {
-                        enabled: Theme.motion
-                        SpringAnimation {
-                            spring: Theme.springSpatialFast
-                            damping: Theme.dampSpatialFast
-                            epsilon: 0.005
-                        }
-                    }
+                    radius: Theme.radiusSm
                     color: filled
                         ? (buttonMouse.pressed ? Theme.accentHover
                             : (buttonMouse.containsMouse ? Theme.accentHover

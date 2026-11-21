@@ -218,7 +218,7 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: Theme.controlSm
-        radius: Theme.radiusFull
+        radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)

@@ -18,16 +18,21 @@ import dae
 //      accent" idea. A selected row is `secondaryContainer`, a floating
 //      surface is `surfaceContainerHigh`, and the model keeps the seed colour
 //      (system accent or brand teal) flowing into every derived role.
-//   2. Shape follows the M3 corner scale: 4 / 8 / 12 / 16 / 28 / 48 / full.
-//      Buttons and chips are pills, dialogs take the 28 dp extra-large corner,
-//      menus and list selections the 12 dp medium one.
+//   2. Shape follows the desktop corner scale: 3 / 6 / 8 / 12. Buttons, tabs,
+//      rows and fields take the 6 dp small corner; tooltips, cards and menu
+//      rows the 8 dp medium one; menus, dialogs and the palette the 12 dp
+//      large one. Only
+//      genuinely circular things (icon buttons, switches, dots) are round.
+//      This is Material 3 as applied to large screens, and the same restraint
+//      Chrome's desktop surfaces use: a 28 dp dialog corner or a 30 dp pill
+//      tab belongs to a phone, not to a window with a pointer.
 //   3. Type uses the M3 scale translated to the app's density: label 11/12,
 //      body 14, title 17, headline 22. Emphasized weights (500/600) mark the
 //      selected and primary thing, matching the "emphasized" type styles.
-//   4. Motion is the M3 Expressive spring system: spatial springs (position,
-//      size, corner radius) overshoot into place, effects springs (colour,
-//      opacity) do not. The tokens are calibrated Qt `SpringAnimation` pairs,
-//      and the whole scheme can drop to the calmer "standard" preset.
+//   4. Motion is the M3 Expressive spring system, used where a desktop app
+//      wants it: switches and sliders settle on a spatial spring, while
+//      colour and opacity ride effects curves. Surfaces do not pop or squish
+//      into place; a menu or dialog appears where it belongs.
 //
 // Colour values remain literals (or contrast-guarded derivations) so the
 // acceptance gate in `docs/ui-redesign/check-contrast.mjs` can still measure
@@ -88,7 +93,7 @@ QtObject {
     /// "disabled" rather than "chosen".
     readonly property color secondaryContainer: dark
         ? hslColor(accentHue, 0.34, 0.24)
-        : hslColor(accentHue, 0.34, 0.86)
+        : hslColor(accentHue, 0.40, 0.83)
     /// Tertiary is the seed rotated 60°: the expressive counterweight used for
     /// badges, pinned marks and one-off emphasis.
     readonly property color tertiary: dark
@@ -135,24 +140,27 @@ QtObject {
     readonly property color inkOnError: readableInk(error, errorSolidInk)
     readonly property color inkOnErrorContainer: readableInk(errorContainer,
         errorContainerInk)
-    readonly property color inkOnSurface: dark ? "#dfe4e2" : "#181c1b"
-    readonly property color inkOnSurfaceVariant: dark ? "#bec9c6" : "#3f4947"
+    readonly property color inkOnSurface: dark ? "#e2e6e5" : "#141817"
+    readonly property color inkOnSurfaceVariant: dark ? "#c2ccca" : "#3d4644"
     readonly property color inkOnDanger: inkOnError
 
     // ── M3 surfaces ─────────────────────────────────────────────────────────
     /// The tonal surface ladder. Light elevation steps *down* in tone
     /// (surface is brightest); dark elevation steps up, as the model specifies.
-    readonly property color surface: dark ? "#0f1413" : "#f7faf9"
-    readonly property color surfaceDim: dark ? "#0a0e0d" : "#d9dedc"
-    readonly property color surfaceBright: dark ? "#353a39" : "#f7faf9"
+    /// The light ramp keeps a whisper of the seed's hue but is close to neutral:
+    /// a desktop window is read at arm's length, and the green cast the earlier
+    /// values carried made text look tinted rather than the surface tinted.
+    readonly property color surface: dark ? "#0f1413" : "#fbfcfc"
+    readonly property color surfaceDim: dark ? "#0a0e0d" : "#dce1e0"
+    readonly property color surfaceBright: dark ? "#353a39" : "#fbfcfc"
     readonly property color surfaceContainerLowest: dark ? "#0a0e0d" : "#ffffff"
-    readonly property color surfaceContainerLow: dark ? "#171c1b" : "#f1f5f3"
-    readonly property color surfaceContainer: dark ? "#1b201f" : "#ebefee"
-    readonly property color surfaceContainerHigh: dark ? "#252a29" : "#e4e9e7"
-    readonly property color surfaceContainerHighest: dark ? "#303534" : "#dee4e2"
+    readonly property color surfaceContainerLow: dark ? "#171c1b" : "#f3f5f5"
+    readonly property color surfaceContainer: dark ? "#1b201f" : "#eceeee"
+    readonly property color surfaceContainerHigh: dark ? "#252a29" : "#e4e7e7"
+    readonly property color surfaceContainerHighest: dark ? "#303534" : "#dadee0"
 
-    readonly property color outline: dark ? "#889390" : "#6f7977"
-    readonly property color outlineVariant: dark ? "#3f4947" : "#bec9c6"
+    readonly property color outline: dark ? "#8b9593" : "#6e7876"
+    readonly property color outlineVariant: dark ? "#3f4947" : "#c5cecc"
     readonly property color inverseSurface: dark ? "#dfe4e2" : "#2d3130"
     readonly property color inverseOnSurface: dark ? "#2c3130" : "#eff1f0"
     readonly property color inversePrimary: dark
@@ -163,6 +171,18 @@ QtObject {
     readonly property color window: surfaceDim
     /// The frame: tab row, sidebar, status bar, inspector.
     readonly property color chrome: surfaceContainerLow
+    /// The tab row's own band. The darkest step in both themes, the way a
+    /// desktop browser separates its tab strip from the toolbar: the active
+    /// tab wears the toolbar's surface, so it reads as a raised chip only when
+    /// the strip behind it sits a step lower.
+    readonly property color tabStrip: surfaceDim
+    /// The active tab's plate. It has to stay a step away from the strip in
+    /// both material modes: the bar is either the solid `tabStrip` or a Mica
+    /// tint of whatever is behind the window, so the chip is pinned to the
+    /// brightest container role rather than to the toolbar's surface. White on
+    /// light and a raised grey on dark is what Chrome's active tab does.
+    readonly property color tabActive: dark ? surfaceContainerHigh
+                                            : surfaceContainerLowest
     /// Content: the listing, the grid, the preview body.
     readonly property color canvas: surface
     /// A surface that floats above everything: menus, dialogs, the palette.
@@ -225,7 +245,7 @@ QtObject {
     readonly property color inkSecondary: inkOnSurfaceVariant
     /// Tertiary text is one step lighter than `onSurfaceVariant` so an 11 px
     /// label still clears 4.5:1 on the canvas.
-    readonly property color inkTertiary: dark ? "#a3afac" : "#5c6664"
+    readonly property color inkTertiary: dark ? "#a5b0ad" : "#5b6563"
 
     // ── Lines ───────────────────────────────────────────────────────────────
     /// Region boundaries. `outlineVariant` is the M3 divider role.
@@ -310,6 +330,14 @@ QtObject {
         return table[family] !== undefined ? table[family] : table["other"]
     }
 
+    /// A folder's silhouette. The family colour carries both the outline and
+    /// the wash, so the mark is one hue; the neutral ink it used to borrow left
+    /// a grey edge around a beige shape, which at 18 dp read as dirt rather
+    /// than as a folder.
+    readonly property color folderOutline: dark
+        ? fileColor("folder")
+        : mix(fileColor("folder"), black, 0.78)
+
     /// The eight tag colours: fixed options at one lightness, because a free
     /// picker cannot promise that any two tags stay legible on both themes.
     readonly property var tagPaletteLight: [
@@ -373,16 +401,16 @@ QtObject {
     /// `reduceMotion`, which collapses everything to an instant switch.
     readonly property bool expressive: ExplorerPrefs.motionScheme !== "standard"
 
-    /// M3 Expressive runs on springs, not fixed curves: spatial springs move
-    /// position, size and corner radius and overshoot; effects springs move
-    /// colour and opacity and never do. Qt's `SpringAnimation` integrates a
+    /// The remaining springs move the parts a desktop app expects to feel
+    /// physical — the switch's thumb, the slider's handle — while colour and
+    /// opacity ride fixed effects curves. Qt's `SpringAnimation` integrates a
     /// normalised spring (its `spring`/`damping` are not physical stiffness and
     /// damping ratio — large stiffness values diverge), so the six tokens below
     /// were calibrated against the scheme's published overshoot and settle
     /// targets by sampling the animation headless:
     ///
-    ///   spatial fast     ~14 % overshoot, ~170 ms  (press morph, small parts)
-    ///   spatial default  ~8 % overshoot, ~270 ms   (menus, dialogs, panels)
+    ///   spatial fast     ~14 % overshoot, ~170 ms  (switch thumb, slider)
+    ///   spatial default  ~8 % overshoot, ~270 ms   (moving panels)
     ///   spatial slow     gentle overshoot, ~350 ms (large surfaces)
     ///   effects fast     no overshoot, ~125 ms
     ///   effects default  no overshoot, ~220 ms
@@ -420,12 +448,18 @@ QtObject {
     /// M3 roles at desktop density. Every value is an integer because Qt's
     /// `font.pixelSize` is an int.
     ///
-    ///   labelSmall 11 / labelMedium 12
-    ///   bodyMedium 14
+    ///   labelSmall 11 (counts, badges only)
+    ///   labelMedium/labelLarge 12 (column heads, section heads, status)
+    ///   bodyMedium 13 (rows: the one rung a dense desktop list needs and the
+    ///                 phone scale does not have)
+    ///   bodyLarge 14 (prose, paths, single-line controls)
     ///   titleMedium 17
     ///   titleLarge 22 / headlineSmall 24 (hero moments only)
     readonly property int typeMicro: 11
     readonly property int typeCaption: 12
+    /// The listing's own body rung. A 32 dp row holds 13 px text with 9–10 px
+    /// of air above and below; 14 read as a phone list on a desktop window.
+    readonly property int typeRow: 13
     readonly property int typeBody: 14
     readonly property int typeHeading: 17
     /// The command palette's query line: one rung above the title.
@@ -495,33 +529,26 @@ QtObject {
     readonly property real leadingProse: 1.6
 
     // ── Shape ───────────────────────────────────────────────────────────────
-    /// The M3 Expressive corner scale. Components map to roles:
+    /// The desktop corner scale. Components map to roles:
     ///
-    ///   xs 4    keycaps, tiny marks
-    ///   sm 8    nested thumbnails, compact tags
-    ///   md 12   menus, list selection, text fields
-    ///   lg 16   cards, panels, grid selection
-    ///   xl 28   dialogs, search surfaces, command palette
-    ///   xxl 48  hero containers
-    ///   full    buttons, chips, nav indicators, search fields
-    readonly property int radiusXs: 4
-    readonly property int radiusSm: 8
-    readonly property int radiusMd: 12
-    readonly property int radiusLg: 16
-    readonly property int radiusLgIncreased: 20
-    readonly property int radiusXl: 28
-    readonly property int radiusXlIncreased: 32
-    readonly property int radiusXxl: 48
+    ///   xs 3    keycaps, tags, the paper of a file mark, nested wells
+    ///   sm 6    rows, tabs, buttons, chips, text fields, breadcrumb plates
+    ///   md 8    menu rows, tooltips, floating cards, grid selection, thumbs
+    ///   lg 12   menus, dialogs, the command palette, large floating panels
+    ///   full    only true circles: icon-button footprints, switches, dots
+    ///
+    /// There is deliberately no larger rung. A 16 dp card or a 28 dp dialog
+    /// reads as a phone surface; a frameless desktop window has a 10 dp frame
+    /// and everything inside it stays at or below 12.
+    readonly property int radiusXs: 3
+    readonly property int radiusSm: 6
+    readonly property int radiusMd: 8
+    readonly property int radiusLg: 12
+    /// Dialog-sized alias. Floating surfaces that own the screen (a dialog,
+    /// the palette) name `lg` directly; this keeps the older call sites and
+    /// their intent readable without a second, larger value.
+    readonly property int radiusXl: radiusLg
     readonly property int radiusFull: 999
-
-    /// Shape morph (m3.material.io/styles/shape/shape-morph). A round control
-    /// squishes toward this corner while it is held, then springs back to the
-    /// pill on release — the press is felt in the silhouette, not only in the
-    /// colour. Selected toggle segments rest at this corner too, so "chosen"
-    /// reads as a shape change rather than a fill alone. At desktop control
-    /// heights (28–32 dp) the small corner is far enough from the pill's
-    /// half-height that the morph actually reads.
-    readonly property int radiusMorphPress: 8
 
     /// The width of a structural rule: one device pixel.
     function ruleWidth(dpr) {

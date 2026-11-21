@@ -123,7 +123,7 @@ Item {
                     x: 8
                     width: parent.width - 16
                     height: parent.height
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: node.current
                         ? Theme.selection
                         : (nodeMouse.containsMouse ? Theme.hover : "transparent")

@@ -5,7 +5,7 @@ import QtQuick
 //
 // The context menu, the view menu and the filter menu used to be three copies
 // of the same overlay — three panel radii, three row heights and two border
-// colours. This file owns the one M3 Expressive definition: a
+// colours. This file owns the one desktop definition: a
 // `surfaceContainerHigh` rounded plate (12 dp) with no stroke, 32 dp rows,
 // one shadow and one level of submenu. `MenuList` paints the rows.
 //
@@ -237,10 +237,12 @@ Item {
         id: panel
 
         width: list.naturalWidth
-        // Never taller than the window: the rows scroll inside whatever the
-        // window can give them.
+        // Never taller than a menu: the rows scroll inside a panel that tops
+        // out at 560 dp (or the window, on a short one). A menu that ran the
+        // full window height stopped reading as a menu and started reading as
+        // a page — the display menu has fifty entries and did exactly that.
         height: Math.min(list.contentHeight + 8 + root.footerHeight + root.headerHeight,
-                         root.height - 16)
+                         Math.min(560, root.height - 16))
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         /// §6.6: the panel lifts the last 2 dp as it arrives, and hiding is
         /// instant, so the offset is only visible on the way in. It rides the
@@ -259,26 +261,14 @@ Item {
             enabled: Theme.motion && root.visible
             YAnimator { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
         }
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: "transparent"
         border.width: 0
 
-        /// M3 Expressive menus grow out of their anchor on the spatial spring:
-        /// a short scale from the corner nearest the click that overshoots a
-        /// hair into place, paired with the opacity fade and the 2 dp lift
-        /// above. Hiding stays instant for the same reason the opacity does.
-        scale: root.visible ? 1 : 0.96
-        transformOrigin: root.above ? Item.BottomLeft : Item.TopLeft
-        Behavior on scale {
-            enabled: Theme.motion && root.visible
-            SpringAnimation {
-                spring: Theme.springSpatial
-                damping: Theme.dampSpatial
-                epsilon: 0.005
-            }
-        }
-
-        Glass { radius: Theme.radiusMd }
+        /// A desktop menu appears: the fade and the 2 dp lift above are the
+        /// whole arrival. It does not grow from the anchor on a spring — that
+        /// gesture belongs to a touch target under a finger.
+        Glass { radius: Theme.radiusLg }
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise
@@ -342,23 +332,11 @@ Item {
         height: Math.min(submenuList.contentHeight + 8, root.height - 16)
         x: Math.max(8, Math.min(root.submenuX, root.width - width - 8))
         y: Math.max(8, Math.min(root.submenuY, root.height - height - 8))
-        radius: Theme.radiusMd
+        radius: Theme.radiusLg
         color: "transparent"
         border.width: 0
 
-        /// The submenu grows from the row it belongs to, like the parent panel.
-        scale: submenuPanel.visible ? 1 : 0.96
-        transformOrigin: Item.TopLeft
-        Behavior on scale {
-            enabled: Theme.motion && submenuPanel.visible
-            SpringAnimation {
-                spring: Theme.springSpatial
-                damping: Theme.dampSpatial
-                epsilon: 0.005
-            }
-        }
-
-        Glass { radius: Theme.radiusMd }
+        Glass { radius: Theme.radiusLg }
 
         // The panel itself is not an input item, so a press on its padding or
         // on a non-selectable row (a separator, a group label) would otherwise

@@ -3,11 +3,13 @@ import QtQuick
 
 // The one dialog plate in the shell.
 //
-// The M3 Expressive dialog: a `surfaceContainerHigh` plate on the 32 % scrim,
-// a 28 dp extra-large corner, no stroke (tone and elevation separate it), a
-// 17 px emphasized heading and a pill button row at the bottom right. Dialogs
-// used to lay this out by hand with drift in radius and foot height; this file
-// owns the one definition, and a dialog supplies a body and a footer.
+// The desktop dialog: a `surfaceContainerHigh` plate on the 32 % scrim, a
+// 12 dp large corner, no stroke (tone and elevation separate it), a 17 px
+// emphasized heading and a right-aligned button row at the bottom. It is
+// centred in the window, the way a desktop app's modal sits, rather than
+// pinned near the top. Dialogs used to lay this out by hand with drift in
+// radius and foot height; this file owns the one definition, and a dialog
+// supplies a body and a footer.
 //
 //     Dialog {
 //         heading: qsTr("新建文件夹")
@@ -94,7 +96,7 @@ FocusScope {
         id: panel
 
         anchors.horizontalCenter: parent.horizontalCenter
-        y: 64
+        y: Math.max(16, Math.round((root.height - height) / 2))
         width: Math.min(root.panelWidth, root.width - 32)
         height: head.height + 12 + root.bodyHeight + 12
             + (root.footerHeight > 0 ? root.footerHeight + 16 : 0)
@@ -102,24 +104,15 @@ FocusScope {
         color: "transparent"
         border.width: 0
 
-        /// M3 Expressive confirmation is springy: the plate scales up a hair
-        /// past its resting size while the scrim fades. Hiding stays instant so
-        /// the next dialog never opens on top of a departing one.
+        /// A desktop dialog fades in where it belongs. The scrim is the
+        /// arrival; the plate does not scale up out of nowhere. Hiding stays
+        /// instant so the next dialog never opens on top of a departing one.
         opacity: root.visible ? 1 : 0
         Behavior on opacity {
             enabled: Theme.motion && root.visible
             OpacityAnimator {
                 duration: Theme.motionOverlay
                 easing.type: Easing.OutCubic
-            }
-        }
-        scale: root.visible ? 1 : 0.94
-        Behavior on scale {
-            enabled: Theme.motion && root.visible
-            SpringAnimation {
-                spring: Theme.springSpatial
-                damping: Theme.dampSpatial
-                epsilon: 0.005
             }
         }
 

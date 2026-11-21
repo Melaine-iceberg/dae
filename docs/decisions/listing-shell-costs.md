@@ -2,10 +2,10 @@
 
 > **状态：审计完成；第 1 项（§2、§3）、§4 的 watcher 补丁、§5 的批量选择/前缀
 > 与 §6 的选区表示都已实施；§9 的 app 内 qmlprofiler 复测（2026-11-03）之后，
-> §10 又落地了四刀（可见视图按需、完成排序与交互式排序移出 GUI 线程、终端输出按帧合并），§7 的次级清单
-> 只记录、未动。§11（2026-11-20）再落地一轮：刷新排序移出 GUI 线程、标签全量读查重改哈希、
+> §10 又落地了四刀（可见视图按需、完成排序与交互式排序移出 GUI 线程、终端输出按帧合并）。§11（2026-11-20）再落地一轮：刷新排序移出 GUI 线程、标签全量读查重改哈希、
 > watcher 补丁单遍查找、搜索比较器借用化、图标提取出锁与编码零分配，以及 QML 侧的
-> 列种类按需、ToolTip 霜面按需、网格复用、隐藏列表去模型、偏好合并与 Inspector 门控。**
+> 列种类按需、ToolTip 霜面按需、网格复用、隐藏列表去模型、偏好合并与 Inspector 门控。
+> §7 的次级清单里，回收站选择已于 2026-11-21 搬进模型；其余只记录、未动。**
 > 枚举与 IO 不在本文范围之内——它们已经有实测与结论
 > （[`windows-directory-enumeration.md`](windows-directory-enumeration.md)、
 > [`completion-io.md`](completion-io.md)）。本文问的是另一个问题：
@@ -371,7 +371,7 @@ n 次比较，**结构推断**，未单独计时）。
 | `OverviewModel::refresh`、`SidebarModel::refresh` | **已实施（2026-11-18）**：两处 refresh 的行构建都搬到 blocking pool（overview 的 `build_overview_base` 含 `list_disks_sync` 与 recents/spaces/tags JSON，sidebar 的 `build_base_rows` 含 hidden/favorites/connections/cloud JSON），Qt 线程只做 generation 复核 + `replace_rows` | overview 的 landing 带 generation 守卫，旧刷新被丢弃；sidebar 沿用原异步形状不加守卫（改动前 volumes 半段同样无守卫） |
 | `DirectoryListModel::data` | **量过，不做（2026-11-18）**：一屏 165 行 × 13 次角色读取（每次读都重复 size/timestamp/full_path，3 倍悲观的口径）共 **0.428 ms**；真实 delegate 创建只读一遍。行内缓存要么急切化 12 万行（**74.8 ms**，测量同一次）要么给 `StoredRow` 加 interior mutability，两头都亏 | 数字来自 `model::tests::reports_the_cost_of_role_formatting`，`--release --ignored --nocapture` |
 | `Tab.qml` 选区路径数组存入 `historyEntry()` | 大选区会随后退栈保留多份 | 内存，不是帧时间（§6.5） |
-| `TrashView.qml` 的 `selectionVersion`/`isSelected` | 回收站仍是 `path -> true` map + `selectionVersion`，delegate 每次变更跑一次 `isSelected` | 行在 `trash_model.rs` 里；要等那份模型也带 `selected` 角色时一起搬（§6.5） |
+| `TrashView.qml` 的 `selectionVersion`/`isSelected` | **已实施（2026-11-21）**：选择搬进 `trash_model.rs`，复用共享 `Selection`（以系统 trash id 为键），模型发布 `selected`/上下相邻角色并维护 `selectedCount`；Ctrl、Shift、全选各一次跨 FFI，`dataChanged` 只发变化行及邻行 | 无 app 内帧时复测，按结构与回归验收；回收站不是主列表，不宣称毫秒收益 |
 
 ## 8. 已经做对，不要重做
 

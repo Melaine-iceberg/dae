@@ -325,7 +325,7 @@ FocusScope {
                         && modelData.checked === true && !hasImage
 
                     width: column.width
-                    height: separator ? 9 : (header ? 24 : root.rowHeight)
+                    height: separator ? 9 : (header ? 28 : root.rowHeight)
 
                     // The row is the accessible element, not the label inside
                     // it: a screen reader has to be able to say which verb is
@@ -388,9 +388,9 @@ FocusScope {
                             width: parent.width - x - 8
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.modelData.label || ""
-                            color: Theme.inkSecondary
-                            font.pixelSize: Theme.typeMicro
-                            font.weight: Theme.weightEmphasis
+                            color: Theme.inkTertiary
+                            font.pixelSize: Theme.typeCaption
+                            font.weight: Theme.weightStrong
                             elide: Text.ElideRight
                         }
                     }

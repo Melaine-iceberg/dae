@@ -315,7 +315,7 @@ Item {
                         y: 5
                         width: 53
                         height: Theme.controlSm
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         readonly property bool actionEnabled: !root.busy
                             && (modelData.action === "create" || root.canNetwork)
                         color: actionMouse.containsMouse && actionEnabled
@@ -410,7 +410,7 @@ Item {
                     y: 5
                     width: 52
                     height: Theme.controlSm
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: root.createPending || branchInput.text.trim() === ""
                         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.10)
                         : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)

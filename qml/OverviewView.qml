@@ -312,7 +312,7 @@ Item {
 
                             implicitWidth: chipRow.implicitWidth + 24
                             height: 32
-                            radius: Theme.radiusFull
+                            radius: Theme.radiusSm
                             color: chipHover.containsMouse ? Theme.hover : Theme.inset
                             border.width: 1
                             border.color: chip.activeFocus ? Theme.accent : Theme.outlineVariant

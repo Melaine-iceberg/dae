@@ -402,7 +402,7 @@ Item {
             readonly property bool folded: root.isFolded(sectionRow.section)
 
             width: ListView.view.width
-            height: 24
+            height: 32
 
             /// The header is the fold control (§7.3.2): one click closes the
             /// group, the next opens it, and the state is remembered.
@@ -414,9 +414,9 @@ Item {
 
             Glyph {
                 id: foldMark
-                x: 4
-                width: 10
-                height: 10
+                x: 20
+                width: 12
+                height: 12
                 anchors.verticalCenter: parent.verticalCenter
                 kind: sectionRow.folded ? "chevronRight" : "chevronDown"
                 tint: sectionRow.favoriteSection && sectionRow.lit
@@ -426,22 +426,20 @@ Item {
             }
 
             Text {
-                x: 18
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 4
+                x: 40
+                anchors.verticalCenter: parent.verticalCenter
                 text: root.sectionLabel(sectionRow.section)
                 color: parent.lit ? Theme.accent
                     : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
                 font.family: Theme.uiFamily
-                font.pixelSize: Theme.typeMicro
-                font.weight: Theme.weightEmphasis
+                font.pixelSize: Theme.typeCaption
+                font.weight: Theme.weightStrong
             }
 
             Text {
                 anchors.right: parent.right
                 anchors.rightMargin: 18
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
                 visible: parent.lit && parent.favoriteSection
                 text: qsTr("松开以加入收藏")
                 color: Theme.accent
@@ -532,9 +530,11 @@ Item {
                 && list.currentIndex === row.index
             readonly property bool lit: row.focused || row.armed
                 || rowMouse.containsMouse
-            /// Every destination is one 32 dp line; a volume's tree hangs
-            /// below it rather than inside the row.
-            readonly property int rowHeight: 32
+            /// Every destination is one 32 dp line; a volume adds a second band
+            /// under it for its capacity rule, which is what keeps the gauge
+            /// out of the selection pill's rounded silhouette.
+            readonly property int rowHeight: row.isVolume ? 40 : 32
+            readonly property int plateHeight: 32
 
             width: ListView.view.width
             height: row.folded ? 0 : rowHeight + (row.treeOpen ? treeLoader.height : 0)
@@ -580,7 +580,7 @@ Item {
                 id: rowBody
 
                 width: parent.width
-                height: row.rowHeight
+                height: row.plateHeight
 
                 Rectangle {
                     id: plate
@@ -588,10 +588,11 @@ Item {
                     x: 8
                     width: rowBody.width - 16
                     height: rowBody.height
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     /// The current destination is an M3 `secondaryContainer`
-                    /// pill; the ink flips to `onSecondaryContainer` with it.
-                    /// A drop target is the accent wash, one step stronger.
+                    /// plate with the row's small corner; the ink flips to
+                    /// `onSecondaryContainer` with it. A drop target is the
+                    /// accent wash, one step stronger.
                     color: row.armed ? Theme.accentSoft
                         : row.focused ? Theme.selection
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
@@ -604,7 +605,7 @@ Item {
                 Rectangle {
                     anchors.fill: plate
                     visible: row.armed
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: "transparent"
                     border.width: 2
                     border.color: Theme.accent
@@ -675,8 +676,8 @@ Item {
                         ? Theme.accent
                         : row.focused && !row.armed ? Theme.selectionInk
                         : (row.lit ? Theme.ink : Theme.inkSecondary)
-                    font.pixelSize: Theme.typeBody
-                    font.weight: row.focused ? Theme.weightEmphasis : Font.Normal
+                    font.pixelSize: Theme.typeRow
+                    font.weight: row.focused ? Theme.weightStrong : Font.Normal
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                 }
@@ -689,7 +690,7 @@ Item {
 
                     visible: row.isVolume
                     anchors.right: parent.right
-                    anchors.rightMargin: 18
+                    anchors.rightMargin: 16
                     height: 32
                     width: Math.min(implicitWidth, Math.max(0, rowBody.width * 0.45))
                     verticalAlignment: Text.AlignVCenter
@@ -708,9 +709,9 @@ Item {
                     id: capacity
 
                     visible: row.isVolume
-                    x: 46
-                    y: rowBody.height - 4
-                    width: Math.max(0, rowBody.width - 46 - 18)
+                    x: 44
+                    y: rowBody.height + 2
+                    width: Math.max(0, rowBody.width - 44 - 16)
                     height: 3
                     radius: height / 2
                     color: Theme.outlineVariant
@@ -729,7 +730,7 @@ Item {
 
                     visible: !row.isVolume
                     anchors.right: parent.right
-                    anchors.rightMargin: 18
+                    anchors.rightMargin: 16
                     height: 32
                     width: Math.min(implicitWidth, 112)
                     verticalAlignment: Text.AlignVCenter
@@ -954,7 +955,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: serverRow.hovered ? Theme.hover : "transparent"
                 }
 
@@ -1081,7 +1082,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: savedRow.hovered ? Theme.hover : "transparent"
                 }
 
@@ -1231,7 +1232,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: tagRow.armed ? Theme.accentSoft
                         : (tagRow.hovered ? Theme.hover : "transparent")
                 }
@@ -1316,7 +1317,7 @@ Item {
             y: 7
             width: parent.width - 16
             height: Theme.controlLg
-            radius: Theme.radiusFull
+            radius: Theme.radiusSm
             color: root.trashActive
                 ? Theme.selection
                 : (trashMouse.containsMouse ? Theme.hover : "transparent")

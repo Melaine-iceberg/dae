@@ -92,16 +92,6 @@ Item {
                 easing.type: Easing.OutCubic
             }
         }
-        scale: root.visible ? 1 : 0.96
-        Behavior on scale {
-            enabled: Theme.motion && root.visible
-            SpringAnimation {
-                spring: Theme.springSpatial
-                damping: Theme.dampSpatial
-                epsilon: 0.005
-            }
-        }
-
         Glass { radius: Theme.radiusXl }
 
         // A click inside the plate must not close it; the scrim is behind.

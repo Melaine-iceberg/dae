@@ -34,7 +34,7 @@ QtObject {
             return qsTr("概览")
         if (surface === "space")
             return spaceTitle.length > 0 ? spaceTitle : qsTr("空间")
-        return listing.path !== "" ? listing.path : "dae"
+        return listing.path !== "" ? listing.path : qsTr("新标签页")
     }
     property DirectoryListModel listing: DirectoryListModel {}
     property SearchModel nameSearch: SearchModel {}

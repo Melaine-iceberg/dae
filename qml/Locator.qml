@@ -127,7 +127,7 @@ Item {
         id: well
         anchors.fill: parent
         visible: bar.framed
-        radius: Theme.radiusFull
+        radius: Theme.radiusSm
         color: Theme.field
         /// M3 filled fields carry no stroke at rest; the 2 px primary ring
         /// appears with the keyboard or the active split pane.
@@ -389,7 +389,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     visible: slot.dropActive
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     color: Theme.accentSoft
                     border.width: 2
                     border.color: Theme.accent
@@ -412,9 +412,9 @@ Item {
                 Rectangle {
                     id: plate
                     anchors.fill: parent
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     // The current folder is a selected destination, so it takes
-                    // the same `secondaryContainer` pill as the sidebar; the
+                    // the same `secondaryContainer` plate as the sidebar; the
                     // ancestors only gain the hover state layer.
                     color: slot.modelData.current === true
                         ? Theme.selection
@@ -858,7 +858,7 @@ Item {
         }
 
         M3Loader {
-            anchors.centerIn: parent
+            anchors.centerIn: searchTrailing
             visible: bar.searchBusy
             width: 14
             height: 14
@@ -866,7 +866,7 @@ Item {
         }
 
         Glyph {
-            anchors.centerIn: parent
+            anchors.centerIn: searchTrailing
             visible: !bar.searchBusy && searchInput.text.length > 0
             width: 10
             height: 10
@@ -875,7 +875,7 @@ Item {
         }
 
         MouseArea {
-            anchors.fill: parent
+            anchors.fill: searchTrailing
             enabled: !bar.searchBusy && searchInput.text.length > 0
             cursorShape: Qt.PointingHandCursor
             onClicked: {

@@ -1,13 +1,11 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 
-// The M3 Expressive connected button group (m3.material.io/components/button-groups),
-// the component that replaces the segmented button. Segments sit flush with a
-// 2 dp gap; the chosen one takes a strong `secondary` fill and morphs from a
-// pill to a 12 dp corner, while the rest stay round on a light container tint.
-// Selecting changes only that segment's shape — the connected variant leaves
-// its neighbours alone — and the morph rides the fast spatial spring, so the
-// choice is felt in the silhouette. Single-select, keyboard-navigable.
+// A desktop segmented control. Segments sit with a 2 dp gap and every one is
+// the same 6 dp rectangle; the chosen segment is distinguished by its fill,
+// not by a shape change. This is the view switcher Chrome-style toolbars use:
+// three quiet buttons in a row, one of them lit. Single-select,
+// keyboard-navigable.
 FocusScope {
     id: group
 
@@ -46,32 +44,27 @@ FocusScope {
 
                 readonly property bool chosen: group.currentId === modelData.id
                 readonly property bool labelled: (modelData.label || "") !== ""
-                /// 0 = pill, 1 = the 12 dp pressed/selected corner. The spring
-                /// drives this one scalar; the radius follows it.
-                property real morph: (segment.chosen || segmentMouse.pressed) ? 1 : 0
-                readonly property real restRadius: height / 2
-                readonly property real squareRadius: Theme.radiusMorphPress
 
                 width: labelled ? label.implicitWidth + group.labelPad * 2
-                                : group.segmentHeight + 2
+                                : group.segmentHeight
                 height: group.segmentHeight
-                radius: restRadius + (squareRadius - restRadius) * morph
-                color: chosen ? Theme.secondary
+                radius: Theme.radiusSm
+                /// One selection language across the shell: the chosen segment
+                /// wears the same `secondaryContainer` the selected row and
+                /// the current sidebar destination do. The
+                /// strong `secondary` fill M3 uses for a *pressed* toggle read
+                /// as a second accent colour in a toolbar of quiet controls.
+                /// The unchosen segments carry no plate at all, so the group
+                /// reads as "one of three is on" beside the round icon buttons
+                /// rather than as three grey blocks glued together.
+                color: chosen ? Theme.selection
                     : (segmentMouse.pressed ? Theme.surfaceContainerHighest
                         : (segmentMouse.containsMouse ? Theme.hover
-                                                      : Theme.surfaceContainerHigh))
+                                                      : "transparent"))
                 opacity: enabled ? 1 : 0.38
                 border.width: segment.activeFocus ? 2 : 0
                 border.color: Theme.accent
 
-                Behavior on morph {
-                    enabled: Theme.motion
-                    SpringAnimation {
-                        spring: Theme.springSpatialFast
-                        damping: Theme.dampSpatialFast
-                        epsilon: 0.005
-                    }
-                }
                 Behavior on color {
                     enabled: Theme.motion
                     ColorAnimation {
@@ -109,7 +102,7 @@ FocusScope {
                     width: group.iconEdge
                     height: group.iconEdge
                     kind: segment.modelData.glyph || ""
-                    tint: segment.chosen ? Theme.inkOnSecondary : Theme.inkOnSurfaceVariant
+                    tint: segment.chosen ? Theme.selectionInk : Theme.inkOnSurfaceVariant
                 }
 
                 Text {
@@ -117,7 +110,7 @@ FocusScope {
                     anchors.centerIn: parent
                     visible: segment.labelled
                     text: segment.modelData.label || ""
-                    color: segment.chosen ? Theme.inkOnSecondary : Theme.inkOnSurfaceVariant
+                    color: segment.chosen ? Theme.selectionInk : Theme.inkOnSurfaceVariant
                     font.pixelSize: Theme.typeCaption
                     font.weight: segment.chosen ? Theme.weightStrong : Font.Normal
                 }

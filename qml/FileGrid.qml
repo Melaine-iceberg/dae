@@ -40,7 +40,10 @@ Item {
     /// room for a two-line name and expand into the available width.
     readonly property int requestedThumb: Math.max(48,
         Math.min(192, Math.round(ExplorerPrefs.iconSize * 2)))
-    readonly property int minCellWidth: requestedThumb + 24
+    /// A tile is at least 104 dp wide whatever the icon size: below that a
+    /// source file's name breaks mid-token ("UpdateDialog.q / ml") and every
+    /// label in the grid reads as a fragment.
+    readonly property int minCellWidth: Math.max(requestedThumb + 24, 104)
     readonly property int thumbWidth: Math.max(48,
         Math.min(Math.max(48, tileWidth - 8), requestedThumb))
     readonly property bool portraitThumbs: ExplorerPrefs.gridThumb !== "square"
@@ -50,8 +53,8 @@ Item {
     /// figure line. The cell owns all of it so a two-line name cannot paint
     /// into the row below.
     readonly property int tileHeight: thumbHeight + 8 + 8
-        + Math.ceil(Theme.typeBody * Theme.leadingTight * 2)
-        + Math.ceil(Theme.typeCaption * Theme.leadingBody) + 2
+        + Math.ceil(Theme.typeRow * Theme.leadingTight * 2)
+        + Math.ceil(Theme.typeMicro * Theme.leadingBody) + 2
 
     readonly property int columns: {
         const available = Math.max(0, width - padding * 2)
@@ -362,18 +365,17 @@ Item {
             Accessible.selected: cell.selected
             Accessible.onPressAction: root.activate(cell.index)
 
-            /// §11.2: the pointer lifts the thumbnail 2 dp; selection is a
-            /// ring plus a check dot, never a tinted cell.
-            readonly property bool lifted: hover.containsMouse && !cell.selected
-            readonly property int glyphEdge: Math.max(24,
-                Math.min(44, Math.round(thumb.width * 0.42)))
+            /// Selection is a tonal cell plus a check dot, never a tinted
+            /// thumbnail; the pointer only changes the cell's wash.
+            readonly property int glyphEdge: Math.max(32,
+                Math.min(56, Math.round(thumb.width * 0.7)))
 
             /// Hover and selection are M3 state layers on the whole tile; the
             /// thumbnail itself keeps its natural contrast. The selected tile
             /// is a `secondaryContainer` card with a check dot, not a ring.
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusLg
+                radius: Theme.radiusMd
                 color: cell.dropTarget ? Theme.accentSoft
                     : cell.selected ? Theme.selection
                     : (hover.containsMouse ? Theme.hover : "transparent")
@@ -385,38 +387,36 @@ Item {
             Item {
                 id: thumb
 
-                /// §11.2: the pointer lifts the thumbnail 2 dp. The lift rides
-                /// `y` rather than `anchors.topMargin` so a `YAnimator` can run
-                /// it on the render thread; `topMargin` has no animator type.
-                y: 8 - (cell.lifted ? 2 : 0)
+                /// Desktop grid tiles stay put under the pointer: the cell
+                /// behind them carries the hover state. A thumbnail that lifts
+                /// is a touch affordance and makes a wall of tiles twitch.
+                y: 8
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: root.thumbWidth
                 height: root.thumbHeight
 
-                Behavior on y {
-                    enabled: Theme.motion
-                    YAnimator {
-                        duration: Theme.motionSelect
-                        easing.type: Theme.motionEaseSpatial
-                    }
-                }
-
-                /// Expressive media card: a rounded tonal frame holds an inset
-                /// preview well, so photographs read as cards rather than as
-                /// raw rectangles pasted on the canvas.
+                /// A media card: a rounded tonal frame holds an inset preview
+                /// well, so photographs read as cards rather than as raw
+                /// rectangles pasted on the canvas. A tile with no preview
+                /// (a folder, a source file) is only its glyph and its name:
+                /// the frame used to be drawn around every tile with the
+                /// `outline` role, which put a dark wireframe box around forty
+                /// empty cards.
                 Rectangle {
                     anchors.fill: parent
+                    visible: cell.showImage
                     radius: Theme.radiusMd
                     color: Theme.surfaceContainerLow
                     border.width: Theme.edgeWidth
-                    border.color: Theme.line
+                    border.color: Theme.outlineVariant
                     Accessible.ignored: true
                 }
 
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 4
-                    radius: Theme.radiusSm
+                    visible: cell.showImage
+                    radius: Theme.radiusXs
                     color: Theme.inset
                     Accessible.ignored: true
 
@@ -475,7 +475,7 @@ Item {
             /// The keyboard cursor on an unselected cell (§7.1.8).
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusLg
+                radius: Theme.radiusMd
                 color: "transparent"
                 visible: cell.focusedCursor && !cell.selected && !cell.dropTarget
                 border.width: 2
@@ -498,6 +498,12 @@ Item {
                 Text {
                     id: nameText
                     width: parent.width
+                    /// The two name lines keep their box even when the name is
+                    /// one word: the figure under it is anchored to that box,
+                    /// so every tile in a row prints its size on one baseline
+                    /// instead of following its own name length.
+                    height: Math.ceil(Theme.typeRow * Theme.leadingTight * 2)
+                    verticalAlignment: Text.AlignBottom
                     text: {
                         if (ExplorerPrefs.showExtensions || cell.extension === "")
                             return cell.fileName
@@ -507,7 +513,7 @@ Item {
                     }
                     color: cell.hidden ? Theme.inkTertiary
                         : (cell.selected ? Theme.selectionInk : Theme.ink)
-                    font.pixelSize: Theme.typeBody
+                    font.pixelSize: Theme.typeRow
                     font.weight: cell.selected ? Theme.weightStrong : Font.Normal
                     lineHeight: Theme.leadingTight
                     horizontalAlignment: Text.AlignHCenter
@@ -522,8 +528,9 @@ Item {
                     width: parent.width
                     text: cell.isDir ? "" : cell.sizeText
                     color: Theme.inkTertiary
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeCaption
+                    font.family: Theme.uiFamily
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                 }

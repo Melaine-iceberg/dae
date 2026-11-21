@@ -699,19 +699,8 @@ Item {
         color: "transparent"
         border.width: 0
 
-        /// The palette drops in on the spatial spring, overshooting a hair
-        /// into place; hiding stays instant so the next open never stacks.
-        scale: root.visible ? 1 : 0.96
-        transformOrigin: Item.Top
-        Behavior on scale {
-            enabled: Theme.motion && root.visible
-            SpringAnimation {
-                spring: Theme.springSpatial
-                damping: Theme.dampSpatial
-                epsilon: 0.005
-            }
-        }
-
+        /// The palette appears where it belongs; hiding stays instant so the
+        /// next open never stacks on a departing one.
         Glass { radius: Theme.radiusXl }
 
         MouseArea {
@@ -720,9 +709,9 @@ Item {
             onWheel: function (wheel) { wheel.accepted = true }
         }
 
-        // Search bar: an M3 search pill (40 dp, full radius, container-high
-        // fill) inset from the panel's top edge. The palette's own chord is
-        // stated by the footer; the band belongs to the query.
+        // Search bar: a 40 dp well with the small desktop corner, inset from
+        // the panel's top edge. The palette's own chord is stated by the
+        // footer; the band belongs to the query.
         Item {
             id: field
 
@@ -741,7 +730,7 @@ Item {
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
-                radius: Theme.radiusFull
+                radius: Theme.radiusSm
                 color: Theme.field
                 border.width: input.activeFocus ? 2 : 0
                 border.color: Theme.accent

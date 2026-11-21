@@ -16,10 +16,8 @@ Item {
     property var model: null
     property color headerColor: Theme.canvas
 
-    /// id -> true. Ids are the system trash ids; a restored entry no longer
-    /// exists, so selection is never allowed to outlive a reload.
-    property var selected: ({})
-    property int selectionVersion: 0
+    /// Selection lives on the rows in TrashModel. Ids are used only at the
+    /// restore/purge command boundary and never outlive a reload.
     property int anchorIndex: -1
 
     readonly property int rowHeight: Theme.rowSpacious
@@ -37,17 +35,8 @@ Item {
     /// for keyboard movement, never for a click — the same rule as the list.
     property bool keyboardCursor: false
 
-    readonly property int selectionCount: {
-        const version = root.selectionVersion
-        if (version < 0)
-            return 0
-        let count = 0
-        for (const key in root.selected) {
-            if (root.selected[key])
-                count += 1
-        }
-        return count
-    }
+    readonly property int selectionCount: root.model !== null
+        ? root.model.selectedCount : 0
     readonly property bool allSelected: root.model !== null
         && root.model.count > 0 && root.selectionCount === root.model.count
 
@@ -78,7 +67,6 @@ Item {
         })
     }
 
-    onSelectionVersionChanged: root.pushPreview()
     onModelChanged: root.pushPreview()
 
     Connections {
@@ -95,59 +83,24 @@ Item {
         function onCountChanged() {
             root.pushPreview()
         }
+
+        function onSelectedCountChanged() {
+            root.pushPreview()
+        }
     }
 
     function selectedIdList() {
-        const ids = []
-        for (const key in selected) {
-            if (selected[key])
-                ids.push(key)
-        }
-        return ids
+        return root.model !== null ? root.model.selectedIds() : []
     }
 
-    function isSelected(id) {
-        return id !== "" && selected[id] === true
+    function isSelectedAt(index) {
+        return root.model !== null && root.model.isSelectedAt(index)
     }
 
     function clearSelection() {
-        selected = ({})
+        if (root.model !== null)
+            root.model.clearSelection()
         anchorIndex = -1
-        selectionVersion += 1
-    }
-
-    function selectOnly(id) {
-        const next = ({})
-        if (id !== "")
-            next[id] = true
-        selected = next
-        selectionVersion += 1
-    }
-
-    function selectMany(ids) {
-        const next = ({})
-        for (let index = 0; index < ids.length; index += 1) {
-            if (ids[index] !== "")
-                next[ids[index]] = true
-        }
-        selected = next
-        selectionVersion += 1
-    }
-
-    function toggle(id) {
-        if (id === "")
-            return
-        const next = ({})
-        for (const key in selected) {
-            if (selected[key])
-                next[key] = true
-        }
-        if (next[id])
-            delete next[id]
-        else
-            next[id] = true
-        selected = next
-        selectionVersion += 1
     }
 
     function idAt(index) {
@@ -165,7 +118,7 @@ Item {
         const active = root.currentId()
         if (active === "")
             return []
-        return root.isSelected(active) ? root.selectedIdList() : [active]
+        return root.isSelectedAt(list.currentIndex) ? root.selectedIdList() : [active]
     }
 
     function takeFocus() {
@@ -175,12 +128,8 @@ Item {
     }
 
     function selectAll() {
-        if (root.model === null)
-            return
-        const ids = []
-        for (let row = 0; row < root.model.count; row += 1)
-            ids.push(root.idAt(row))
-        root.selectMany(ids)
+        if (root.model !== null)
+            root.model.selectAll()
     }
 
     function handleClick(index, shift, ctrl) {
@@ -189,20 +138,15 @@ Item {
         root.keyboardCursor = false
         root.takeFocus()
         list.currentIndex = index
-        const id = root.idAt(index)
         if (shift && root.anchorIndex >= 0) {
-            const first = Math.min(root.anchorIndex, index)
-            const last = Math.max(root.anchorIndex, index)
-            const ids = []
-            for (let row = first; row <= last; row += 1)
-                ids.push(root.idAt(row))
-            root.selectMany(ids)
+            root.model.selectRange(Math.min(root.anchorIndex, index),
+                                   Math.max(root.anchorIndex, index))
             return
         }
         if (ctrl)
-            root.toggle(id)
+            root.model.toggleAt(index)
         else
-            root.selectOnly(id)
+            root.model.selectOnly(index)
         root.anchorIndex = index
     }
 
@@ -234,9 +178,8 @@ Item {
             return true
         }
         if (event.key === Qt.Key_Space) {
-            const id = root.currentId()
-            if (id !== "")
-                root.toggle(id)
+            if (root.currentId() !== "")
+                root.model.toggleAt(list.currentIndex)
             return true
         }
         return false
@@ -538,18 +481,14 @@ Item {
             required property string sizeText
             required property bool isDir
             required property string category
+            required property bool selected
+            required property bool rowAboveSelected
+            required property bool rowBelowSelected
 
             width: list.width
             rowHeight: root.rowHeight
             contentInset: 8
             spacing: 10
-
-            readonly property bool selected: root.isSelected(row.entryId)
-            readonly property bool rowAboveSelected: row.index > 0
-                && root.isSelected(root.idAt(row.index - 1))
-            readonly property bool rowBelowSelected: root.model !== null
-                && row.index < root.model.count - 1
-                && root.isSelected(root.idAt(row.index + 1))
 
             isSelected: row.selected
             previousSelected: row.rowAboveSelected
@@ -597,7 +536,7 @@ Item {
                         onClicked: {
                             root.takeFocus()
                             list.currentIndex = row.index
-                            root.toggle(row.entryId)
+                            root.model.toggleAt(row.index)
                             root.anchorIndex = row.index
                         }
                     }
@@ -642,8 +581,8 @@ Item {
                     root.keyboardCursor = false
                     list.currentIndex = row.index
                     root.anchorIndex = row.index
-                    if (!root.isSelected(row.entryId))
-                        root.selectOnly(row.entryId)
+                    if (!row.selected)
+                        root.model.selectOnly(row.index)
                     const point = row.mapToItem(null, mouse.x, mouse.y)
                     root.contextRequested(row.entryId, row.originalParent, point.x, point.y)
                     return
@@ -716,7 +655,7 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: Theme.controlSm
-        radius: Theme.radiusFull
+        radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)

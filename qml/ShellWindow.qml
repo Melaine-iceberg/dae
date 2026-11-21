@@ -450,12 +450,12 @@ Window {
             color: "transparent"
             border.width: 1
             border.color: Theme.accent
-            radius: Theme.radiusFull
+            radius: Theme.radiusSm
         }
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusFull
+            radius: Theme.radiusSm
             color: chipMouse.containsMouse ? Theme.hover : "transparent"
         }
 
@@ -4554,16 +4554,7 @@ Window {
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
-                    property real morph: backMouse.pressed ? 1 : 0
-                    radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-                    Behavior on morph {
-                        enabled: Theme.motion
-                        SpringAnimation {
-                            spring: Theme.springSpatialFast
-                            damping: Theme.dampSpatialFast
-                            epsilon: 0.005
-                        }
-                    }
+                    radius: width / 2
                     color: root.canGoBack && backMouse.containsMouse
                         ? Theme.hover : "transparent"
                     opacity: root.canGoBack ? 1 : 0.32
@@ -4572,8 +4563,8 @@ Window {
 
                     Glyph {
                         anchors.centerIn: parent
-                        width: 14
-                        height: 14
+                        width: 16
+                        height: 16
                         kind: "arrowLeft"
                         tint: backMouse.containsMouse && parent.canGo
                             ? root.textColor : root.mutedColor
@@ -4616,16 +4607,7 @@ Window {
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
-                    property real morph: forwardMouse.pressed ? 1 : 0
-                    radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-                    Behavior on morph {
-                        enabled: Theme.motion
-                        SpringAnimation {
-                            spring: Theme.springSpatialFast
-                            damping: Theme.dampSpatialFast
-                            epsilon: 0.005
-                        }
-                    }
+                    radius: width / 2
                     color: root.canGoForward && forwardMouse.containsMouse
                         ? Theme.hover : "transparent"
                     opacity: root.canGoForward ? 1 : 0.32
@@ -4634,8 +4616,8 @@ Window {
 
                     Glyph {
                         anchors.centerIn: parent
-                        width: 14
-                        height: 14
+                        width: 16
+                        height: 16
                         kind: "arrowRight"
                         tint: forwardMouse.containsMouse && parent.canGo
                             ? root.textColor : root.mutedColor
@@ -4675,24 +4657,15 @@ Window {
                     height: Theme.controlMd
                     implicitWidth: width
                     implicitHeight: height
-                    property real morph: upMouse.pressed ? 1 : 0
-                    radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-                    Behavior on morph {
-                        enabled: Theme.motion
-                        SpringAnimation {
-                            spring: Theme.springSpatialFast
-                            damping: Theme.dampSpatialFast
-                            epsilon: 0.005
-                        }
-                    }
+                    radius: width / 2
                     color: root.folderActive && upMouse.containsMouse
                         ? Theme.hover : "transparent"
                     opacity: root.folderActive ? 1 : 0.32
 
                     Glyph {
                         anchors.centerIn: parent
-                        width: 14
-                        height: 14
+                        width: 16
+                        height: 16
                         kind: "arrowUp"
                         tint: upMouse.containsMouse && root.folderActive
                             ? root.textColor : root.mutedColor
@@ -4751,16 +4724,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        property real morph: searchIconMouse.pressed ? 1 : 0
-                        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-                        Behavior on morph {
-                            enabled: Theme.motion
-                            SpringAnimation {
-                                spring: Theme.springSpatialFast
-                                damping: Theme.dampSpatialFast
-                                epsilon: 0.005
-                            }
-                        }
+                        radius: width / 2
                         color: root.searchOpen || searchIconMouse.containsMouse
                             ? Theme.hover : "transparent"
                         border.width: searchSlot.activeFocus ? 2 : 0
@@ -4803,7 +4767,7 @@ Window {
                     height: Theme.controlSm
                     implicitWidth: width
                     implicitHeight: height
-                    radius: Theme.radiusFull
+                    radius: Theme.radiusSm
                     visible: root.trashActive && trashModel.count > 0
                     color: trashClearMouse.containsMouse ? Theme.hover : "transparent"
 
@@ -4875,16 +4839,7 @@ Window {
 
                         Rectangle {
                             anchors.fill: parent
-                            property real morph: viewMenuMouse.pressed ? 1 : 0
-                            radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-                            Behavior on morph {
-                                enabled: Theme.motion
-                                SpringAnimation {
-                                    spring: Theme.springSpatialFast
-                                    damping: Theme.dampSpatialFast
-                                    epsilon: 0.005
-                                }
-                            }
+                            radius: width / 2
                             color: viewMenuMouse.containsMouse || displayMenu.visible
                                 ? Theme.hover : "transparent"
                             border.width: viewMenuButton.activeFocus ? 2 : 0
@@ -4941,16 +4896,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        property real morph: moreMouse.pressed ? 1 : 0
-                        radius: height / 2 + (Theme.radiusMorphPress - height / 2) * morph
-                        Behavior on morph {
-                            enabled: Theme.motion
-                            SpringAnimation {
-                                spring: Theme.springSpatialFast
-                                damping: Theme.dampSpatialFast
-                                epsilon: 0.005
-                            }
-                        }
+                        radius: width / 2
                         color: moreMouse.containsMouse || moreMenu.visible
                             ? Theme.hover : "transparent"
                         border.width: moreSlot.activeFocus ? 2 : 0
@@ -5290,7 +5236,7 @@ Window {
                                             width: Math.min(176,
                                                 Math.max(88, splitChipText.implicitWidth + 32))
                                             height: 24
-                                            radius: Theme.radiusFull
+                                            radius: Theme.radiusSm
                                             color: active ? Theme.selection
                                                 : (chipMouse.containsMouse ? Theme.hover : "transparent")
                                             border.width: splitChip.activeFocus ? 2 : 0
@@ -5935,7 +5881,7 @@ Window {
             // ── Left: what the listing holds ──────────────────────────────
             Text {
                 id: statusText
-                x: 10
+                x: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
                     if (root.activeTab === null)
@@ -5972,7 +5918,7 @@ Window {
                     return base
                 }
                 color: Theme.inkSecondary
-                font.family: Theme.monoFamily
+                font.family: Theme.uiFamily
                 font.pixelSize: Theme.typeCaption
                 font.features: { "tnum": 1 }
                 elide: Text.ElideRight
@@ -6103,7 +6049,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         color: historyMouse.containsMouse || statusCenter.visible
                             ? Theme.hover : "transparent"
                     }
@@ -6162,7 +6108,7 @@ Window {
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                     }
 
                     function openPanel() {
@@ -6172,7 +6118,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         color: gitStatusMouse.containsMouse || gitPanel.shown
                             ? Theme.hover : "transparent"
                     }
@@ -6284,12 +6230,12 @@ Window {
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                     }
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         color: inspectorToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }
@@ -6344,12 +6290,12 @@ Window {
                         color: "transparent"
                         border.width: 1
                         border.color: Theme.accent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                     }
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         color: terminalToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }

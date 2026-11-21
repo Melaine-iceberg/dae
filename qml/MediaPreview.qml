@@ -129,7 +129,7 @@ Item {
             // The track and the transport below the surface stay fixed; the
             // video takes the rest of the height the pane offers.
             height: root.video ? Math.max(76, Math.round(root.contentHeight) - 52) : 76
-            radius: Theme.radiusLg
+            radius: Theme.radiusMd
             color: root.sectionColor
             border.width: 1
             border.color: root.hairline
@@ -308,7 +308,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 26
                 height: Theme.controlMd
-                radius: Theme.radiusLg
+                radius: Theme.radiusSm
                 color: root.accent
                 opacity: root.unplayable ? 0.4 : 1
 

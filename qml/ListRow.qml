@@ -104,7 +104,7 @@ Item {
         anchors.rightMargin: 6
         anchors.topMargin: 1
         anchors.bottomMargin: 1
-        radius: Theme.radiusMd
+        radius: Theme.radiusSm
         color: row.isSelected ? Theme.selection
             : row.dropTarget ? Theme.accentSoftStrong
             : (row.hovered || row.highlighted ? Theme.hover : "transparent")
@@ -128,7 +128,7 @@ Item {
         /// One-shot paste/create highlight.
         opacity: row.flash ? 1 : 0
         visible: row.flash || opacity > 0
-        radius: Theme.radiusMd
+        radius: Theme.radiusSm
         color: Theme.accentSoftStrong
         Accessible.ignored: true
 
@@ -148,7 +148,7 @@ Item {
         anchors.topMargin: 1
         anchors.bottomMargin: 1
         visible: row.dropTarget
-        radius: Theme.radiusMd
+        radius: Theme.radiusSm
         color: "transparent"
         border.width: 2
         border.color: Theme.accent
@@ -162,7 +162,7 @@ Item {
         anchors.topMargin: 1
         anchors.bottomMargin: 1
         visible: row.focusedCursor && !row.isSelected
-        radius: Theme.radiusMd
+        radius: Theme.radiusSm
         color: "transparent"
         border.width: 2
         border.color: Theme.accent
@@ -181,7 +181,7 @@ Item {
             opacity: row.iconOpacity
             category: row.iconCategory
             edge: row.iconEdge
-            outline: row.iconCategory === "folder" ? Theme.inkSecondary
+            outline: row.iconCategory === "folder" ? Theme.folderOutline
                                                   : Theme.inkTertiary
         }
 

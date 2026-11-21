@@ -494,7 +494,7 @@ FocusScope {
                             Rectangle {
                                 width: 96
                                 height: Theme.controlSm
-                                radius: Theme.radiusFull
+                                radius: Theme.radiusSm
                                 color: scanMouse.containsMouse
                                     ? Theme.hover : "transparent"
                                 border.width: 1
@@ -1330,7 +1330,7 @@ FocusScope {
 
         width: aclChipLabel.implicitWidth + 16
         height: Theme.controlSm
-        radius: Theme.radiusFull
+        radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.55
         color: aclChip.selected
             ? (aclChip.danger

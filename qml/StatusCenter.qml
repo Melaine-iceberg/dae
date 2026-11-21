@@ -127,7 +127,7 @@ Item {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radiusFull
+                        radius: Theme.radiusSm
                         color: clearMouse.containsMouse
                             ? Qt.rgba(Theme.accent.r, Theme.accent.g,
                                       Theme.accent.b, 0.08) : "transparent"
