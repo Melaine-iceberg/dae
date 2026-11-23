@@ -187,6 +187,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "nativeHandle"]
         fn native_handle(self: Pin<&mut WindowController>) -> f64;
+
+        /// Mirrors the shell's operation progress onto this window's Windows
+        /// taskbar button. `state` is `none`, `indeterminate`, `normal` or
+        /// `paused`; `progress` is a 0–1 fraction for the determinate states.
+        /// Other platforms accept the call without drawing anything.
+        #[qinvokable]
+        #[cxx_name = "setTaskbarProgress"]
+        fn set_taskbar_progress(
+            self: Pin<&mut WindowController>,
+            state: &QString,
+            progress: f64,
+        ) -> bool;
     }
 }
 
@@ -275,6 +287,139 @@ impl qobject::WindowController {
 
     pub fn native_handle(self: Pin<&mut Self>) -> f64 {
         qobject::native_window_handle(&self.token)
+    }
+
+    pub fn set_taskbar_progress(self: Pin<&mut Self>, state: &QString, progress: f64) -> bool {
+        #[cfg(windows)]
+        {
+            return windows_taskbar::set_progress(
+                qobject::native_window_handle(&self.token),
+                state.to_string().as_str(),
+                progress,
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (state, progress);
+            false
+        }
+    }
+}
+
+/// The taskbar COM object is apartment-bound. It is therefore cached on the
+/// calling (GUI) thread rather than behind a process-wide mutex, and every
+/// window still gets its own HWND-specific progress value.
+#[cfg(windows)]
+mod windows_taskbar {
+    use std::cell::RefCell;
+
+    use windows::Win32::Foundation::{HWND, RPC_E_CHANGED_MODE};
+    use windows::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+        CoUninitialize,
+    };
+    use windows::Win32::UI::Shell::{
+        ITaskbarList3, TBPF_INDETERMINATE, TBPF_NOPROGRESS, TBPF_NORMAL, TBPF_PAUSED, TaskbarList,
+    };
+    use windows::core::Result;
+
+    struct TaskbarCom {
+        taskbar: Option<ITaskbarList3>,
+        uninitialize: bool,
+    }
+
+    impl TaskbarCom {
+        fn new() -> Self {
+            // Qt normally initializes OLE for drag-and-drop, but taskbar
+            // progress can be the first shell COM call in a session. Balance
+            // only the reference this call actually acquires; if Qt already
+            // chose an MTA, do not try to change its apartment.
+            let apartment = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            let uninitialize = apartment.is_ok();
+            if apartment.is_err() && apartment != RPC_E_CHANGED_MODE {
+                log::warn!("dae-taskbar COM initialization failed: {apartment:?}");
+                return Self {
+                    taskbar: None,
+                    uninitialize: false,
+                };
+            }
+
+            let created: Result<ITaskbarList3> =
+                unsafe { CoCreateInstance(&TaskbarList, None, CLSCTX_INPROC_SERVER) };
+            let taskbar = match created {
+                Ok(taskbar) => match unsafe { taskbar.HrInit() } {
+                    Ok(()) => Some(taskbar),
+                    Err(error) => {
+                        log::warn!("dae-taskbar initialization failed: {error}");
+                        None
+                    }
+                },
+                Err(error) => {
+                    log::warn!("dae-taskbar creation failed: {error}");
+                    None
+                }
+            };
+            Self {
+                taskbar,
+                uninitialize,
+            }
+        }
+    }
+
+    impl Drop for TaskbarCom {
+        fn drop(&mut self) {
+            // Release the apartment-bound interface before balancing our COM
+            // initialization reference.
+            self.taskbar = None;
+            if self.uninitialize {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
+    thread_local! {
+        static TASKBAR: RefCell<Option<TaskbarCom>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn set_progress(handle: f64, state: &str, progress: f64) -> bool {
+        if !handle.is_finite() || handle <= 0.0 {
+            return false;
+        }
+        let hwnd = HWND(handle as usize as *mut core::ffi::c_void);
+        let flag = match state {
+            "none" => TBPF_NOPROGRESS,
+            "indeterminate" => TBPF_INDETERMINATE,
+            "normal" => TBPF_NORMAL,
+            "paused" => TBPF_PAUSED,
+            _ => return false,
+        };
+        TASKBAR.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            // Starting or closing a quiet shell must not pay for COM. Once an
+            // operation did create the object, the same call clears its bar.
+            if slot.is_none() && flag == TBPF_NOPROGRESS {
+                return true;
+            }
+            let com = slot.get_or_insert_with(TaskbarCom::new);
+            let Some(taskbar) = com.taskbar.as_ref() else {
+                return false;
+            };
+            // SAFETY: the HWND comes from this GUI thread's live QQuickWindow;
+            // the interface was initialized on that same thread.
+            if unsafe { taskbar.SetProgressState(hwnd, flag) }.is_err() {
+                return false;
+            }
+            if flag == TBPF_NORMAL || flag == TBPF_PAUSED {
+                let fraction = if progress.is_finite() {
+                    progress.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let completed = (fraction * 1000.0).round() as u64;
+                return unsafe { taskbar.SetProgressValue(hwnd, completed, 1000) }.is_ok();
+            }
+            true
+        })
     }
 }
 

@@ -584,6 +584,74 @@ Window {
         token: root.objectName
     }
 
+    // Mirror both progress surfaces onto the Windows taskbar: the transfer
+    // queue uses byte-weighted totals, while other operations use their shared
+    // Workspace counters. A queue with no total yet stays indeterminate unless
+    // the other operation already has a useful fraction.
+    readonly property var taskbarTransferRows: {
+        try {
+            const rows = JSON.parse(Workspace.transfersJson)
+            return Array.isArray(rows) ? rows : []
+        } catch (error) {
+            return []
+        }
+    }
+    // QStringList exposes `.length` to QML; qmllint's type model does not.
+    // qmllint disable missing-property
+    readonly property int taskbarQueuedCount: Workspace.queuedTransfers.length
+    // qmllint enable missing-property
+    readonly property bool taskbarHasTransfers: taskbarTransferRows.length > 0
+        || taskbarQueuedCount > 0
+    readonly property var taskbarTransferAggregate: {
+        let done = 0
+        let total = 0
+        let running = 0
+        let paused = 0
+        for (const row of taskbarTransferRows) {
+            if (!row.running)
+                continue
+            running += 1
+            if (row.paused)
+                paused += 1
+            done += Math.max(0, Number(row.done) || 0)
+            total += Math.max(0, Number(row.total) || 0)
+        }
+        return { "done": done, "total": total, "running": running, "paused": paused }
+    }
+    readonly property bool taskbarTransfersPaused: taskbarHasTransfers
+        && taskbarQueuedCount === 0
+        && taskbarTransferAggregate.running > 0
+        && taskbarTransferAggregate.running === taskbarTransferRows.length
+        && taskbarTransferAggregate.paused === taskbarTransferAggregate.running
+    readonly property string taskbarState: {
+        if (taskbarTransfersPaused)
+            return "paused"
+        if (taskbarHasTransfers)
+            return taskbarTransferAggregate.total > 0
+                || (Workspace.busy && Workspace.progressTotal > 0) ? "normal" : "indeterminate"
+        if (!Workspace.busy)
+            return "none"
+        return Workspace.progressTotal > 0 ? "normal" : "indeterminate"
+    }
+    readonly property real taskbarFraction: {
+        let fraction = 0
+        if (taskbarTransferAggregate.total > 0) {
+            fraction = taskbarTransferAggregate.done / taskbarTransferAggregate.total
+        } else {
+            fraction = Workspace.progressTotal > 0
+                ? Workspace.progressDone / Workspace.progressTotal : 0
+        }
+        return Math.max(0, Math.min(1, fraction))
+    }
+
+    function syncTaskbarProgress() {
+        if (chrome && chrome.attached)
+            chrome.setTaskbarProgress(root.taskbarState, root.taskbarFraction)
+    }
+
+    onTaskbarStateChanged: root.syncTaskbarProgress()
+    onTaskbarFractionChanged: root.syncTaskbarProgress()
+
     /// One bin per window. The bin itself is process-wide, but a window that
     /// tears a tab off refreshes its own snapshot rather than sharing rows
     /// across windows.
@@ -7413,6 +7481,9 @@ Window {
 
         if (!chrome.attach())
             console.warn("dae: native window attach failed")
+        // A window created during a running operation starts with its current
+        // progress rather than waiting for the next backend tick.
+        root.syncTaskbarProgress()
         // The tab band is a client area of the caption. It can only be declared
         // once the window exists natively, so this runs after `attach` rather
         // than from the bar's own completion.
@@ -7490,6 +7561,7 @@ Window {
     }
 
     onClosing: {
+        chrome.setTaskbarProgress("none", 0)
         // The record is built while the tabs still exist: `disposeTabs` below
         // kills their models, and a closed tab in the record would restore an
         // empty folder.
