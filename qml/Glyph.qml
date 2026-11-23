@@ -35,8 +35,8 @@ Item {
     /// Controls: "chevron" (and its left/up/down forms), "check", "close",
     /// "refresh", "eye", "info", "copy", "cut", "paste", "pencil", "external",
     /// "undo", "sort", "filter", "split", "extract", "arrowLeft", "arrowRight",
-    /// "arrowUp", "pause", "play", "windowMin", "windowMax", "windowClose",
-    /// "windowFullScreen", "windowExitFullScreen".
+    /// "arrowUp", "arrowDown", "pause", "play", "windowMin", "windowMax",
+    /// "windowClose", "windowFullScreen", "windowExitFullScreen".
     /// Anything else draws nothing and the caller falls back to its label.
     property string kind: "home"
     /// The stroke and silhouette colour. Alpha is part of the key: the title

@@ -2628,12 +2628,13 @@ FocusScope {
                     height: Theme.controlXs
                     spacing: 7
 
-                    Text {
+                    Glyph {
                         visible: Workspace.defaultManagerBusy
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "↻"
-                        color: root.faintColor
-                        font.pixelSize: Theme.typeCaption
+                        width: 12
+                        height: 12
+                        kind: "refresh"
+                        tint: root.faintColor
 
                         RotationAnimator on rotation {
                             running: Workspace.defaultManagerBusy

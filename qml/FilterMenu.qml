@@ -169,11 +169,12 @@ Menu {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("清除名称筛选")
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "×"
-                    color: clearMouse.containsMouse ? Theme.ink : Theme.inkTertiary
-                    font.pixelSize: Theme.typeBody
+                    width: 12
+                    height: 12
+                    kind: "close"
+                    tint: clearMouse.containsMouse ? Theme.ink : Theme.inkTertiary
                 }
 
                 MouseArea {

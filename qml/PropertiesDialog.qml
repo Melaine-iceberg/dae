@@ -1475,11 +1475,12 @@ FocusScope {
             border.width: 1
             border.color: root.hairline
 
-            Text {
+            Glyph {
                 anchors.centerIn: parent
-                text: "✕"
-                color: root.mutedColor
-                font.pixelSize: Theme.typeMicro
+                width: 10
+                height: 10
+                kind: "close"
+                tint: root.mutedColor
             }
 
             MouseArea {

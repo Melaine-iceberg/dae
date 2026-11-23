@@ -409,14 +409,13 @@ Item {
                 radius: Theme.radiusFull
                 color: newMouse.containsMouse ? Theme.hover : "transparent"
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "+"
-                    color: newMouse.containsMouse
+                    width: 12
+                    height: 12
+                    kind: "plus"
+                    tint: newMouse.containsMouse
                         ? Theme.terminalInkStrong : Theme.terminalInk
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeCaption
-                    textFormat: Text.PlainText
                 }
 
                 Accessible.role: Accessible.Button
@@ -672,12 +671,13 @@ Item {
                     radius: Theme.radiusFull
                     color: prevMouse.containsMouse ? Theme.hover : "transparent"
 
-                    Text {
+                    Glyph {
                         anchors.centerIn: parent
-                        text: "↑"
-                        color: prevMouse.containsMouse
+                        width: 12
+                        height: 12
+                        kind: "arrowUp"
+                        tint: prevMouse.containsMouse
                             ? Theme.terminalInkStrong : Theme.terminalInk
-                        font.pixelSize: Theme.typeCaption
                     }
 
                     Accessible.role: Accessible.Button
@@ -698,12 +698,13 @@ Item {
                     radius: Theme.radiusFull
                     color: nextMouse.containsMouse ? Theme.hover : "transparent"
 
-                    Text {
+                    Glyph {
                         anchors.centerIn: parent
-                        text: "↓"
-                        color: nextMouse.containsMouse
+                        width: 12
+                        height: 12
+                        kind: "arrowDown"
+                        tint: nextMouse.containsMouse
                             ? Theme.terminalInkStrong : Theme.terminalInk
-                        font.pixelSize: Theme.typeCaption
                     }
 
                     Accessible.role: Accessible.Button

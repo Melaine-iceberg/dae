@@ -2384,13 +2384,13 @@ Item {
                     visible: row.statusMark !== ""
                     Accessible.ignored: true
 
-                    Text {
+                    Glyph {
                         anchors.centerIn: parent
                         visible: row.statusMark === "broken"
-                        text: "↗"
-                        color: Theme.danger
-                        font.pixelSize: Theme.typeMicro
-                        textFormat: Text.PlainText
+                        kind: "external"
+                        implicitWidth: 9
+                        implicitHeight: 9
+                        tint: Theme.danger
                     }
 
                     Item {
@@ -2597,16 +2597,14 @@ Item {
                 /// A symbolic link is marked at the end of the row (§6.1.6).
                 /// The marker sits in the row's right padding, so it never
                 /// shifts the columns beside it. A broken link uses `danger`.
-                Text {
+                Glyph {
                     visible: row.category === "link"
                     x: root.tableWidth - 16
                     width: 12
+                    height: 12
                     anchors.verticalCenter: parent.verticalCenter
-                    horizontalAlignment: Text.AlignRight
-                    text: "↗"
-                    color: row.brokenLink ? Theme.danger : Theme.inkTertiary
-                    font.pixelSize: Theme.typeCaption
-                    textFormat: Text.PlainText
+                    kind: "external"
+                    tint: row.brokenLink ? Theme.danger : Theme.inkTertiary
                     Accessible.ignored: true
                 }
 

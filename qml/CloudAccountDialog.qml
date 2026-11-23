@@ -318,11 +318,12 @@ Item {
                         color: copyMouse.containsMouse
                             ? Theme.hover : "transparent"
 
-                        Text {
+                        Glyph {
                             anchors.centerIn: parent
-                            text: root.copied ? "✓" : "⎘"
-                            color: root.copied ? root.accent : root.mutedColor
-                            font.pixelSize: Theme.typeCaption
+                            width: 12
+                            height: 12
+                            kind: root.copied ? "check" : "copy"
+                            tint: root.copied ? root.accent : root.mutedColor
                         }
                     }
 
