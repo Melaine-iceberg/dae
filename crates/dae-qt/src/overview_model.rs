@@ -1,8 +1,8 @@
 //! The overview page's rows and its project scan.
 //!
-//! The overview combines four independent sources: known places and custom
-//! favorites, the recent list, the user's spaces, and the git repositories
-//! behind recent folders. All of them read files — JSON stores, a disk
+//! The overview combines independent sources: known places and custom
+//! favorites, the recent list, tags, disks, and the git repositories behind
+//! recent folders. All of them read files — JSON stores, a disk
 //! listing, git — so `refresh` builds the row list on the blocking pool and
 //! lands it on the Qt thread; a generation counter keeps a slow build or
 //! scan from overwriting a newer refresh (a tab switch or a favorites
@@ -21,7 +21,6 @@ use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QStri
 use dae_core::fs::git::{self, GitEntryStatusKind};
 use dae_core::fs::recents::{self, RecentItem};
 use dae_core::fs::sidebar::{self, PlaceKind, SystemPlace};
-use dae_core::fs::spaces;
 use dae_core::fs::tags;
 use dae_core::fs::vfs;
 use dae_core::types::{EntryKind, display_name_from_path};
@@ -32,7 +31,6 @@ use crate::runtime;
 const SECTION_PROJECTS: &str = "Projects";
 const SECTION_FAVORITES: &str = "Favorites";
 const SECTION_RECENTS: &str = "Recent";
-const SECTION_SPACES: &str = "Spaces";
 const SECTION_TAGS: &str = "Tags";
 const SECTION_DRIVES: &str = "Drives";
 
@@ -190,7 +188,7 @@ pub struct OverviewModelRust {
     status: QString,
     generation: u64,
     /// Section names the landing page must not show, comma-separated
-    /// (`Projects`, `Favorites`, `Recent`, `Spaces`). Set from the shell's
+    /// (`Projects`, `Favorites`, `Recent`, `Tags`). Set from the shell's
     /// preference so hiding a widget survives a restart; empty shows all.
     hidden_sections: String,
 }
@@ -467,33 +465,6 @@ impl qobject::OverviewModel {
             }
         }
 
-        match spaces::list_spaces() {
-            Ok(spaces) => {
-                for space in spaces {
-                    rows.push(OverviewRow {
-                        section: SECTION_SPACES,
-                        kind: "space",
-                        name: space.name,
-                        path: space.id,
-                        detail: if space.items.is_empty() {
-                            "Empty space".to_owned()
-                        } else {
-                            let count = space.items.len();
-                            format!("{count} item{}", if count == 1 { "" } else { "s" })
-                        },
-                        icon: "space",
-                        is_directory: true,
-                        branch: String::new(),
-                        change_text: String::new(),
-                        time_text: String::new(),
-                    });
-                }
-            }
-            Err(error) => {
-                report_aux_error("overview", &error.to_string());
-            }
-        }
-
         rows.extend(tag_rows(tags::definitions(), &tags::counts()));
         rows.extend(drive_rows(sidebar::list_disks_sync()));
         (rows, candidates)
@@ -604,7 +575,7 @@ fn recent_row(item: &RecentItem) -> OverviewRow {
     }
 }
 
-/// A broken favorites/recents/spaces file must not hide the other sections.
+/// A broken favorites/recents file must not hide the other sections.
 /// The overview keeps rendering and the failure stays in the log rather than
 /// turning the landing page into an error screen.
 fn report_aux_error(source: &str, error: &str) {

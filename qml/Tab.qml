@@ -8,32 +8,21 @@ import dae 1.0
 QtObject {
     id: tab
 
-    /// What this tab is showing. A folder tab owns `listing`; the trash,
-    /// overview and space surfaces reuse the same tab so the tab strip keeps
-    /// one stable identity while the body swaps.
+    /// What this tab is showing. A folder tab owns `listing`; the trash and
+    /// overview surfaces reuse the same tab so the tab strip keeps one stable
+    /// identity while the body swaps.
     property string surface: "folder"
-    property string spaceId: ""
     /// Pinned tabs survive "close others" and "close left/right", and the strip
     /// marks them with a signal dot. The flag is part of the session record.
     property bool pinned: false
     readonly property bool folder: surface === "folder"
     readonly property bool trash: surface === "trash"
     readonly property bool overview: surface === "overview"
-    readonly property bool space: surface === "space"
-    readonly property string spaceTitle: {
-        // Reading `revision` is what makes a rename in another window update
-        // this tab's title.
-        if (surface !== "space" || spaceId === "" || Spaces.revision < 0)
-            return ""
-        return Spaces.nameOfId(spaceId)
-    }
     property string title: {
         if (surface === "trash")
             return qsTr("回收站")
         if (surface === "overview")
             return qsTr("概览")
-        if (surface === "space")
-            return spaceTitle.length > 0 ? spaceTitle : qsTr("空间")
         return listing.path !== "" ? listing.path : qsTr("新标签页")
     }
     property DirectoryListModel listing: DirectoryListModel {}
@@ -87,7 +76,6 @@ QtObject {
     /// an empty selection the way a fresh navigation does.
     function loadFolder(path, keepSelection) {
         surface = "folder"
-        spaceId = ""
         cancelSearch()
         listing.load(path)
         if (!keepSelection)
@@ -108,7 +96,7 @@ QtObject {
         if (!path || path.length === 0)
             return
         // Only a step away from a folder is worth remembering. Arriving here
-        // from the recycle bin, a space or the overview would otherwise push a
+        // from the recycle bin or the overview would otherwise push a
         // `listing.path` that no longer describes what the user was looking at.
         if (surface === "folder" && listing.path !== "" && listing.path !== path)
             backStack = pushHistory(backStack, historyEntry())
@@ -141,7 +129,6 @@ QtObject {
         cancelSearch()
         listing.clearSelection()
         surface = "trash"
-        spaceId = ""
     }
 
     /// Shows the landing page. Its data lives in the window's OverviewModel.
@@ -149,18 +136,6 @@ QtObject {
         cancelSearch()
         listing.clearSelection()
         surface = "overview"
-        spaceId = ""
-    }
-
-    /// Shows a space by id. The space view owns its item list; a rename keeps
-    /// the id stable, and deleting the space closes this surface.
-    function openSpace(id) {
-        if (!id)
-            return
-        cancelSearch()
-        listing.clearSelection()
-        surface = "space"
-        spaceId = id
     }
 
     function cancelSearch() {

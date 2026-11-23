@@ -15,14 +15,12 @@ use std::sync::{Mutex, OnceLock};
 
 use super::recents::{self, RecentItem};
 use super::sidebar::{Favorite, SystemPlace};
-use super::spaces::{self, Space};
 
 #[derive(Default)]
 pub struct StartupPrefetch {
     system_places: Mutex<Option<Vec<SystemPlace>>>,
     favorites: Mutex<Option<Vec<Favorite>>>,
     recents: Mutex<Option<Vec<RecentItem>>>,
-    spaces: Mutex<Option<Vec<Space>>>,
 }
 
 fn take<T>(slot: &Mutex<Option<T>>) -> Option<T> {
@@ -46,10 +44,6 @@ impl StartupPrefetch {
 
     pub fn take_recents(&self) -> Option<Vec<RecentItem>> {
         take(&self.recents)
-    }
-
-    pub fn take_spaces(&self) -> Option<Vec<Space>> {
-        take(&self.spaces)
     }
 }
 
@@ -80,9 +74,6 @@ pub fn warm_startup_data(places: Option<Vec<SystemPlace>>) {
         }
         if let Ok(recent_items) = recents::list_recents() {
             store(&state.recents, recent_items);
-        }
-        if let Ok(spaces_list) = spaces::list_spaces() {
-            store(&state.spaces, spaces_list);
         }
     });
 }

@@ -74,7 +74,6 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/material-marks.json", "qml/material-marks.json"),
     ("../../qml/SidebarTree.qml", "qml/SidebarTree.qml"),
     ("../../qml/OverviewView.qml", "qml/OverviewView.qml"),
-    ("../../qml/SpaceView.qml", "qml/SpaceView.qml"),
     ("../../qml/CommandPalette.qml", "qml/CommandPalette.qml"),
     ("../../qml/Menu.qml", "qml/Menu.qml"),
     ("../../qml/MenuList.qml", "qml/MenuList.qml"),

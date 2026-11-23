@@ -6,7 +6,7 @@ import dae 1.0
 // The landing page (§11.1): a quiet, grouped list, not a board.
 //
 // Titles and instructions are gone. The page opens on 快速访问, then the
-// groups the model publishes — 项目, 最近, 空间, 磁盘, 标签 — each on the same
+// groups the model publishes — 项目, 最近, 磁盘, 标签 — each on the same
 // 40 dp row the file list and the trash mount. A section heading is 11 px
 // tertiary type, not a card; a destination is never a sticky note.
 Item {
@@ -43,7 +43,7 @@ Item {
             root.quickAccess = [];
             return;
         }
-        const order = ["Projects", "Recent", "Spaces", "Drives", "Tags", "Favorites"]
+        const order = ["Projects", "Recent", "Drives", "Tags", "Favorites"]
         const buckets = ({})
         const total = root.model.count
         for (let row = 0; row < total; ++row) {
@@ -123,7 +123,6 @@ Item {
         case "videos": return "videos"
         case "star":
         case "favorite": return "star"
-        case "space": return "diamond"
         case "project": return "folder"
         case "tag": return "tag"
         case "drive": return "drive"
@@ -133,9 +132,7 @@ Item {
     }
 
     function openNote(note) {
-        if (note.kind === "space")
-            root.openRequested("space", note.path)
-        else if (note.kind === "tag")
+        if (note.kind === "tag")
             root.openRequested("tag", note.path)
         else if (note.kind === "recent" && !note.isDir)
             root.openRequested("file", note.path)
@@ -148,7 +145,6 @@ Item {
         case "Projects": return qsTr("项目")
         case "Favorites": return qsTr("快速访问")
         case "Recent": return qsTr("最近")
-        case "Spaces": return qsTr("空间")
         case "Tags": return qsTr("标签")
         case "Drives": return qsTr("磁盘")
         default: return value
@@ -169,8 +165,6 @@ Item {
     }
 
     function detailLabel(value) {
-        if (value === "Empty space")
-            return qsTr("空")
         const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
@@ -363,7 +357,7 @@ Item {
                 }
             }
 
-            /// ── 项目 / 最近 / 空间 / 磁盘 / 标签 ─────────────────────────
+            /// ── 项目 / 最近 / 磁盘 / 标签 ────────────────────────────────
             Repeater {
                 model: root.sections
 
@@ -409,14 +403,12 @@ Item {
                             showIcon: entry.modelData.kind === "project"
                                 || entry.modelData.kind === "recent"
                                 || entry.modelData.kind === "favorite"
-                            showLeading: entry.modelData.kind === "space"
-                                || entry.modelData.kind === "tag"
+                            showLeading: entry.modelData.kind === "tag"
                                 || entry.modelData.kind === "drive"
                             iconEdge: 18
                             meta: entry.modelData.kind === "recent"
                                 ? root.timeLabel(entry.modelData.timeText)
-                                : (entry.modelData.kind === "space"
-                                    || entry.modelData.kind === "tag"
+                                : (entry.modelData.kind === "tag"
                                     ? root.detailLabel(entry.modelData.detail) : "")
                             metaWidth: entry.modelData.kind === "recent" ? 84 : 120
                             accessibleName: entry.title
@@ -426,8 +418,7 @@ Item {
                             leading: Item {
                                 width: 18
                                 height: 18
-                                visible: entry.modelData.kind === "space"
-                                    || entry.modelData.kind === "tag"
+                                visible: entry.modelData.kind === "tag"
                                     || entry.modelData.kind === "drive"
 
                                 Glyph {

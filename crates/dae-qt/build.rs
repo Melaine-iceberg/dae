@@ -172,7 +172,6 @@ fn main() {
             "src/shell_command_model.rs",
             "src/sidebar_model.rs",
             "src/sidebar_tree_model.rs",
-            "src/spaces_model.rs",
             "src/overview_model.rs",
             "src/terminal.rs",
             "src/trash_model.rs",

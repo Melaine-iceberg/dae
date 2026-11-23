@@ -224,7 +224,7 @@ FocusScope {
             title: qsTr("全局"),
             actions: [
                 { id: "app.commandBar", label: qsTr("命令面板"),
-                  detail: qsTr("打开文件、空间与命令的快速搜索") },
+                  detail: qsTr("打开文件与命令的快速搜索") },
                 { id: "app.pathJump", label: qsTr("跳转路径"),
                   detail: qsTr("在地址栏中直接输入路径") },
                 { id: "app.toggleTerminal", label: qsTr("切换终端"),
@@ -1204,7 +1204,6 @@ FocusScope {
                                     { value: "Projects", label: qsTr("项目") },
                                     { value: "Favorites", label: qsTr("收藏") },
                                     { value: "Recent", label: qsTr("最近") },
-                                    { value: "Spaces", label: qsTr("空间") },
                                     { value: "Tags", label: qsTr("标签") },
                                     { value: "Drives", label: qsTr("驱动器") }
                                 ]

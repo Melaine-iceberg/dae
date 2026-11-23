@@ -25,7 +25,7 @@ Rectangle {
     border.width: 1
 
     // QStringList exposes `.length` to QML; qmllint's type model
-    // does not (same caveat in SpaceView/TransferQueue).
+    // does not (same caveat in TransferQueue).
     // qmllint disable missing-property
     readonly property int count: Workspace.queuedTransfers.length + transferRows.length
     // qmllint enable missing-property

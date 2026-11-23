@@ -24,7 +24,7 @@ Item {
     /// "breadcrumb", "address" or "search". The shell derives it from
     /// `pathEditing` and `searchOpen` so only one mode can be active.
     property string mode: "breadcrumb"
-    /// False for a surface label (overview, spaces, recycle bin) and for the
+    /// False for a surface label (overview, recycle bin) and for the
     /// split pane's trail.
     property bool interactive: true
     /// Draws the shared field well. The split pane keeps the bare trail.

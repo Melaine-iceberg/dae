@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 
-/// One list row. Every list-like page — overview, trash, spaces and the column
+/// One list row. Every list-like page — overview, trash and the column
 /// browser — mounts this instead of restating the row grammar: 40 dp tall by
 /// default, a glyph, one or two lines of text, optional trailing content.
 ///

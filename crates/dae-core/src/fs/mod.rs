@@ -55,7 +55,6 @@ pub mod shell_commands;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod smb;
-pub mod spaces;
 pub mod tags;
 pub mod templates;
 #[cfg(test)]

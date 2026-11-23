@@ -4,14 +4,14 @@ import QtQuick.Window
 import dae 1.0
 import "Shortcut.js" as ShortcutJS
 
-// The Mod+K palette: commands, spaces, favorites, recents, projects and a
-// progressive filename search in one keyboard-first surface. Filename and
-// content search are local-only, so a network scope keeps commands and jumps
-// but never starts a search walk.
+// The Mod+K palette: commands, favorites, recents, projects and a progressive
+// filename search in one keyboard-first surface. Filename and content search
+// are local-only, so a network scope keeps commands and jumps but never starts
+// a search walk.
 //
 // The row list is rebuilt from the shared models rather than kept in a second
-// store: `Spaces` owns the space list, `OverviewModel` owns the landing page's
-// rows, and the palette's own `SearchModel` owns the filename hits. A rebuild
+// store: `OverviewModel` owns the landing page's rows, and the palette's own
+// `SearchModel` owns the filename hits. A rebuild
 // re-reads those models, ranks the flat candidate set, then buckets the matches
 // back into sections so a section header never floats over an unrelated row.
 //
@@ -79,9 +79,7 @@ Item {
         input.text = ""
         paletteSearchModel.cancel()
         searchTimer.stop()
-        // The palette is the second entry point to Spaces and the overview, so
-        // it refreshes both rather than trusting that their page was visited.
-        Spaces.refresh()
+        // Refresh the overview rather than trusting that its page was visited.
         if (root.overviewModel !== null)
             root.overviewModel.refresh()
         root.visible = true
@@ -208,7 +206,7 @@ Item {
 
     /// Commands that are always reachable. The file and view groups are
     /// appended only while a folder surface is active, because their ids are
-    /// no-ops on the overview, a space or the recycle bin.
+    /// no-ops on the overview or the recycle bin.
     function navigationCommands() {
         const items = [
             root.command("overview", qsTr("概览"), "", "home", qsTr("导航")),
@@ -219,7 +217,6 @@ Item {
             // costs the only empty space there is.
             root.command("new-window", qsTr("新建窗口"), "", "", qsTr("导航")),
             root.command("close-tab", qsTr("关闭标签页"), root.chord("Mod+W"), "close", qsTr("导航")),
-            root.command("new-space", qsTr("新建空间…"), "", "diamond", qsTr("导航")),
             root.command("settings", qsTr("设置"),
                          root.shortcutHint("app.openSettings", "Ctrl+,"),
                          "gear", qsTr("导航"))
@@ -322,34 +319,12 @@ Item {
         ]
     }
 
-    function spaceCandidates() {
-        const items = []
-        for (let index = 0; index < Spaces.count; index += 1) {
-            const name = Spaces.nameAt(index)
-            const count = Spaces.itemCountAt(index)
-            items.push({
-                group: qsTr("空间"),
-                label: qsTr("打开空间 “") + name + "”",
-                hint: count > 0 ? count + qsTr(" 项") : qsTr("空"),
-                glyph: "diamond",
-                kind: "space",
-                value: Spaces.idAt(index),
-                keywords: qsTr("空间 space workspace ") + name
-            })
-        }
-        return items
-    }
-
     function overviewCandidates() {
         const items = []
         if (root.overviewModel === null)
             return items
         for (let index = 0; index < root.overviewModel.count; index += 1) {
             const kind = root.overviewModel.kindAt(index)
-            // Spaces are already listed from the singleton, which is the
-            // authoritative source and does not wait for the project scan.
-            if (kind === "space")
-                continue
             const name = root.overviewModel.nameAt(index)
             const path = root.overviewModel.pathAt(index)
             const detail = root.overviewModel.detailAt(index)
@@ -446,8 +421,8 @@ Item {
     }
 
     /// §7.5 gives the palette exactly three sections: 文件 / 命令 / 位置.
-    /// The candidate vocabulary is finer than that (spaces, favorites,
-    /// recents, projects, jump, search), so the sections are derived from
+    /// The candidate vocabulary is finer than that (favorites, recents,
+    /// projects, jump, search), so the sections are derived from
     /// what a row *is* rather than from the group it was registered under.
     function displayGroup(item) {
         if (item.kind === "command")
@@ -476,7 +451,6 @@ Item {
         if (direct !== null)
             candidates.push(direct)
         candidates.push.apply(candidates, root.navigationCommands())
-        candidates.push.apply(candidates, root.spaceCandidates())
         candidates.push.apply(candidates, root.overviewCandidates())
         if (root.folderActive) {
             candidates.push.apply(candidates, root.fileCommands())
@@ -767,7 +741,7 @@ Item {
                 // or the field is announced as "text".
                 Accessible.role: Accessible.EditableText
                 Accessible.name: qsTr("命令面板搜索")
-                Accessible.description: qsTr("搜索文件、空间或命令")
+                Accessible.description: qsTr("搜索文件或命令")
 
                 // `textEdited` covers keystrokes only: a paste, or any other
                 // programmatic write into the field, leaves the query at its
@@ -819,7 +793,7 @@ Item {
                 anchors.leftMargin: 49
                 anchors.verticalCenter: parent.verticalCenter
                 visible: input.text.length === 0
-                text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
+                text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件或命令")
                 color: Theme.inkTertiary
                 font.pixelSize: Theme.typeInput
             }
@@ -1039,7 +1013,7 @@ Item {
                 width: parent.width
                 visible: !root.searchingFiles
                 text: root.trimmedQuery.length === 0
-                    ? qsTr("试试命令名、文件路径，或一个空间的名字。")
+                    ? qsTr("试试命令名或文件路径。")
                     : qsTr("试试其他关键词，或输入一个路径直接跳转。")
                 color: Theme.inkTertiary
                 font.pixelSize: Theme.typeCaption

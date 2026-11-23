@@ -420,11 +420,6 @@
         <translation>Close tab</translation>
     </message>
     <message>
-        <location filename="../CommandPalette.qml" line="221"/>
-        <source>新建空间…</source>
-        <translation>New space…</translation>
-    </message>
-    <message>
         <location filename="../CommandPalette.qml" line="222"/>
         <source>设置</source>
         <translation>Settings</translation>
@@ -626,16 +621,6 @@
         <translation>Clear filters</translation>
     </message>
     <message>
-        <location filename="../CommandPalette.qml" line="322"/>
-        <source>空间</source>
-        <translation>Spaces</translation>
-    </message>
-    <message>
-        <location filename="../CommandPalette.qml" line="323"/>
-        <source>打开空间 “</source>
-        <translation>Open space “</translation>
-    </message>
-    <message>
         <location filename="../CommandPalette.qml" line="324"/>
         <source> 项</source>
         <translation> items</translation>
@@ -644,11 +629,6 @@
         <location filename="../CommandPalette.qml" line="324"/>
         <source>空</source>
         <translation>Empty</translation>
-    </message>
-    <message>
-        <location filename="../CommandPalette.qml" line="328"/>
-        <source>空间 space workspace </source>
-        <translation>space workspace </translation>
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="350"/>
@@ -708,8 +688,8 @@
     <message>
         <location filename="../CommandPalette.qml" line="703"/>
         <location filename="../CommandPalette.qml" line="755"/>
-        <source>搜索文件、空间或命令</source>
-        <translation>Search files, spaces, or commands</translation>
+        <source>搜索文件或命令</source>
+        <translation>Search files or commands</translation>
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="817"/>
@@ -803,8 +783,8 @@
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="974"/>
-        <source>试试命令名、文件路径，或一个空间的名字。</source>
-        <translation>Try a command, a file path, or the name of a space.</translation>
+        <source>试试命令名或文件路径。</source>
+        <translation>Try a command or a file path.</translation>
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="266"/>
@@ -3495,11 +3475,6 @@
         <translation>Recent</translation>
     </message>
     <message>
-        <location filename="../OverviewView.qml" line="322"/>
-        <source>空间</source>
-        <translation>Space</translation>
-    </message>
-    <message>
         <location filename="../OverviewView.qml" line="323"/>
         <source>标签</source>
         <translation>Tags</translation>
@@ -3545,11 +3520,6 @@
         <translation>Videos</translation>
     </message>
     <message>
-        <location filename="../OverviewView.qml" line="344"/>
-        <source>空空间</source>
-        <translation>Empty space</translation>
-    </message>
-    <message>
         <location filename="../OverviewView.qml" line="347"/>
         <location filename="../OverviewView.qml" line="594"/>
         <source>%1 项</source>
@@ -3591,15 +3561,10 @@
         <translation>Overview</translation>
     </message>
     <message>
-        <location filename="../OverviewView.qml" line="427"/>
-        <source>从收藏、最近访问与空间继续。</source>
-        <translation>Pick up where you left off, or start from a favourite.</translation>
-    </message>
-    <message>
         <location filename="../OverviewView.qml" line="472"/>
         <location filename="../OverviewView.qml" line="503"/>
-        <source>搜索文件、空间或命令</source>
-        <translation>Search files, spaces, or commands</translation>
+        <source>搜索文件或命令</source>
+        <translation>Search files or commands</translation>
     </message>
     <message>
         <location filename="../OverviewView.qml" line="440"/>
@@ -4365,8 +4330,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="210"/>
-        <source>打开文件、空间与命令的快速搜索</source>
-        <translation>Quickly search files, spaces, and commands</translation>
+        <source>打开文件与命令的快速搜索</source>
+        <translation>Quickly search files and commands</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="211"/>
@@ -5295,11 +5260,6 @@
         <translation>Recent</translation>
     </message>
     <message>
-        <location filename="../SettingsPanel.qml" line="1007"/>
-        <source>空间</source>
-        <translation>Spaces</translation>
-    </message>
-    <message>
         <location filename="../SettingsPanel.qml" line="1024"/>
         <source>背景图</source>
         <translation>Background image</translation>
@@ -5633,11 +5593,6 @@
         <location filename="../ShellWindow.qml" line="183"/>
         <source>概览</source>
         <translation>Overview</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="185"/>
-        <source>空间</source>
-        <translation>Space</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="276"/>
@@ -6065,16 +6020,6 @@
         <translation>Empty Trash</translation>
     </message>
     <message>
-        <location filename="../ShellWindow.qml" line="1243"/>
-        <source>无法删除空间</source>
-        <translation>Could not delete space</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="1245"/>
-        <source>空间已删除</source>
-        <translation>Space deleted</translation>
-    </message>
-    <message>
         <location filename="../ShellWindow.qml" line="1457"/>
         <source>内容搜索只支持本地目录</source>
         <translation>Content search only supports local folders</translation>
@@ -6123,69 +6068,9 @@
         <translation>Rename</translation>
     </message>
     <message>
-        <location filename="../ShellWindow.qml" line="2008"/>
-        <source>新建空间</source>
-        <translation>New space</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2008"/>
-        <source>新空间</source>
-        <translation>New space</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2016"/>
-        <source>重命名空间</source>
-        <translation>Rename space</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2312"/>
-        <source>预设空间不能删除</source>
-        <translation>Preset spaces cannot be deleted</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2317"/>
-        <source>删除空间？</source>
-        <translation>Delete space?</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2318"/>
-        <source>空间 “</source>
-        <translation>Space “</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2318"/>
-        <source>” 将被删除，其中的项目不会从磁盘移除。</source>
-        <translation>” will be deleted. Its items will not be removed from disk.</translation>
-    </message>
-    <message>
         <location filename="../ShellWindow.qml" line="2319"/>
         <source>删除</source>
         <translation>Delete</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2327"/>
-        <source>无法添加到空间</source>
-        <translation>Could not add to space</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2329"/>
-        <source>已添加到“</source>
-        <translation>Added to “</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2346"/>
-        <source>无法创建空间</source>
-        <translation>Could not create space</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2351"/>
-        <source>已创建空间</source>
-        <translation>Space created</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2356"/>
-        <source>无法重命名空间</source>
-        <translation>Could not rename space</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="2374"/>
@@ -6196,11 +6081,6 @@
         <location filename="../ShellWindow.qml" line="2376"/>
         <source>无法保存搜索</source>
         <translation>Could not save search</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2390"/>
-        <source>新建空间并添加…</source>
-        <translation>New space and add…</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="2437"/>
@@ -6351,11 +6231,6 @@
         <translation>Add to favorites</translation>
     </message>
     <message>
-        <location filename="../ShellWindow.qml" line="2578"/>
-        <source>添加到空间</source>
-        <translation>Add to space</translation>
-    </message>
-    <message>
         <location filename="../ShellWindow.qml" line="2457"/>
         <source>移到回收站</source>
         <translation>Move to Trash</translation>
@@ -6456,11 +6331,6 @@
         <location filename="../ShellWindow.qml" line="4744"/>
         <source>读取概览…</source>
         <translation>Loading overview…</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="4746"/>
-        <source>空间 · </source>
-        <translation>Space · </translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="4746"/>
@@ -7201,59 +7071,6 @@
     </message>
 </context>
 <context>
-    <name>SpaceView</name>
-    <message>
-        <location filename="../SpaceView.qml" line="55"/>
-        <source>无法从空间移除</source>
-        <translation>Could not remove from space</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="99"/>
-        <source>空间</source>
-        <translation>Space</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="107"/>
-        <source>还没有固定项目</source>
-        <translation>No pinned items yet</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="108"/>
-        <source> 个固定项目</source>
-        <translation> pinned items</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="121"/>
-        <source>重命名</source>
-        <translation>Rename</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="128"/>
-        <source>删除空间</source>
-        <translation>Delete space</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="232"/>
-        <source>移除</source>
-        <translation>Remove</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="282"/>
-        <source>不可撤销</source>
-        <translation>Cannot be undone</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="253"/>
-        <source>在文件上右键，选择“添加到空间”，把常用位置固定到这里。</source>
-        <translation>Right-click a file and choose “Add to Space” to pin frequently used locations here.</translation>
-    </message>
-    <message>
-        <location filename="../SpaceView.qml" line="252"/>
-        <source>这个空间是空的</source>
-        <translation>This space is empty</translation>
-    </message>
-</context>
-<context>
     <name>StatusCenter</name>
     <message>
         <location filename="../StatusCenter.qml" line="62"/>
@@ -7320,11 +7137,6 @@
         <location filename="../Tab.qml" line="34"/>
         <source>概览</source>
         <translation>Overview</translation>
-    </message>
-    <message>
-        <location filename="../Tab.qml" line="36"/>
-        <source>空间</source>
-        <translation>Space</translation>
     </message>
 </context>
 <context>

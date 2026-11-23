@@ -187,18 +187,14 @@ Window {
     readonly property var gitListing: activeTab !== null ? activeTab.listing : null
     readonly property bool trashActive: activeTab !== null && activeTab.trash
     readonly property bool overviewActive: activeTab !== null && activeTab.overview
-    readonly property bool spaceActive: activeTab !== null && activeTab.space
     readonly property bool folderActive: activeTab !== null && activeTab.folder
-    readonly property string activeSpaceId: spaceActive ? activeTab.spaceId : ""
-    /// The bar's label for the three non-folder surfaces. A folder tab keeps
+    /// The bar's label for the two non-folder surfaces. A folder tab keeps
     /// using the breadcrumb trail or the path editor.
     readonly property string surfaceTitle: {
         if (trashActive)
             return qsTr("回收站")
         if (overviewActive)
             return qsTr("概览")
-        if (spaceActive)
-            return activeTab.spaceTitle.length > 0 ? activeTab.spaceTitle : qsTr("空间")
         return ""
     }
     readonly property bool gitVisible: folderActive && gitListing !== null
@@ -756,8 +752,6 @@ Window {
             Qt.callLater(fileList.takeFocus)
         else if (root.overviewActive)
             Qt.callLater(overviewView.takeFocus)
-        else if (root.spaceActive)
-            Qt.callLater(spaceView.takeFocus)
     }
 
     function addTab(path) {
@@ -767,9 +761,9 @@ Window {
     }
 
     /// §10.2's new tab: it lands on the folder the window is showing, not on
-    /// the start page. A surface tab (overview, space, recycle bin) still
-    /// knows its directory, so the new tab is a folder tab there too; only a
-    /// window that has never shown a folder falls back to the home directory.
+    /// the start page. A surface tab (overview or recycle bin) still knows its
+    /// directory, so the new tab is a folder tab there too; only a window that
+    /// has never shown a folder falls back to the home directory.
     function addTabHere() {
         let path = root.activeTab !== null ? root.activeTab.listing.path : ""
         if (path === "")
@@ -777,14 +771,12 @@ Window {
         root.addTab(path)
     }
 
-    function addSurfaceTab(kind, id) {
+    function addSurfaceTab(kind) {
         const tab = createTab("")
         if (tab === null)
             return
         if (kind === "overview")
             tab.openOverview()
-        else if (kind === "space")
-            tab.openSpace(id)
         else if (kind === "trash")
             tab.openTrash()
         root.insertTab(tab)
@@ -894,7 +886,6 @@ Window {
             forward.push(tab.forwardStack[index].path)
         return {
             "surface": tab.surface,
-            "spaceId": tab.spaceId,
             "path": tab.listing.path,
             "pinned": tab.pinned,
             "back": back,
@@ -914,8 +905,10 @@ Window {
             tab.openTrash()
         } else if (state.surface === "overview") {
             tab.openOverview()
-        } else if (state.surface === "space" && state.spaceId) {
-            tab.openSpace(state.spaceId)
+        } else if (state.surface === "space" && !state.path) {
+            // Sessions from older versions may still name a removed space.
+            // Fall back to the overview rather than leaving an empty tab.
+            tab.openOverview()
         } else if (state.path) {
             tab.loadFolder(state.path, false)
         }
@@ -1524,32 +1517,6 @@ Window {
         Qt.callLater(overviewView.takeFocus)
     }
 
-    /// Opens a space surface. `SpaceView` binds to the active tab's space id and
-    /// reloads its items when the shared `Spaces` revision changes.
-    function openSpace(id) {
-        if (root.activeTab === null || root.modalOpen || !id || id.length === 0)
-            return
-        root.pathEditing = false
-        root.resetSearchState()
-        inspector.showPaths([])
-        root.activeTab.openSpace(id)
-        Qt.callLater(spaceView.takeFocus)
-    }
-
-    /// A space deleted in another window must not leave a tab pointing at a
-    /// missing id. Any such tab falls back to the overview, the closest safe
-    /// surface; the active one is re-focused by `openOverview` only if the user
-    /// was already on another tab.
-    function reconcileSpaces() {
-        for (let index = 0; index < root.tabs.length; index += 1) {
-            const tab = root.tabs[index]
-            if (tab.space && Spaces.nameOfId(tab.spaceId) === "")
-                tab.openOverview()
-        }
-        if (root.overviewActive)
-            overviewModelInstance.refresh()
-    }
-
     function trashTargetIds() {
         const ids = trashView.selectedIdList()
         if (ids.length > 0)
@@ -1609,13 +1576,6 @@ Window {
             Workspace.emptyTrash()
         } else if (mode === "remoteDelete") {
             Workspace.deleteEntries(ids)
-        } else if (mode === "deleteSpace") {
-            const spaceId = ids.length > 0 ? ids[0] : ""
-            if (!Spaces.deleteSpace(spaceId))
-                toast.show(Spaces.error !== ""
-                    ? root.localizeBackend(Spaces.error) : qsTr("无法删除空间"), true)
-            else
-                toast.show(qsTr("空间已删除"), false)
         }
         root.modalClosed()
     }
@@ -1901,8 +1861,8 @@ Window {
         if (root.remoteLocation)
             return
         if (!root.folderActive) {
-            // The overview and a space have no listing to search in; open the
-            // folder the tab came from first, then run the tag search there.
+            // The overview has no listing to search in; open the folder the
+            // tab came from first, then run the tag search there.
             root.navigate(root.activePath)
         }
         const query = "tag:" + name
@@ -2549,8 +2509,8 @@ Window {
     }
 
     /// §10.3: a drop on a tab moves the files into the folder that tab shows.
-    /// A surface tab (overview, space, recycle bin) has no directory to take
-    /// them, so it refuses instead of guessing one.
+    /// A surface tab (overview or recycle bin) has no directory to take them,
+    /// so it refuses instead of guessing one.
     function dropFilesOnTab(index, paths) {
         if (index < 0 || index >= root.tabs.length)
             return
@@ -2558,22 +2518,6 @@ Window {
         if (tab === null || !tab.folder || tab.listing.path === "")
             return
         root.dropFilesOnPath(paths, tab.listing.path)
-    }
-
-    function promptSpaceCreate(addPath) {
-        if (root.modalOpen)
-            return
-        root.promptMode = "spaceCreate"
-        root.promptPath = addPath !== undefined ? addPath : ""
-        namePrompt.open(qsTr("新建空间"), qsTr("新空间"), "")
-    }
-
-    function promptSpaceRename(id, name) {
-        if (root.modalOpen || !id)
-            return
-        root.promptMode = "spaceRename"
-        root.promptPath = id
-        namePrompt.open(qsTr("重命名空间"), name, "")
     }
 
     /// One entry point for the palette. It closes first, then the surface
@@ -2594,10 +2538,6 @@ Window {
         }
         if (kind === "trash") {
             root.openTrash()
-            return
-        }
-        if (kind === "space") {
-            root.openSpace(value)
             return
         }
         if (kind === "navigate") {
@@ -2629,8 +2569,6 @@ Window {
             root.closeTab(root.activeIndex)
         else if (id === "settings")
             settingsPanel.open()
-        else if (id === "new-space")
-            root.promptSpaceCreate()
         else if (id === "path-jump") {
             if (root.folderActive)
                 root.beginPathEditing()
@@ -2871,30 +2809,6 @@ Window {
         }
     }
 
-    function requestSpaceDelete(id, name) {
-        if (root.modalOpen || !id)
-            return
-        if (Spaces.isPresetOfId(id)) {
-            toast.show(qsTr("预设空间不能删除"), true)
-            return
-        }
-        root.confirmMode = "deleteSpace"
-        root.confirmTrashIds = [id]
-        confirmDialog.open(qsTr("删除空间？"),
-                           qsTr("空间 “") + name + qsTr("” 将被删除，其中的项目不会从磁盘移除。"),
-                           qsTr("删除"), true)
-    }
-
-    function addPathToSpace(spaceId, path) {
-        if (!spaceId || !path)
-            return
-        if (!Spaces.addItem(spaceId, path))
-            toast.show(Spaces.error !== ""
-                ? root.localizeBackend(Spaces.error) : qsTr("无法添加到空间"), true)
-        else
-            toast.show(qsTr("已添加到“") + Spaces.nameOfId(spaceId) + "”", false)
-    }
-
     function acceptName(text) {
         const mode = root.promptMode
         const path = root.promptPath
@@ -2909,22 +2823,7 @@ Window {
             Workspace.createFromTemplate(path, template, text)
         else if (mode === "rename")
             Workspace.renameEntry(path, text)
-        else if (mode === "spaceCreate") {
-            const id = Spaces.createSpace(text)
-            if (id === "")
-                toast.show(Spaces.error !== ""
-                    ? root.localizeBackend(Spaces.error) : qsTr("无法创建空间"), true)
-            else {
-                if (path !== "")
-                    Spaces.addItem(id, path)
-                root.openSpace(id)
-                toast.show(qsTr("已创建空间"), false)
-            }
-        } else if (mode === "spaceRename") {
-            if (!Spaces.renameSpace(path, text))
-                toast.show(Spaces.error !== ""
-                    ? root.localizeBackend(Spaces.error) : qsTr("无法重命名空间"), true)
-        } else if (mode === "saveSearch") {
+        else if (mode === "saveSearch") {
             // The spec is one JSON object rather than ten arguments: the
             // preference setter takes a `SavedSearch`, and a spec that grows a
             // field later does not change the call.
@@ -2945,20 +2844,6 @@ Window {
             else
                 toast.show(qsTr("无法保存搜索"), true)
         }
-    }
-
-    /// The row menu's space submenu is built from the shared singleton, so it
-    /// never lists a stale rename. The final entry creates a space and pins the
-    /// row in one prompt.
-    function spaceSubmenu() {
-        const entries = []
-        for (let index = 0; index < Spaces.count; index += 1)
-            entries.push({ id: "addSpace:" + Spaces.idAt(index),
-                           glyph: "diamond",
-                           label: Spaces.nameAt(index) })
-        entries.push({ separator: true })
-        entries.push({ id: "newSpaceAdd", glyph: "plus", label: qsTr("新建空间并添加…") })
-        return entries
     }
 
     function showRowMenu(path, isDir, x, y) {
@@ -3189,8 +3074,6 @@ Window {
         items.push({ separator: true })
         items.push({ id: "favorite", glyph: "star", label: qsTr("加入收藏"),
                      enabled: hasPath && isDir })
-        items.push({ id: "addToSpace", glyph: "diamond", label: qsTr("添加到空间"),
-                     enabled: hasPath, submenu: root.spaceSubmenu() })
         items.push({ separator: true })
         items.push({ id: "delete", glyph: "trash", label: qsTr("永久删除"),
                      shortcut: root.shortcutDisplay("explorer.deletePermanent"),
@@ -3795,13 +3678,6 @@ Window {
             root.clearContext()
             return
         }
-        // The row menu's space submenu also encodes its destination, because
-        // the menu itself has no per-item state once it opens.
-        if (id.indexOf("addSpace:") === 0) {
-            root.addPathToSpace(id.substring("addSpace:".length), path)
-            root.clearContext()
-            return
-        }
         if (id.indexOf("hidePlace:") === 0) {
             Workspace.hidePlace(id.substring("hidePlace:".length))
             root.clearContext()
@@ -3868,11 +3744,6 @@ Window {
         if (id === "menuBack") {
             root.rowMenuMore = false
             menu.openAt(menu.openX, menu.openY, root.rowMenuItems())
-            return
-        }
-        if (id === "newSpaceAdd") {
-            root.promptSpaceCreate(path)
-            root.clearContext()
             return
         }
         switch (id) {
@@ -4131,8 +4002,6 @@ Window {
             }
             if (root.overviewActive)
                 overviewView.takeFocus()
-            else if (root.spaceActive)
-                spaceView.takeFocus()
             else if (root.trashActive)
                 trashView.takeFocus()
             else if (root.splitActive && root.splitFocused)
@@ -4174,19 +4043,6 @@ Window {
         const panel = terminalLoader.item as TerminalPanel
         if (panel !== null)
             panel.focusTerminal()
-    }
-
-    Connections {
-        target: Spaces
-
-        function onChanged() {
-            root.reconcileSpaces()
-            // The landing page lists spaces too; refresh it in place so a
-            // rename or a new space is not a stale row.
-            overviewModelInstance.refresh()
-            if (commandPalette.shown)
-                commandPalette.rebuild()
-        }
     }
 
     Connections {
@@ -5790,9 +5646,7 @@ Window {
                         commandShortcut: root.shortcutDisplay("app.commandBar")
 
                         onOpenRequested: function (kind, path) {
-                            if (kind === "space")
-                                root.openSpace(path)
-                            else if (kind === "tag")
+                            if (kind === "tag")
                                 root.searchTag(path)
                             else if (kind === "file")
                                 Workspace.openPath(path)
@@ -5802,31 +5656,6 @@ Window {
                         onCommandPaletteRequested: commandPalette.openPalette()
                     }
 
-                    SpaceView {
-                        id: spaceView
-                        anchors.fill: parent
-                        visible: root.spaceActive
-                        spaceId: root.activeSpaceId
-                        dark: root.dark
-                        accent: root.accent
-                        textColor: root.textColor
-                        mutedColor: root.mutedColor
-                        hairline: root.hairline
-                        headerColor: root.chromeColor
-
-                        onOpenRequested: function (path) {
-                            root.navigate(path)
-                        }
-                        onRenameRequested: function (id, name) {
-                            root.promptSpaceRename(id, name)
-                        }
-                        onDeleteRequested: function (id, name) {
-                            root.requestSpaceDelete(id, name)
-                        }
-                        onErrorReported: function (message) {
-                            toast.show(root.localizeBackend(message), true)
-                        }
-                    }
                 }
 
                 // Built on first use, not with the window: see `terminalLoaded`.
@@ -6042,8 +5871,6 @@ Window {
                             : (overviewModelInstance.loaded
                                 ? overviewModelInstance.count + qsTr(" 个入口")
                                 : qsTr("读取概览…"))
-                    if (root.spaceActive)
-                        return qsTr("空间 · ") + spaceView.itemCount + qsTr(" 项")
                     if (root.trashActive) {
                         const bin = trashModel.loaded
                             ? root.localizeBackend(trashModel.status)
