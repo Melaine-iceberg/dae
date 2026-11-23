@@ -389,6 +389,31 @@ Window {
         default: return Localize.message(text)
         }
     }
+
+    /// The strip's line while the shell runs a command that is not a transfer.
+    /// The measure leads and the label follows because the strip elides from the
+    /// right: a file name is the one part of this line that may be cut, the
+    /// number is the part that says how much is left. Until the operation knows
+    /// its size — a trash purge is still listing the bin — `progressTotal` is 0,
+    /// and printing "0/0" would be worse than printing nothing.
+    function operationProgressText() {
+        const label = root.localizeBackend(Workspace.progressLabel)
+        const total = Workspace.progressTotal
+        if (total <= 0)
+            return label
+        const done = Workspace.progressDone
+        // A delete and the size walk count entries, so the count is the honest
+        // number to print. Compressing and extracting count bytes, where
+        // "1048576/52428800" would read as an item count and be wrong by six
+        // orders of magnitude; a move is either — it copies bytes across
+        // volumes and counts entries when it only re-links them — so both get
+        // the percentage, which is right either way.
+        const kind = Workspace.progressKind
+        if (kind === "delete" || kind === "properties")
+            return done + "/" + total + " · " + label
+        return Math.round(done * 100 / total) + "% · " + label
+    }
+
     /// §7.3.3's left-hand sentence: `58 项 · 2 个文件夹 · 56 个文件`. The two
     /// counts come from the same single pass that already fills the type
     /// breakdown, so this line costs no extra walk. A listing that ended in an
@@ -5946,6 +5971,56 @@ Window {
                 color: Theme.hairline
             }
 
+            /// The shared operation's bar. Everything the shell runs that is not
+            /// a transfer — a delete, a trash purge, an extraction, a size walk —
+            /// reports into `progressDone` / `progressTotal`, and until now only
+            /// its caption reached the strip: a purge said what it was doing but
+            /// never how much was left. The bottom edge is the track, so the bar
+            /// takes no horizontal room and cannot push the transfer chip or the
+            /// pane switches aside on a narrow window.
+            M3Progress {
+                id: operationLine
+
+                /// Held back for a blink, the same rule the listing's loading
+                /// line follows: a rename or a single-file delete finishes
+                /// inside it and must not flash a bar.
+                property bool armed: false
+                readonly property int total: Workspace.progressTotal
+                readonly property int done: Workspace.progressDone
+                /// No total yet — the operation is still working out how much
+                /// work there is (a trash purge lists the bin first) — so the
+                /// segment sweeps instead of sitting at zero.
+                readonly property bool pending: operationLine.total <= 0
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 3
+                visible: operationLine.armed && Workspace.busy
+                thickness: 3
+                wavy: false
+                value: operationLine.pending ? 0
+                    : Math.max(0, Math.min(1, operationLine.done / operationLine.total))
+                indeterminate: operationLine.pending
+                z: 5
+
+                Timer {
+                    repeat: false
+                    interval: 250
+                    running: Workspace.busy
+                    onTriggered: operationLine.armed = true
+                }
+
+                Connections {
+                    target: Workspace
+
+                    function onBusyChanged() {
+                        if (!Workspace.busy)
+                            operationLine.armed = false
+                    }
+                }
+            }
+
             // ── Left: what the listing holds ──────────────────────────────
             Text {
                 id: statusText
@@ -5954,6 +6029,13 @@ Window {
                 text: {
                     if (root.activeTab === null)
                         return ""
+                    // A command the shell is running outranks whatever the page
+                    // would otherwise say, so it is asked here rather than at the
+                    // end: the per-surface summaries below return early, which is
+                    // why a purge started from the bin used to leave the bin's own
+                    // line on the strip while its entries were counted down.
+                    if (Workspace.busy && Workspace.progressLabel !== "")
+                        return root.operationProgressText()
                     if (root.overviewActive)
                         return overviewModelInstance.projectBusy
                             ? qsTr("查找项目…")
@@ -5980,8 +6062,6 @@ Window {
                     }
                     const listing = root.actionList !== null
                         ? root.actionList.activeModel() : root.activeTab.listing
-                    if (Workspace.busy && Workspace.progressLabel !== "")
-                        return root.localizeBackend(Workspace.progressLabel)
                     const base = root.listingSummary(listing)
                     return base
                 }

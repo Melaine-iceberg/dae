@@ -126,6 +126,14 @@ pub mod qobject {
         #[qproperty(QString, progress_label, cxx_name = "progressLabel")]
         #[qproperty(i32, progress_done, cxx_name = "progressDone")]
         #[qproperty(i32, progress_total, cxx_name = "progressTotal")]
+        /// What `progressDone` counts, as the core's code for the operation:
+        /// `delete` and `properties` raise it by entries, `compress` and
+        /// `extract` by bytes, and a move by either — bytes when it copies
+        /// across volumes, entries when it only re-links. The strip prints a
+        /// count where the unit is certain and a percentage everywhere else,
+        /// so it has to know which it is looking at. Empty until an operation
+        /// reports.
+        #[qproperty(QString, progress_kind, cxx_name = "progressKind")]
         /// The conflict the dialog is showing, one at a time — the Tauri shell's
         /// dialog walked its list the same way, with one "apply to all" escape
         /// hatch, so QML never needs the whole list at once. `conflictIndex` is
@@ -934,6 +942,7 @@ pub struct WorkspaceRust {
     progress_label: QString,
     progress_done: i32,
     progress_total: i32,
+    progress_kind: QString,
     conflict_index: i32,
     conflict_total: i32,
     conflict_name: QString,
@@ -1038,6 +1047,7 @@ impl Default for WorkspaceRust {
             progress_label: QString::default(),
             progress_done: 0,
             progress_total: 0,
+            progress_kind: QString::default(),
             conflict_index: 0,
             conflict_total: 0,
             conflict_name: QString::default(),
@@ -1273,6 +1283,10 @@ impl qobject::Workspace {
         self.as_mut().set_busy(true);
         self.as_mut().set_progress_done(0);
         self.as_mut().set_progress_total(0);
+        // Unknown until the operation reports: a rename sends no progress at
+        // all, and a stale code from the previous command would make the strip
+        // read the new one's numbers in the wrong unit.
+        self.as_mut().set_progress_kind(QString::default());
         self.as_mut().set_progress_label(QString::from(label));
         self.as_mut().set_last_error(QString::default());
     }
@@ -1743,6 +1757,7 @@ impl qobject::Workspace {
         self.as_mut().set_busy(active > 0);
         self.as_mut().set_progress_done(0);
         self.as_mut().set_progress_total(0);
+        self.as_mut().set_progress_kind(QString::default());
         self.as_mut().set_progress_label(QString::default());
     }
 
@@ -1804,6 +1819,8 @@ impl qobject::Workspace {
                     .unwrap_or_else(|| operation_label(operation).to_owned());
                 self.as_mut()
                     .set_progress_label(QString::from(label.as_str()));
+                self.as_mut()
+                    .set_progress_kind(QString::from(operation.code()));
                 self.as_mut()
                     .set_progress_done(completed.min(i32::MAX as u64) as i32);
                 let total = total.unwrap_or(0).min(i32::MAX as u64) as i32;
