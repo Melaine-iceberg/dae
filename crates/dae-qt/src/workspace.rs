@@ -3679,6 +3679,13 @@ fn expand_dollar(text: &str) -> String {
         };
         runtime::spawn(async move {
             let _ = dae_core::fs::recents::record_recent(path, kind, source).await;
+            // The taskbar's frequent group follows the folders the user browses,
+            // not the files they open. The request comes after the visit is on
+            // disk, or the rebuild would read a list without the folder that
+            // triggered it.
+            if is_directory {
+                crate::jump_list::refresh();
+            }
         });
     }
 
@@ -3693,13 +3700,17 @@ fn expand_dollar(text: &str) -> String {
         }
         favorites.push(Favorite {
             name: display_name_from_path(&path),
-            path,
+            path: path.clone(),
         });
         match sidebar::save_favorites(favorites) {
             Ok(()) => {
                 self.as_mut()
                     .set_status(QString::from("Added to favorites"));
                 self.as_mut().favorites_changed();
+                // A folder the user favorited belongs in the taskbar menu, even
+                // if it was deleted from it earlier.
+                crate::jump_list::reinclude(&path);
+                crate::jump_list::refresh();
             }
             Err(error) => {
                 let message = friendly_error(&error.to_string());
@@ -3711,7 +3722,7 @@ fn expand_dollar(text: &str) -> String {
 
     fn add_favorite_paths(mut self: Pin<&mut Self>, paths: &QStringList) {
         let mut favorites = sidebar::load_favorites().unwrap_or_default();
-        let mut added = 0;
+        let mut added: Vec<String> = Vec::new();
         for path in paths.iter() {
             let path = path.to_string();
             if path.is_empty() || !std::path::Path::new(&path).is_dir() {
@@ -3722,11 +3733,11 @@ fn expand_dollar(text: &str) -> String {
             }
             favorites.push(Favorite {
                 name: display_name_from_path(&path),
-                path,
+                path: path.clone(),
             });
-            added += 1;
+            added.push(path);
         }
-        if added == 0 {
+        if added.is_empty() {
             return;
         }
         match sidebar::save_favorites(favorites) {
@@ -3734,6 +3745,10 @@ fn expand_dollar(text: &str) -> String {
                 self.as_mut()
                     .set_status(QString::from("Added to favorites"));
                 self.as_mut().favorites_changed();
+                for path in &added {
+                    crate::jump_list::reinclude(path);
+                }
+                crate::jump_list::refresh();
             }
             Err(error) => {
                 let message = friendly_error(&error.to_string());
@@ -3793,6 +3808,7 @@ fn expand_dollar(text: &str) -> String {
                 self.as_mut()
                     .set_status(QString::from("Removed from favorites"));
                 self.as_mut().favorites_changed();
+                crate::jump_list::refresh();
             }
             Err(error) => {
                 let message = friendly_error(&error.to_string());

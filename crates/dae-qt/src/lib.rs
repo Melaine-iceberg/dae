@@ -54,6 +54,7 @@ pub mod format;
 pub mod i18n;
 pub mod icons;
 pub mod ime;
+pub mod jump_list;
 mod linux_desktop;
 pub mod logging;
 pub mod material;
@@ -131,6 +132,10 @@ pub fn init() {
     // the first listing, not when the preferences singleton is first touched.
     preferences::apply_process_wide_preferences();
     window::startup_mark("settings");
+    // The taskbar's right-click menu, built from the same favorites and recents
+    // the sidebar shows. The first write happens on a worker shortly after this
+    // returns, so nothing here waits on the shell.
+    jump_list::refresh();
     terminal::register_item();
     window::startup_mark("terminal");
 }

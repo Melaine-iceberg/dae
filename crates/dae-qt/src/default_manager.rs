@@ -107,8 +107,10 @@ fn registered_executable(command: &str) -> Option<&str> {
 /// manifest's execution alias resolves to whichever version is installed; when
 /// it is missing (the alias switched off in Settings, or a test build that is
 /// not packaged) fall back to the running executable rather than guessing.
+///
+/// The jump list embeds the same path in its rows, for the same reason.
 #[cfg(windows)]
-fn launch_path() -> Result<PathBuf, FileSystemError> {
+pub(crate) fn launch_path() -> Result<PathBuf, FileSystemError> {
     if dae_core::package::is_packaged() {
         let alias =
             std::env::var_os("LOCALAPPDATA").map(|local| alias_path(std::path::Path::new(&local)));

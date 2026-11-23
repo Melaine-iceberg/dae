@@ -52,6 +52,11 @@ that shell; `git log` and the decision document are where it lives now.
   request; the default shell is opaque and uses dae's own accent, so the
   interface looks the same on every platform. See
   [docs/ui-redesign/proposal.md](docs/ui-redesign/proposal.md) §14.
+- **A taskbar menu worth right-clicking.** On Windows, dae's taskbar button
+  carries the folders pinned in the sidebar and the ones you visit most —
+  under their own icons, movable to the pinned section with the shell's own
+  command — and every row reopens dae on that folder. See
+  `crates/dae-qt/src/jump_list.rs`.
 - **Yours to configure.** A human-editable `settings.toml`, rebindable
   shortcuts, `dae://` deep links, and registering dae as the default file
   manager. Interface in English, Simplified and Traditional Chinese.

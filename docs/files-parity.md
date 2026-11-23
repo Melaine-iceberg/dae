@@ -58,7 +58,7 @@ P0、P1 与 §12.1 的 R-1…R-6 落地后，上表四类只剩验证尾巴：�
 | 属性 | 常规、POSIX 权限、DOS 属性、MD5/SHA1/SHA256 | `crates/dae-qt/src/properties.rs`、`qml/PropertiesDialog.qml` |
 | Git | 状态、分支、fetch/pull/push/sync | `fs/git.rs`、`qml/GitPanel.qml` |
 | 终端 | 内嵌 PTY 面板 | `crates/dae-qt/src/terminal.rs`、`qml/TerminalPanel.qml` |
-| 系统集成 | 默认文件管理器、深链、更新器、Windows Shell 扩展命令 | `default_manager.rs`、`activation.rs`、`updater.rs`、`fs/shell_commands/windows.rs` |
+| 系统集成 | 默认文件管理器、深链、更新器、Windows Shell 扩展命令、任务栏跳转列表（收藏 + 常用文件夹） | `default_manager.rs`、`activation.rs`、`updater.rs`、`fs/shell_commands/windows.rs`、`jump_list.rs` |
 | 外观 | 明暗、强调色、Mica/Acrylic/Wayland 模糊、减少动效、en/zh-CN | `settings.rs`、`qml/SettingsPanel.qml` |
 
 ---
