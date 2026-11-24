@@ -97,6 +97,12 @@ pub fn search_file_contents_sync(
         file_filter: params.file_filter.map(Into::into),
     };
 
+    // One statement for every verdict this tree can reuse: the per-file arm
+    // below then answers from memory instead of querying once per file. The
+    // snapshot is taken before the walk, which matches the old shape — this
+    // search's own verdicts are only written after it.
+    let lookups = Arc::new(content_cache::load(&root, &cache_key));
+
     let mut builder = WalkBuilder::new(&root);
     builder.standard_filters(true).follow_links(false);
     builder.overrides(ignores::default_overrides(&root)?);
@@ -108,14 +114,14 @@ pub fn search_file_contents_sync(
         let shared = Arc::clone(&shared);
         let root = Arc::new(root);
         let matcher = Arc::new(matcher);
-        let cache_key = cache_key.clone();
+        let lookups = Arc::clone(&lookups);
 
         move || {
             let shared = Arc::clone(&shared);
             let root = Arc::clone(&root);
             let matcher = Arc::clone(&matcher);
             // Owned per thread so the boxed closure below is `'static`.
-            let cache_key = cache_key.clone();
+            let lookups = Arc::clone(&lookups);
 
             // One searcher per *thread*, built here rather than per file in the
             // loop below. Everything a `Searcher` owns is a buffer — the read
@@ -164,9 +170,7 @@ pub fn search_file_contents_sync(
                 if mtime_ms >= 0 {
                     // A hit replays exactly what a fresh search of these bytes
                     // produced: same key, same file, no read.
-                    if let Some(matches) =
-                        content_cache::lookup(&path, mtime_ms, size, &cache_key)
-                    {
+                    if let Some(matches) = lookups.matches(&path, mtime_ms, size) {
                         if !matches.is_empty()
                             && record_file(&shared, entry.path(), &root, path, matches)
                         {

@@ -19,15 +19,23 @@
 //! changed, so its old mtime no longer matches) age out the same way; they
 //! cost one indexed lookup each and nothing else.
 
-use crate::fs::types::ContentSearchMatch;
+use crate::fs::types::{ContentSearchMatch, path_to_string};
 use crate::paths;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Rows older than this are dropped when the store opens.
 const MAX_ROW_AGE_DAYS: i64 = 30;
+
+/// Cap on the rows one search loads at once, mirroring the 250,000-row pending
+/// cap `content_search` already applies: a tree of millions of files must not
+/// turn the reuse map into the search's memory bill. Rows past the cap are
+/// simply not reused — the walk searches those files fresh, which is the cache
+/// being absent, not a wrong answer.
+const MAX_LOADED_ROWS: usize = 250_000;
 
 /// The query half of a cache key: everything besides the file's identity
 /// that decides what the matches look like. Owned, so the search's worker
@@ -127,36 +135,108 @@ fn open(dir: &Path) -> rusqlite::Result<Store> {
     })
 }
 
-/// The cached matches for one file under one query, or `None` when this
-/// (file bytes, query) pair has never been searched. Never fails visibly:
-/// an unavailable or corrupt store is an absent cache.
-pub fn lookup(
-    path: &str,
+/// One file's verdict as loaded for one search: the identity it was written
+/// under, and the matches still encoded. Decoding waits for a hit, so a row
+/// this walk does not visit costs a map slot and nothing else.
+struct CachedRow {
     mtime_ms: i64,
     size: u64,
-    key: &QueryKey,
-) -> Option<Vec<ContentSearchMatch>> {
-    let store = store()?;
-    let Ok(conn) = store.conn.lock() else {
-        return None;
+    encoded_matches: Box<str>,
+}
+
+/// Every verdict one search can reuse, loaded by a single statement. Empty
+/// when the store is unavailable, which is the same as a cache that has never
+/// seen the tree.
+#[derive(Default)]
+pub struct Lookups {
+    rows: HashMap<Box<str>, CachedRow>,
+}
+
+impl Lookups {
+    /// The cached answer for one file, or `None` when this (path, bytes,
+    /// query) was never stored. `Some(vec![])` is a cached "no matches".
+    pub fn matches(&self, path: &str, mtime_ms: i64, size: u64) -> Option<Vec<ContentSearchMatch>> {
+        let row = self.rows.get(path)?;
+        if row.mtime_ms != mtime_ms || row.size != size {
+            return None;
+        }
+        serde_json::from_str(&row.encoded_matches).ok()
+    }
+}
+
+/// Loads, in one statement, the verdicts cached for `key` below `root`.
+///
+/// The `path` range rides the primary key's leading column, so SQLite reads
+/// the returned rows and no others; the upper bound is the separator-terminated
+/// root with the highest code point appended, which keeps a sibling that only
+/// shares the root's spelling out of the map. [`Lookups::matches`] still
+/// compares the exact path, so a spelling the range misses is a cache miss,
+/// never a wrong answer.
+pub fn load(root: &Path, key: &QueryKey) -> Lookups {
+    let mut lookups = Lookups::default();
+    let Some(store) = store() else {
+        return lookups;
     };
-    conn.query_row(
-        "SELECT matches FROM matches
-         WHERE path = ?1 AND mtime_ms = ?2 AND size = ?3
-           AND query = ?4 AND is_regex = ?5 AND case_sensitive = ?6 AND file_filter = ?7",
-        params![
-            path,
-            mtime_ms,
-            size as i64,
-            key.query.as_ref(),
-            key.is_regex as i64,
-            key.case_sensitive as i64,
-            key.file_filter.as_deref().unwrap_or("")
-        ],
-        |row| row.get::<_, String>(0),
-    )
-    .ok()
-    .and_then(|encoded| serde_json::from_str(&encoded).ok())
+    let Ok(conn) = store.conn.lock() else {
+        return lookups;
+    };
+    let Ok(mut statement) = conn.prepare_cached(
+        "SELECT path, mtime_ms, size, matches FROM matches
+         WHERE query = ?1 AND is_regex = ?2 AND case_sensitive = ?3 AND file_filter = ?4
+           AND path >= ?5 AND path < ?6
+         LIMIT ?7",
+    ) else {
+        return lookups;
+    };
+
+    let prefix = path_prefix(root);
+    let upper = format!("{prefix}\u{10FFFF}");
+    let Ok(mut rows) = statement.query(params![
+        key.query.as_ref(),
+        key.is_regex as i64,
+        key.case_sensitive as i64,
+        key.file_filter.as_deref().unwrap_or(""),
+        prefix,
+        upper,
+        MAX_LOADED_ROWS as i64,
+    ]) else {
+        return lookups;
+    };
+
+    loop {
+        let row = match rows.next() {
+            Ok(Some(row)) => row,
+            Ok(None) | Err(_) => break,
+        };
+        let (Ok(path), Ok(mtime_ms), Ok(size), Ok(encoded_matches)) = (
+            row.get::<_, String>(0),
+            row.get::<_, i64>(1),
+            row.get::<_, i64>(2),
+            row.get::<_, String>(3),
+        ) else {
+            continue;
+        };
+        lookups.rows.insert(
+            path.into_boxed_str(),
+            CachedRow {
+                mtime_ms,
+                size: size as u64,
+                encoded_matches: encoded_matches.into_boxed_str(),
+            },
+        );
+    }
+
+    lookups
+}
+
+/// The spelling every stored path under `root` starts with, separator
+/// included, so `root` and a sibling named `root-other` do not share a range.
+fn path_prefix(root: &Path) -> String {
+    let mut prefix = path_to_string(root);
+    if !prefix.ends_with(std::path::MAIN_SEPARATOR) {
+        prefix.push(std::path::MAIN_SEPARATOR);
+    }
+    prefix
 }
 
 /// Persists one search's verdicts in a single transaction: either the whole
@@ -235,34 +315,45 @@ mod tests {
     #[test]
     fn a_row_is_readable_under_exactly_its_key() {
         cache_dir();
+        let root = std::env::temp_dir().join("dae-content-cache-key");
+        let path = path_to_string(&root.join("a.txt"));
+        let sibling_root = root.with_file_name("dae-content-cache-key-other");
+        let sibling = path_to_string(&sibling_root.join("a.txt"));
         let matches = vec![one_match(3)];
         let key = key_of("hello");
-        store_rows(&[CacheRow {
-            path: "C:\\tmp\\a.txt",
-            mtime_ms: 1234,
-            size: 10,
-            key: &key,
-            matches: &matches,
-        }]);
+        for stored in [&path, &sibling] {
+            store_rows(&[CacheRow {
+                path: stored.as_str(),
+                mtime_ms: 1234,
+                size: 10,
+                key: &key,
+                matches: &matches,
+            }]);
+        }
 
-        assert_eq!(lookup("C:\\tmp\\a.txt", 1234, 10, &key), Some(matches));
+        let lookups = load(&root, &key);
+        assert_eq!(lookups.matches(&path, 1234, 10), Some(matches));
         // A different mtime, size, or query is a different key: no reuse.
-        assert_eq!(lookup("C:\\tmp\\a.txt", 1235, 10, &key), None);
-        assert_eq!(lookup("C:\\tmp\\a.txt", 1234, 11, &key), None);
-        assert_eq!(lookup("C:\\tmp\\a.txt", 1234, 10, &key_of("other")), None);
+        assert_eq!(lookups.matches(&path, 1235, 10), None);
+        assert_eq!(lookups.matches(&path, 1234, 11), None);
+        assert_eq!(load(&root, &key_of("other")).matches(&path, 1234, 10), None);
+        // A sibling that only extends the root's spelling is not this tree.
+        assert_eq!(lookups.matches(&sibling, 1234, 10), None);
     }
 
     #[test]
     fn an_empty_verdict_round_trips_as_a_hit() {
         cache_dir();
+        let root = std::env::temp_dir().join("dae-content-cache-empty");
+        let path = path_to_string(&root.join("b.txt"));
         let key = key_of("needle");
         store_rows(&[CacheRow {
-            path: "C:\\tmp\\b.txt",
+            path: &path,
             mtime_ms: 5,
             size: 7,
             key: &key,
             matches: &[],
         }]);
-        assert_eq!(lookup("C:\\tmp\\b.txt", 5, 7, &key), Some(Vec::new()));
+        assert_eq!(load(&root, &key).matches(&path, 5, 7), Some(Vec::new()));
     }
 }
