@@ -6,8 +6,8 @@
 //! two documents instead of from the shell's usage tracking, so both groups
 //! already mean something inside the app:
 //!
-//! * **Favorites** — `sidebar-favorites.json`, the folders pinned in dae's
-//!   sidebar, shown as "已收藏".
+//! * **Pinned** — the sidebar's pinned section: user favorites first, then the
+//!   visible system places, shown as "已固定".
 //! * **Frequent** — `recent-items.json`, the folders the user browsed, newest
 //!   first, shown as "常用".
 //!
@@ -118,6 +118,18 @@ fn favorite_paths(favorites: &[Favorite], removed: &[String]) -> Vec<PathBuf> {
     out
 }
 
+/// The "Pinned" group mirrors the sidebar's pinned section: user favorites
+/// first, then the system places that section always contains. The places are
+/// also what keeps the heading present before the user has pinned anything.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn pinned_paths(favorites: &[Favorite], places: &[String], removed: &[String]) -> Vec<PathBuf> {
+    let mut out = favorite_paths(favorites, removed);
+    for place in places {
+        push_candidate(&mut out, place, removed);
+    }
+    out
+}
+
 /// The folders the frequent group shows.
 ///
 /// `recents` is already newest first, which is the order the group is read in:
@@ -135,8 +147,8 @@ fn frequent_paths(
         if item.source != RecentSource::Visited || item.kind != EntryKind::Directory {
             continue;
         }
-        // A favorite already has a row; repeating it under a second heading is
-        // what Windows' own lists avoid.
+        // A pinned folder already has a row; repeating it under a second
+        // heading is what Windows' own lists avoid.
         if favorites
             .iter()
             .any(|path| fold(&path.to_string_lossy()) == fold(&item.path))
@@ -348,6 +360,19 @@ fn load_favorites() -> Vec<Favorite> {
     })
 }
 
+/// The visible system places, in the order the sidebar's pinned section shows
+/// them. Hidden places are left out, so the taskbar menu and the sidebar do
+/// not disagree about what belongs in that section.
+#[cfg(any(windows, test))]
+fn load_place_paths() -> Vec<String> {
+    let hidden = dae_core::fs::sidebar::load_hidden_places().unwrap_or_default();
+    dae_core::fs::sidebar::system_places()
+        .into_iter()
+        .filter(|place| !hidden.contains(&place.kind))
+        .map(|place| place.path)
+        .collect()
+}
+
 #[cfg(any(windows, test))]
 fn load_recents() -> Vec<RecentItem> {
     dae_core::fs::recents::list_recents().unwrap_or_else(|error| {
@@ -360,14 +385,13 @@ fn load_recents() -> Vec<RecentItem> {
 ///
 /// A jump list is drawn by the taskbar, outside QML, so the titles cannot come
 /// from `qsTr()`. The stored language decides: English gets English, and both
-/// Chinese scripts — which spell these two words identically — get the source
-/// wording the rest of the interface is written in.
+/// Chinese scripts get the source wording the rest of the interface uses.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn titles() -> (&'static str, &'static str) {
     if uses_english() {
-        ("Favorites", "Frequent")
+        ("Pinned", "Frequent")
     } else {
-        ("已收藏", "常用")
+        ("已固定", "常用")
     }
 }
 
@@ -408,8 +432,8 @@ mod imp {
     use windows::core::{GUID, HSTRING, Interface};
 
     use super::{
-        favorite_paths, forget_removal, frequent_paths, load_favorites, load_recents,
-        merge_removals, quote, titles, update_removals,
+        forget_removal, frequent_paths, load_favorites, load_place_paths, load_recents,
+        merge_removals, pinned_paths, quote, titles, update_removals,
     };
 
     /// `System.Title` — `FMTID_SummaryInformation`, property 2. The jump list
@@ -491,10 +515,10 @@ mod imp {
         // user made are the application's to carry forward.
         let removed = update_removals(|removed| merge_removals(removed, reported_paths(&reported)));
 
-        let favorites = favorite_paths(&load_favorites(), &removed);
-        let frequent = frequent_paths(&load_recents(), &favorites, &removed);
+        let pinned = pinned_paths(&load_favorites(), &load_place_paths(), &removed);
+        let frequent = frequent_paths(&load_recents(), &pinned, &removed);
 
-        let written = append_groups(&list, &favorites, &frequent);
+        let written = append_groups(&list, &pinned, &frequent);
         if let Err(error) = written {
             let _ = unsafe { list.AbortList() };
             return Err(error);
@@ -504,8 +528,8 @@ mod imp {
             .map_err(|error| format!("the jump list was not committed: {error}"))?;
         log::debug!(
             target: "dae::jump_list",
-            "committed {} favorites and {} frequent folders",
-            favorites.len(),
+            "committed {} pinned and {} frequent folders",
+            pinned.len(),
             frequent.len()
         );
         Ok(())
@@ -520,12 +544,12 @@ mod imp {
 
     fn append_groups(
         list: &ICustomDestinationList,
-        favorites: &[std::path::PathBuf],
+        pinned: &[std::path::PathBuf],
         frequent: &[std::path::PathBuf],
     ) -> Result<(), String> {
-        let (favorite_title, frequent_title) = titles();
-        if !favorites.is_empty() {
-            append(list, favorite_title, favorites)?;
+        let (pinned_title, frequent_title) = titles();
+        if !pinned.is_empty() {
+            append(list, pinned_title, pinned)?;
         }
         if !frequent.is_empty() {
             append(list, frequent_title, frequent)?;
@@ -802,18 +826,32 @@ mod tests {
         assert_eq!(quote(r#"a\"b"#), r#""a\\\"b""#);
     }
 
-    /// A favorite is already in the list; the frequent group must not repeat
-    /// it, and neither group may repeat itself.
+    /// A pinned folder is already in the list; the frequent group must not
+    /// repeat it, and neither group may repeat itself.
     #[test]
     fn the_groups_do_not_repeat_a_folder() {
         let temp = TempDir::new("repeats");
         let path = temp.path();
 
-        let favorites = favorite_paths(&[favorite(&path), favorite(&path)], &[]);
-        assert_eq!(favorites.len(), 1);
+        let pinned = pinned_paths(&[favorite(&path), favorite(&path)], &[], &[]);
+        assert_eq!(pinned.len(), 1);
 
-        let frequent = frequent_paths(&[visited(&path), visited(&path)], &favorites, &[]);
-        assert!(frequent.is_empty(), "a favorite is not also a frequent row");
+        let frequent = frequent_paths(&[visited(&path), visited(&path)], &pinned, &[]);
+        assert!(
+            frequent.is_empty(),
+            "a pinned folder is not also a frequent row"
+        );
+    }
+
+    /// With no user pins, the system places still give the "Pinned" category
+    /// rows, so both it and "Frequent" remain in the taskbar menu.
+    #[test]
+    fn system_places_keep_the_pinned_group_visible() {
+        let temp = TempDir::new("places");
+        let path = temp.path();
+
+        let pinned = pinned_paths(&[], &[path.clone()], &[]);
+        assert_eq!(pinned, [PathBuf::from(path)]);
     }
 
     /// A folder the user deleted from the list stays out, even when the stored

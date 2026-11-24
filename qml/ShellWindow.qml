@@ -369,8 +369,8 @@ Window {
         case "Trash emptied": return qsTr("已清空回收站")
         case "Done": return qsTr("完成")
         case "Opened in system terminal": return qsTr("已在系统终端中打开")
-        case "Added to favorites": return qsTr("已加入收藏")
-        case "Removed from favorites": return qsTr("已从收藏移除")
+        case "Added to favorites": return qsTr("已固定")
+        case "Removed from favorites": return qsTr("已取消固定")
         case "Connection removed": return qsTr("已移除连接")
         case "Cloud account removed": return qsTr("已移除云盘账户")
         case "Connection test succeeded": return qsTr("连接测试成功")
@@ -3072,7 +3072,7 @@ Window {
         items.push({ id: "extractTo", glyph: "folder", label: qsTr("解压到新文件夹…"),
                      enabled: canExtract })
         items.push({ separator: true })
-        items.push({ id: "favorite", glyph: "star", label: qsTr("加入收藏"),
+        items.push({ id: "favorite", glyph: "star", label: qsTr("固定到侧边栏"),
                      enabled: hasPath && isDir })
         items.push({ separator: true })
         items.push({ id: "delete", glyph: "trash", label: qsTr("永久删除"),
@@ -3520,14 +3520,14 @@ Window {
         const rowKind = placeKind !== "" ? "place" : kind
         const items = []
         if (rowKind === "favorite")
-            items.push({ id: "removeFavorite", glyph: "star", label: qsTr("从收藏移除"),
+            items.push({ id: "removeFavorite", glyph: "star", label: qsTr("取消固定"),
                          danger: true })
         if (rowKind === "recent" && !root.isRemotePath(path))
             items.push({ id: "reveal", glyph: "folder", label: qsTr("在资源管理器中显示") })
         items.push({ id: "openTab", glyph: "plus", label: qsTr("在新标签页打开") })
         items.push({ id: "openWindow", glyph: "window", label: qsTr("在新窗口打开") })
         if (rowKind !== "favorite")
-            items.push({ id: "favorite", glyph: "star", label: qsTr("加入收藏") })
+            items.push({ id: "favorite", glyph: "star", label: qsTr("固定到侧边栏") })
         items.push({ separator: true })
         items.push({ id: "copyPath", glyph: "copy", label: qsTr("复制路径") })
         if (placeKind !== "") {

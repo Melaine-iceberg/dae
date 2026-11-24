@@ -53,9 +53,9 @@ that shell; `git log` and the decision document are where it lives now.
   interface looks the same on every platform. See
   [docs/ui-redesign/proposal.md](docs/ui-redesign/proposal.md) §14.
 - **A taskbar menu worth right-clicking.** On Windows, dae's taskbar button
-  carries the folders pinned in the sidebar and the ones you visit most —
-  under their own icons, movable to the pinned section with the shell's own
-  command — and every row reopens dae on that folder. See
+  carries the sidebar's pinned places under "已固定" and recently visited
+  folders under "常用" — under their own icons, with the shell's own pin command
+  on every row — and every row reopens dae on that folder. See
   `crates/dae-qt/src/jump_list.rs`.
 - **Yours to configure.** A human-editable `settings.toml`, rebindable
   shortcuts, `dae://` deep links, and registering dae as the default file

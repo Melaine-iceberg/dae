@@ -143,7 +143,7 @@ Item {
     function sectionLabel(value) {
         switch (value) {
         case "Projects": return qsTr("项目")
-        case "Favorites": return qsTr("快速访问")
+        case "Favorites": return qsTr("已固定")
         case "Recent": return qsTr("最近")
         case "Tags": return qsTr("标签")
         case "Drives": return qsTr("磁盘")

@@ -53,7 +53,7 @@ Item {
 
     /// §7.3.2: folded groups, remembered across launches. The value is the
     /// same comma-separated list the preference stores, so there is one
-    /// spelling of "Favorites is folded" in the process.
+    /// spelling of "Pinned is folded" in the process.
     readonly property var foldedSections: {
         const raw = ExplorerPrefs.foldedSidebarSections
         return raw === "" ? [] : raw.split(",")
@@ -205,8 +205,7 @@ Item {
 
     function sectionLabel(value) {
         switch (value) {
-        case "Places": return qsTr("位置")
-        case "Favorites": return qsTr("收藏")
+        case "Pinned": return qsTr("已固定")
         case "Disks": return Qt.platform.os === "osx" ? qsTr("宗卷") : qsTr("磁盘")
         case "Network Storage": return qsTr("网络存储")
         case "Cloud Storage": return qsTr("云存储")
@@ -227,7 +226,7 @@ Item {
         case "Videos": return qsTr("视频")
         case "Connect network storage…": return qsTr("连接网络存储…")
         case "Add cloud account…": return qsTr("添加网盘账户…")
-        case "Drop folders here to favorite them": return qsTr("将文件夹拖到这里加入收藏")
+        case "Drop folders here to favorite them": return qsTr("将文件夹拖到这里固定")
         case "Restore hidden places": return qsTr("恢复隐藏的位置")
         default: return name
         }
@@ -397,8 +396,8 @@ Item {
 
             required property string section
 
-            readonly property bool favoriteSection: section === "Favorites"
-            readonly property bool lit: favoriteSection && root.favoriteDropActive
+            readonly property bool pinnedSection: section === "Pinned"
+            readonly property bool lit: pinnedSection && root.favoriteDropActive
             readonly property bool folded: root.isFolded(sectionRow.section)
 
             width: ListView.view.width
@@ -419,7 +418,7 @@ Item {
                 height: 12
                 anchors.verticalCenter: parent.verticalCenter
                 kind: sectionRow.folded ? "chevronRight" : "chevronDown"
-                tint: sectionRow.favoriteSection && sectionRow.lit
+                tint: sectionRow.pinnedSection && sectionRow.lit
                     ? Theme.accent
                     : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
                 Accessible.ignored: true
@@ -431,7 +430,6 @@ Item {
                 text: root.sectionLabel(sectionRow.section)
                 color: parent.lit ? Theme.accent
                     : (headerMouse.containsMouse ? Theme.inkSecondary : Theme.inkTertiary)
-                font.family: Theme.uiFamily
                 font.pixelSize: Theme.typeCaption
                 font.weight: Theme.weightStrong
             }
@@ -440,8 +438,8 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                visible: parent.lit && parent.favoriteSection
-                text: qsTr("松开以加入收藏")
+                visible: parent.lit && parent.pinnedSection
+                text: qsTr("松开以固定")
                 color: Theme.accent
                 font.pixelSize: Theme.typeMicro
             }
@@ -459,7 +457,7 @@ Item {
             DropArea {
                 anchors.fill: parent
                 keys: ["text/uri-list"]
-                enabled: parent.favoriteSection
+                enabled: parent.pinnedSection
 
                 onEntered: function (drag) {
                     root.favoriteDropActive = true
@@ -470,7 +468,7 @@ Item {
                     drag.accept(Qt.CopyAction)
                 }
                 onExited: {
-                    if (parent.favoriteSection)
+                    if (parent.pinnedSection)
                         root.favoriteDropActive = false
                 }
                 onDropped: function (drop) {
@@ -887,7 +885,6 @@ Item {
             y: 8
             text: qsTr("网络")
             color: Theme.inkTertiary
-            font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
             font.weight: Theme.weightEmphasis
         }
@@ -1045,7 +1042,6 @@ Item {
             y: 8
             text: qsTr("保存的搜索")
             color: Theme.inkTertiary
-            font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
             font.weight: Theme.weightEmphasis
         }
@@ -1198,7 +1194,6 @@ Item {
             y: 8
             text: qsTr("标签")
             color: Theme.inkTertiary
-            font.family: Theme.uiFamily
             font.pixelSize: Theme.typeMicro
             font.weight: Theme.weightEmphasis
         }

@@ -516,8 +516,8 @@
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="264"/>
-        <source>加入收藏</source>
-        <translation>Add to favorites</translation>
+        <source>固定到侧边栏</source>
+        <translation>Pin to sidebar</translation>
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="265"/>
@@ -632,13 +632,13 @@
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="350"/>
-        <source>收藏</source>
-        <translation>Favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="356"/>
-        <source>收藏 favorite </source>
-        <translation>favorite </translation>
+        <source>已固定 固定 favorite </source>
+        <translation>pinned pin favorite </translation>
     </message>
     <message>
         <location filename="../CommandPalette.qml" line="360"/>
@@ -2449,13 +2449,13 @@
     </message>
     <message>
         <location filename="../Localize.js" line="179"/>
-        <source>已加入收藏</source>
-        <translation>Added to favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../Localize.js" line="180"/>
-        <source>已从收藏移除</source>
-        <translation>Removed from favorites</translation>
+        <source>已取消固定</source>
+        <translation>Unpinned</translation>
     </message>
     <message>
         <location filename="../Localize.js" line="181"/>
@@ -3466,8 +3466,8 @@
     </message>
     <message>
         <location filename="../OverviewView.qml" line="320"/>
-        <source>收藏</source>
-        <translation>Favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../OverviewView.qml" line="321"/>
@@ -4203,8 +4203,8 @@
     </message>
     <message>
         <location filename="../SearchFilterBar.qml" line="184"/>
-        <source>收藏</source>
-        <translation>Favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../SearchFilterBar.qml" line="191"/>
@@ -5251,8 +5251,8 @@
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="1005"/>
-        <source>收藏</source>
-        <translation>Favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../SettingsPanel.qml" line="1006"/>
@@ -5880,13 +5880,13 @@
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="355"/>
-        <source>已加入收藏</source>
-        <translation>Added to favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="356"/>
-        <source>已从收藏移除</source>
-        <translation>Removed from favorites</translation>
+        <source>已取消固定</source>
+        <translation>Unpinned</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="357"/>
@@ -6227,8 +6227,8 @@
     <message>
         <location filename="../ShellWindow.qml" line="2576"/>
         <location filename="../ShellWindow.qml" line="2862"/>
-        <source>加入收藏</source>
-        <translation>Add to favorites</translation>
+        <source>固定到侧边栏</source>
+        <translation>Pin to sidebar</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="2457"/>
@@ -6275,11 +6275,6 @@
         <location filename="../ShellWindow.qml" line="2843"/>
         <source>移除云盘账户</source>
         <translation>Remove cloud account</translation>
-    </message>
-    <message>
-        <location filename="../ShellWindow.qml" line="2855"/>
-        <source>从收藏移除</source>
-        <translation>Remove from favorites</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="3076"/>
@@ -6583,7 +6578,7 @@
     <message>
         <location filename="../ShellWindow.qml" line="786"/>
         <source>取消固定</source>
-        <translation>Unpin tab</translation>
+        <translation>Unpin</translation>
     </message>
     <message>
         <location filename="../ShellWindow.qml" line="786"/>
@@ -6897,8 +6892,8 @@
     </message>
     <message>
         <location filename="../Sidebar.qml" line="159"/>
-        <source>收藏</source>
-        <translation>Favorites</translation>
+        <source>已固定</source>
+        <translation>Pinned</translation>
     </message>
     <message>
         <location filename="../Sidebar.qml" line="160"/>
@@ -6967,8 +6962,8 @@
     </message>
     <message>
         <location filename="../Sidebar.qml" line="180"/>
-        <source>将文件夹拖到这里加入收藏</source>
-        <translation>Drop folders here to favorite them</translation>
+        <source>将文件夹拖到这里固定</source>
+        <translation>Drop folders here to pin them</translation>
     </message>
     <message>
         <location filename="../Sidebar.qml" line="181"/>
@@ -7008,8 +7003,8 @@
     </message>
     <message>
         <location filename="../Sidebar.qml" line="413"/>
-        <source>松开以加入收藏</source>
-        <translation>Release to add to favorites</translation>
+        <source>松开以固定</source>
+        <translation>Release to pin</translation>
     </message>
     <message>
         <location filename="../Sidebar.qml" line="923"/>

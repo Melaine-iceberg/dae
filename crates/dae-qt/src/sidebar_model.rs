@@ -1,15 +1,15 @@
 //! The sidebar's rows, as one flat model with section names.
 //!
-//! Places, favourites, volumes and cloud accounts are different domain calls
-//! with different lifetimes, but the sidebar draws them as one list. A
-//! single `QAbstractListModel` keeps the QML side to one `ListView` and lets
-//! `section.property` draw the headers, instead of several nested views that
-//! each scroll independently.
+//! System places, pinned folders, volumes and cloud accounts are different
+//! domain calls with different lifetimes, but the sidebar draws them as one
+//! list. A single `QAbstractListModel` keeps the QML side to one `ListView` and
+//! lets `section.property` draw the headers, instead of several nested views
+//! that each scroll independently.
 //!
-//! Section order is deliberate: the five primary places first, then the extra
-//! places and favourites, then volumes, then the network group — WSL distros
-//! are network locations too — and finally cloud accounts. The trash is not a
-//! row here; the sidebar parks it at the bottom itself.
+//! Section order is deliberate: system places and pinned folders share the
+//! first "Pinned" group, then volumes, then the network group — WSL distros are
+//! network locations too — and finally cloud accounts. The trash is not a row
+//! here; the sidebar parks it at the bottom itself.
 
 use core::pin::Pin;
 use std::path::Path;
@@ -24,8 +24,10 @@ use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
 use crate::format;
 use crate::runtime;
 
-const SECTION_PLACES: &str = "Places";
-const SECTION_FAVORITES: &str = "Favorites";
+/// System places and folders the user pinned share one group. Keeping them in
+/// one section is what turns the old "Places" and "Favorites" headings into a
+/// single "Pinned" heading in the sidebar.
+const SECTION_PINNED: &str = "Pinned";
 const SECTION_VOLUMES: &str = "Disks";
 const SECTION_NETWORK: &str = "Network Storage";
 const SECTION_CLOUD: &str = "Cloud Storage";
@@ -284,7 +286,7 @@ fn build_base_rows() -> (Vec<SidebarRow>, Vec<SidebarRow>, Vec<SidebarRow>) {
     // back has to be a row of its own or it would not exist anywhere.
     if !hidden.is_empty() {
         base.push(SidebarRow {
-            section: SECTION_PLACES.to_owned(),
+            section: SECTION_PINNED.to_owned(),
             name: "Restore hidden places".to_owned(),
             path: String::new(),
             kind: "restorePlaces".to_owned(),
@@ -302,7 +304,7 @@ fn build_base_rows() -> (Vec<SidebarRow>, Vec<SidebarRow>, Vec<SidebarRow>) {
         // onto it is pinned, and the section stays discoverable before
         // anything has been pinned.
         base.push(SidebarRow {
-            section: SECTION_FAVORITES.to_owned(),
+            section: SECTION_PINNED.to_owned(),
             name: "Drop folders here to favorite them".to_owned(),
             path: String::new(),
             kind: "favoriteHint".to_owned(),
@@ -316,7 +318,7 @@ fn build_base_rows() -> (Vec<SidebarRow>, Vec<SidebarRow>, Vec<SidebarRow>) {
     } else {
         for favorite in favorites {
             base.push(SidebarRow {
-                section: SECTION_FAVORITES.to_owned(),
+                section: SECTION_PINNED.to_owned(),
                 name: favorite.name,
                 path: favorite.path,
                 kind: "favorite".to_owned(),
@@ -351,9 +353,10 @@ fn build_base_rows() -> (Vec<SidebarRow>, Vec<SidebarRow>, Vec<SidebarRow>) {
     (base, network, cloud)
 }
 
-/// The order of the rows inside the Places section. The first five are the
-/// primary destinations; Music and Videos keep their rows but sit after them,
-/// which is also what keeps the first screen to ten rows on a fresh profile.
+/// The order of the system places inside the pinned section. The first five are
+/// the primary destinations; Music and Videos keep their rows but sit after
+/// them, which is also what keeps the first screen to ten rows on a fresh
+/// profile.
 fn place_rank(kind: PlaceKind) -> u8 {
     match kind {
         PlaceKind::Home => 0,
@@ -377,7 +380,7 @@ fn place_row(kind: PlaceKind, path: &str) -> SidebarRow {
         PlaceKind::Videos => ("Videos", "videos"),
     };
     SidebarRow {
-        section: SECTION_PLACES.to_owned(),
+        section: SECTION_PINNED.to_owned(),
         name: name.to_owned(),
         path: path.to_owned(),
         kind: "place".to_owned(),
@@ -508,7 +511,7 @@ mod tests {
             let row = place_row(kind, "/tmp");
             assert!(!row.name.is_empty());
             assert!(!row.icon.is_empty());
-            assert_eq!(row.section, SECTION_PLACES);
+            assert_eq!(row.section, SECTION_PINNED);
             assert!(row.is_dir);
         }
     }

@@ -261,7 +261,7 @@ Item {
             root.command("open-terminal", qsTr("在终端中打开"),
                          root.shortcutHint("explorer.openSystemTerminal", "Ctrl+`"),
                          "terminal", qsTr("文件")),
-            root.command("toggle-favorite", qsTr("加入收藏"), "", "star", qsTr("文件")),
+            root.command("toggle-favorite", qsTr("固定到侧边栏"), "", "star", qsTr("文件")),
             root.command("toggle-split", qsTr("切换分栏"), "", "column", qsTr("文件")),
             root.command("toggle-inspector", qsTr("切换检查器"),
                          root.shortcutHint("app.toggleInspector", "Ctrl+I"),
@@ -331,13 +331,13 @@ Item {
             const isDir = root.overviewModel.isDirAt(index)
             if (kind === "favorite") {
                 items.push({
-                    group: qsTr("收藏"),
+                    group: qsTr("已固定"),
                     label: name,
                     hint: path,
                     glyph: "star",
                     kind: "navigate",
                     value: path,
-                    keywords: qsTr("收藏 favorite ") + path
+                    keywords: qsTr("已固定 固定 favorite ") + path
                 })
             } else if (kind === "recent") {
                 items.push({

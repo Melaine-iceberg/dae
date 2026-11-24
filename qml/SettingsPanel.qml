@@ -1202,7 +1202,7 @@ FocusScope {
                             Repeater {
                                 model: [
                                     { value: "Projects", label: qsTr("项目") },
-                                    { value: "Favorites", label: qsTr("收藏") },
+                                    { value: "Favorites", label: qsTr("已固定") },
                                     { value: "Recent", label: qsTr("最近") },
                                     { value: "Tags", label: qsTr("标签") },
                                     { value: "Drives", label: qsTr("驱动器") }
