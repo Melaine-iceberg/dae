@@ -3,12 +3,12 @@
 
 Qt 6.11 moved the Windows desktop packages into per-architecture folders:
 
-    online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/Updates.xml
+    online/qtsdkrepository/windows_x86/desktop/qt6_6121/qt6_6121_msvc2022_64/Updates.xml
 
-aqtinstall 3.3.0 still derives `qt6_6120/qt6_6120/Updates.xml` from the
+aqtinstall 3.3.0 still derives `qt6_6121/qt6_6121/Updates.xml` from the
 version alone, which is a 404, and `install-qt` fails with
 
-    ERROR : Failed to locate XML data for Qt version '6.12.0'.
+    ERROR : Failed to locate XML data for Qt version '6.12.1'.
 
 `ArchiveId.to_folder` already knows how to build the per-arch folder — it just
 receives an empty extension, because `QtRepoProperty.extension_for_arch` only
@@ -16,7 +16,7 @@ answers for wasm and Android. Filling that answer in is a one-function patch,
 so the rest of aqtinstall — module resolution, checksums, 7z extraction,
 `--outputdir` layout — runs unmodified.
 
-Linux is unaffected: `linux_x64/desktop/qt6_6120/qt6_6120/Updates.xml` still
+Linux is unaffected: `linux_x64/desktop/qt6_6121/qt6_6121/Updates.xml` still
 exists, which is why `install-qt-action` keeps working there.
 
 Delete this script and the workflow step that calls it once aqtinstall

@@ -311,22 +311,22 @@ jobs:
           sudo apt-get install -y llvm-bolt || \
             echo "::warning title=BOLT unavailable::llvm-bolt is not packaged for this runner; the Qt release will ship a PGO-only binary"
 
-      # The same Qt minor as the local development instructions. cxx-qt picks
-      # qmake up from PATH; QT_ROOT_DIR is used by the deployment steps.
+      # The same Qt version as the local development instructions. cxx-qt
+      # picks qmake up from PATH; QT_ROOT_DIR is used by the deployment steps.
       #
       # Windows is handled below instead of here: Qt 6.11+ publishes the
       # Windows desktop packages under a per-architecture folder
-      # (`qt6_6120/qt6_6120_msvc2022_64/Updates.xml`) and aqtinstall 3.3.0 —
-      # which this action pins — still asks for `qt6_6120/qt6_6120`, so the
+      # (`qt6_6121/qt6_6121_msvc2022_64/Updates.xml`) and aqtinstall 3.3.0 —
+      # which this action pins — still asks for `qt6_6121/qt6_6121`, so the
       # action fails with "Failed to locate XML data". See
       # `scripts/aqt-per-arch.py` for the patch and the upstream issue.
       - uses: jurplel/install-qt-action@v4
         if: matrix.platform != 'windows-latest'
         with:
-          version: "6.12.0"
+          version: "6.12.1"
           arch: ${{ matrix.qt_arch }}
           cache: true
-          cache-key-prefix: qt-6.12-${{ matrix.platform_key }}
+          cache-key-prefix: qt-6.12.1-${{ matrix.platform_key }}
           # The preview pane's in-place player imports QtMultimedia.
           modules: qtmultimedia
 
@@ -338,8 +338,8 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: actions/cache@v5
         with:
-          path: C:\Qt\6.12.0\msvc2022_64
-          key: qt-6.12.0-msvc2022_64
+          path: C:\Qt\6.12.1\msvc2022_64
+          key: qt-6.12.1-msvc2022_64
 
       - name: Install Qt (Windows)
         if: matrix.platform == 'windows-latest'
@@ -351,19 +351,19 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
 
           $root = 'C:\Qt'
-          $dest = Join-Path $root '6.12.0\msvc2022_64'
+          $dest = Join-Path $root '6.12.1\msvc2022_64'
           if (-not (Test-Path (Join-Path $dest 'bin\qmake.exe'))) {
             python -m pip install --disable-pip-version-check aqtinstall==3.3.0
             python scripts/aqt-per-arch.py
             for ($attempt = 1; $attempt -le 3; $attempt++) {
-              python -m aqt install-qt windows desktop 6.12.0 win64_msvc2022_64 `
+              python -m aqt install-qt windows desktop 6.12.1 win64_msvc2022_64 `
                 --outputdir $root --modules qtmultimedia --timeout 120
               if ($LASTEXITCODE -eq 0 -and (Test-Path (Join-Path $dest 'bin\qmake.exe'))) { break }
               Write-Host "attempt $attempt did not finish; retrying"
             }
           }
           if (-not (Test-Path (Join-Path $dest 'bin\qmake.exe'))) {
-            throw "Qt 6.12.0 is not installed at $dest"
+            throw "Qt 6.12.1 is not installed at $dest"
           }
           # What install-qt-action would have exported: qmake on PATH for the
           # cxx-qt build scripts, QT_ROOT_DIR for windeployqt and the MSIX job.
@@ -383,7 +383,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: qt-${{ matrix.platform_key }}
+          key: qt-6.12.1-${{ matrix.platform_key }}
           cache-on-failure: true
 
       # The Linux leg builds libghostty-vt from the pinned libghostty-vt release;

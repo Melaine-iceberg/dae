@@ -53,7 +53,7 @@ if (-not $QtRoot) {
 }
 $windeployqt = if ($QtRoot) { Join-Path $QtRoot 'bin\windeployqt.exe' } else { $null }
 if (-not $windeployqt -or -not (Test-Path $windeployqt)) {
-  throw 'windeployqt was not found. Set QT_ROOT_DIR to the Qt installation (for example K:\Qt\6.12.0\msvc2022_64).'
+  throw 'windeployqt was not found. Set QT_ROOT_DIR to the Qt installation (for example K:\Qt\6.12.1\msvc2022_64).'
 }
 Write-Host "Qt: $QtRoot"
 
