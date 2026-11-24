@@ -12,8 +12,7 @@ import dae.terminal 1.0
 // Embedded in the content column, so the listing above it keeps its rows and
 // the terminal never covers them. 240 px by default; the top edge is a drag
 // handle whose range reaches the column's top boundary, and the height is
-// remembered in explorer-qt.ini. See docs/ui-instrument-migration.md §7.2 and
-// docs/terminal-redesign.md §3.
+// remembered in explorer-qt.ini. See docs/terminal-redesign.md §3.
 Item {
     id: root
 

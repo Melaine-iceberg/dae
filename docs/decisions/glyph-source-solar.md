@@ -1,12 +1,12 @@
 # 界面图标换成 Solar Icons
 
 > 日期：2026-11-13 · 状态：已实施（Windows 本机验证，macOS/Linux 未跑）
-> 相关：`qml/Glyph.qml`、`qml/solar-marks.json`、`docs/ui-instrument-migration.md` §6.4
+> 相关：`qml/Glyph.qml`、`qml/solar-marks.json`；`docs/ui-instrument-migration.md` §6.4（该文档已删除，历史见 git）
 
 ## 问题
 
 `qml/Glyph.qml` 里 64 个标记（407 行路径数据）是照着原型 sprite 手抄的，
-`docs/ui-instrument-migration.md` §6.4 规定「图形数据只有一个来源」。实际结果是：
+当时的界面执行清单（`ui-instrument-migration.md` §6.4，已删除）规定「图形数据只有一个来源」。实际结果是：
 
 - 新增一个标记要手绘坐标，10/12/14/16/28/38 dp 六种尺寸都要肉眼校一次；
 - 手绘的近似形状已经在漂移（§6.4 自己记过「设置画成太阳、链接画成纸张」）；

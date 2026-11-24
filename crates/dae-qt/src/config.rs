@@ -12,7 +12,7 @@
 //!   instead of opening an error.
 //! * **How to jump to the path bar.** `settings.toml` carries the same
 //!   `app.pathJump` binding the React shell uses (`Mod+L` by default, the
-//!   address-bar chord from `docs/ui-ux-2026.md`). `Mod` is translated to Qt's
+//!   address-bar chord). `Mod` is translated to Qt's
 //!   `Ctrl` spelling; Qt maps `Ctrl` to Command on macOS.
 //! * **How to open the command palette.** The same table's `app.commandBar`
 //!   (`Mod+K` by default), behind the same `Mod` translation.

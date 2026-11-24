@@ -65,7 +65,7 @@
 
 ## 2. 现状诊断
 
-以 `docs/prototypes/after-*.png` 为准（2026-11-13 的 drift 版本），逐条对照 `qml/` 的实现。
+当时以 `docs/prototypes/after-*.png` 为准（2026-11-13 的 drift 版本，截图已从工作树删除，需要时从 git 历史取），逐条对照 `qml/` 的实现。
 
 ### 2.1 装饰压过了内容
 
@@ -1030,7 +1030,7 @@ Git 状态作为一个字母（`M`/`A`/`D`/`?`）紧挨类型列右侧，颜色�
 
 ### 13.2 与现有文档的关系
 
-- `docs/ui-ux-2026.md`、`docs/ui-instrument-migration.md`、`docs/ui-drift-migration.md` 转为**历史记录**，不再作为执行依据；其中仍然有效的判断（116 px 外壳的来历、选择与焦点的输入来源过滤、`reduceMotion` 的做法、图标数据来源的决定）已在本文继承。
+- `docs/ui-ux-2026.md`、`docs/ui-instrument-migration.md`、`docs/ui-drift-migration.md` 已从工作树删除，历史留在 git 中，不再作为执行依据；其中仍然有效的判断（116 px 外壳的来历、选择与焦点的输入来源过滤、`reduceMotion` 的做法、图标数据来源的决定）已在本文继承。
 - `docs/decisions/glyph-source-solar.md` 的**数据来源**决定保留，**渲染方式**（每图标一个 Canvas）被 §12.3 取代，需要补一条新的决策记录。
 - `docs/files-parity.md` 的功能清单不受影响；本文只改呈现。
 

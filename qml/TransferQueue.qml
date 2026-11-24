@@ -20,7 +20,6 @@ import "Localize.js" as Localize
 //
 // A 326 px plate over the bottom of the window, the way the prototype stacks
 // it: it is a read-out on the status bar, not a dialog.
-// See docs/ui-instrument-migration.md §7.3.
 Item {
     id: root
 
