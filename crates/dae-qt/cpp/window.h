@@ -57,6 +57,7 @@
 #include <QElapsedTimer>
 #include <QFont>
 #include <QFontDatabase>
+#include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QLocale>
 #include <QPalette>
@@ -1458,6 +1459,22 @@ inline void dae_qt_warm_font_database()
     dae_qt_startup_mark("font-db warm begin");
     QFontDatabase::families();
     dae_qt_startup_mark("font-db warm end");
+    // DirectWrite builds the CJK fallback face on the first Chinese string the
+    // GUI thread lays out; on the eager shell tree that was a single ~232 ms
+    // text item inside `engine.load` (docs/qml-aot.md §19). Build it here
+    // instead. The two sizes are the ones the first screen's text uses
+    // (`Theme.typeMicro` 11, `Theme.typeCaption` 12); more sizes cost nothing
+    // measurable once the face exists. Paired A/B: first-frame 1247 -> 1127 ms.
+    dae_qt_startup_mark("cjk-warm begin");
+    const QString sample = QStringLiteral("没有排队中的传输 查找项目 名称 大小 修改日期");
+    const QFont base = QGuiApplication::font();
+    for (int pixel : {11, 12}) {
+        QFont font = base;
+        font.setPixelSize(pixel);
+        QFontMetricsF metrics(font);
+        (void)metrics.horizontalAdvance(sample);
+    }
+    dae_qt_startup_mark("cjk-warm end");
 #endif
 }
 

@@ -69,15 +69,6 @@ fn main() {
     let mut application = QGuiApplication::new();
     dae_qt::window::startup_mark("qgui-application");
 
-    // The first font-database query builds the whole Windows database
-    // (200–300 ms); every query API pays it, and `apply_system_font` no longer
-    // queries. Qt documents `QFontDatabase` as thread-safe, so pay it here on a
-    // worker while the main thread does logging, claiming and engine load.
-    // Measured (10 interleaved runs, release + AOT): first-frame median
-    // 1200 → 1133 ms. The first text that needs the database waits on it.
-    #[cfg(windows)]
-    std::thread::spawn(dae_qt::window::warm_font_database);
-
     // Before `claim`: a failed scheme registration or a refused instance lock
     // is exactly the kind of failure nobody can reproduce later, and starting
     // here means it lands in the file rather than in a stderr a release build
@@ -97,6 +88,16 @@ fn main() {
     // DwmEnableBlurBehindWindow then composites the backdrop behind it.
     dae_qt::init();
     dae_qt::window::startup_mark("qt-init");
+
+    // The first font-database query builds the whole Windows database
+    // (200–300 ms), and `apply_system_font` no longer queries. Qt documents
+    // `QFontDatabase` as thread-safe, so pay it on a worker while the main
+    // thread builds the stand-in window and the QML tree. Started *after*
+    // `init` on purpose: `addApplicationFont` takes the same database lock, so
+    // spawning it earlier made the main thread wait for the warm instead of
+    // overlapping with it (measured: +206 ms on the first bundled face).
+    #[cfg(windows)]
+    std::thread::spawn(dae_qt::window::warm_font_database);
 
     // Put a solid, text-free window on screen before the QML tree is loaded.
     // The tree's first synchronous CJK text layout is where the one-time font

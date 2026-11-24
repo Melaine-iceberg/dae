@@ -474,7 +474,9 @@ qml-loaded           774.14 ms
    §13 也已经证明 AOT 覆盖率不动实例化。
 2. **535 ms 只能从平台层确认——已经确认，见 §15。** WPA/ETW 的原生采样栈把它坐实成
    「字体库构建 + 首次 CJK 引擎创建」两块，都是一次性的。预热线程不是解法——主线程
-   60 ms 就要字体，没有 ≥500 ms 的非文本工作可以垫。
+   60 ms 就要字体，没有 ≥500 ms 的非文本工作可以垫。（§16 的占位窗改变了这个前提：
+   首次同步文本度量被推到 ~330 ms 起，§18 据此把预热的启动位置移到了字体注册之后；
+   CJK 建 face 的成本本身仍未挪走。）
 3. **~260 ms 首帧**要动只能用 Qt 内部（预建 RHI 设备或 `QQuickRenderControl` 预热），
    风险高于收益，不做。
 
@@ -578,7 +580,9 @@ DLL 导出表（`?name@Class@@…` 那张）就能定位到函数：整条链在
 
 - **一次性**：首帧后 DWrite 归零，进程内只付一次。
 - **因此接受它，不再动 QML。** 要把这笔钱挪走只能预建字体缓存，而它必须在主线程第一次
-  同步文本度量（60 ms）之前就绪——没有 ≥500 ms 的非文本工作可以垫。
+  同步文本度量（60 ms）之前就绪——没有 ≥500 ms 的非文本工作可以垫。（§16/§18 之后这条
+  路径变了：占位窗把首次同步度量推到 ~330 ms，预热也移到了字体注册之后；这里说的
+  CJK 建 face 成本仍在首次排版时付。）
 
 方法学说明：采样器的栈回溯本身很贵，`-a stack -butterfly` 的独占命中里
 `ntkrnlmp.exe!EtwpTraceStackWalk` + `KeExpandKernelStackAndCalloutInternal` 占了 88%；
@@ -689,3 +693,175 @@ D3D11 设备/交换链——没有壳时这段 150–200 ms，有壳时（设备
 - 剩下的是数据：首帧里侧栏为空、状态栏是「查找项目…」，随后 ~100 ms 补上。那是
   `overviewModel` 的返回值，不是动画；要连它一起去掉只能把窗口压到列表就绪之后再显示，
   代价正是 §16 挣到的那 ~650 ms 里的一两百。
+
+## 18. 字体预热不该挡在字体注册前面：首帧 −89 ms、首像素 −213 ms（2026-11-24）
+
+§14/§15 把「首次 CJK 排版」定成不可挪的一次性成本；这一节不翻那个案，拆的是它前面
+的一笔等待：`apply_fonts` 和预热线程抢同一把 `QFontDatabase` 锁，主线程在 `alpha`
+之后一直等到预热结束。
+
+### 怎么发现的
+
+`DAE_STARTUP_PERF=1` 的 release（HEAD `256315a`，Qt 6.12.1，7 次中位）里
+`alpha` → `settings` 是 227 ms，而其余设置工作（`settings::init`、`migrate_legacy`、
+`load_settings`、`set_ui_font`、`apply_process_wide_preferences`）合计不到 2 ms。
+加临时标记（已移除）后：
+
+| 标记 | ms |
+|---|---:|
+| `alpha` | 23.0 |
+| `fonts-enter` | 23.4 |
+| 第一个 `addApplicationFont` 返回 | **229.7** |
+| 第二 / 第三个 face 返回 | +1.8 / +2.9 |
+| `fonts-applied` → `terminal` | 235.0 → 237.3 |
+
+即 206 ms 卡在第一个 `addApplicationFont`。同一批的 `font-db warm begin → end` 是
+17.0 → 205.6，而每一轮里第一个 face 都在 `warm end` 之后 24–28 ms 才返回（7/7）。
+
+原因：`main` 在 `QGuiApplication` 之后就 spawn `warm_font_database`，紧接着
+`dae_qt::init` 里的 `apply_fonts` 调 `addApplicationFont`——两者是同一把锁，预热在这里
+不是并行，而是让主线程替它排队。
+
+### 改动
+
+`apps/dae/src/main.rs`：`warm_font_database` 的 spawn 从 `qgui-application` 之后移到
+`dae_qt::init()`（`apply_fonts` 已完成）之后。之后到首帧仍有约 900 ms 的非文本工作
+（占位窗 + 实例化）可以让预热重叠。
+
+### 数字（同机同日，各 7 次中位）
+
+| | 改前 | 改后 |
+|---|---:|---:|
+| `alpha → settings` | 226.8 | **34.6** |
+| 第一像素（`shell-frame`） | 543.8 | **330.7** |
+| `qml-root-completed` | 1078.4 | **960.5** |
+| `qml-first-model` | 1211.1 | 1119.5 |
+| **`first-frame`** | **1282.6** | **1193.8（−6.9%）** |
+
+排除每批第 1 次冷启动：改前 1251.9–1307.0，改后 1152.7–1270.9（6 次里 5 次 <1240）。
+实例化的绝对终点提前 118 ms，端到端拿到 89 ms；差的约 30 ms 落在预热与主线程抢 CPU
+之后的 `qml-first-model` 段和首屏绘制段（各 +20 ms）。
+
+### 占位窗关闭时
+
+`DAE_SHELL_FIRST=0`，同一份改后二进制，7 次中位：`first-frame` **1183.9**
+（1141.7–1224.6），`alpha → settings` 31.3，`qml-engine` 57.2，`root` 756.6，
+`first-list → first-frame` 267.4。预热（55.7 → 234.7）与 `engine.load`（57.2 起）重叠，
+QML 侧没有被拖住；前段省下的时间被首帧里的 D3D11 设备初始化吃回去，端到端与开占位窗
+打平，占位窗的价值仍是第一像素（331 vs 1184）。
+
+旧位置在 `shellFirst=0` 下没有直接测（要再构建两版）。按路径推断它不会更快：旧位置是
+把主线程挡到预热结束（~205 ms）再 load，新位置从 57 ms 就开始 load，最多只可能在
+235 ms 前等锁，损失被并行抵消。
+
+### 注意
+
+- 绝对值受机器状态影响（同一二进制批次间 ±10–15%）；结论要读同批前后对比，别引用单点。
+- 临时标记、测量脚本和原始 stderr 都只在会话临时目录，未入库；结论保留在
+  `apps/dae/src/main.rs` 的注释里。
+
+## 19. 把 CJK face 的创建挪到预热线程：首帧成对 −147 ms（2026-11-24）
+
+§18 之后 `shell-frame → qml-root-completed` 仍有 ~630 ms。用 `DAE_QML_PROFILE=1` 的
+release 接 qmlprofiler（`--include creating,compiling,binding,javascript,handlingsignal`）
+抓了一次启动，实例化窗口（trace 345 → 946 ms，601 ms）的构成是：
+
+| 段 | ms | 内容 |
+|---|---:|---|
+| 运行时编译 | 53 | `Main.qml` 53.3 + `ShellWindow.qml` 48.3（profiler 构建绕过 AOT，正式构建没有这段） |
+| `ShellWindow` 构造 | 150.7 | 其中 [Inspector.qml](../qml/Inspector.qml) 的 office `TextEdit` 占 129.8（创建时 `visible=false`） |
+| 零散面板 | ~35 | QuickPreview、DisplayMenu、Toast 等 |
+| `TransferQueue.qml:416` 的空状态 `Text` | **231.8** | 单个 Text 创建，期间没有任何其他 Creating 事件——整段阻塞 |
+| 菜单 / TopBar / StatusCenter / ActionBar | ~130 | TopBar Repeater 44.8、MenuList 的 Repeater 等 |
+
+也就是说 ~360 ms（60%）是两笔一次性文本成本：第一套文本引擎初始化，和第一个中文字符串
+触发的 DirectWrite CJK face 构建；真正的树结构约 186 ms。
+
+### 改动
+
+`dae_qt_warm_font_database`（`crates/dae-qt/cpp/window.h`）在 `QFontDatabase::families()`
+之后，用 `QFontMetricsF` 在 worker 上量一遍中文样例，字号取首屏实际使用的两个值
+（`Theme.typeMicro` 11、`Theme.typeCaption` 12）。face 建好后多量几个字号没有可测成本，
+所以 11/12 之外不再加。仍然只在 Windows（`Q_OS_WIN`）下编译，和原有的字体库预热同一条件。
+
+### 数字（交错 A/B，7 对，同一对里两个二进制轮流先跑）
+
+| | base | cjk warm |
+|---|---:|---:|
+| 第一像素（`shell-frame`） | 339.8 | 353.1 |
+| `qml-root-completed` | 986.8 | **864.2** |
+| `qml-first-model` | 1152.2 | **1021.4** |
+| **`first-frame`** | **1246.7** | **1126.5** |
+
+成对 `first-frame` 差值中位 **−146.8 ms**，范围 −264.0 .. +69.4，7 对里 6 对为负。
+注意这张表的 base 绝对值比 §18 的 1193.8 高，是机器状态漂移；只有成对差值能当结论。
+
+### 代价与注意
+
+- 预热线程从 ~200 ms 延长到 ~420–450 ms（`cjk-warm begin → end`），结束点落在
+  `qml-root-completed` 前约 100–200 ms。它和占位窗/建树抢 CPU，第一像素晚约 13–15 ms；
+  首帧净赚 ~147 ms。
+- `QFontMetricsF` 在非 GUI 线程上运行，依赖与现有字体库预热相同的「Qt 6 字体函数可跨线程」
+  前提；本次 14 次交替运行无崩溃、无 Qt 警告。
+- 样例串覆盖首屏的中文文案。若首屏第一个中文字符串换成别的脚本（例如日文假名），face 可能
+  不是同一份，收益要重测。
+- 这次 profiler trace 只用于定位成分（调试服务绕过 AOT、每事件有开销），绝对时间不可与
+  §18 的 632 ms 直接比较。
+
+## 20. 两条负结果：预热字号顺序、隐藏文本延迟布局（2026-11-24）
+
+§19 的 CJK 预热让第一个 QML 文本要等 worker 建完 face（同一把 `QFontDatabase` 锁）。
+下面两条都试着缩短这段等待，**都无效，代码已还原**，记下来避免重复尝试。
+
+### 20.1 预热字号顺序 `{12, 11}`
+
+动机：qmlprofiler trace 里 `ShellWindow` 最先创建的文本是 [Inspector.qml](../qml/Inspector.qml)
+的 office `TextEdit`，字号 `Theme.typeCaption` 12；而预热循环先建 11。怀疑按字号建 face，
+把 12 排到前面就能让第一个文本提前拿到锁。
+
+7 对交错 A/B（同一份代码，只换循环顺序）：
+
+| | `{11, 12}` | `{12, 11}` |
+|---|---:|---:|
+| `qml-root-completed` | 771.3 | 782.4 |
+| `qml-first-model` | 912.7 | 934.3 |
+| **`first-frame`** | **984.4** | **1005.5** |
+
+成对差值中位 **−1.2 ms**（范围 −61.3 .. +278.9），无差异。warm12 版的逐字号标记给出原因：
+
+| 标记 | ms |
+|---|---:|
+| `cjk-warm begin` | 278.3 |
+| 12 px 完成 | 626.6（**+348.3**） |
+| 11 px 完成 | 627.5（**+0.9**） |
+| `cjk-warm end` | 627.6 |
+
+**face 是按字体族建的，不是按字号建的。** 第一个字号付全部 ~348 ms，第二个几乎免费，
+所以顺序无关。预热循环保留原样 `{11, 12}`。
+
+### 20.2 隐藏文本延迟布局
+
+动机：office `TextEdit` 在 `officeCard.visible=false` 时仍会布局错误文案，trace 里它
+占了 336 ms 并一直等到预热结束。实验把它在卡片不可见时的 `text` 置空（绑定改为
+`officeCard.visible ? … : ""`），希望主线程先建完树。
+
+7 对交错 A/B：
+
+| | base | 置空 |
+|---|---:|---:|
+| `qml-root-completed` | 983.4 | 990.9 |
+| `qml-first-model` | 1162.1 | 1180.5 |
+| **`first-frame`** | **1289.8** | **1282.9** |
+
+成对差值中位 **−6.9 ms**（范围 −104.4 .. +85.1），正负各半。
+
+原因还是 §14 的转移：Inspector 更早的中文标签（441/477/757 行的 Column 内）会接手
+“首个中文字符串”的角色，主线程照样等同一把锁。**只要首屏有中文，等待就无法靠推迟
+单个控件绕开**；要真正消除只能让预热不持有那把锁，属于 Qt 内部行为，不做。
+
+### 结论
+
+- 预热本身（§19）保留：它把两笔文本成本合并成一笔，A/B 有 −147 ms。
+- 预热**内部**没有可调的：顺序无关，等待会转移。
+- 两次实验的 QML / C++ 改动均已撤回，产品代码只保留 §18、§19 的两处。
+
