@@ -22,6 +22,13 @@ use std::sync::OnceLock;
 /// How often partial totals are pushed to the UI while a scan runs.
 const SIZE_PROGRESS_INTERVAL_MS: u64 = 250;
 
+/// Entries a size walk visits on the calling thread before it hands the tree
+/// to the parallel walker. The parallel pool costs ~4 ms to start (measured on
+/// a 16-thread machine), while a serial entry costs well under a microsecond,
+/// so every small folder is cheaper without it; this bound keeps the detour a
+/// large tree pays below that fixed cost.
+const SERIAL_ENTRY_LIMIT: u64 = 512;
+
 /// Live scans keyed by operation id, so navigating away can stop a scan.
 #[derive(Default)]
 pub struct DirectorySizeState {
@@ -123,8 +130,15 @@ pub fn measure_directory(directory: &Path, cancelled: &AtomicBool) -> u64 {
     walk_directory_size(directory, cancelled, &|_| {})
 }
 
-/// Walks `directory` in parallel and sums the bytes of every regular file,
-/// reporting the running total to `progress` after each counted file.
+/// Walks `directory` and sums the bytes of every regular file, reporting the
+/// running total to `progress` after each counted file.
+///
+/// Small trees are summed on the calling thread: `ignore` splits *directories*
+/// across threads, never the entries inside one, so a folder that fits in
+/// [`SERIAL_ENTRY_LIMIT`] entries gains nothing from a pool that costs ~4 ms to
+/// start. A larger tree restarts under the parallel walker, so the serial
+/// attempt is the only extra work it pays.
+///
 /// Returns the final total; a pre-set or mid-walk `cancelled` flag stops the
 /// traversal early (the returned sum is then partial).
 pub(super) fn walk_directory_size(
@@ -132,17 +146,20 @@ pub(super) fn walk_directory_size(
     cancelled: &AtomicBool,
     progress: &(dyn Fn(u64) + Send + Sync),
 ) -> u64 {
+    if let Some((total, reported)) = walk_small_tree(directory, cancelled) {
+        // Replayed only once the serial walk owns the answer: a partial total
+        // from an attempt that handed the tree to the parallel walker must not
+        // reach the UI, and the progress contract is one report per counted
+        // file either way.
+        for current in reported {
+            progress(current);
+        }
+        return total;
+    }
+
     let total = AtomicU64::new(0);
 
-    let mut builder = WalkBuilder::new(directory);
-    // Count everything the shell would, including hidden files; none of the
-    // standard ignore filters apply to a size report.
-    builder
-        .standard_filters(false)
-        .hidden(false)
-        .follow_links(false);
-
-    builder.build_parallel().run(|| {
+    size_builder(directory).build_parallel().run(|| {
         Box::new(|result| {
             if cancelled.load(AtomicOrdering::Relaxed) {
                 return WalkState::Quit;
@@ -164,6 +181,51 @@ pub(super) fn walk_directory_size(
     });
 
     total.load(AtomicOrdering::Relaxed)
+}
+
+/// The options every size walk uses: everything the shell would count, no
+/// standard ignore filters, and symlinks never followed.
+fn size_builder(directory: &Path) -> WalkBuilder {
+    let mut builder = WalkBuilder::new(directory);
+    builder
+        .standard_filters(false)
+        .hidden(false)
+        .follow_links(false);
+    builder
+}
+
+/// Sums the tree on the calling thread while it stays within
+/// [`SERIAL_ENTRY_LIMIT`] entries, buffering the per-file running totals the
+/// caller replays through `progress` once this arm owns the answer. `None`
+/// means the tree is larger and the caller has to restart it under the
+/// parallel walker, discarding the partial total reached here.
+fn walk_small_tree(directory: &Path, cancelled: &AtomicBool) -> Option<(u64, Vec<u64>)> {
+    let mut total = 0u64;
+    let mut visited = 0u64;
+    let mut reported = Vec::new();
+
+    for result in size_builder(directory).build() {
+        if cancelled.load(AtomicOrdering::Relaxed) {
+            return Some((total, reported));
+        }
+
+        visited += 1;
+        if visited > SERIAL_ENTRY_LIMIT {
+            return None;
+        }
+
+        if let Ok(entry) = result
+            && entry
+                .file_type()
+                .is_some_and(|file_type| file_type.is_file())
+            && let Ok(metadata) = entry.metadata()
+        {
+            total += metadata.len();
+            reported.push(total);
+        }
+    }
+
+    Some((total, reported))
 }
 
 /// Emits a running total at most once per throttle window. The
@@ -237,6 +299,102 @@ mod tests {
         assert_eq!(total, 4 + 7 + 12);
         assert_eq!(last_reported.load(AtomicOrdering::Relaxed), total);
         assert_eq!(report_count.load(AtomicOrdering::Relaxed), 3);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    /// Prints what one folder-size walk costs on a real tree.
+    ///
+    /// ```bash
+    /// cd crates/dae-core
+    /// DAE_DIRECTORY_SIZE_BENCH=K:/dae-listing-bench/big \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_directory_size_walk
+    /// ```
+    ///
+    /// The tree is whatever the variable names; `bench/listing-pipeline
+    /// prepare` writes a 35,803-entry one from the repository root. `files` is
+    /// how many regular files the walk counted, so `per file` is the fixed cost
+    /// of visiting one entry and `throughput` the bytes half — a tree of empty
+    /// files isolates the former. A tree within `SERIAL_ENTRY_LIMIT` entries is
+    /// summed on the calling thread; past it the parallel walker takes over.
+    /// That walker spreads *directories* across threads, never the files inside
+    /// one directory, so a single 35,803-entry directory stays on one thread in
+    /// both arms. Run a flat tree and a deep one when judging a change. Compare
+    /// this test against itself, before and after a change; absolute
+    /// milliseconds are per-machine.
+    #[test]
+    #[ignore = "prints measurements for the directory in DAE_DIRECTORY_SIZE_BENCH"]
+    fn reports_the_cost_of_a_directory_size_walk() {
+        use std::time::Instant;
+
+        let Some(root) = std::env::var_os("DAE_DIRECTORY_SIZE_BENCH") else {
+            panic!("set DAE_DIRECTORY_SIZE_BENCH to a directory to measure");
+        };
+        let root = PathBuf::from(root);
+        assert!(root.is_dir(), "{} is not a directory", root.display());
+
+        // One untimed walk counts the files the timed walk will visit, so the
+        // per-entry figure and the shipped answer come from the same entries.
+        let cancelled = AtomicBool::new(false);
+        let counted = AtomicU64::new(0);
+        let expected = walk_directory_size(&root, &cancelled, &|_| {
+            counted.fetch_add(1, AtomicOrdering::Relaxed);
+        });
+        let files = counted.load(AtomicOrdering::Relaxed);
+
+        // Two warm passes, then seven timed ones; a walk that summed a
+        // different number is a bug, not a faster run.
+        for _ in 0..2 {
+            assert_eq!(measure_directory(&root, &cancelled), expected);
+        }
+        let mut samples = Vec::with_capacity(7);
+        for _ in 0..7 {
+            let started = Instant::now();
+            let measured = measure_directory(&root, &cancelled);
+            samples.push(started.elapsed().as_nanos());
+            assert_eq!(measured, expected);
+        }
+        samples.sort_unstable();
+
+        let median_ms = samples[samples.len() / 2] as f64 / 1e6;
+        let mebibytes = expected as f64 / (1024.0 * 1024.0);
+
+        println!("root       {}", root.display());
+        println!("files      {files}");
+        println!("bytes      {expected}  ({mebibytes:.1} MiB)");
+        println!("median     {median_ms:.2} ms");
+        println!(
+            "min/max    {:.2} / {:.2} ms",
+            samples[0] as f64 / 1e6,
+            samples[samples.len() - 1] as f64 / 1e6
+        );
+        println!(
+            "per file   {:.2} us/file",
+            median_ms * 1000.0 / files.max(1) as f64
+        );
+        println!(
+            "throughput {:.1} MiB/s",
+            mebibytes / (median_ms / 1000.0).max(f64::MIN_POSITIVE)
+        );
+    }
+
+    /// Past `SERIAL_ENTRY_LIMIT` entries the serial arm hands the tree to the
+    /// parallel walker; the restart must count every file exactly once.
+    #[test]
+    fn falls_back_to_the_parallel_walk_past_the_serial_limit() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-folder-size-limit-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+        let files = SERIAL_ENTRY_LIMIT as usize + 8;
+        for index in 0..files {
+            fs::write(directory.join(format!("file-{index:04}.txt")), "x")
+                .expect("write test file");
+        }
+
+        let cancelled = AtomicBool::new(false);
+        let total = measure_directory(&directory, &cancelled);
+
+        assert_eq!(total, files as u64);
 
         fs::remove_dir_all(directory).expect("remove test directory");
     }
