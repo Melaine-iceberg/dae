@@ -50,10 +50,8 @@ QtObject {
         || (Appearance.theme === "system" && Workspace.systemDark)
 
     // ── Seed & interaction ──────────────────────────────────────────────────
-    /// The app's own seed colour. In M3 terms this is the key colour's tone 40
-    /// (light) / tone 80 (dark). Kept separate from `accent` because the
-    /// settings panel shows this swatch even when the preference is "system".
-    readonly property color brandAccent: dark ? "#6bcac9" : "#007a7b"
+    /// The app's own seed colour — Chrome GM3 Blue (tone 40 light / tone 80 dark).
+    readonly property color brandAccent: dark ? "#a8c7fa" : "#0b57d0"
     /// `primary` in M3 role terms. The preference decides its source: "system"
     /// follows the desktop's accent reading, "brand" stays on the app's teal,
     /// and "custom" uses the seed the user picked in the settings palette.
@@ -92,8 +90,8 @@ QtObject {
     /// shows a dozen selected things side by side and a grey pill reads as
     /// "disabled" rather than "chosen".
     readonly property color secondaryContainer: dark
-        ? hslColor(accentHue, 0.34, 0.24)
-        : hslColor(accentHue, 0.40, 0.83)
+        ? hslColor(accentHue, 0.36, 0.25)
+        : hslColor(accentHue, 0.72, 0.90)
     /// Tertiary is the seed rotated 60°: the expressive counterweight used for
     /// badges, pinned marks and one-off emphasis.
     readonly property color tertiary: dark
@@ -140,49 +138,56 @@ QtObject {
     readonly property color inkOnError: readableInk(error, errorSolidInk)
     readonly property color inkOnErrorContainer: readableInk(errorContainer,
         errorContainerInk)
-    readonly property color inkOnSurface: dark ? "#e2e6e5" : "#141817"
-    readonly property color inkOnSurfaceVariant: dark ? "#c2ccca" : "#3d4644"
+    readonly property color inkOnSurface: dark ? "#e8eaed" : "#1f1f1f"
+    readonly property color inkOnSurfaceVariant: dark ? "#c4c7c5" : "#444746"
     readonly property color inkOnDanger: inkOnError
 
-    // ── M3 surfaces ─────────────────────────────────────────────────────────
-    /// The tonal surface ladder. Light elevation steps *down* in tone
-    /// (surface is brightest); dark elevation steps up, as the model specifies.
-    /// The light ramp keeps a whisper of the seed's hue but is close to neutral:
-    /// a desktop window is read at arm's length, and the green cast the earlier
-    /// values carried made text look tinted rather than the surface tinted.
-    readonly property color surface: dark ? "#0f1413" : "#fbfcfc"
-    readonly property color surfaceDim: dark ? "#0a0e0d" : "#dce1e0"
-    readonly property color surfaceBright: dark ? "#353a39" : "#fbfcfc"
-    readonly property color surfaceContainerLowest: dark ? "#0a0e0d" : "#ffffff"
-    readonly property color surfaceContainerLow: dark ? "#171c1b" : "#f3f5f5"
-    readonly property color surfaceContainer: dark ? "#1b201f" : "#eceeee"
-    readonly property color surfaceContainerHigh: dark ? "#252a29" : "#e4e7e7"
-    readonly property color surfaceContainerHighest: dark ? "#303534" : "#dadee0"
+    // ── M3 surfaces (Chrome Desktop GM3 tonal ladder) ───────────────────────
+    /// The tonal surface ladder tuned to Chrome Desktop: iconic periwinkle-blue
+    /// tab strip (`tabStrip` #d3e3fd in light / #1f2024 in dark), pure white /
+    /// lifted slate toolbar + active tab (`toolbar`), soft cool sidebar
+    /// (`chrome`), and `#edf2fa` / `#202124` Omnibox well (`field`).
+    readonly property color surface: dark ? "#202124" : "#ffffff"
+    readonly property color surfaceDim: dark ? "#191a1d" : "#e6ebf4"
+    readonly property color surfaceBright: dark ? "#383b42" : "#ffffff"
+    readonly property color surfaceContainerLowest: dark ? "#17181b" : "#ffffff"
+    readonly property color surfaceContainerLow: dark ? "#25272b" : "#f3f6fc"
+    readonly property color surfaceContainer: dark ? "#2c2e33" : "#edf2fa"
+    readonly property color surfaceContainerHigh: dark ? "#303238" : "#ffffff"
+    readonly property color surfaceContainerHighest: dark ? "#202124" : "#edf2fa"
 
-    readonly property color outline: dark ? "#8b9593" : "#6e7876"
-    readonly property color outlineVariant: dark ? "#3f4947" : "#c5cecc"
-    readonly property color inverseSurface: dark ? "#dfe4e2" : "#2d3130"
-    readonly property color inverseOnSurface: dark ? "#2c3130" : "#eff1f0"
+    readonly property color outline: dark ? "#8e918f" : "#747775"
+    readonly property color outlineVariant: dark ? "#3c4043" : "#e1e3e1"
+    readonly property color inverseSurface: dark ? "#e8eaed" : "#303134"
+    readonly property color inverseOnSurface: dark ? "#202124" : "#f8f9fa"
     readonly property color inversePrimary: dark
         ? withLightness(accent, 0.34) : withLightness(accent, 0.76)
 
-    // ── Legacy surface aliases ──────────────────────────────────────────────
+    // ── Legacy & Chrome surface aliases ─────────────────────────────────────
     /// The window's bottom layer, visible only in the gutters.
     readonly property color window: surfaceDim
-    /// The frame: tab row, sidebar, status bar, inspector.
+    /// The frame: sidebar, status bar, inspector.
     readonly property color chrome: surfaceContainerLow
-    /// The tab row's own band. The darkest step in both themes, the way a
-    /// desktop browser separates its tab strip from the toolbar: the active
-    /// tab wears the toolbar's surface, so it reads as a raised chip only when
-    /// the strip behind it sits a step lower.
-    readonly property color tabStrip: surfaceDim
-    /// The active tab's plate. It has to stay a step away from the strip in
-    /// both material modes: the bar is either the solid `tabStrip` or a Mica
-    /// tint of whatever is behind the window, so the chip is pinned to the
-    /// brightest container role rather than to the toolbar's surface. White on
-    /// light and a raised grey on dark is what Chrome's active tab does.
-    readonly property color tabActive: dark ? surfaceContainerHigh
-                                            : surfaceContainerLowest
+    /// The tab row's own band: Chrome Refresh 2023 `#d3e3fd` in default light
+    /// mode (and dynamically seed-tinted when custom accent is chosen).
+    readonly property color tabStrip: dark
+        ? (Appearance.accent === "brand" ? "#1f2024" : mix(accent, "#1f2024", 0.08))
+        : (Appearance.accent === "brand" ? "#d3e3fd" : mix(accent, "#e9effa", 0.18))
+    readonly property color tabStripInactive: dark
+        ? "#292b30"
+        : "#e8eef7"
+    /// Leading tab-search button well inside the tab strip.
+    readonly property color tabSearchFill: dark ? "#2d3036" : "#edf2fa"
+    readonly property color tabSearchHover: dark ? "#383c44" : "#dde7fb"
+    /// The toolbar and active tab share this exact surface so the active tab
+    /// connects seamlessly into the toolbar below it without a seam.
+    readonly property color toolbar: dark ? "#35373c" : "#ffffff"
+    readonly property color tabActive: toolbar
+    /// Inactive tab hover pill and vertical divider between tabs and before `+`.
+    readonly property color tabHover: dark
+        ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0.043, 0.341, 0.816, 0.10)
+    readonly property color tabDivider: dark
+        ? Qt.rgba(1, 1, 1, 0.22) : "#a8c7fa"
     /// Content: the listing, the grid, the preview body.
     readonly property color canvas: surface
     /// A surface that floats above everything: menus, dialogs, the palette.
@@ -192,24 +197,18 @@ QtObject {
     /// the grab/blur passes entirely.
     readonly property bool glassEnabled: Appearance.frostedGlass
     /// The frosted-glass veil painted over the blurred scene behind a floating
-    /// plate (`Glass.qml`). macOS materials tint *neutral* — an achromatic
-    /// grey/white — not the app's seed colour: a seed-tinted veil read green
-    /// over the blur. Kept a touch cool (blue ≥ red ≥ green) so it can never
-    /// cast green, and translucent enough that the vibrancy reads through
-    /// while text keeps its contrast.
-    readonly property color glassTint: dark ? Qt.rgba(0.102, 0.102, 0.110, 0.68)
-                                            : Qt.rgba(0.965, 0.965, 0.973, 0.74)
-    /// The hairline edge of a glass plate. macOS separates a material from its
-    /// backdrop with a faint stroke — light-on-dark in the dark theme,
-    /// dark-on-light in the light theme.
+    /// plate (`Glass.qml`).
+    readonly property color glassTint: dark ? Qt.rgba(0.145, 0.153, 0.176, 0.82)
+                                            : Qt.rgba(1.0, 1.0, 1.0, 0.86)
+    /// The hairline edge of a glass plate.
     readonly property color glassEdge: dark ? Qt.rgba(1, 1, 1, 0.14)
-                                            : Qt.rgba(0, 0, 0, 0.12)
-    /// The one-pixel top highlight inside a glass plate's corner: caught light
-    /// on the material's upper edge.
+                                            : Qt.rgba(0, 0, 0, 0.10)
+    /// The one-pixel top highlight inside a glass plate's corner.
     readonly property color glassHighlight: dark ? Qt.rgba(1, 1, 1, 0.08)
-                                                 : Qt.rgba(1, 1, 1, 0.65)
-    /// An input well: text fields, search, path editing.
+                                                 : Qt.rgba(1, 1, 1, 0.75)
+    /// An input well: Omnibox resting, search, path editing.
     readonly property color field: surfaceContainerHighest
+    readonly property color fieldHover: dark ? "#2b2d33" : "#e3eaf6"
     /// A surface *inside* a surface: preview wells, tag pills, cards.
     readonly property color inset: surfaceContainerLow
 
@@ -245,7 +244,7 @@ QtObject {
     readonly property color inkSecondary: inkOnSurfaceVariant
     /// Tertiary text is one step lighter than `onSurfaceVariant` so an 11 px
     /// label still clears 4.5:1 on the canvas.
-    readonly property color inkTertiary: dark ? "#a5b0ad" : "#5b6563"
+    readonly property color inkTertiary: dark ? "#9aa0a6" : "#5f6368"
 
     // ── Lines ───────────────────────────────────────────────────────────────
     /// Region boundaries. `outlineVariant` is the M3 divider role.
@@ -254,14 +253,17 @@ QtObject {
     readonly property color line: outline
     /// The edge of something that has to be seen: a drop target, a focus ring.
     readonly property color lineStrong: inkOnSurfaceVariant
-    /// M3 floating surfaces are separated by tone and elevation, not by a
-    /// stroke. Kept as a token because call sites still set a border.
-    readonly property color overlayLine: "transparent"
+    /// Floating surfaces keep a crisp 1px hairline in Chrome Desktop.
+    readonly property color overlayLine: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
 
     // ── State ───────────────────────────────────────────────────────────────
     /// M3's 8 % on-surface state layer.
     readonly property color hover: Qt.rgba(inkOnSurface.r, inkOnSurface.g,
                                           inkOnSurface.b, dark ? 0.08 : 0.06)
+    readonly property color ripple: Qt.rgba(inkOnSurface.r, inkOnSurface.g,
+                                           inkOnSurface.b, dark ? 0.14 : 0.11)
+    readonly property color accentRipple: Qt.rgba(inkOnAccent.r, inkOnAccent.g,
+                                                 inkOnAccent.b, 0.20)
     /// Behind a modal. M3 scrim is 32 % black.
     readonly property color scrim: "#52000000"
     /// The selected row / tile / menu item. In M3 that is the secondary
@@ -570,9 +572,9 @@ QtObject {
     readonly property int controlLg: 32
     readonly property int controlXl: 36
 
-    /// The chrome bands. The tab row is 38 dp and the native side's
+    /// The chrome bands. The tab row is 40 dp and the native side's
     /// `kTitleBarDp` is the same number.
-    readonly property int shellTitle: 38
+    readonly property int shellTitle: 40
     readonly property int shellNav: 44
     readonly property int shellStatus: 28
     readonly property int actionBar: 36

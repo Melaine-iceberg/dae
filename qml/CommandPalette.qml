@@ -671,7 +671,8 @@ Item {
         height: Math.min(430, root.height - y - 96)
         radius: Theme.radiusXl
         color: "transparent"
-        border.width: 0
+        border.width: 1
+        border.color: Theme.overlayLine
 
         /// The palette appears where it belongs; hiding stays instant so the
         /// next open never stacks on a departing one.
@@ -704,8 +705,8 @@ Item {
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
-                radius: Theme.radiusSm
-                color: Theme.field
+                radius: height / 2
+                color: input.activeFocus ? Theme.toolbar : Theme.field
                 border.width: input.activeFocus ? 2 : 0
                 border.color: Theme.accent
             }
@@ -912,6 +913,7 @@ Item {
                 // M3 Expressive selection: a `secondaryContainer` block, not a
                 // wash plus a rail. The same block marks the row Enter will run.
                 Rectangle {
+                    id: paletteRowPlate
                     anchors.fill: parent
                     anchors.leftMargin: 4
                     anchors.rightMargin: 4
@@ -920,6 +922,16 @@ Item {
                     radius: Theme.radiusMd
                     color: row.current ? Theme.selection
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple {
+                        id: paletteRowRipple
+                        radius: Theme.radiusMd
+                    }
                 }
 
                 Glyph {
@@ -966,6 +978,12 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    onPressed: function (mouse) {
+                        const pt = paletteRowPlate.mapFromItem(rowMouse, mouse.x, mouse.y)
+                        paletteRowRipple.burst(pt.x, pt.y)
+                    }
+                    onReleased: paletteRowRipple.release()
+                    onCanceled: paletteRowRipple.release()
                     onClicked: {
                         list.currentIndex = row.index
                         root.activeIndex = row.index

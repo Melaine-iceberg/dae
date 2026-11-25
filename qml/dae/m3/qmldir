@@ -1,0 +1,3 @@
+module dae.m3
+typeinfo m3.qmltypes
+depends QtQuick auto

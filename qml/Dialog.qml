@@ -102,7 +102,8 @@ FocusScope {
             + (root.footerHeight > 0 ? root.footerHeight + 16 : 0)
         radius: Theme.radiusXl
         color: "transparent"
-        border.width: 0
+        border.width: 1
+        border.color: Theme.overlayLine
 
         /// A desktop dialog fades in where it belongs. The scrim is the
         /// arrival; the plate does not scale up out of nowhere. Hiding stays

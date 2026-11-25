@@ -1,35 +1,27 @@
 import QtQuick
 
-// The desktop dialog button: 32 high with a 6 dp corner, in three of the
-// Material button styles. Chrome's dialog buttons are rectangles with a
-// modest corner, not pills; only icon buttons stay circular.
-//
-//   "quiet"    text button — no container, `primary` label, 8 % state layer
-//   "primary"  filled button — `primary` container, `inkOnPrimary` label
-//   "danger"   filled error button — `error` container, `inkOnError` label
-//
-// Keyboard focus draws a 2 px ring inside the pill: `primary` on the text
-// button, the ink-on colour on the two filled ones. That keeps focus visible
-// on every tone without changing the button's footprint.
+// The Chrome GM3 desktop dialog button: 32 high full pill (`radius: height / 2`),
+// outlined secondary / filled primary / filled danger with pointer-originated
+// RHI ink ripple.
 Rectangle {
     id: root
 
     property string label: ""
-    /// "quiet" (cancel), "primary" (filled), "danger" (filled error).
+    /// "quiet" (cancel/outlined), "primary" (filled), "danger" (filled error).
     property string tone: "quiet"
     property bool focused: false
 
     signal clicked()
 
     activeFocusOnTab: true
-    Keys.onReturnPressed: if (root.enabled) root.clicked()
-    Keys.onEnterPressed: if (root.enabled) root.clicked()
-    Keys.onSpacePressed: if (root.enabled) root.clicked()
+    Keys.onReturnPressed: if (root.enabled) { buttonRipple.pulse(); root.clicked() }
+    Keys.onEnterPressed: if (root.enabled) { buttonRipple.pulse(); root.clicked() }
+    Keys.onSpacePressed: if (root.enabled) { buttonRipple.pulse(); root.clicked() }
 
-    implicitWidth: Math.max(64, labelText.implicitWidth + 32)
+    implicitWidth: Math.max(72, labelText.implicitWidth + 36)
     implicitHeight: Theme.controlLg
     opacity: enabled ? 1 : 0.38
-    radius: Theme.radiusSm
+    radius: height / 2
     color: {
         if (root.tone === "danger")
             return buttonMouse.containsMouse ? Theme.dangerSolidHover : Theme.dangerSolid
@@ -39,11 +31,25 @@ Rectangle {
             ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
             : "transparent"
     }
-    border.width: root.focused || root.activeFocus ? 2 : 0
+    border.width: root.focused || root.activeFocus ? 2 : (root.tone === "quiet" ? 1 : 0)
     border.color: {
-        if (root.tone === "quiet")
-            return Theme.accent
-        return root.tone === "danger" ? Theme.inkOnDanger : Theme.inkOnAccent
+        if (root.focused || root.activeFocus) {
+            if (root.tone === "quiet")
+                return Theme.accent
+            return root.tone === "danger" ? Theme.inkOnDanger : Theme.inkOnAccent
+        }
+        return Theme.outlineVariant
+    }
+
+    Behavior on color {
+        enabled: Theme.motion
+        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+    }
+
+    InkRipple {
+        id: buttonRipple
+        radius: root.height / 2
+        color: root.tone === "quiet" ? Theme.ripple : Theme.accentRipple
     }
 
     Accessible.role: Accessible.Button
@@ -66,6 +72,9 @@ Rectangle {
         enabled: root.enabled
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        onPressed: function (mouse) { buttonRipple.burst(mouse.x, mouse.y) }
+        onReleased: buttonRipple.release()
+        onCanceled: buttonRipple.release()
         onClicked: root.clicked()
     }
 }

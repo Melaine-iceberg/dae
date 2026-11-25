@@ -69,7 +69,7 @@ Window {
     readonly property int closedTabLimit: 16
     /// Toolbar action ids in display order. The defaults match the components
     /// declared in the path bar; `syncToolbarOrder` reconciles a stored value.
-    property var toolbarLeadingItems: ["back", "forward", "up"]
+    property var toolbarLeadingItems: ["back", "forward", "up", "refresh"]
     property var toolbarTrailingItems: ["search", "trash", "view", "more"]
     /// The tab the open tab menu belongs to.
     property int tabMenuIndex: -1
@@ -204,6 +204,13 @@ Window {
     /// on this instead of failing after the click.
     readonly property bool remoteLocation: folderActive
         && (activeTab.listing.remote || root.isRemotePath(activeTab.listing.path))
+    property bool currentFavorite: false
+    function syncFavorite() {
+        root.currentFavorite = root.folderActive && root.activePath !== ""
+            ? Workspace.isFavorite(root.activePath) : false
+    }
+    onActivePathChanged: syncFavorite()
+    onFolderActiveChanged: syncFavorite()
     readonly property bool searchActive: folderActive && searchQuery.trim().length > 0
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
     readonly property bool splitActive: ExplorerPrefs.splitEnabled
@@ -695,12 +702,6 @@ Window {
         }
         function onToolbarLeadingChanged() {
             root.syncToolbarOrder()
-        Qt.callLater(function () {
-            const first = leadingToolbarRepeater.itemAt(0)
-            console.log("dae-after", leadingToolbar.width, trailingToolbar.width,
-                        first ? first.item !== null : false,
-                        first ? first.width : -1)
-        })
         }
         function onToolbarTrailingChanged() {
             root.syncToolbarOrder()
@@ -1005,6 +1006,39 @@ Window {
         }
         root.tabs = kept
         root.activeIndex = Math.max(0, kept.indexOf(target))
+    }
+
+    function showTabSwitcherMenu(x, y) {
+        const entries = []
+        for (let i = 0; i < root.tabs.length; i += 1) {
+            const tab = root.tabs[i]
+            if (!tab)
+                continue
+            entries.push({
+                id: "tabSwitch:" + i,
+                glyph: i === root.activeIndex ? "check" : "folder",
+                label: tab.title,
+                checked: i === root.activeIndex
+            })
+        }
+        if (entries.length > 0)
+            entries.push({ separator: true })
+        entries.push({
+            id: "tabNew",
+            glyph: "plus",
+            label: qsTr("新建标签页"),
+            shortcut: root.chord("Mod+T")
+        })
+        if (root.closedTabs.length > 0) {
+            entries.push({
+                id: "tabReopen",
+                glyph: "undo",
+                label: qsTr("重新打开关闭的标签页"),
+                shortcut: root.chord("Mod+Shift+T")
+            })
+        }
+        const point = topBar.mapToItem(null, x, y)
+        menu.openAt(point.x, point.y, entries)
     }
 
     function showTabMenu(index, x, y) {
@@ -1641,7 +1675,7 @@ Window {
 
     function syncToolbarOrder() {
         const leading = root.toolbarIds(ExplorerPrefs.toolbarLeading,
-                                        ["back", "forward", "up"])
+                                        ["back", "forward", "up", "refresh"])
         const trailing = root.toolbarIds(ExplorerPrefs.toolbarTrailing,
                                          ["search", "trash", "view", "more"])
         if (leading.join(",") !== root.toolbarLeadingItems.join(","))
@@ -3746,6 +3780,18 @@ Window {
             menu.openAt(menu.openX, menu.openY, root.rowMenuItems())
             return
         }
+        if (id.indexOf("tabSwitch:") === 0) {
+            const targetIndex = parseInt(id.substring("tabSwitch:".length), 10)
+            if (!isNaN(targetIndex) && targetIndex >= 0 && targetIndex < root.tabs.length)
+                root.activeIndex = targetIndex
+            root.clearContext()
+            return
+        }
+        if (id === "tabNew") {
+            root.addTabHere()
+            root.clearContext()
+            return
+        }
         switch (id) {
         case "open":
             if (isDir)
@@ -4049,6 +4095,7 @@ Window {
         target: Workspace
 
         function onFavoritesChanged() {
+            root.syncFavorite()
             overviewModelInstance.refresh()
         }
 
@@ -4235,6 +4282,7 @@ Window {
                 controller: chrome
                 dark: root.dark
                 material: root.material
+                windowActive: root.active
                 title: root.title
                 tabs: root.tabs
                 activeIndex: root.activeIndex
@@ -4268,6 +4316,9 @@ Window {
                 onTabContextRequested: function (index, x, y) {
                     root.showTabMenu(index, x, y)
                 }
+                onTabSearchRequested: function (x, y) {
+                    root.showTabSwitcherMenu(x, y)
+                }
                 onTabMoved: function (from, to) {
                     root.moveTab(from, to)
                 }
@@ -4287,12 +4338,19 @@ Window {
             id: pathBar
             width: parent.width
             height: Theme.shellNav
-            color: root.chromeColor
+            color: Theme.toolbar
             /// The address field's completion list hangs below the bar, so the
             /// bar has to paint above the body that follows it in the column.
-            /// Without this the list is drawn under the column header, which
-            /// looks like a truncated popup rather than a covered one.
             z: 20
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                visible: !searchFilterBar.visible
+                height: Theme.ruleWidth(Screen.devicePixelRatio)
+                color: Theme.hairline
+            }
 
             // The toolbar is a model, not a fixed row: every action is a
             // Loader over `toolbarLeadingItems`/`toolbarTrailingItems`, so a
@@ -4342,16 +4400,14 @@ Window {
                 }
             }
 
-            // Separates navigation from the path itself, the way the
-            // instrument's control cluster is set apart from its readout.
-            Rectangle {
+            Item {
                 id: navSeparator
                 anchors.left: leadingToolbar.right
-                anchors.leftMargin: 6
+                anchors.leftMargin: 0
                 anchors.verticalCenter: parent.verticalCenter
-                width: Theme.ruleWidth(Screen.devicePixelRatio)
+                width: 0
                 height: 16
-                color: Theme.hairline
+                visible: false
             }
 
             Item {
@@ -4359,22 +4415,23 @@ Window {
                 anchors.left: navSeparator.right
                 anchors.leftMargin: 6
                 anchors.right: trailingToolbar.left
-                anchors.rightMargin: 6
+                anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                // M3 Expressive control cluster: a 36 dp search pill between
-                // round icon buttons.
-                height: Theme.controlXl
+                // Chrome Desktop Omnibox pill height.
+                height: 34
 
-                // One frame, three modes. The trail navigates, a click on its
-                // empty part or Mod+L becomes the path editor, Mod+F becomes
-                // search; the shell owns which mode is on.
+                // One Chrome-style capsule Omnibox, three modes + surface state.
                 Locator {
                     id: locator
                     anchors.fill: parent
-                    visible: root.folderActive
-                    mode: root.searchOpen ? "search"
-                        : (root.pathEditing ? "address" : "breadcrumb")
+                    mode: !root.folderActive ? "surface"
+                        : (root.searchOpen ? "search"
+                            : (root.pathEditing ? "address" : "breadcrumb"))
                     interactive: root.folderActive
+                    surfaceTitle: root.surfaceTitle
+                    surfaceGlyph: root.trashActive ? "trash" : "home"
+                    isRemote: root.remoteLocation
+                    isFavorite: root.currentFavorite
                     names: root.activeTab !== null
                         ? root.activeTab.listing.breadcrumbNames : []
                     paths: root.activeTab !== null
@@ -4383,10 +4440,6 @@ Window {
                     accent: root.accent
                     textColor: root.textColor
                     mutedColor: root.mutedColor
-                    /// §11.4: the active pane's path bar carries the accent
-                    /// border, the inactive one the hairline. With one pane
-                    /// there is no "other" pane to distinguish, so the bar
-                    /// keeps its quiet frame.
                     paneFocused: root.splitActive && !root.splitFocused
                     addressPath: root.activePath
                     searchMode: root.searchMode
@@ -4418,23 +4471,16 @@ Window {
                     }
                     onSearchCleared: root.acceptSearchText("")
                     onSearchDismissed: root.closeSearch()
-                }
-
-                // Overview, spaces and the recycle bin are surfaces, not paths:
-                // there is nothing to walk back through, and nothing to type.
-                // One label serves all three, so the bar does not grow a branch
-                // per surface.
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 8
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: !root.folderActive
-                    text: root.surfaceTitle
-                    color: root.textColor
-                    font.pixelSize: Theme.typeBody
-                    elide: Text.ElideRight
+                    onFavoriteToggled: {
+                        if (root.folderActive && root.activePath !== "")
+                            Workspace.toggleFavorite(root.activePath)
+                    }
+                    onCopyPathRequested: {
+                        if (root.folderActive && root.activePath !== "") {
+                            Workspace.copyText(root.activePath)
+                            toast.show(qsTr("已复制路径"), false)
+                        }
+                    }
                 }
             }
 
@@ -4488,6 +4534,7 @@ Window {
                 case "back": return backToolbarComponent
                 case "forward": return forwardToolbarComponent
                 case "up": return upToolbarComponent
+                case "refresh": return refreshToolbarComponent
                 case "search": return searchToolbarComponent
                 case "trash": return trashToolbarComponent
                 case "view": return viewToolbarComponent
@@ -4499,14 +4546,21 @@ Window {
             Component {
                 id: backToolbarComponent
                 Rectangle {
-                    width: 28
-                    height: Theme.controlMd
+                    width: 30
+                    height: 30
                     implicitWidth: width
                     implicitHeight: height
                     radius: width / 2
                     color: root.canGoBack && backMouse.containsMouse
                         ? Theme.hover : "transparent"
-                    opacity: root.canGoBack ? 1 : 0.32
+                    opacity: root.canGoBack ? 1 : 0.34
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple { id: backRipple; radius: 15 }
 
                     readonly property bool canGo: root.canGoBack
 
@@ -4522,26 +4576,31 @@ Window {
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("后退")
 
-                    /// A nav button is a tab stop, and Enter is its click. The
-                    /// ring is drawn inside the 28 px box so the button does
-                    /// not move when it takes focus.
                     activeFocusOnTab: canGo
                     border.width: activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: {
-                        if (canGo)
+                        if (canGo) {
+                            backRipple.pulse()
                             root.goBack()
+                        }
                     }
                     Keys.onSpacePressed: {
-                        if (canGo)
+                        if (canGo) {
+                            backRipple.pulse()
                             root.goBack()
+                        }
                     }
 
                     MouseArea {
                         id: backMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: parent.canGo
+                        onPressed: function (mouse) { backRipple.burst(mouse.x, mouse.y) }
+                        onReleased: backRipple.release()
+                        onCanceled: backRipple.release()
                         onClicked: root.goBack()
                     }
 
@@ -4552,14 +4611,21 @@ Window {
             Component {
                 id: forwardToolbarComponent
                 Rectangle {
-                    width: 28
-                    height: Theme.controlMd
+                    width: 30
+                    height: 30
                     implicitWidth: width
                     implicitHeight: height
                     radius: width / 2
                     color: root.canGoForward && forwardMouse.containsMouse
                         ? Theme.hover : "transparent"
-                    opacity: root.canGoForward ? 1 : 0.32
+                    opacity: root.canGoForward ? 1 : 0.34
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple { id: forwardRipple; radius: 15 }
 
                     readonly property bool canGo: root.canGoForward
 
@@ -4579,19 +4645,27 @@ Window {
                     border.width: activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: {
-                        if (canGo)
+                        if (canGo) {
+                            forwardRipple.pulse()
                             root.goForward()
+                        }
                     }
                     Keys.onSpacePressed: {
-                        if (canGo)
+                        if (canGo) {
+                            forwardRipple.pulse()
                             root.goForward()
+                        }
                     }
 
                     MouseArea {
                         id: forwardMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: parent.canGo
+                        onPressed: function (mouse) { forwardRipple.burst(mouse.x, mouse.y) }
+                        onReleased: forwardRipple.release()
+                        onCanceled: forwardRipple.release()
                         onClicked: root.goForward()
                     }
 
@@ -4602,14 +4676,21 @@ Window {
             Component {
                 id: upToolbarComponent
                 Rectangle {
-                    width: 28
-                    height: Theme.controlMd
+                    width: 30
+                    height: 30
                     implicitWidth: width
                     implicitHeight: height
                     radius: width / 2
                     color: root.folderActive && upMouse.containsMouse
                         ? Theme.hover : "transparent"
-                    opacity: root.folderActive ? 1 : 0.32
+                    opacity: root.folderActive ? 1 : 0.34
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple { id: upRipple; radius: 15 }
 
                     Glyph {
                         anchors.centerIn: parent
@@ -4627,19 +4708,27 @@ Window {
                     border.width: activeFocus ? 2 : 0
                     border.color: Theme.accent
                     Keys.onReturnPressed: {
-                        if (root.folderActive)
+                        if (root.folderActive) {
+                            upRipple.pulse()
                             root.goUp()
+                        }
                     }
                     Keys.onSpacePressed: {
-                        if (root.folderActive)
+                        if (root.folderActive) {
+                            upRipple.pulse()
                             root.goUp()
+                        }
                     }
 
                     MouseArea {
                         id: upMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.folderActive
+                        onPressed: function (mouse) { upRipple.burst(mouse.x, mouse.y) }
+                        onReleased: upRipple.release()
+                        onCanceled: upRipple.release()
                         onClicked: root.goUp()
                     }
 
@@ -4647,42 +4736,117 @@ Window {
                 }
             }
 
+            Component {
+                id: refreshToolbarComponent
+                Rectangle {
+                    width: 30
+                    height: 30
+                    implicitWidth: width
+                    implicitHeight: height
+                    radius: width / 2
+                    color: root.folderActive && refreshMouse.containsMouse
+                        ? Theme.hover : "transparent"
+                    opacity: root.folderActive ? 1 : 0.34
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple { id: refreshRipple; radius: 15 }
+
+                    function trigger() {
+                        if (root.folderActive && root.activeTab !== null)
+                            root.activeTab.listing.reload()
+                        else if (root.trashActive)
+                            trashModel.refresh()
+                        else if (root.overviewActive)
+                            overviewModelInstance.refresh()
+                    }
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 15
+                        height: 15
+                        kind: "refresh"
+                        tint: refreshMouse.containsMouse && root.folderActive
+                            ? root.textColor : root.mutedColor
+                    }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("刷新")
+
+                    activeFocusOnTab: root.folderActive
+                    border.width: activeFocus ? 2 : 0
+                    border.color: Theme.accent
+                    Keys.onReturnPressed: {
+                        refreshRipple.pulse()
+                        trigger()
+                    }
+                    Keys.onSpacePressed: {
+                        refreshRipple.pulse()
+                        trigger()
+                    }
+
+                    MouseArea {
+                        id: refreshMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onPressed: function (mouse) { refreshRipple.burst(mouse.x, mouse.y) }
+                        onReleased: refreshRipple.release()
+                        onCanceled: refreshRipple.release()
+                        onClicked: trigger()
+                    }
+
+                    ToolTip { text: qsTr("刷新") }
+                }
+            }
+
             // ── Search ────────────────────────────────────────────────────
-            // The field lives in the locator now (§7.2): this button switches
-            // that one control into search mode, so the bar never carries two
-            // text fields that could disagree about the query.
             Component {
                 id: searchToolbarComponent
                 Item {
                     id: searchSlot
 
-                    height: Theme.controlMd
-                    width: 28
+                    height: 30
+                    width: 30
                     implicitWidth: width
                     implicitHeight: height
                     visible: root.folderActive
 
-                    /// Search walks the local disk only. Keep the affordance in
-                    /// place so it does not flicker in and out while crossing
-                    /// locations, but dim and disable it on network paths.
                     opacity: root.remoteLocation ? 0.35 : 1
 
                     activeFocusOnTab: !root.remoteLocation
-                    Keys.onReturnPressed: root.openSearch()
-                    Keys.onSpacePressed: root.openSearch()
+                    Keys.onReturnPressed: {
+                        searchRipple.pulse()
+                        root.openSearch()
+                    }
+                    Keys.onSpacePressed: {
+                        searchRipple.pulse()
+                        root.openSearch()
+                    }
 
                     Rectangle {
                         anchors.fill: parent
                         radius: width / 2
-                        color: root.searchOpen || searchIconMouse.containsMouse
-                            ? Theme.hover : "transparent"
+                        color: root.searchOpen
+                            ? Theme.selection
+                            : (searchIconMouse.containsMouse ? Theme.hover : "transparent")
                         border.width: searchSlot.activeFocus ? 2 : 0
                         border.color: Theme.accent
+
+                        Behavior on color {
+                            enabled: Theme.motion
+                            ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                        }
+
+                        InkRipple { id: searchRipple; radius: 15 }
 
                         Glyph {
                             anchors.centerIn: parent
                             kind: "search"
-                            tint: root.searchOpen ? Theme.accent
+                            tint: root.searchOpen ? Theme.selectionInk
                                 : (searchIconMouse.containsMouse && !root.remoteLocation
                                     ? root.textColor : root.mutedColor)
                         }
@@ -4696,6 +4860,9 @@ Window {
                             enabled: !root.remoteLocation
                             hoverEnabled: true
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onPressed: function (mouse) { searchRipple.burst(mouse.x, mouse.y) }
+                            onReleased: searchRipple.release()
+                            onCanceled: searchRipple.release()
                             onClicked: root.openSearch()
                         }
 
@@ -4828,16 +4995,20 @@ Window {
                 id: moreToolbarComponent
                 Item {
                     id: moreSlot
-                    width: 28
-                    height: Theme.controlMd
+                    width: 30
+                    height: 30
                     implicitWidth: width
                     implicitHeight: height
 
-                    /// Same split as the view button: the slot is the tab stop,
-                    /// the plate draws the ring.
                     activeFocusOnTab: true
-                    Keys.onReturnPressed: moreSlot.openMenu()
-                    Keys.onSpacePressed: moreSlot.openMenu()
+                    Keys.onReturnPressed: {
+                        moreRipple.pulse()
+                        moreSlot.openMenu()
+                    }
+                    Keys.onSpacePressed: {
+                        moreRipple.pulse()
+                        moreSlot.openMenu()
+                    }
 
                     function openMenu() {
                         root.openMoreMenu()
@@ -4850,6 +5021,13 @@ Window {
                             ? Theme.hover : "transparent"
                         border.width: moreSlot.activeFocus ? 2 : 0
                         border.color: Theme.accent
+
+                        Behavior on color {
+                            enabled: Theme.motion
+                            ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                        }
+
+                        InkRipple { id: moreRipple; radius: 15 }
 
                         Glyph {
                             anchors.centerIn: parent
@@ -4867,6 +5045,9 @@ Window {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
+                        onPressed: function (mouse) { moreRipple.burst(mouse.x, mouse.y) }
+                        onReleased: moreRipple.release()
+                        onCanceled: moreRipple.release()
                         onClicked: moreSlot.openMenu()
                     }
 

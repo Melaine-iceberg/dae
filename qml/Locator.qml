@@ -1,41 +1,31 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
+import dae.m3 1.0
 
-// The navigation row's one input control: an M3 search-bar pill that becomes a
-// breadcrumb trail, a path editor or a search field.
-//
-// The modes are states of this bar, not three widgets:
-//
-//   breadcrumb  every ancestor is a destination; the current folder is a
-//               `secondaryContainer` pill, exactly like a selected list row.
-//   address     the whole frame becomes a mono text field seeded with the
-//               current path, all selected, Enter navigates, Escape returns.
-//   search      the frame holds the query. The filter row below it carries the
-//               mode, scope and filters; this control only types and clears.
-//
-// `ShellWindow` owns the mode (`pathEditing` / `searchOpen`) and the query, so
-// a tab switch resets both without this component keeping stale state. The
-// split pane instantiates it with `framed: false` and `interactive: false`,
-// which is the old read-only trail.
+// The Chrome Desktop pill Omnibox: one capsule control that serves as the
+// breadcrumb trail, surface readout, path editor with autocompletion, and
+// search input, complete with a leading location chip and trailing bookmark
+// star + copy-path actions.
 Item {
     id: bar
 
-    /// "breadcrumb", "address" or "search". The shell derives it from
-    /// `pathEditing` and `searchOpen` so only one mode can be active.
+    /// "breadcrumb", "address", "search", or "surface".
     property string mode: "breadcrumb"
-    /// False for a surface label (overview, recycle bin) and for the
-    /// split pane's trail.
+    /// False for a surface label (overview, recycle bin) and read-only trails.
     property bool interactive: true
-    /// Draws the shared field well. The split pane keeps the bare trail.
+    /// Draws the shared pill well.
     property bool framed: true
-    /// §11.4: this pane is the active one. In split view the active pane's
-    /// bar is outlined in the accent and the inactive one in `line`; with a
-    /// single pane the property stays false and the bar keeps the hairline.
+    /// In split view the active pane's bar is outlined in the accent.
     property bool paneFocused: false
+    /// Non-folder surface title and glyph (overview, trash).
+    property string surfaceTitle: ""
+    property string surfaceGlyph: "home"
+    property bool isRemote: false
+    property bool isFavorite: false
 
-    /// The listed directory's ancestors, outermost first, exactly as the
-    /// backend spelled them. The two are parallel lists, so the shorter wins.
+    /// The listed directory's ancestors, outermost first.
     property var names: []
     property var paths: []
 
@@ -44,48 +34,39 @@ Item {
     property color textColor: Theme.ink
     property color mutedColor: Theme.inkSecondary
 
-    /// Seeds the address mode. Read when the mode becomes "address" so typing
-    /// over the path never drops a binding.
     property string addressPath: ""
-    /// "name" or "content". Drives the search placeholder only.
     property string searchMode: "name"
     property bool searchBusy: false
-    /// "name" only, but kept as a property so the escape rule does not have to
-    /// know about the query state.
     property string searchText: ""
 
-    /// The path of the ancestor that was clicked.
     signal crumbActivated(string path)
-    /// The ancestors hidden behind the `…`, with the position to open a menu
-    /// at — in window coordinates, because the menu belongs to the window.
     signal ancestorsRequested(real x, real y, var names, var paths)
-    /// A segment's `⌄`: open the menu of directories beside `path`, anchored
-    /// below the chevron in window coordinates; `path` is the segment itself.
     signal siblingsRequested(real x, real y, string path)
-    /// Files dropped on a segment: move them into that ancestor directory.
     signal filesDropped(var paths, string path)
-    /// A right-click on the bar itself: copy path, copy name, terminal, edit
-    /// path. Window coordinates for the same reason as above.
     signal contextMenuRequested(real x, real y)
-    /// A click on the empty part of the trail: the shell switches to address
-    /// mode. (Typing itself is handled by the address field.)
     signal addressRequested()
     signal addressAccepted(string path)
-    /// The address field lost focus without Enter.
     signal addressCanceled()
     signal searchEdited(string value)
     signal searchCleared()
-    /// Escape on an empty search field; the shell collapses search mode.
     signal searchDismissed()
+    signal favoriteToggled()
+    signal copyPathRequested()
 
-    implicitHeight: Theme.controlXl
-    height: Theme.controlXl
+    implicitHeight: 34
+    height: 34
 
     readonly property bool editing: mode === "address"
     readonly property bool searching: mode === "search"
+    readonly property bool surfaceOnly: mode === "surface"
     readonly property bool breadcrumb: mode === "breadcrumb"
     readonly property bool inputFocused: addressInput.activeFocus
         || searchInput.activeFocus
+    readonly property bool showTrailingActions: bar.framed && bar.interactive
+        && bar.breadcrumb && bar.width >= 260
+    readonly property real leadingOffset: bar.framed ? 36 : 8
+    readonly property real trailingReserve: bar.showTrailingActions
+        ? (bar.isRemote ? 34 : 62) : (bar.searching ? 34 : 10)
 
     function focusAddress() {
         if (mode !== "address")
@@ -109,11 +90,7 @@ Item {
     onModeChanged: {
         if (mode === "address") {
             addressInput.text = bar.addressPath
-            // The recent directories back the completion until the typed text
-            // grows a separator; they arrive once per edit, not per keystroke.
             bar.recentPaths = Workspace.recentDirectories()
-            // The field is only visible once the mode has been laid out; a
-            // hidden item cannot take focus.
             Qt.callLater(bar.focusAddress)
         } else if (mode === "search") {
             bar.setSearchText(bar.searchText)
@@ -123,30 +100,117 @@ Item {
 
     onSearchTextChanged: bar.setSearchText(searchText)
 
+    HoverHandler {
+        id: wellHover
+    }
+
+    // Chrome Omnibox capsule well: softly tinted at rest, lifting to the
+    // toolbar surface with a crisp accent ring when focused or editing.
     Rectangle {
         id: well
         anchors.fill: parent
         visible: bar.framed
-        radius: Theme.radiusSm
-        color: Theme.field
-        /// M3 filled fields carry no stroke at rest; the 2 px primary ring
-        /// appears with the keyboard or the active split pane.
-        border.width: bar.inputFocused || bar.paneFocused ? 2 : 0
-        border.color: bar.accent
+        radius: height / 2
+        color: (bar.inputFocused || bar.editing || bar.searching)
+            ? Theme.toolbar
+            : (wellHover.hovered ? Theme.fieldHover : Theme.field)
+        border.width: (bar.inputFocused || bar.paneFocused)
+            ? 2
+            : ((bar.editing || bar.searching) ? 1 : 0)
+        border.color: (bar.inputFocused || bar.paneFocused)
+            ? bar.accent : Theme.hairline
+
+        Behavior on color {
+            enabled: Theme.motion
+            ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+        }
+    }
+
+    // Leading context icon chip (Chrome's site-info / search pill on the left
+    // of the Omnibox).
+    Item {
+        id: leadingChip
+        visible: bar.framed
+        x: 5
+        anchors.verticalCenter: parent.verticalCenter
+        width: 24
+        height: 24
+
+        Rectangle {
+            anchors.fill: parent
+            radius: width / 2
+            color: (bar.editing || bar.searching)
+                ? Theme.accentSoft
+                : (leadingMouse.containsMouse ? Theme.hover
+                    : (Theme.dark ? Theme.surfaceContainer : Theme.toolbar))
+
+            Behavior on color {
+                enabled: Theme.motion
+                ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+            }
+
+            InkRipple { id: leadingRipple; radius: 12 }
+        }
+
+        Glyph {
+            anchors.centerIn: parent
+            width: 13
+            height: 13
+            kind: bar.searching ? "search"
+                : (bar.surfaceOnly ? bar.surfaceGlyph
+                    : (bar.isRemote ? "cloud" : "folder"))
+            tint: (bar.editing || bar.searching) ? bar.accent : Theme.inkSecondary
+        }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: bar.searching ? qsTr("搜索")
+            : (bar.surfaceOnly ? bar.surfaceTitle : qsTr("编辑路径"))
+        Accessible.onPressAction: {
+            if (bar.interactive && bar.breadcrumb)
+                bar.addressRequested()
+        }
+
+        MouseArea {
+            id: leadingMouse
+            anchors.fill: parent
+            enabled: bar.interactive
+            hoverEnabled: true
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onPressed: function (mouse) { leadingRipple.burst(mouse.x, mouse.y) }
+            onReleased: leadingRipple.release()
+            onCanceled: leadingRipple.release()
+            onClicked: function (mouse) {
+                if (bar.breadcrumb)
+                    bar.addressRequested()
+                else if (bar.editing)
+                    bar.focusAddress()
+            }
+        }
+    }
+
+    // Surface title readout when showing Overview or Recycle Bin inside the
+    // unified Omnibox pill.
+    Text {
+        visible: bar.surfaceOnly
+        anchors.left: parent.left
+        anchors.leftMargin: bar.leadingOffset
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.verticalCenter: parent.verticalCenter
+        text: bar.surfaceTitle
+        color: bar.textColor
+        font.pixelSize: Theme.typeBody
+        font.weight: Theme.weightStrong
+        elide: Text.ElideRight
     }
 
     // ── Breadcrumb ──────────────────────────────────────────────────────────
-    // The trail is laid out here rather than by a `Row`: the fold decision is a
-    // measured one, so the same numbers have to position the crumbs that
-    // decided whether they fit.
-    readonly property real fontSize: Theme.typeBody
+    readonly property real fontSize: Theme.typeRow
     readonly property real crumbGap: 3
-    readonly property real crumbPad: 8
-    /// The `⌄` between a segment's name and the next separator (§7.2). It is
-    /// part of the measured width, so the fold decision accounts for it.
-    readonly property real chevronWidth: 12
-    readonly property real plateHeight: Theme.controlMd
-    readonly property real ellipsisWidth: 22
+    readonly property real crumbPad: 9
+    readonly property real chevronWidth: 13
+    readonly property real plateHeight: 24
+    readonly property real ellipsisWidth: 24
     readonly property real maxAncestorWidth: 160
     readonly property real maxCurrentWidth: 256
     readonly property real minCurrentWidth: bar.crumbPad * 2 + bar.fontSize * 2
@@ -162,14 +226,9 @@ Item {
         font.pixelSize: bar.fontSize
     }
 
-    /// One separator plus the gaps around it: what every crumb but the first
-    /// costs beyond its own plate.
     readonly property real unit: separatorMeasure.advanceWidth
         + bar.crumbGap * 2
 
-    /// What the bar paints: `{ name, path, current, x, width }` entries plus
-    /// one `{ ellipsis: true, x, width }` when ancestors were swallowed by the
-    /// menu.
     property var crumbs: []
     property var hiddenNames: []
     property var hiddenPaths: []
@@ -182,10 +241,6 @@ Item {
         return nameWidth + bar.crumbPad * 2 + (bar.interactive ? bar.chevronWidth : 0)
     }
 
-    /// Mirrors the Tauri shell's `computeHiddenRange`: the first crumb and the
-    /// current one always stay, the ellipsis claims one slot, and the ancestors
-    /// between them are added back from the current folder outwards for as long
-    /// as they fit.
     function fit(all) {
         const count = all.length
         if (count <= 2)
@@ -198,15 +253,10 @@ Item {
             widths.push(width)
             total += width
         }
-        // 1px tolerance absorbs sub-pixel rounding, so a bar that sits exactly
-        // on the edge does not flip between folded and whole on every resize.
         total += bar.unit * (count - 1)
         if (total <= trail.width + 1)
             return { "visible": all, "hidden": [] }
 
-        // Seeded with the current crumb, not just the first one: growing
-        // towards a crumb that was never counted is what made the Tauri shell
-        // report a row as fitting while it painted 70px too wide.
         let used = widths[0] + bar.unit + bar.ellipsisWidth + bar.unit
             + widths[count - 1]
         let start = count - 1
@@ -215,9 +265,6 @@ Item {
             start -= 1
         }
 
-        // Even `root › … › current` is too wide. Painting everything and
-        // letting the clip cut it is still better than folding to a bar that
-        // names nothing: the current crumb truncates inside its own box.
         if (start <= 1)
             return { "visible": all, "hidden": [] }
 
@@ -227,8 +274,6 @@ Item {
         return { "visible": visible, "hidden": all.slice(1, start) }
     }
 
-    /// Stamps the horizontal position into every entry, so the delegates paint
-    /// exactly the geometry the fold decision was made with.
     function place(entries) {
         let x = 0
         for (let index = 0; index < entries.length; index += 1) {
@@ -239,10 +284,6 @@ Item {
             x = entry.x + entry.width
         }
 
-        // The fold can only give up what lies between the root and the current
-        // folder. When even `root › … › current` is wider than the bar, the
-        // last crumb is trimmed to what is left rather than cut off by the
-        // clip; below the two-character floor the clip is the better answer.
         const last = entries[entries.length - 1]
         if (entries.length > 1) {
             const room = trail.width - last.x
@@ -297,22 +338,18 @@ Item {
     onNamesChanged: Qt.callLater(bar.rebuild)
     onPathsChanged: Qt.callLater(bar.rebuild)
     onWidthChanged: bar.rebuild()
+    onTrailingReserveChanged: Qt.callLater(bar.rebuild)
     Component.onCompleted: bar.rebuild()
 
     Item {
         id: trail
-        x: 8
+        x: bar.leadingOffset
         y: 0
-        width: Math.max(0, bar.width - 16)
+        width: Math.max(0, bar.width - bar.leadingOffset - bar.trailingReserve)
         height: bar.height
         visible: bar.breadcrumb
         clip: true
 
-        // The empty stretches between crumbs belong to the bar too: a
-        // left-click there starts typing a path, a right-click opens the bar
-        // menu. Declared under the repeater, so a crumb's own press wins on its
-        // plate. In the split pane it only takes the right button, leaving the
-        // left one to the pane's focus target.
         MouseArea {
             Accessible.ignored: true
             anchors.fill: parent
@@ -347,9 +384,6 @@ Item {
                 Accessible.name: slot.modelData.ellipsis === true
                     ? qsTr("显示完整路径") : slot.modelData.name
 
-                /// §10.3: a dragged file dropped on a segment moves into that
-                /// ancestor. The ellipsis stands for several ancestors at
-                /// once, so it is not a target.
                 property bool dropActive: false
 
                 DropArea {
@@ -383,13 +417,10 @@ Item {
                     }
                 }
 
-                /// Same feedback as a row: a primary wash and a 2 dp accent
-                /// frame. It sits above the plate and below the mouse areas,
-                /// so a drop never turns into a click.
                 Rectangle {
                     anchors.fill: parent
                     visible: slot.dropActive
-                    radius: Theme.radiusSm
+                    radius: height / 2
                     color: Theme.accentSoft
                     border.width: 2
                     border.color: Theme.accent
@@ -397,8 +428,6 @@ Item {
                     Accessible.ignored: true
                 }
 
-                // The separator belongs to the crumb on its right: that is the
-                // only crumb whose plate width the fit added a `unit` for.
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     x: -bar.crumbGap - width
@@ -412,14 +441,21 @@ Item {
                 Rectangle {
                     id: plate
                     anchors.fill: parent
-                    radius: Theme.radiusSm
-                    // The current folder is a selected destination, so it takes
-                    // the same `secondaryContainer` plate as the sidebar; the
-                    // ancestors only gain the hover state layer.
+                    radius: height / 2
                     color: slot.modelData.current === true
                         ? Theme.selection
                         : ((plateMouse.containsMouse || siblingMouse.containsMouse)
                             ? Theme.hover : "transparent")
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple {
+                        id: plateRipple
+                        radius: plate.height / 2
+                    }
 
                     Text {
                         anchors.left: parent.left
@@ -439,15 +475,11 @@ Item {
                         elide: Text.ElideMiddle
                     }
 
-                    /// §7.2: the segment's own `⌄` opens that level's sibling
-                    /// directories. The segment body still navigates, so the
-                    /// two gestures never fight: the chevron owns only its
-                    /// 12 dp box.
                     Item {
                         id: siblingButton
 
                         anchors.right: parent.right
-                        anchors.rightMargin: 1
+                        anchors.rightMargin: 2
                         anchors.verticalCenter: parent.verticalCenter
                         width: bar.chevronWidth
                         height: parent.height
@@ -495,6 +527,12 @@ Item {
                         cursorShape: slot.modelData.current === true
                             ? Qt.ArrowCursor : Qt.PointingHandCursor
 
+                        onPressed: function (mouse) {
+                            if (mouse.button === Qt.LeftButton && slot.modelData.current !== true)
+                                plateRipple.burst(mouse.x, mouse.y)
+                        }
+                        onReleased: plateRipple.release()
+                        onCanceled: plateRipple.release()
                         onClicked: function (mouse) {
                             if (mouse.button === Qt.RightButton) {
                                 const point = plateMouse.mapToItem(null,
@@ -518,15 +556,117 @@ Item {
         }
     }
 
+    // Trailing inline Chrome Omnibox actions: Copy Path & Bookmark Star.
+    Row {
+        id: trailingActions
+        visible: bar.showTrailingActions
+        anchors.right: parent.right
+        anchors.rightMargin: 6
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 2
+
+        Item {
+            width: 24
+            height: 24
+
+            Rectangle {
+                anchors.fill: parent
+                radius: width / 2
+                color: copyPathMouse.containsMouse ? Theme.hover : "transparent"
+
+                InkRipple { id: copyPathRipple; radius: 12 }
+            }
+
+            Glyph {
+                anchors.centerIn: parent
+                width: 13
+                height: 13
+                kind: "copy"
+                tint: copyPathMouse.containsMouse ? bar.textColor : Theme.inkTertiary
+            }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("复制路径")
+            Accessible.onPressAction: bar.copyPathRequested()
+
+            MouseArea {
+                id: copyPathMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: function (mouse) { copyPathRipple.burst(mouse.x, mouse.y) }
+                onReleased: copyPathRipple.release()
+                onCanceled: copyPathRipple.release()
+                onClicked: bar.copyPathRequested()
+            }
+
+            ToolTip { text: qsTr("复制路径") }
+        }
+
+        Item {
+            visible: !bar.isRemote
+            width: 24
+            height: 24
+
+            Rectangle {
+                anchors.fill: parent
+                radius: width / 2
+                color: bar.isFavorite
+                    ? Theme.accentSoft
+                    : (starMouse.containsMouse ? Theme.hover : "transparent")
+
+                Behavior on color {
+                    enabled: Theme.motion
+                    ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                }
+
+                InkRipple { id: starRipple; radius: 12 }
+            }
+
+            Glyph {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                kind: "star"
+                wash: bar.isFavorite ? 0.9 : 0.25
+                tint: bar.isFavorite
+                    ? bar.accent
+                    : (starMouse.containsMouse ? bar.textColor : Theme.inkTertiary)
+            }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: bar.isFavorite ? qsTr("取消固定") : qsTr("固定到侧边栏")
+            Accessible.onPressAction: bar.favoriteToggled()
+
+            MouseArea {
+                id: starMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: function (mouse) { starRipple.burst(mouse.x, mouse.y) }
+                onReleased: starRipple.release()
+                onCanceled: starRipple.release()
+                onClicked: bar.favoriteToggled()
+            }
+
+            ToolTip {
+                text: bar.isFavorite ? qsTr("取消固定") : qsTr("固定到侧边栏")
+            }
+        }
+    }
+
     // ── Address ─────────────────────────────────────────────────────────────
     TextInput {
         id: addressInput
         Accessible.role: Accessible.EditableText
         Accessible.name: qsTr("路径")
 
-        anchors.fill: parent
-        anchors.leftMargin: 16
-        anchors.rightMargin: 16
+        anchors.left: parent.left
+        anchors.leftMargin: bar.leadingOffset
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
         visible: bar.editing
         enabled: bar.interactive
         verticalAlignment: TextInput.AlignVCenter
@@ -539,9 +679,6 @@ Item {
         selectByMouse: true
         clip: true
 
-        // TextInput assigns to `text` while the user edits, which permanently
-        // drops any binding on it. The mode change seeds it instead, and losing
-        // focus — Enter, Escape, a click elsewhere — leaves address mode.
         onActiveFocusChanged: {
             if (!activeFocus && bar.editing)
                 bar.addressCanceled()
@@ -568,16 +705,11 @@ Item {
             if (event.accepted)
                 bar.moveCompletion(-1)
         }
-        /// Tab takes the highlighted directory and keeps the field open; with
-        /// no list it stays an ordinary focus move, so the field can still be
-        /// left from the keyboard.
         Keys.onTabPressed: function (event) {
             event.accepted = bar.acceptCompletion(true)
         }
 
         onAccepted: {
-            // Enter takes the highlighted completion when there is one; the
-            // raw text is the fallback, which is what a fully typed path is.
             if (bar.acceptCompletion(false))
                 return
             let target = text.trim()
@@ -585,35 +717,24 @@ Item {
                     && target.charAt(0) === '"'
                     && target.charAt(target.length - 1) === '"')
                 target = target.substring(1, target.length - 1)
-            // `~` and environment shorthands expand here, after the quote
-            // strip and before the navigation; anything unresolvable stays
-            // as typed and the navigation says so.
-            target = Workspace.expandTypedPath(target)
+            const expanded = String(Workspace.expandTypedPath(target))
             focus = false
-            if (target.length > 0)
-                bar.addressAccepted(target)
+            if (expanded.length > 0)
+                bar.addressAccepted(expanded)
         }
     }
 
-    /// ── Address completion (§7.2) ──────────────────────────────────────────
-    /// The typed directory's subdirectories, filtered by the segment being
-    /// typed. The directory is read once per parent change, not once per
-    /// keystroke: a folder with 120,000 entries would otherwise pay a
-    /// `readdir` for every letter.
+    /// ── Address completion ─────────────────────────────────────────────────
     property var completions: []
     property int completionIndex: -1
     property string completionDir: ""
     property var completionNames: []
-    /// The recently visited directories, the completion's source until the
-    /// typed text has a separator.
     property var recentPaths: []
 
     function splitTypedPath(text) {
         let cut = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"))
         if (cut < 0)
             return { "parent": "", "prefix": "" }
-        // A drive root keeps its separator (`C:\`), which is what makes the
-        // first typed segment complete at all.
         return {
             "parent": text.substring(0, cut + 1),
             "prefix": text.substring(cut + 1)
@@ -632,9 +753,6 @@ Item {
         }
         const split = bar.splitTypedPath(addressInput.text)
         if (split.parent === "") {
-            // No separator yet: the history is the source, newest first.
-            // A prefix that matches nothing closes the list, exactly the
-            // way the directory completion does.
             const prefix = split.prefix.toLowerCase()
             const matches = []
             const names = bar.recentPaths
@@ -670,9 +788,6 @@ Item {
         bar.completionIndex = (bar.completionIndex + step + count) % count
     }
 
-    /// `continueEditing` is the Tab case: it fills the field and stays in it,
-    /// because a completed directory is usually the first half of a path.
-    /// Enter and a click navigate.
     function acceptCompletion(continueEditing) {
         if (bar.completions.length === 0 || bar.completionIndex < 0)
             return false
@@ -690,10 +805,6 @@ Item {
         return true
     }
 
-    /// The list itself: 28 dp rows on a `surfaceContainerHigh` plate, drawn
-    /// above the well and outside the bar's box, so it reads as an attachment
-    /// to the field rather than a second control. The shadow is declared before
-    /// the plate and in the same coordinate space, as `Shadow` requires.
     Shadow {
         target: completionPopup
         z: 59
@@ -704,23 +815,25 @@ Item {
 
         visible: bar.editing && bar.completions.length > 0
         x: 0
-        y: bar.height + 4
+        y: bar.height + 6
         width: bar.width
-        height: completionColumn.implicitHeight + 8
-        radius: Theme.radiusMd
+        height: completionColumn.implicitHeight + 10
+        radius: Theme.radiusLg
         color: "transparent"
-        border.width: 0
+        border.width: 1
+        border.color: Theme.overlayLine
         z: 60
 
-        Glass { radius: Theme.radiusMd }
+        Glass { radius: Theme.radiusLg }
         Accessible.role: Accessible.List
 
         Column {
             id: completionColumn
 
-            x: 4
-            y: 4
-            width: parent.width - 8
+            x: 5
+            y: 5
+            width: parent.width - 10
+            spacing: 1
 
             Repeater {
                 model: bar.completions
@@ -731,33 +844,50 @@ Item {
                     required property int index
                     required property string modelData
 
+                    readonly property bool chosen: bar.completionIndex === completionRow.index
+
                     width: completionColumn.width
-                    height: 28
-                    radius: Theme.radiusSm
-                    color: bar.completionIndex === completionRow.index ? Theme.selection
+                    height: 32
+                    radius: Theme.radiusMd
+                    color: chosen ? Theme.selection
                         : (itemMouse.containsMouse ? Theme.hover : "transparent")
+
+                    InkRipple {
+                        id: completionRipple
+                        radius: Theme.radiusMd
+                    }
 
                     Accessible.role: Accessible.ListItem
                     Accessible.name: completionRow.modelData
                     Accessible.selectable: true
-                    Accessible.selected: bar.completionIndex === completionRow.index
+                    Accessible.selected: completionRow.chosen
                     Accessible.onPressAction: {
                         bar.completionIndex = completionRow.index
                         bar.acceptCompletion(false)
                     }
 
+                    Glyph {
+                        x: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 14
+                        height: 14
+                        kind: bar.splitTypedPath(addressInput.text).parent === ""
+                            ? "clock" : "folder"
+                        tint: completionRow.chosen ? Theme.selectionInk : Theme.inkTertiary
+                    }
+
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 8
+                        anchors.leftMargin: 32
                         anchors.right: parent.right
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         text: completionRow.modelData
-                        color: bar.completionIndex === completionRow.index
+                        color: completionRow.chosen
                             ? Theme.selectionInk : bar.textColor
                         font.family: Theme.monoFamily
                         font.pixelSize: Theme.typeCaption
-                        font.weight: bar.completionIndex === completionRow.index
+                        font.weight: completionRow.chosen
                             ? Theme.weightEmphasis : Font.Normal
                         elide: Text.ElideMiddle
                     }
@@ -766,6 +896,10 @@ Item {
                         id: itemMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onPressed: function (mouse) { completionRipple.burst(mouse.x, mouse.y) }
+                        onReleased: completionRipple.release()
+                        onCanceled: completionRipple.release()
                         onClicked: {
                             bar.completionIndex = completionRow.index
                             bar.acceptCompletion(false)
@@ -777,20 +911,9 @@ Item {
     }
 
     // ── Search ──────────────────────────────────────────────────────────────
-    Glyph {
-        id: searchLeading
-        x: 14
-        width: 14
-        height: 14
-        anchors.verticalCenter: parent.verticalCenter
-        visible: bar.searching
-        kind: "search"
-        tint: Theme.inkSecondary
-    }
-
     Text {
-        anchors.left: searchLeading.right
-        anchors.leftMargin: 6
+        anchors.left: parent.left
+        anchors.leftMargin: bar.leadingOffset
         anchors.right: searchTrailing.left
         anchors.rightMargin: 4
         anchors.verticalCenter: parent.verticalCenter
@@ -803,8 +926,8 @@ Item {
 
     TextInput {
         id: searchInput
-        anchors.left: searchLeading.right
-        anchors.leftMargin: 6
+        anchors.left: parent.left
+        anchors.leftMargin: bar.leadingOffset
         anchors.right: searchTrailing.left
         anchors.rightMargin: 4
         anchors.verticalCenter: parent.verticalCenter
@@ -818,8 +941,6 @@ Item {
         clip: true
         activeFocusOnTab: true
 
-        /// The placeholder above is drawn, not declared: without these the
-        /// field is announced as an unnamed text box.
         Accessible.role: Accessible.EditableText
         Accessible.name: qsTr("搜索")
         Accessible.description: bar.searchMode === "content"
@@ -842,13 +963,12 @@ Item {
     Item {
         id: searchTrailing
         anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        anchors.rightMargin: 6
+        anchors.verticalCenter: parent.verticalCenter
         width: 24
+        height: 24
         visible: bar.searching
 
-        /// The cross is a picture; this strip is the button, and it only exists
-        /// as one when there is something to clear.
         enabled: !bar.searchBusy && searchInput.text.length > 0
         Accessible.role: Accessible.Button
         Accessible.name: qsTr("清除搜索")
@@ -857,12 +977,23 @@ Item {
             bar.searchCleared()
         }
 
-        M3Loader {
+        ChromeSpinner {
             anchors.centerIn: searchTrailing
             visible: bar.searchBusy
             width: 14
             height: 14
             running: bar.searchBusy
+            color: bar.accent
+            strokeWidth: 1.8
+            reduceMotion: !Theme.motion
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: width / 2
+            visible: !bar.searchBusy && searchInput.text.length > 0
+            color: clearSearchMouse.containsMouse ? Theme.hover : "transparent"
+            InkRipple { id: clearSearchRipple; radius: 12 }
         }
 
         Glyph {
@@ -871,13 +1002,18 @@ Item {
             width: 10
             height: 10
             kind: "close"
-            tint: bar.mutedColor
+            tint: clearSearchMouse.containsMouse ? bar.textColor : bar.mutedColor
         }
 
         MouseArea {
+            id: clearSearchMouse
             anchors.fill: searchTrailing
+            hoverEnabled: true
             enabled: !bar.searchBusy && searchInput.text.length > 0
             cursorShape: Qt.PointingHandCursor
+            onPressed: function (mouse) { clearSearchRipple.burst(mouse.x, mouse.y) }
+            onReleased: clearSearchRipple.release()
+            onCanceled: clearSearchRipple.release()
             onClicked: {
                 searchInput.text = ""
                 bar.searchCleared()

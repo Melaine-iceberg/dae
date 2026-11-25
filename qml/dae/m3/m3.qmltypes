@@ -1,0 +1,106 @@
+import QtQuick.tooling 1.2
+
+// Tooling description of the C++ types registered at run time by
+// `crates/dae-qt/cpp/m3_items.h` (`qmlRegisterType` under "dae.m3").
+Module {
+    Component {
+        file: "m3_items.h"
+        lineNumber: 34
+        name: "M3ProgressItem"
+        accessSemantics: "reference"
+        prototype: "QQuickItem"
+        exports: ["dae.m3/ProgressIndicator 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "value"; type: "double"; read: "value"; write: "setValue"; notify: "valueChanged"; index: 0 }
+        Property { name: "indeterminate"; type: "bool"; read: "indeterminate"; write: "setIndeterminate"; notify: "indeterminateChanged"; index: 1 }
+        Property { name: "wavy"; type: "bool"; read: "wavy"; write: "setWavy"; notify: "wavyChanged"; index: 2 }
+        Property { name: "reduceMotion"; type: "bool"; read: "reduceMotion"; write: "setReduceMotion"; notify: "reduceMotionChanged"; index: 3 }
+        Property { name: "thickness"; type: "double"; read: "thickness"; write: "setThickness"; notify: "thicknessChanged"; index: 4 }
+        Property { name: "activeColor"; type: "QColor"; read: "activeColor"; write: "setActiveColor"; notify: "activeColorChanged"; index: 5 }
+        Property { name: "trackColor"; type: "QColor"; read: "trackColor"; write: "setTrackColor"; notify: "trackColorChanged"; index: 6 }
+        Signal { name: "valueChanged" }
+        Signal { name: "indeterminateChanged" }
+        Signal { name: "wavyChanged" }
+        Signal { name: "reduceMotionChanged" }
+        Signal { name: "thicknessChanged" }
+        Signal { name: "activeColorChanged" }
+        Signal { name: "trackColorChanged" }
+    }
+    Component {
+        file: "m3_items.h"
+        lineNumber: 96
+        name: "M3LoaderItem"
+        accessSemantics: "reference"
+        prototype: "QQuickItem"
+        exports: ["dae.m3/LoadingIndicator 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "color"; type: "QColor"; read: "color"; write: "setColor"; notify: "colorChanged"; index: 0 }
+        Property { name: "containerColor"; type: "QColor"; read: "containerColor"; write: "setContainerColor"; notify: "containerColorChanged"; index: 1 }
+        Property { name: "running"; type: "bool"; read: "running"; write: "setRunning"; notify: "runningChanged"; index: 2 }
+        Property { name: "reduceMotion"; type: "bool"; read: "reduceMotion"; write: "setReduceMotion"; notify: "reduceMotionChanged"; index: 3 }
+        Signal { name: "colorChanged" }
+        Signal { name: "containerColorChanged" }
+        Signal { name: "runningChanged" }
+        Signal { name: "reduceMotionChanged" }
+    }
+    Component {
+        file: "m3_items.h"
+        lineNumber: 147
+        name: "ChromeTabShape"
+        accessSemantics: "reference"
+        prototype: "QQuickItem"
+        exports: ["dae.m3/ChromeTabShape 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "color"; type: "QColor"; read: "color"; write: "setColor"; notify: "colorChanged"; index: 0 }
+        Property { name: "borderColor"; type: "QColor"; read: "borderColor"; write: "setBorderColor"; notify: "borderColorChanged"; index: 1 }
+        Property { name: "borderWidth"; type: "double"; read: "borderWidth"; write: "setBorderWidth"; notify: "borderWidthChanged"; index: 2 }
+        Property { name: "topRadius"; type: "double"; read: "topRadius"; write: "setTopRadius"; notify: "topRadiusChanged"; index: 3 }
+        Property { name: "bottomRadius"; type: "double"; read: "bottomRadius"; write: "setBottomRadius"; notify: "bottomRadiusChanged"; index: 4 }
+        Property { name: "connected"; type: "bool"; read: "connected"; write: "setConnected"; notify: "connectedChanged"; index: 5 }
+        Signal { name: "colorChanged" }
+        Signal { name: "borderColorChanged" }
+        Signal { name: "borderWidthChanged" }
+        Signal { name: "topRadiusChanged" }
+        Signal { name: "bottomRadiusChanged" }
+        Signal { name: "connectedChanged" }
+    }
+    Component {
+        file: "m3_items.h"
+        lineNumber: 192
+        name: "InkRippleItem"
+        accessSemantics: "reference"
+        prototype: "QQuickItem"
+        exports: ["dae.m3/InkRippleEffect 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "color"; type: "QColor"; read: "color"; write: "setColor"; notify: "colorChanged"; index: 0 }
+        Property { name: "radius"; type: "double"; read: "radius"; write: "setRadius"; notify: "radiusChanged"; index: 1 }
+        Property { name: "reduceMotion"; type: "bool"; read: "reduceMotion"; write: "setReduceMotion"; notify: "reduceMotionChanged"; index: 2 }
+        Signal { name: "colorChanged" }
+        Signal { name: "radiusChanged" }
+        Signal { name: "reduceMotionChanged" }
+        Method {
+            name: "burst"
+            Parameter { name: "x"; type: "double" }
+            Parameter { name: "y"; type: "double" }
+        }
+        Method { name: "release" }
+        Method { name: "pulse" }
+    }
+    Component {
+        file: "m3_items.h"
+        lineNumber: 233
+        name: "ChromeSpinnerItem"
+        accessSemantics: "reference"
+        prototype: "QQuickItem"
+        exports: ["dae.m3/ChromeSpinner 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "color"; type: "QColor"; read: "color"; write: "setColor"; notify: "colorChanged"; index: 0 }
+        Property { name: "strokeWidth"; type: "double"; read: "strokeWidth"; write: "setStrokeWidth"; notify: "strokeWidthChanged"; index: 1 }
+        Property { name: "running"; type: "bool"; read: "running"; write: "setRunning"; notify: "runningChanged"; index: 2 }
+        Property { name: "reduceMotion"; type: "bool"; read: "reduceMotion"; write: "setReduceMotion"; notify: "reduceMotionChanged"; index: 3 }
+        Signal { name: "colorChanged" }
+        Signal { name: "strokeWidthChanged" }
+        Signal { name: "runningChanged" }
+        Signal { name: "reduceMotionChanged" }
+    }
+}

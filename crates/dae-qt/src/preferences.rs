@@ -160,7 +160,7 @@ impl Default for StoredPrefs {
             terminal_height: 240,
             terminal_shell: String::new(),
             copy_on_select: false,
-            toolbar_leading: "back,forward,up".to_owned(),
+            toolbar_leading: "back,forward,up,refresh".to_owned(),
             toolbar_trailing: "search,trash,view,more".to_owned(),
             background_image: String::new(),
             background_dim: 70,

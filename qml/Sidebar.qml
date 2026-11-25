@@ -586,16 +586,24 @@ Item {
                     x: 8
                     width: rowBody.width - 16
                     height: rowBody.height
-                    radius: Theme.radiusSm
-                    /// The current destination is an M3 `secondaryContainer`
-                    /// plate with the row's small corner; the ink flips to
-                    /// `onSecondaryContainer` with it. A drop target is the
-                    /// accent wash, one step stronger.
+                    radius: height / 2
+                    /// M3 Navigation Drawer pill (`secondaryContainer`) for the
+                    /// active destination, smooth state layer and ink ripple.
                     color: row.armed ? Theme.accentSoft
                         : row.focused ? Theme.selection
                         : (rowMouse.containsMouse ? Theme.hover : "transparent")
                     border.width: row.cursor && !row.armed ? 2 : 0
                     border.color: Theme.accent
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple {
+                        id: sidebarRowRipple
+                        radius: plate.height / 2
+                    }
                 }
 
                 /// The plate's edge for a drop target: a solid accent frame,
@@ -603,7 +611,7 @@ Item {
                 Rectangle {
                     anchors.fill: plate
                     visible: row.armed
-                    radius: Theme.radiusSm
+                    radius: height / 2
                     color: "transparent"
                     border.width: 2
                     border.color: Theme.accent
@@ -793,7 +801,16 @@ Item {
 
                     anchors.fill: parent
                     hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onPressed: function (event) {
+                        if (event.button === Qt.LeftButton) {
+                            const pt = plate.mapFromItem(rowMouse, event.x, event.y)
+                            sidebarRowRipple.burst(pt.x, pt.y)
+                        }
+                    }
+                    onReleased: sidebarRowRipple.release()
+                    onCanceled: sidebarRowRipple.release()
                     onClicked: function (event) {
                         // The keyboard cursor follows the pointer, so tabbing
                         // back into the column resumes where the mouse left it.

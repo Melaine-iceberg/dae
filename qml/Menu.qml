@@ -263,7 +263,8 @@ Item {
         }
         radius: Theme.radiusLg
         color: "transparent"
-        border.width: 0
+        border.width: 1
+        border.color: Theme.overlayLine
 
         /// A desktop menu appears: the fade and the 2 dp lift above are the
         /// whole arrival. It does not grow from the anchor on a spring — that
@@ -334,7 +335,8 @@ Item {
         y: Math.max(8, Math.min(root.submenuY, root.height - height - 8))
         radius: Theme.radiusLg
         color: "transparent"
-        border.width: 0
+        border.width: 1
+        border.color: Theme.overlayLine
 
         Glass { radius: Theme.radiusLg }
 

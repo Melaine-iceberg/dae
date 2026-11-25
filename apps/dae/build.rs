@@ -56,6 +56,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/Shadow.qml", "qml/Shadow.qml"),
     ("../../qml/M3Progress.qml", "qml/M3Progress.qml"),
     ("../../qml/M3Loader.qml", "qml/M3Loader.qml"),
+    ("../../qml/InkRipple.qml", "qml/InkRipple.qml"),
     ("../../qml/ButtonGroup.qml", "qml/ButtonGroup.qml"),
     ("../../qml/M3Switch.qml", "qml/M3Switch.qml"),
     ("../../qml/M3Slider.qml", "qml/M3Slider.qml"),
@@ -742,6 +743,8 @@ fn main() {
         "../../qml/dae/terminal/terminal.qmltypes",
         "../../qml/dae/activation/qmldir",
         "../../qml/dae/activation/activation.qmltypes",
+        "../../qml/dae/m3/qmldir",
+        "../../qml/dae/m3/m3.qmltypes",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }

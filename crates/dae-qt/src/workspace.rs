@@ -729,6 +729,14 @@ pub mod qobject {
         #[cxx_name = "removeFavorite"]
         fn remove_favorite(self: Pin<&mut Workspace>, path: &QString);
 
+        #[qinvokable]
+        #[cxx_name = "isFavorite"]
+        fn is_favorite(&self, path: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "toggleFavorite"]
+        fn toggle_favorite(self: Pin<&mut Workspace>, path: &QString);
+
         /// Removes a system place (`home`, `desktop`, …) from the sidebar.
         #[qinvokable]
         #[cxx_name = "hidePlace"]
@@ -3832,6 +3840,25 @@ fn expand_dollar(text: &str) -> String {
                 self.as_mut()
                     .set_last_error(QString::from(message.as_str()));
             }
+        }
+    }
+
+    fn is_favorite(&self, path: &QString) -> bool {
+        let target = path.to_string();
+        if target.is_empty() {
+            return false;
+        }
+        sidebar::load_favorites()
+            .unwrap_or_default()
+            .iter()
+            .any(|favorite| favorite.path.eq_ignore_ascii_case(&target) || favorite.path == target)
+    }
+
+    fn toggle_favorite(self: Pin<&mut Self>, path: &QString) {
+        if self.is_favorite(path) {
+            self.remove_favorite(path);
+        } else {
+            self.add_favorite(path);
         }
     }
 

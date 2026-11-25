@@ -396,6 +396,7 @@ FocusScope {
                     }
 
                     Rectangle {
+                        id: menuRowPlate
                         visible: entry.selectable
                         anchors.fill: parent
                         anchors.leftMargin: 4
@@ -412,6 +413,11 @@ FocusScope {
                                 duration: Theme.motionFast
                                 easing.type: Theme.motionEaseEffects
                             }
+                        }
+
+                        InkRipple {
+                            id: menuRowRipple
+                            radius: Theme.radiusMd
                         }
                     }
 
@@ -520,6 +526,12 @@ FocusScope {
                             root.moved(entry.index)
                         }
 
+                        onPressed: function (mouse) {
+                            const pt = menuRowPlate.mapFromItem(hover, mouse.x, mouse.y)
+                            menuRowRipple.burst(pt.x, pt.y)
+                        }
+                        onReleased: menuRowRipple.release()
+                        onCanceled: menuRowRipple.release()
                         onClicked: root.triggered(entry.index)
                     }
                 }

@@ -120,13 +120,24 @@ Item {
                 Accessible.onPressAction: root.navigateRequested(node.treePath)
 
                 Rectangle {
+                    id: treePlate
                     x: 8
                     width: parent.width - 16
                     height: parent.height
-                    radius: Theme.radiusSm
+                    radius: height / 2
                     color: node.current
                         ? Theme.selection
                         : (nodeMouse.containsMouse ? Theme.hover : "transparent")
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple {
+                        id: treeRowRipple
+                        radius: treePlate.height / 2
+                    }
                 }
 
                 Item {
@@ -196,6 +207,14 @@ Item {
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
+                    onPressed: function (event) {
+                        if (event.button === Qt.LeftButton) {
+                            const pt = treePlate.mapFromItem(nodeMouse, event.x, event.y)
+                            treeRowRipple.burst(pt.x, pt.y)
+                        }
+                    }
+                    onReleased: treeRowRipple.release()
+                    onCanceled: treeRowRipple.release()
                     onClicked: function (event) {
                         if (event.button === Qt.RightButton) {
                             const point = node.mapToItem(null, event.x, event.y)

@@ -302,14 +302,14 @@ inline void dae_qt_dress_placeholder(QWindow* window)
     set_transitions(hwnd, TRUE);
 }
 
-// The QML chrome bar is 38 dp tall and each window button 46 dp wide. These are
+// The QML chrome bar is 40 dp tall and each window button 46 dp wide. These are
 // physical pixels on this side because WM_NCHITTEST speaks client pixels,
 // which Qt does not scale for us in a native filter.
 //
-// 38 is not cosmetic: the tabs live inside the bar, so the bar holds a 30 dp
-// tab with 4 dp above and below it. The height and
-// `TopBar.implicitHeight` are the same number and both are load-bearing.
-constexpr double kTitleBarDp = 38.0;
+// 40 holds Chrome Desktop's 6 dp top frame air above a 34 dp active tab whose
+// bottom sits flush against the toolbar. `kTitleBarDp` and `TopBar.implicitHeight`
+// are the same number and both are load-bearing.
+constexpr double kTitleBarDp = 40.0;
 constexpr double kButtonDp = 46.0;
 
 /// Everything the native half needs to know about one window.

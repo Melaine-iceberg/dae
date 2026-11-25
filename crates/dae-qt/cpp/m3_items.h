@@ -138,10 +138,157 @@ private:
 /// Called from `dae_qt::init` before the QML engine loads, beside the terminal
 /// item registration. The module is separate from `dae` for the same reason:
 /// these are plain C++ QQuickItems, not cxx-qt objects.
+///
+/// ChromeTabShape: draws Chrome Desktop's connected active-tab silhouette
+/// (rounded top corners + concave outward bottom fillets) on the RHI in a
+/// single draw call with 1px feathered anti-aliasing.
+class ChromeTabShape : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+    Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor NOTIFY borderColorChanged)
+    Q_PROPERTY(qreal borderWidth READ borderWidth WRITE setBorderWidth NOTIFY borderWidthChanged)
+    Q_PROPERTY(qreal topRadius READ topRadius WRITE setTopRadius NOTIFY topRadiusChanged)
+    Q_PROPERTY(qreal bottomRadius READ bottomRadius WRITE setBottomRadius NOTIFY bottomRadiusChanged)
+    Q_PROPERTY(bool connected READ connected WRITE setConnected NOTIFY connectedChanged)
+
+public:
+    explicit ChromeTabShape(QQuickItem *parent = nullptr);
+
+    QColor color() const { return m_color; }
+    void setColor(const QColor &color);
+    QColor borderColor() const { return m_borderColor; }
+    void setBorderColor(const QColor &color);
+    qreal borderWidth() const { return m_borderWidth; }
+    void setBorderWidth(qreal width);
+    qreal topRadius() const { return m_topRadius; }
+    void setTopRadius(qreal radius);
+    qreal bottomRadius() const { return m_bottomRadius; }
+    void setBottomRadius(qreal radius);
+    bool connected() const { return m_connected; }
+    void setConnected(bool on);
+
+signals:
+    void colorChanged();
+    void borderColorChanged();
+    void borderWidthChanged();
+    void topRadiusChanged();
+    void bottomRadiusChanged();
+    void connectedChanged();
+
+protected:
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+
+private:
+    QColor m_color = QColor("#ffffff");
+    QColor m_borderColor = QColor(0, 0, 0, 0);
+    qreal m_borderWidth = 0.0;
+    qreal m_topRadius = 10.0;
+    qreal m_bottomRadius = 10.0;
+    bool m_connected = true;
+};
+
+/// Pointer-originated Material 3 / Chrome ink ripple rendered on the RHI.
+/// The expanding radial wave is analytically clamped to the item's rounded
+/// rectangle so it never bleeds past pill or card corners and costs zero draw
+/// calls at rest.
+class InkRippleItem : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+    Q_PROPERTY(qreal radius READ radius WRITE setRadius NOTIFY radiusChanged)
+    Q_PROPERTY(bool reduceMotion READ reduceMotion WRITE setReduceMotion NOTIFY reduceMotionChanged)
+
+public:
+    explicit InkRippleItem(QQuickItem *parent = nullptr);
+
+    QColor color() const { return m_color; }
+    void setColor(const QColor &color);
+    qreal radius() const { return m_radius; }
+    void setRadius(qreal radius);
+    bool reduceMotion() const { return m_reduceMotion; }
+    void setReduceMotion(bool on);
+
+    Q_INVOKABLE void burst(qreal x, qreal y);
+    Q_INVOKABLE void release();
+    Q_INVOKABLE void pulse();
+
+signals:
+    void colorChanged();
+    void radiusChanged();
+    void reduceMotionChanged();
+
+protected:
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
+
+private:
+    void stopAnimations();
+
+    QColor m_color = QColor(0, 0, 0, 32);
+    qreal m_radius = 6.0;
+    bool m_reduceMotion = false;
+    qreal m_originX = -1.0;
+    qreal m_originY = -1.0;
+    qreal m_progress = 0.0;
+    qreal m_fade = 0.0;
+    bool m_pressed = false;
+    bool m_active = false;
+    QVariantAnimation m_expandAnim;
+    QVariantAnimation m_fadeAnim;
+};
+
+/// Chrome-style circular arc spinner rendered on the RHI with feathered stroke
+/// and smooth variable-sweep animation.
+class ChromeSpinnerItem : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+    Q_PROPERTY(qreal strokeWidth READ strokeWidth WRITE setStrokeWidth NOTIFY strokeWidthChanged)
+    Q_PROPERTY(bool running READ running WRITE setRunning NOTIFY runningChanged)
+    Q_PROPERTY(bool reduceMotion READ reduceMotion WRITE setReduceMotion NOTIFY reduceMotionChanged)
+
+public:
+    explicit ChromeSpinnerItem(QQuickItem *parent = nullptr);
+
+    QColor color() const { return m_color; }
+    void setColor(const QColor &color);
+    qreal strokeWidth() const { return m_strokeWidth; }
+    void setStrokeWidth(qreal width);
+    bool running() const { return m_running; }
+    void setRunning(bool on);
+    bool reduceMotion() const { return m_reduceMotion; }
+    void setReduceMotion(bool on);
+
+signals:
+    void colorChanged();
+    void strokeWidthChanged();
+    void runningChanged();
+    void reduceMotionChanged();
+
+protected:
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
+    void componentComplete() override;
+
+private:
+    void syncAnimation();
+
+    QColor m_color = QColor("#007a7b");
+    qreal m_strokeWidth = 1.8;
+    bool m_running = true;
+    bool m_reduceMotion = false;
+    qreal m_clock = 0.0;
+    QVariantAnimation m_anim;
+};
+
 inline void dae_qt_register_m3_items()
 {
     qmlRegisterType<M3ProgressItem>("dae.m3", 1, 0, "ProgressIndicator");
     qmlRegisterType<M3LoaderItem>("dae.m3", 1, 0, "LoadingIndicator");
+    qmlRegisterType<ChromeTabShape>("dae.m3", 1, 0, "ChromeTabShape");
+    qmlRegisterType<InkRippleItem>("dae.m3", 1, 0, "InkRippleEffect");
+    qmlRegisterType<ChromeSpinnerItem>("dae.m3", 1, 0, "ChromeSpinner");
 }
 
 } // namespace dae_qt

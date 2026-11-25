@@ -156,9 +156,9 @@ Item {
 
                     readonly property bool filled: modelData.id === "open"
 
-                    width: buttonRow.implicitWidth + (filled ? 24 : 20)
+                    width: buttonRow.implicitWidth + (filled ? 26 : 22)
                     height: Theme.controlMd
-                    radius: Theme.radiusSm
+                    radius: height / 2
                     color: filled
                         ? (buttonMouse.pressed ? Theme.accentHover
                             : (buttonMouse.containsMouse ? Theme.accentHover
@@ -171,14 +171,34 @@ Item {
                     border.width: button.activeFocus ? 2 : 0
                     border.color: filled ? Theme.inkOnAccent : Theme.accent
 
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
+
+                    InkRipple {
+                        id: actionRipple
+                        radius: button.height / 2
+                        color: button.filled ? Theme.accentRipple : Theme.ripple
+                    }
+
                     Accessible.role: Accessible.Button
                     Accessible.name: modelData.label
                     Accessible.onPressAction: button.trigger()
 
                     activeFocusOnTab: modelData.enabled
-                    Keys.onReturnPressed: button.trigger()
-                    Keys.onEnterPressed: button.trigger()
-                    Keys.onSpacePressed: button.trigger()
+                    Keys.onReturnPressed: {
+                        actionRipple.pulse()
+                        button.trigger()
+                    }
+                    Keys.onEnterPressed: {
+                        actionRipple.pulse()
+                        button.trigger()
+                    }
+                    Keys.onSpacePressed: {
+                        actionRipple.pulse()
+                        button.trigger()
+                    }
 
                     function trigger() {
                         if (!modelData.enabled)
@@ -224,6 +244,13 @@ Item {
                         id: buttonMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: button.modelData.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onPressed: function (mouse) {
+                            if (button.modelData.enabled)
+                                actionRipple.burst(mouse.x, mouse.y)
+                        }
+                        onReleased: actionRipple.release()
+                        onCanceled: actionRipple.release()
                         onClicked: button.trigger()
                     }
                 }

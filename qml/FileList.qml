@@ -2255,27 +2255,30 @@ Item {
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
-                    anchors.topMargin: 1
-                    anchors.bottomMargin: 1
-                    radius: Theme.radiusSm
+                    anchors.topMargin: row.selected && row.previousSelected ? 0 : 1
+                    anchors.bottomMargin: row.selected && row.nextSelected ? 0 : 1
+                    topLeftRadius: row.selected && row.previousSelected ? 0 : Theme.radiusMd
+                    topRightRadius: row.selected && row.previousSelected ? 0 : Theme.radiusMd
+                    bottomLeftRadius: row.selected && row.nextSelected ? 0 : Theme.radiusMd
+                    bottomRightRadius: row.selected && row.nextSelected ? 0 : Theme.radiusMd
                     color: row.selected ? Theme.selection
                         : row.dropTarget ? Theme.accentSoft
                         : (rowHover.containsMouse ? Theme.hover : "transparent")
+
+                    Behavior on color {
+                        enabled: Theme.motion
+                        ColorAnimation { duration: Theme.motionFast; easing.type: Theme.motionEaseEffects }
+                    }
                 }
 
                 /// The one-shot paste/create highlight, a 160 ms fade (§7.1.7).
-                /// `visible` also follows the property on purpose: an
-                /// `OpacityAnimator` only commits `opacity` when it finishes,
-                /// so the fade-out would be cut off if visibility waited on it
-                /// alone — the last committed value keeps the layer alive
-                /// until the animation lands on 0.
                 Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
                     anchors.topMargin: 1
                     anchors.bottomMargin: 1
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
                     color: Theme.accentSoftStrong
                     opacity: row.flash ? 1 : 0
                     visible: row.flash || opacity > 0
@@ -2299,23 +2302,24 @@ Item {
                     anchors.bottomMargin: 1
                     visible: row.dropTarget
                     color: "transparent"
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
                     border.width: 2
                     border.color: Theme.accent
                 }
 
-                /// The keyboard cursor is one 2 dp inner ring on the same block;
-                /// a selected row needs no extra rail because the container
-                /// already carries the state.
+                /// The keyboard cursor is one 2 dp inner ring on the same block.
                 Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
-                    anchors.topMargin: 1
-                    anchors.bottomMargin: 1
+                    anchors.topMargin: row.selected && row.previousSelected ? 0 : 1
+                    anchors.bottomMargin: row.selected && row.nextSelected ? 0 : 1
                     visible: row.focusedCursor
                     color: "transparent"
-                    radius: Theme.radiusSm
+                    topLeftRadius: row.selected && row.previousSelected ? 0 : Theme.radiusMd
+                    topRightRadius: row.selected && row.previousSelected ? 0 : Theme.radiusMd
+                    bottomLeftRadius: row.selected && row.nextSelected ? 0 : Theme.radiusMd
+                    bottomRightRadius: row.selected && row.nextSelected ? 0 : Theme.radiusMd
                     border.width: 2
                     border.color: Theme.accent
                 }
