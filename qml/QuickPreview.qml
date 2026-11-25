@@ -16,6 +16,10 @@ Item {
     property bool dark: true
     property color accent: Theme.accent
 
+    /// The plate and the Inspector behind it are built on the first open and
+    /// kept afterwards: a preview nobody has asked for costs no resident tree.
+    property bool plateLoaded: false
+
     visible: false
     focus: visible
     z: 1004
@@ -27,8 +31,15 @@ Item {
         root.paths = next && next.length > 0 ? next : []
         if (root.paths.length === 0)
             return
+        // Loaded before `visible` flips, so the plate is created at opacity 0
+        // and still animates in.
+        root.plateLoaded = true
         root.visible = true
-        panel.forceActiveFocus()
+        if (plateLoader.item !== null) {
+            // qmllint disable missing-property
+            plateLoader.item.takeFocus()
+            // qmllint enable missing-property
+        }
     }
 
     function close() {
@@ -36,19 +47,38 @@ Item {
         root.paths = []
     }
 
+    onVisibleChanged: if (visible)
+        root.plateLoaded = true
+
+    function scrollPreview(distance) {
+        if (plateLoader.item !== null) {
+            // qmllint disable missing-property
+            plateLoader.item.scrollBy(distance)
+            // qmllint enable missing-property
+        }
+    }
+
+    function pagePreview(direction) {
+        if (plateLoader.item !== null) {
+            // qmllint disable missing-property
+            plateLoader.item.pageBy(direction)
+            // qmllint enable missing-property
+        }
+    }
+
     /// The overlay owns the arrow keys, not the file list: scrolling the
     /// preview must not move the selection behind it.
     Keys.onEscapePressed: root.close()
-    Keys.onUpPressed: panelContent.scrollBy(-40)
-    Keys.onDownPressed: panelContent.scrollBy(40)
+    Keys.onUpPressed: root.scrollPreview(-40)
+    Keys.onDownPressed: root.scrollPreview(40)
     Keys.onLeftPressed: root.close()
     Keys.onRightPressed: root.close()
     Keys.onPressed: function (event) {
         if (event.key === Qt.Key_PageUp) {
-            panelContent.scrollBy(-panelContent.height * 0.8)
+            root.pagePreview(-1)
             event.accepted = true
         } else if (event.key === Qt.Key_PageDown) {
-            panelContent.scrollBy(panelContent.height * 0.8)
+            root.pagePreview(1)
             event.accepted = true
         } else if (event.key === Qt.Key_Space) {
             root.close()
@@ -67,50 +97,76 @@ Item {
         }
     }
 
-    Shadow {
-        target: panel
-    }
+    Loader {
+        id: plateLoader
 
-    Rectangle {
-        id: panel
+        anchors.fill: parent
+        active: root.plateLoaded
+        sourceComponent: Component {
+            Item {
+                anchors.fill: parent
 
-        anchors.centerIn: parent
-        width: Math.min(760, parent.width - 96)
-        height: Math.min(parent.height - 96, 680)
-        /// The preview is a large floating sheet, so it wears the dialog corner
-        /// and the high container instead of a hairline outline.
-        radius: Theme.radiusXl
-        color: "transparent"
-        border.width: 0
-        focus: true
+                function takeFocus() {
+                    panel.forceActiveFocus()
+                }
 
-        opacity: root.visible ? 1 : 0
-        Behavior on opacity {
-            enabled: Theme.motion && root.visible
-            OpacityAnimator {
-                duration: Theme.motionOverlay
-                easing.type: Easing.OutCubic
+                function scrollBy(distance) {
+                    panelContent.scrollBy(distance)
+                }
+
+                function pageBy(direction) {
+                    panelContent.scrollBy(direction * panelContent.height * 0.8)
+                }
+
+                Shadow {
+                    target: panel
+                }
+
+                Rectangle {
+                    id: panel
+
+                    anchors.centerIn: parent
+                    width: Math.min(760, parent.width - 96)
+                    height: Math.min(parent.height - 96, 680)
+                    /// The preview is a large floating sheet, so it wears the
+                    /// dialog corner and the high container instead of a
+                    /// hairline outline.
+                    radius: Theme.radiusXl
+                    color: "transparent"
+                    border.width: 0
+                    focus: true
+
+                    opacity: root.visible ? 1 : 0
+                    Behavior on opacity {
+                        enabled: Theme.motion && root.visible
+                        OpacityAnimator {
+                            duration: Theme.motionOverlay
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+                    Glass { radius: Theme.radiusXl }
+
+                    // A click inside the plate must not close it; the scrim is
+                    // behind.
+                    MouseArea {
+                        Accessible.ignored: true
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    }
+
+                    Inspector {
+                        id: panelContent
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        paths: root.paths
+                        dark: root.dark
+                        accent: root.accent
+                        plate: true
+                        wellHeight: 260
+                        onCloseRequested: root.close()
+                    }
+                }
             }
-        }
-        Glass { radius: Theme.radiusXl }
-
-        // A click inside the plate must not close it; the scrim is behind.
-        MouseArea {
-            Accessible.ignored: true
-            anchors.fill: parent
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
-        }
-
-        Inspector {
-            id: panelContent
-            anchors.fill: parent
-            anchors.margins: 1
-            paths: root.paths
-            dark: root.dark
-            accent: root.accent
-            plate: true
-            wellHeight: 260
-            onCloseRequested: root.close()
         }
     }
 }

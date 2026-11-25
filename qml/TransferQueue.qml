@@ -52,8 +52,24 @@ Item {
     ListModel { id: transferModel }
 
     readonly property string transfersJson: Workspace.transfersJson
-    onTransfersJsonChanged: root.syncTransfers()
-    Component.onCompleted: root.syncTransfers()
+    /// True while the rows changed with the panel closed. A progress tick only
+    /// parses and matches the rows while someone is looking at them; the first
+    /// open (or the next tick after it) catches the model up.
+    property bool transfersPending: true
+    onTransfersJsonChanged: {
+        if (root.visible) {
+            root.transfersPending = false
+            root.syncTransfers()
+        } else {
+            root.transfersPending = true
+        }
+    }
+    onVisibleChanged: {
+        if (visible && root.transfersPending) {
+            root.transfersPending = false
+            root.syncTransfers()
+        }
+    }
 
     function syncTransfers() {
         const rows = JSON.parse(root.transfersJson)

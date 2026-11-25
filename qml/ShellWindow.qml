@@ -5634,26 +5634,40 @@ Window {
                         }
                     }
 
-                    OverviewView {
+                    LazySurface {
                         id: overviewView
                         anchors.fill: parent
+                        // Like the trash view: built the first time the content
+                        // stack shows it, and kept afterwards. A session that
+                        // restores straight into a folder never pays for it.
                         visible: root.overviewActive
-                        model: overviewModelInstance
-                        accent: root.accent
-                        textColor: root.textColor
-                        mutedColor: root.mutedColor
-                        hairline: root.hairline
-                        commandShortcut: root.shortcutDisplay("app.commandBar")
+                        loadWhenShown: root.overviewActive
+                        surface: Component {
+                            OverviewView {
+                                anchors.fill: parent
+                                model: overviewModelInstance
+                                accent: root.accent
+                                textColor: root.textColor
+                                mutedColor: root.mutedColor
+                                hairline: root.hairline
+                                commandShortcut: root.shortcutDisplay("app.commandBar")
 
-                        onOpenRequested: function (kind, path) {
-                            if (kind === "tag")
-                                root.searchTag(path)
-                            else if (kind === "file")
-                                Workspace.openPath(path)
-                            else
-                                root.navigate(path)
+                                onOpenRequested: function (kind, path) {
+                                    if (kind === "tag")
+                                        root.searchTag(path)
+                                    else if (kind === "file")
+                                        Workspace.openPath(path)
+                                    else
+                                        root.navigate(path)
+                                }
+                                onCommandPaletteRequested: commandPalette.openPalette()
+                            }
                         }
-                        onCommandPaletteRequested: commandPalette.openPalette()
+
+                        function takeFocus() {
+                            if (content !== null)
+                                content.takeFocus()
+                        }
                     }
 
                 }
@@ -6390,6 +6404,42 @@ Window {
             drop.accept(Qt.MoveAction)
             ShellState.recordTabDrop(tab.token, tab.index, root.token,
                                      drop.x, drop.y, tab.onStrip)
+        }
+    }
+
+    /// The first frosted plate of a session is the one that builds the blur and
+    /// mask pipelines on the render thread; the pipeline cache is per run, so
+    /// the menu or dialog that asks for that first plate drops frames while it
+    /// is built, and every later plate is smooth. A 2 dp plate in the corner
+    /// renders both passes shortly after the window is up — past the first
+    /// frame, before anyone can open a plate — for about a hundred milliseconds,
+    /// then is hidden again. With the frost off there is nothing to warm.
+    Item {
+        id: glassWarmup
+
+        property bool arming: false
+        property bool done: false
+
+        width: 2
+        height: 2
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: glassWarmup.arming && !glassWarmup.done && Theme.glassEnabled
+
+        Glass { radius: 1 }
+
+        Timer {
+            interval: 150
+            running: root.active
+            repeat: false
+            onTriggered: glassWarmup.arming = true
+        }
+
+        Timer {
+            interval: 100
+            running: glassWarmup.arming
+            repeat: false
+            onTriggered: glassWarmup.done = true
         }
     }
 
