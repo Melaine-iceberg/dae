@@ -521,6 +521,12 @@ FocusScope {
                         onPositionChanged: {
                             if (root.scrollGuard)
                                 return
+                            // A move inside the row already highlighted is not a
+                            // new row. The host re-anchors and measures the
+                            // submenu on every `moved`, so re-announcing the
+                            // same row makes hover cost scale with pointer speed.
+                            if (root.currentIndex === entry.index)
+                                return
                             root.hoverIndex = entry.index
                             root.currentIndex = entry.index
                             root.moved(entry.index)

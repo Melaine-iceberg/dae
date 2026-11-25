@@ -5934,32 +5934,110 @@ Window {
                 }
             }
 
-            Inspector {
+            /// The pane is a 1386-line column and is hidden until Ctrl+I, so
+            /// it is built the first time it is shown instead of with the
+            /// window (~96 ms per window in the qmlprofiler trace). Calls that
+            /// arrive while it is hidden — clearing the selection on every
+            /// navigation — are kept and replayed when it loads.
+            Item {
                 id: inspector
+
                 width: root.inspectorVisible && (root.folderActive || root.trashActive)
                     && root.width >= 840
                     ? Math.min(ExplorerPrefs.previewWidth, Math.max(260, parent.width * 0.5))
                     : 0
                 height: parent.height
                 visible: width > 0
-                dark: root.dark
-                accent: root.accent
-                inTrash: root.trashActive
-                listing: root.activeTab !== null ? root.activeTab.listing : null
-                trashCount: trashModel.count
 
-                onCloseRequested: {
-                    root.inspectorVisible = false
-                    if (root.trashActive)
-                        trashView.takeFocus()
-                    else
-                        fileList.takeFocus()
+                property bool onceShown: false
+                property var pendingPaths: []
+                property string pendingBreakdown: ""
+                property var pendingNeighbors: []
+                property var pendingTrash: null
+                /// What the shell reads to ask what the pane is showing.
+                readonly property var paths: pendingPaths
+
+                onVisibleChanged: if (visible)
+                    onceShown = true
+                Component.onCompleted: if (visible)
+                    onceShown = true
+
+                function showPaths(next, breakdownJson, neighborPaths) {
+                    inspector.pendingPaths = (next || []).slice()
+                    inspector.pendingBreakdown =
+                        breakdownJson !== undefined ? breakdownJson : ""
+                    inspector.pendingNeighbors = (neighborPaths || []).slice()
+                    inspector.pendingTrash = null
+                    if (loader.item !== null) {
+                        // qmllint disable missing-property
+                        loader.item.showPaths(inspector.pendingPaths,
+                                              inspector.pendingBreakdown,
+                                              inspector.pendingNeighbors)
+                        // qmllint enable missing-property
+                    }
                 }
-                onOpenRequested: function (path, isDir) {
-                    root.acceptPreview(path, isDir)
+
+                function showTrash(item) {
+                    inspector.pendingPaths = []
+                    inspector.pendingBreakdown = ""
+                    inspector.pendingNeighbors = []
+                    inspector.pendingTrash =
+                        item && item.name !== undefined && item.name !== "" ? item : null
+                    if (loader.item !== null) {
+                        // qmllint disable missing-property
+                        loader.item.showTrash(inspector.pendingTrash)
+                        // qmllint enable missing-property
+                    }
                 }
-                onPropertiesRequested: function (path) {
-                    propertiesDialog.open(path)
+
+                function takeFocus() {
+                    if (loader.item !== null) {
+                        // qmllint disable missing-property
+                        loader.item.takeFocus()
+                        // qmllint enable missing-property
+                    }
+                }
+
+                Loader {
+                    id: loader
+
+                    anchors.fill: parent
+                    active: inspector.onceShown
+                    sourceComponent: Component {
+                        Inspector {
+                            anchors.fill: parent
+                            dark: root.dark
+                            accent: root.accent
+                            inTrash: root.trashActive
+                            listing: root.activeTab !== null ? root.activeTab.listing : null
+                            trashCount: trashModel.count
+
+                            onCloseRequested: {
+                                root.inspectorVisible = false
+                                if (root.trashActive)
+                                    trashView.takeFocus()
+                                else
+                                    fileList.takeFocus()
+                            }
+                            onOpenRequested: function (path, isDir) {
+                                root.acceptPreview(path, isDir)
+                            }
+                            onPropertiesRequested: function (path) {
+                                propertiesDialog.open(path)
+                            }
+                        }
+                    }
+
+                    onLoaded: {
+                        // qmllint disable missing-property
+                        if (inspector.pendingTrash !== null)
+                            item.showTrash(inspector.pendingTrash)
+                        else
+                            item.showPaths(inspector.pendingPaths,
+                                           inspector.pendingBreakdown,
+                                           inspector.pendingNeighbors)
+                        // qmllint enable missing-property
+                    }
                 }
             }
         }
