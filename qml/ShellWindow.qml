@@ -532,7 +532,7 @@ Window {
         || passwordDialog.shown || settingsPanel.shown || confirmDialog.shown
         || connectDialog.shown || cloudDialog.shown || openWithDialog.shown
         || updateDialog.shown || transferConflict.visible || transferQueue.visible
-        || statusCenter.visible || quickPreview.open
+        || statusCenter.shown || quickPreview.open
         || propertiesDialog.shown || bulkRenameDialog.shown || moveToDialog.shown
         // The toolbar and search-bar menus are overlays too: while one is
         // open, a click elsewhere dismisses it and no shortcut behind it runs.
@@ -6298,7 +6298,7 @@ Window {
                     Rectangle {
                         anchors.fill: parent
                         radius: Theme.radiusSm
-                        color: historyMouse.containsMouse || statusCenter.visible
+                        color: historyMouse.containsMouse || statusCenter.shown
                             ? Theme.hover : "transparent"
                     }
 
@@ -7345,15 +7345,31 @@ Window {
         accent: root.accent
     }
 
-    StatusCenter {
+    LazySurface {
         id: statusCenter
-        anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
 
-        onVisibleChanged: {
-            if (!visible)
-                root.modalClosed()
+        anchors.fill: parent
+        z: 1003
+        surface: Component {
+            StatusCenter {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
+
+                onVisibleChanged: {
+                    if (!visible)
+                        root.modalClosed()
+                }
+            }
+        }
+
+        function openAbove(x, y) {
+            instantiate().openAbove(x, y)
+        }
+
+        function close() {
+            if (content !== null)
+                content.close()
         }
     }
 
@@ -7670,7 +7686,7 @@ Window {
                 confirmDialog.close()
                 root.confirmMode = ""
                 root.confirmTrashIds = []
-            } else if (statusCenter.visible)
+            } else if (statusCenter.shown)
                 statusCenter.close()
             else if (transferQueue.visible)
                 transferQueue.close()

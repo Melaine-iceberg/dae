@@ -210,6 +210,10 @@ Menu {
                         Qt.callLater(function () { nameInput.forceActiveFocus() })
                     })
                 }
+            }
+
+            Connections {
+                target: ExplorerPrefs
                 /// The clear row below also clears the box; the box follows
                 /// unless the user is the one typing into it.
                 function onNameFilterChanged() {

@@ -75,7 +75,9 @@ Item {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onClicked: root.close()
-        onWheel: root.close()
+        // No close on wheel: a wheel the message list cannot take at its
+        // bounds falls through to this scrim, so scrolling the list to either
+        // end dismissed the panel. Clicking outside still closes it.
     }
 
     /// The plate's hard shadow, declared before the plate so it paints

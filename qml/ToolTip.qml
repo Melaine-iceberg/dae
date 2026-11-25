@@ -84,8 +84,8 @@ Item {
         Rectangle {
             id: bubble
 
-            width: plate.width
-            height: plate.height
+            width: plate ? plate.width : 0
+            height: plate ? plate.height : 0
             radius: Theme.radiusMd
             color: "transparent"
             border.width: 0
