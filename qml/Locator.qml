@@ -39,9 +39,12 @@ Item {
     property bool searchBusy: false
     property string searchText: ""
 
+    /// Path of the breadcrumb segment whose subdirectories menu is expanded.
+    property string expandedPath: ""
+
     signal crumbActivated(string path)
     signal ancestorsRequested(real x, real y, var names, var paths)
-    signal siblingsRequested(real x, real y, string path)
+    signal childrenRequested(real x, real y, string path)
     signal filesDropped(var paths, string path)
     signal contextMenuRequested(real x, real y)
     signal addressRequested()
@@ -208,16 +211,26 @@ Item {
     readonly property real fontSize: Theme.typeRow
     readonly property real crumbGap: 3
     readonly property real crumbPad: 9
-    readonly property real chevronWidth: 13
+    readonly property real chevronWidth: 16
     readonly property real plateHeight: 24
     readonly property real ellipsisWidth: 24
     readonly property real maxAncestorWidth: 160
     readonly property real maxCurrentWidth: 256
-    readonly property real minCurrentWidth: bar.crumbPad * 2 + bar.fontSize * 2
+    readonly property real minCurrentWidth: bar.crumbPad + bar.fontSize * 2
+        + (bar.interactive ? (4 + bar.chevronWidth) : bar.crumbPad)
 
-    TextMetrics {
-        id: nameMeasure
+    Text {
+        id: nameMeasureNormal
+        visible: false
         font.pixelSize: bar.fontSize
+        font.weight: Font.Normal
+    }
+
+    Text {
+        id: nameMeasureEmphasis
+        visible: false
+        font.pixelSize: bar.fontSize
+        font.weight: Theme.weightEmphasis
     }
 
     TextMetrics {
@@ -233,12 +246,21 @@ Item {
     property var hiddenNames: []
     property var hiddenPaths: []
 
+    function gapAfter(entry) {
+        if (!bar.interactive || entry.ellipsis === true)
+            return bar.unit
+        return bar.crumbGap
+    }
+
     function crumbWidth(name, current) {
-        nameMeasure.text = name
-        const nameWidth = Math.min(nameMeasure.advanceWidth,
+        const measure = current ? nameMeasureEmphasis : nameMeasureNormal
+        measure.text = name
+        const measured = Math.ceil(measure.implicitWidth) + 1
+        const nameWidth = Math.min(measured,
                                    current ? bar.maxCurrentWidth
                                            : bar.maxAncestorWidth)
-        return nameWidth + bar.crumbPad * 2 + (bar.interactive ? bar.chevronWidth : 0)
+        return nameWidth + bar.crumbPad
+            + (bar.interactive ? (4 + bar.chevronWidth) : bar.crumbPad)
     }
 
     function fit(all) {
@@ -252,16 +274,17 @@ Item {
             const width = bar.crumbWidth(all[index].name, all[index].current)
             widths.push(width)
             total += width
+            if (index < count - 1)
+                total += bar.gapAfter(all[index])
         }
-        total += bar.unit * (count - 1)
-        if (total <= trail.width + 1)
+        if (total <= trail.width)
             return { "visible": all, "hidden": [] }
 
-        let used = widths[0] + bar.unit + bar.ellipsisWidth + bar.unit
+        let used = widths[0] + bar.gapAfter(all[0]) + bar.ellipsisWidth + bar.unit
             + widths[count - 1]
         let start = count - 1
-        while (start > 1 && used + widths[start - 1] + bar.unit <= trail.width) {
-            used += widths[start - 1] + bar.unit
+        while (start > 1 && used + widths[start - 1] + bar.gapAfter(all[start - 1]) <= trail.width) {
+            used += widths[start - 1] + bar.gapAfter(all[start - 1])
             start -= 1
         }
 
@@ -280,7 +303,7 @@ Item {
             const entry = entries[index]
             entry.width = entry.ellipsis === true
                 ? bar.ellipsisWidth : bar.crumbWidth(entry.name, entry.current)
-            entry.x = index === 0 ? 0 : x + bar.unit
+            entry.x = index === 0 ? 0 : x + bar.gapAfter(entries[index - 1])
             x = entry.x + entry.width
         }
 
@@ -335,9 +358,10 @@ Item {
         bar.crumbs = placed
     }
 
-    onNamesChanged: Qt.callLater(bar.rebuild)
+            onNamesChanged: Qt.callLater(bar.rebuild)
     onPathsChanged: Qt.callLater(bar.rebuild)
     onWidthChanged: bar.rebuild()
+    onInteractiveChanged: Qt.callLater(bar.rebuild)
     onTrailingReserveChanged: Qt.callLater(bar.rebuild)
     Component.onCompleted: bar.rebuild()
 
@@ -349,6 +373,7 @@ Item {
         height: bar.height
         visible: bar.breadcrumb
         clip: true
+        onWidthChanged: Qt.callLater(bar.rebuild)
 
         MouseArea {
             Accessible.ignored: true
@@ -385,6 +410,10 @@ Item {
                     ? qsTr("显示完整路径") : slot.modelData.name
 
                 property bool dropActive: false
+                readonly property bool expanded: bar.interactive
+                    && slot.modelData.ellipsis !== true
+                    && bar.expandedPath !== ""
+                    && bar.expandedPath === slot.modelData.path
 
                 DropArea {
                     anchors.fill: parent
@@ -431,7 +460,10 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     x: -bar.crumbGap - width
-                    visible: slot.index > 0
+                    visible: slot.index > 0 && (!bar.interactive
+                        || (slot.index <= bar.crumbs.length
+                            && bar.crumbs[slot.index - 1] !== undefined
+                            && bar.crumbs[slot.index - 1].ellipsis === true))
                     text: "\u203A"
                     color: Theme.inkTertiary
                     font.pixelSize: bar.fontSize
@@ -444,7 +476,7 @@ Item {
                     radius: height / 2
                     color: slot.modelData.current === true
                         ? Theme.selection
-                        : ((plateMouse.containsMouse || siblingMouse.containsMouse)
+                        : ((plateMouse.containsMouse || chevronMouse.containsMouse || slot.expanded)
                             ? Theme.hover : "transparent")
 
                     Behavior on color {
@@ -455,68 +487,6 @@ Item {
                     InkRipple {
                         id: plateRipple
                         radius: plate.height / 2
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: bar.crumbPad
-                        anchors.right: siblingButton.left
-                        anchors.rightMargin: 0
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: slot.modelData.ellipsis === true
-                            ? "\u2026" : slot.modelData.name
-                        color: slot.modelData.current === true
-                            ? Theme.selectionInk
-                            : ((plateMouse.containsMouse || siblingMouse.containsMouse)
-                                ? bar.textColor : bar.mutedColor)
-                        font.pixelSize: bar.fontSize
-                        font.weight: slot.modelData.current === true
-                            ? Theme.weightEmphasis : Font.Normal
-                        elide: Text.ElideMiddle
-                    }
-
-                    Item {
-                        id: siblingButton
-
-                        anchors.right: parent.right
-                        anchors.rightMargin: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: bar.chevronWidth
-                        height: parent.height
-                        visible: bar.interactive && slot.modelData.ellipsis !== true
-
-                        Glyph {
-                            anchors.centerIn: parent
-                            width: 10
-                            height: 10
-                            kind: "chevronDown"
-                            tint: siblingMouse.containsMouse
-                                ? bar.textColor
-                                : (slot.modelData.current === true
-                                    ? Theme.selectionInk : Theme.inkTertiary)
-                        }
-
-                        Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("打开同级目录")
-                        Accessible.onPressAction: {
-                            const anchor = siblingButton.mapToItem(null, 0,
-                                                                  siblingButton.height)
-                            bar.siblingsRequested(anchor.x, anchor.y,
-                                                  slot.modelData.path)
-                        }
-
-                        MouseArea {
-                            id: siblingMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                const anchor = siblingButton.mapToItem(null, 0,
-                                                                      siblingButton.height)
-                                bar.siblingsRequested(anchor.x, anchor.y,
-                                                      slot.modelData.path)
-                            }
-                        }
                     }
 
                     MouseArea {
@@ -542,12 +512,87 @@ Item {
                             }
                             if (slot.modelData.ellipsis === true) {
                                 const anchor = plate.mapToItem(null, 0,
-                                                               plate.height)
+                                                               plate.height + 4)
                                 bar.ancestorsRequested(anchor.x, anchor.y,
                                                        bar.hiddenNames,
                                                        bar.hiddenPaths)
                             } else if (slot.modelData.current !== true) {
                                 bar.crumbActivated(slot.modelData.path)
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: slot.modelData.ellipsis === true ? 4 : bar.crumbPad
+                        anchors.right: slot.modelData.ellipsis === true ? parent.right : chevronButton.left
+                        anchors.rightMargin: slot.modelData.ellipsis === true ? 4 : 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: slot.modelData.ellipsis === true
+                            ? Text.AlignHCenter : Text.AlignLeft
+                        text: slot.modelData.ellipsis === true
+                            ? "\u2026" : slot.modelData.name
+                        color: slot.modelData.current === true
+                            ? Theme.selectionInk
+                            : ((plateMouse.containsMouse || chevronMouse.containsMouse || slot.expanded)
+                                ? bar.textColor : bar.mutedColor)
+                        font.pixelSize: bar.fontSize
+                        font.weight: slot.modelData.current === true
+                            ? Theme.weightEmphasis : Font.Normal
+                        elide: Text.ElideMiddle
+                    }
+
+                    Item {
+                        id: chevronButton
+
+                        z: 2
+                        anchors.right: parent.right
+                        anchors.rightMargin: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: bar.chevronWidth
+                        height: parent.height
+                        visible: bar.interactive && slot.modelData.ellipsis !== true
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.topMargin: 2
+                            anchors.bottomMargin: 2
+                            radius: height / 2
+                            color: slot.expanded || chevronMouse.containsMouse
+                                ? Theme.hover : "transparent"
+                        }
+
+                        Glyph {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 10
+                            kind: slot.expanded ? "chevronDown" : "chevronRight"
+                            tint: (chevronMouse.containsMouse || slot.expanded)
+                                ? bar.textColor
+                                : (slot.modelData.current === true
+                                    ? Theme.selectionInk : Theme.inkTertiary)
+                        }
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("打开子目录")
+                        Accessible.onPressAction: {
+                            const anchor = chevronButton.mapToItem(null, 0,
+                                                                   chevronButton.height + 4)
+                            bar.childrenRequested(anchor.x, anchor.y,
+                                                  slot.modelData.path)
+                        }
+
+                        MouseArea {
+                            id: chevronMouse
+                            anchors.fill: parent
+                            acceptedButtons: Qt.LeftButton
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                const anchor = chevronButton.mapToItem(null, 0,
+                                                                       chevronButton.height + 4)
+                                bar.childrenRequested(anchor.x, anchor.y,
+                                                      slot.modelData.path)
                             }
                         }
                     }

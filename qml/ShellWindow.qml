@@ -161,6 +161,9 @@ Window {
     /// The shell commands answer asynchronously, and only the row menu is
     /// rebuilt when they arrive.
     property string contextKind: ""
+    /// The breadcrumb segment whose child-directory menu is currently open.
+    property string expandedCrumbPath: ""
+    property bool expandedCrumbSplit: false
     /// The row menu's second page is open (see `rowMoreMenuItems`). The page is
     /// part of the menu rather than a flyout, so the installed apps' commands
     /// and the archive/space submenus keep working one level deep.
@@ -3347,6 +3350,7 @@ Window {
     /// `split` says which pane the chosen ancestor belongs to, because the two
     /// panes keep separate trails.
     function openBreadcrumbMenu(x, y, names, paths, split) {
+        root.expandedCrumbPath = ""
         root.contextKind = "breadcrumb"
         const items = []
         for (let index = 0; index < paths.length; index += 1)
@@ -3357,39 +3361,33 @@ Window {
         menu.openAt(x, y, items)
     }
 
-    /// §7.2: a segment's `⌄` lists the directories beside it, so a jump to a
-    /// parallel branch costs one click instead of a trip up and back down.
-    /// The siblings come from the filesystem on demand; the current segment is
-    /// marked and does nothing.
-    function openSiblingsMenu(x, y, path, split) {
+    /// A segment's `>` lists the subdirectories inside it and flips to `⌄`
+    /// while open.
+    function openCrumbChildrenMenu(x, y, path, split) {
+        root.expandedCrumbPath = ""
         if (!path || path === "")
             return
+        const names = Workspace.subdirectories(path)
+        if (names.length === 0) {
+            toast.show(qsTr("这个位置没有子目录"), false)
+            return
+        }
         root.contextKind = "breadcrumb"
         root.contextTab = split ? root.splitTab : null
-        // The parent of `path`: everything up to the last separator, kept with
-        // that separator so the children can be joined by name.
-        const trimmed = String(path).replace(/[\\/]+$/, "")
-        const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
-        const parent = cut < 0 ? "" : trimmed.substring(0, cut + 1)
-        const current = cut < 0 ? trimmed : trimmed.substring(cut + 1)
-        if (parent === "")
-            return
-        const names = Workspace.subdirectories(parent)
+        const base = /[\\/]$/.test(path)
+            ? path
+            : path + (path.indexOf("\\") >= 0 ? "\\" : "/")
         const items = []
         for (let index = 0; index < names.length; index += 1) {
             const name = String(names[index])
             items.push({
-                id: "sibling:" + parent + name,
+                id: "crumb:" + base + name,
                 glyph: "folder",
-                label: name,
-                shortcut: name === current ? qsTr("当前") : "",
-                enabled: name !== current
+                label: name
             })
         }
-        if (items.length === 0) {
-            toast.show(qsTr("这个位置没有同级目录"), false)
-            return
-        }
+        root.expandedCrumbSplit = split
+        root.expandedCrumbPath = path
         menu.openAt(x, y, items)
     }
 
@@ -3580,6 +3578,7 @@ Window {
         root.contextList = null
         root.contextKind = ""
         root.contextName = ""
+        root.expandedCrumbPath = ""
     }
 
     /// The action bar's verbs, on the live selection rather than on a menu's
@@ -3696,11 +3695,6 @@ Window {
         // rebuilt from whatever the bar hid, so there is no state to look up.
         if (id.indexOf("crumb:") === 0) {
             root.navigatePane(root.contextTab, id.substring("crumb:".length))
-            root.clearContext()
-            return
-        }
-        if (id.indexOf("sibling:") === 0) {
-            root.navigatePane(root.contextTab, id.substring("sibling:".length))
             root.clearContext()
             return
         }
@@ -4236,12 +4230,11 @@ Window {
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: Theme.shellTitle
         anchors.bottom: parent.bottom
         // The tab bar strip stays unpainted so the native backdrop reads
-        // through the bar's veil; everything below it is solid. A numeric
-        // offset, not an anchor to chromeBar (a non-sibling): cross-parent
-        // anchor lines do not resolve and would collapse this fill.
-        y: Theme.shellTitle
+        // through the bar's veil; everything below it is solid.
         color: Theme.canvas
     }
 
@@ -4254,8 +4247,9 @@ Window {
     Image {
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: Theme.shellTitle
         anchors.bottom: parent.bottom
-        y: Theme.shellTitle
         visible: ExplorerPrefs.backgroundImage !== ""
         source: root.backgroundImageSource(ExplorerPrefs.backgroundImage)
         fillMode: Image.PreserveAspectCrop
@@ -4445,6 +4439,8 @@ Window {
                     searchMode: root.searchMode
                     searchBusy: root.searchBusy
                     searchText: root.searchQuery
+                    expandedPath: (menu.visible && root.contextKind === "breadcrumb"
+                        && !root.expandedCrumbSplit) ? root.expandedCrumbPath : ""
 
                     onCrumbActivated: function (path) {
                         root.navigate(path)
@@ -4452,8 +4448,8 @@ Window {
                     onAncestorsRequested: function (x, y, names, paths) {
                         root.openBreadcrumbMenu(x, y, names, paths, false)
                     }
-                    onSiblingsRequested: function (x, y, path) {
-                        root.openSiblingsMenu(x, y, path, false)
+                    onChildrenRequested: function (x, y, path) {
+                        root.openCrumbChildrenMenu(x, y, path, false)
                     }
                     onFilesDropped: function (paths, path) {
                         root.dropFilesOnPath(paths, path)
@@ -5108,11 +5104,15 @@ Window {
             }
         }
 
-        Row {
+        Item {
             id: body
             width: parent.width
             height: parent.height - Theme.shellTitle - Theme.shellNav
                 - root.footerHeight - searchFilterBar.height
+
+            Row {
+                id: bodyRow
+                anchors.fill: parent
 
             Sidebar {
                 id: sidebar
@@ -5155,57 +5155,9 @@ Window {
                 }
             }
 
-            // The drag strip belongs between the sidebar and the listing.
-            // It used to sit on the sidebar's outer edge, where its visible
-            // line and its hit area disagreed and could compete with window
-            // resizing. It keeps the exact width the content column subtracts.
-            Item {
-                id: sidebarHandle
-
-                readonly property bool live: root.sidebarVisible
-
-                width: live ? 6 : 0
-                height: parent.height
-
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: Theme.ruleWidth(Screen.devicePixelRatio)
-                    height: parent.height
-                    // At rest the sidebar's own edge is the divider; the
-                    // handle paints only while it is a live target, so two
-                    // hairlines never run three pixels apart.
-                    color: sidebarHandleMouse.containsMouse ? root.accent : "transparent"
-                }
-
-                MouseArea {
-                    id: sidebarHandleMouse
-                    Accessible.ignored: true
-                    anchors.fill: parent
-                    enabled: sidebarHandle.live
-                    hoverEnabled: true
-                    cursorShape: Qt.SizeHorCursor
-
-                    property real startX: 0
-                    property int startWidth: 0
-
-                    onPressed: function (mouse) {
-                        startX = mapToItem(null, mouse.x, 0).x
-                        startWidth = ExplorerPrefs.sidebarWidth
-                    }
-                    onPositionChanged: function (mouse) {
-                        if (!pressed)
-                            return
-                        const dx = mapToItem(null, mouse.x, 0).x - startX
-                        ExplorerPrefs.setNumber("sidebarWidth", Math.round(startWidth + dx))
-                    }
-                    onDoubleClicked: ExplorerPrefs.setNumber("sidebarWidth", 240)
-                }
-            }
-
             Column {
                 id: contentColumn
-                width: parent.width - sidebar.width - sidebarHandle.width
-                    - inspector.width - inspectorHandle.width
+                width: parent.width - sidebar.width - inspector.width
                 height: parent.height
 
                 Item {
@@ -5614,6 +5566,8 @@ Window {
                                 textColor: root.textColor
                                 mutedColor: root.mutedColor
                                 accent: root.accent
+                                expandedPath: (menu.visible && root.contextKind === "breadcrumb"
+                                    && root.expandedCrumbSplit) ? root.expandedCrumbPath : ""
 
                                 onCrumbActivated: function (path) {
                                     root.navigateSplit(path)
@@ -5621,8 +5575,8 @@ Window {
                                 onAncestorsRequested: function (x, y, names, paths) {
                                     root.openBreadcrumbMenu(x, y, names, paths, true)
                                 }
-                                onSiblingsRequested: function (x, y, path) {
-                                    root.openSiblingsMenu(x, y, path, true)
+                                onChildrenRequested: function (x, y, path) {
+                                    root.openCrumbChildrenMenu(x, y, path, true)
                                 }
                                 onFilesDropped: function (paths, path) {
                                     root.dropFilesOnPath(paths, path)
@@ -5887,53 +5841,6 @@ Window {
                 }
             }
 
-            // A one-pixel seam that is six pixels wide to the pointer. The
-            // inspector is the one pane whose useful width depends on what is
-            // in it — a code file wants more, a thumbnail less — so the number
-            // is the user's, remembered in explorer.ini. 260–420 is the range
-            // the preference clamps to; a double click restores the default.
-            Item {
-                id: inspectorHandle
-
-                readonly property bool live: root.inspectorVisible
-                    && (root.folderActive || root.trashActive)
-                    && root.width >= 840
-
-                width: live ? 6 : 0
-                height: parent.height
-
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: Theme.ruleWidth(Screen.devicePixelRatio)
-                    height: parent.height
-                    color: handleMouse.containsMouse ? Theme.accent : Theme.hairline
-                }
-
-                MouseArea {
-                    id: handleMouse
-                    Accessible.ignored: true
-                    anchors.fill: parent
-                    enabled: inspectorHandle.live
-                    hoverEnabled: true
-                    cursorShape: Qt.SizeHorCursor
-
-                    property real startX: 0
-                    property int startWidth: 0
-
-                    onPressed: function (mouse) {
-                        startX = mapToItem(null, mouse.x, 0).x
-                        startWidth = ExplorerPrefs.previewWidth
-                    }
-                    onPositionChanged: function (mouse) {
-                        if (!pressed)
-                            return
-                        const dx = mapToItem(null, mouse.x, 0).x - startX
-                        ExplorerPrefs.setNumber("previewWidth", Math.round(startWidth - dx))
-                    }
-                    onDoubleClicked: ExplorerPrefs.setNumber("previewWidth", 300)
-                }
-            }
-
             /// The pane is a 1386-line column and is hidden until Ctrl+I, so
             /// it is built the first time it is shown instead of with the
             /// window (~96 ms per window in the qmlprofiler trace). Calls that
@@ -6038,6 +5945,97 @@ Window {
                                            inspector.pendingNeighbors)
                         // qmllint enable missing-property
                     }
+                }
+            }
+            }
+
+            // Drag handles sit directly over the 1 px pane seams so they
+            // offer a 6 px hit target without cutting a gap into headers.
+            Item {
+                id: sidebarHandle
+
+                readonly property bool live: root.sidebarVisible
+
+                z: 10
+                x: sidebar.width - 3
+                width: 6
+                height: parent.height
+                visible: live
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
+                    height: parent.height
+                    color: sidebarHandleMouse.containsMouse ? root.accent : "transparent"
+                }
+
+                MouseArea {
+                    id: sidebarHandleMouse
+                    Accessible.ignored: true
+                    anchors.fill: parent
+                    enabled: sidebarHandle.live
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeHorCursor
+
+                    property real startX: 0
+                    property int startWidth: 0
+
+                    onPressed: function (mouse) {
+                        startX = mapToItem(null, mouse.x, 0).x
+                        startWidth = ExplorerPrefs.sidebarWidth
+                    }
+                    onPositionChanged: function (mouse) {
+                        if (!pressed)
+                            return
+                        const dx = mapToItem(null, mouse.x, 0).x - startX
+                        ExplorerPrefs.setNumber("sidebarWidth", Math.round(startWidth + dx))
+                    }
+                    onDoubleClicked: ExplorerPrefs.setNumber("sidebarWidth", 240)
+                }
+            }
+
+            Item {
+                id: inspectorHandle
+
+                readonly property bool live: root.inspectorVisible
+                    && (root.folderActive || root.trashActive)
+                    && root.width >= 840
+
+                z: 10
+                x: parent.width - inspector.width - 3
+                width: 6
+                height: parent.height
+                visible: live
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Theme.ruleWidth(Screen.devicePixelRatio)
+                    height: parent.height
+                    color: handleMouse.containsMouse ? root.accent : "transparent"
+                }
+
+                MouseArea {
+                    id: handleMouse
+                    Accessible.ignored: true
+                    anchors.fill: parent
+                    enabled: inspectorHandle.live
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeHorCursor
+
+                    property real startX: 0
+                    property int startWidth: 0
+
+                    onPressed: function (mouse) {
+                        startX = mapToItem(null, mouse.x, 0).x
+                        startWidth = ExplorerPrefs.previewWidth
+                    }
+                    onPositionChanged: function (mouse) {
+                        if (!pressed)
+                            return
+                        const dx = mapToItem(null, mouse.x, 0).x - startX
+                        ExplorerPrefs.setNumber("previewWidth", Math.round(startWidth - dx))
+                    }
+                    onDoubleClicked: ExplorerPrefs.setNumber("previewWidth", 300)
                 }
             }
         }
@@ -6928,8 +6926,10 @@ Window {
             root.modalClosed()
         }
         onVisibleChanged: {
-            if (!menu.visible)
+            if (!menu.visible) {
+                root.expandedCrumbPath = ""
                 root.modalClosed()
+            }
         }
     }
 
