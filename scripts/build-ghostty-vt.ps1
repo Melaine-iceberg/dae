@@ -27,11 +27,11 @@ $ErrorActionPreference = "Stop"
 $releases = @{
     "x86_64-pc-windows-msvc"  = @{
         Zip  = "x86_64-windows-gnu"
-        Sha  = "8e2eb9e1822e85d786b456c8beb86f49d09c318c91f0c2913f91e7ffa12cda29"
+        Sha  = "f16ec4c167631e7feb24b9793d1f4b8e9b922e959c900dee984b111bb94a8fa8"
     }
     "aarch64-pc-windows-msvc" = @{
         Zip  = "aarch64-windows-gnu"
-        Sha  = "cc61da5f968ea0b08639bdf019c6b7da46bad1d985774fd8a2de57af32862892"
+        Sha  = "463f092cd94540580b1e4d3b3e57661b60eceafbf9f74f53ecb2db5eb05cbdd9"
     }
 }
 $release = $releases[$Target]

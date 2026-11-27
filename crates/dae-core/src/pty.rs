@@ -14,15 +14,17 @@
 
 use std::ffi::c_void;
 use std::io::{Read, Write};
+use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::ghostty_vt::{
-    self, GhosttyRowId, GhosttyStyle, GhosttyStyleColor, Vt,
+    self, GhosttyMouseEncoderSize, GhosttyRowId, GhosttyStyle, GhosttyStyleColor, RenderState, Vt,
 };
 
 const SCROLLBACK_LINES: usize = 10_000;
@@ -70,19 +72,27 @@ impl CellSnapshot {
     }
 }
 
-/// What a snapshot carries. The vendored libghostty-vt marks every update
-/// fully dirty (a probe in `examples/dirty_probe.rs` showed `DIRTY_FULL`
-/// and all rows dirty even for a bare cursor move), so per-row patching is
-/// not available. What the library does expose is stable row identity: when
-/// the viewport scrolled by `k` lines, every row keeps the id of the row
-/// that moved there, so a shift frame sends only the `k` new bottom rows
-/// and the painter moves the rest in its shadow grid.
+/// One dirty viewport row in a `SnapshotKind::Rows` patch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirtyRow {
+    pub row: u16,
+    pub cells: Vec<CellSnapshot>,
+}
+
+/// What a snapshot carries. After calling `ghostty_render_state_clean`,
+/// libghostty-vt reports `DIRTY_FALSE` on idle frames and `DIRTY_PARTIAL`
+/// with per-row dirty flags on localized updates. When a viewport scroll marks
+/// the frame `DIRTY_FULL`, `GhosttyRowId` comparison collapses pure scrolls
+/// into `Shift(k)` so only the `k` new bottom rows cross the bridge.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SnapshotKind {
     Full,
     /// The viewport scrolled up by `k`; `cells` holds the `k` new bottom
     /// rows, top to bottom.
     Shift(usize),
+    /// Only the listed rows changed since the last clean frame (empty when
+    /// nothing changed).
+    Rows(Vec<DirtyRow>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,6 +126,7 @@ pub enum TerminalEvent {
 pub type TerminalNotifier = Arc<dyn Fn(TerminalEvent) + Send + Sync>;
 
 pub struct TerminalSession {
+    render: Mutex<RenderCache>,
     inner: Arc<Mutex<TerminalState>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
@@ -136,6 +147,16 @@ struct WritePtyUserdata {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     reported_pwd: Arc<Mutex<Option<String>>>,
     reported_title: Arc<Mutex<Option<String>>>,
+    render_held: Arc<AtomicBool>,
+}
+
+unsafe extern "C" fn render_hold_callback(
+    _terminal: ghostty_vt::GhosttyTerminal,
+    userdata: *mut c_void,
+    held: bool,
+) {
+    let userdata = unsafe { &*(userdata as *const WritePtyUserdata) };
+    userdata.render_held.store(held, Ordering::Release);
 }
 
 unsafe extern "C" fn write_pty_callback(
@@ -228,6 +249,15 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+struct RenderCache {
+    state: RenderState,
+    /// The row ids of the last frame the painter received, so the next
+    /// snapshot can collapse a scroll into a shift.
+    last_ids: Vec<GhosttyRowId>,
+    last_dark: Option<bool>,
+    last_size: (usize, usize),
+}
+
 struct TerminalState {
     /// Owned by the state and freed with it, *before* the terminal: the
     /// search holds tracked state inside the terminal that must be
@@ -237,10 +267,7 @@ struct TerminalState {
     vt: Vt<WritePtyUserdata>,
     cols: usize,
     rows: usize,
-    /// The row ids of the last frame the painter received, so the next
-    /// snapshot can collapse a scroll into a shift.
-    last_ids: Vec<GhosttyRowId>,
-    last_dark: Option<bool>,
+    needs_full: bool,
 }
 
 impl TerminalSession {
@@ -305,6 +332,7 @@ impl TerminalSession {
 
         let reported_pwd = Arc::new(Mutex::new(None));
         let reported_title = Arc::new(Mutex::new(None));
+        let render_held = Arc::new(AtomicBool::new(false));
         let vt = Vt::new(
             cols,
             rows,
@@ -312,19 +340,26 @@ impl TerminalSession {
             write_pty_callback,
             title_changed_callback,
             pwd_changed_callback,
+            render_hold_callback,
             Box::new(WritePtyUserdata {
                 writer: Arc::clone(&writer),
                 reported_pwd: Arc::clone(&reported_pwd),
                 reported_title: Arc::clone(&reported_title),
+                render_held: Arc::clone(&render_held),
             }),
         )?;
+        let render = Mutex::new(RenderCache {
+            state: RenderState::new()?,
+            last_ids: Vec::new(),
+            last_dark: None,
+            last_size: (0, 0),
+        });
         let inner = Arc::new(Mutex::new(TerminalState {
             search: None,
             vt,
             cols: usize::from(cols),
             rows: usize::from(rows),
-            last_ids: Vec::new(),
-            last_dark: None,
+            needs_full: true,
         }));
         let exited = Arc::new(AtomicBool::new(false));
         let exit_code = Arc::new(AtomicI32::new(-1));
@@ -332,8 +367,10 @@ impl TerminalSession {
         thread::spawn({
             let inner = Arc::clone(&inner);
             let notify = Arc::clone(&notify);
+            let render_held = Arc::clone(&render_held);
             move || {
                 let mut buffer = [0u8; 16 * 1024];
+                let mut hold_since: Option<Instant> = None;
                 loop {
                     match reader.read(&mut buffer) {
                         Ok(0) => break,
@@ -341,7 +378,17 @@ impl TerminalSession {
                             if let Ok(mut state) = inner.lock() {
                                 state.vt.write(&buffer[..read]);
                             }
-                            notify(TerminalEvent::Output);
+                            let held = render_held.load(Ordering::Acquire);
+                            let should_notify = if held {
+                                let started = hold_since.get_or_insert_with(Instant::now);
+                                started.elapsed() >= Duration::from_millis(150)
+                            } else {
+                                hold_since = None;
+                                true
+                            };
+                            if should_notify {
+                                notify(TerminalEvent::Output);
+                            }
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                         Err(_) => break,
@@ -366,6 +413,7 @@ impl TerminalSession {
         });
 
         Ok(Self {
+            render,
             inner,
             writer,
             master: Mutex::new(pair.master),
@@ -437,23 +485,151 @@ impl TerminalSession {
         self.write(&encoded[..written])
     }
 
-    /// What the wheel does with `steps` (positive scrolls up): on the
-    /// alternate screen the program owns the viewport, so the wheel
-    /// becomes arrow keys; on the primary screen it walks the history.
-    /// Returns `true` when the alternate screen took the wheel.
-    pub fn wheel_scroll(&self, steps: i32) -> Result<bool, String> {
-        let alternate = self
+    /// Encodes and writes a key event via libghostty-vt's key encoder,
+    /// following the terminal's active modes (cursor/keypad application,
+    /// alt-esc prefix, backarrow, modifyOtherKeys, Kitty protocol).
+    #[allow(clippy::too_many_arguments)]
+    pub fn key_event(
+        &self,
+        action: i32,
+        key: i32,
+        mods: u16,
+        consumed_mods: u16,
+        unshifted_codepoint: u32,
+        utf8: &str,
+        composing: bool,
+    ) -> Result<bool, String> {
+        let bytes = {
+            let mut state = self
+                .inner
+                .lock()
+                .map_err(|_| "term.state_unavailable".to_string())?;
+            state.vt.encode_key(
+                action,
+                key,
+                mods,
+                consumed_mods,
+                unshifted_codepoint,
+                utf8,
+                composing,
+            )
+        };
+        if bytes.is_empty() {
+            return Ok(false);
+        }
+        self.write(&bytes)?;
+        Ok(true)
+    }
+
+    /// Encodes and writes a mouse event if the running program enabled mouse
+    /// tracking.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mouse_event(
+        &self,
+        action: i32,
+        button: Option<i32>,
+        mods: u16,
+        x: f32,
+        y: f32,
+        screen_width: u32,
+        screen_height: u32,
+        cell_width: u32,
+        cell_height: u32,
+        any_button_pressed: bool,
+    ) -> Result<bool, String> {
+        let size = GhosttyMouseEncoderSize {
+            size: size_of::<GhosttyMouseEncoderSize>(),
+            screen_width: screen_width.max(1),
+            screen_height: screen_height.max(1),
+            cell_width: cell_width.max(1),
+            cell_height: cell_height.max(1),
+            padding_top: 0,
+            padding_bottom: 0,
+            padding_right: 0,
+            padding_left: 0,
+        };
+        let bytes = {
+            let mut state = self
+                .inner
+                .lock()
+                .map_err(|_| "term.state_unavailable".to_string())?;
+            state.vt.encode_mouse(
+                action,
+                button,
+                mods,
+                x,
+                y,
+                size,
+                any_button_pressed,
+            )
+        };
+        if bytes.is_empty() {
+            return Ok(false);
+        }
+        self.write(&bytes)?;
+        Ok(true)
+    }
+
+    /// Whether any mouse tracking mode is currently active in the terminal.
+    pub fn mouse_tracking(&self) -> bool {
+        self.inner
+            .lock()
+            .map(|mut state| state.vt.mouse_tracking())
+            .unwrap_or(false)
+    }
+
+    /// Sends a focus gained/lost report (`CSI I` / `CSI O`) when the running
+    /// program enabled focus reporting (mode 1004).
+    pub fn focus_event(&self, gained: bool) -> Result<(), String> {
+        let bytes = self
             .inner
             .lock()
-            .map(|mut state| state.vt.alternate_screen())
-            .unwrap_or(false);
+            .ok()
+            .and_then(|mut state| state.vt.encode_focus(gained));
+        if let Some(bytes) = bytes {
+            self.write(&bytes)?;
+        }
+        Ok(())
+    }
+
+    /// What the wheel does with `steps` (positive scrolls up): on the
+    /// alternate screen the program owns the viewport, so the wheel
+    /// becomes arrow keys (encoded with the terminal's active cursor-key
+    /// mode); on the primary screen it walks the history.
+    /// Returns `true` when the alternate screen took the wheel.
+    pub fn wheel_scroll(&self, steps: i32) -> Result<bool, String> {
+        let (alternate, sequence) = {
+            let mut state = self
+                .inner
+                .lock()
+                .map_err(|_| "term.state_unavailable".to_string())?;
+            let alternate = state.vt.alternate_screen();
+            if !alternate {
+                (false, Vec::new())
+            } else {
+                let key = if steps >= 0 {
+                    ghostty_vt::KEY_ARROW_UP
+                } else {
+                    ghostty_vt::KEY_ARROW_DOWN
+                };
+                let seq = state.vt.encode_key(
+                    ghostty_vt::KEY_ACTION_PRESS,
+                    key,
+                    0,
+                    0,
+                    0,
+                    "",
+                    false,
+                );
+                (true, seq)
+            }
+        };
         if !alternate {
             self.scroll(steps);
             return Ok(false);
         }
-        let sequence: &[u8] = if steps >= 0 { b"\x1b[A" } else { b"\x1b[B" };
         for _ in 0..steps.unsigned_abs() {
-            self.write(sequence)?;
+            self.write(&sequence)?;
         }
         Ok(true)
     }
@@ -473,7 +649,7 @@ impl TerminalSession {
             state.rows = usize::from(rows);
             // The next frame has new dimensions; the painter's shadow grid
             // and the remembered row ids cannot carry over.
-            state.last_ids.clear();
+            state.needs_full = true;
         }
         let master = self
             .master
@@ -510,42 +686,116 @@ impl TerminalSession {
         }
     }
 
-    /// The grid as the painter consumes it. `dark` picks the palette the
-    /// renderer is drawing against; the cells carry resolved colours, so a
-    /// theme flip is a fresh snapshot rather than a repaint of stale ones.
-    ///
-    /// The first frame after a spawn or a resize, and every frame after a
-    /// theme flip, is full. A frame whose rows are all the previous frame's
-    /// rows moved up by `k`, plus `k` new ones, is a shift: only the new
-    /// rows cross the bridge.
+    /// The grid as the painter consumes it, using two-phase updates and
+    /// `ghostty_render_state_clean()` so idle/partial updates avoid full
+    /// grid copies and hold the terminal lock only for `begin_update`.
     pub fn snapshot(&self, dark: bool) -> Option<TerminalSnapshot> {
-        let mut state = self.inner.lock().ok()?;
-        if !state.vt.update() {
+        self.snapshot_with_mode(dark, false)
+    }
+
+    /// Forces a complete grid snapshot (e.g. when switching session tabs).
+    pub fn snapshot_full(&self, dark: bool) -> Option<TerminalSnapshot> {
+        self.snapshot_with_mode(dark, true)
+    }
+
+    fn snapshot_with_mode(&self, dark: bool, force_full: bool) -> Option<TerminalSnapshot> {
+        let mut render = self.render.lock().ok()?;
+        let (history_size, display_offset, mut need_full) = {
+            let mut state = self.inner.lock().ok()?;
+            if !render.state.begin_update(&state.vt) {
+                return None;
+            }
+            let (history_size, display_offset) = state
+                .vt
+                .scrollbar()
+                .map(|(total, offset, len)| {
+                    let history = total.saturating_sub(len);
+                    (history as usize, history.saturating_sub(offset) as usize)
+                })
+                .unwrap_or((0, 0));
+            let need_full = force_full || state.needs_full;
+            state.needs_full = false;
+            (history_size, display_offset, need_full)
+        };
+
+        if !render.state.end_update() {
             return None;
         }
-        let cols = state.cols;
-        let rows = state.rows;
+        let (cols, rows) = render.state.dimensions();
+        if cols == 0 || rows == 0 {
+            return None;
+        }
         let palette = palette(dark);
+        let dirty = render.state.dirty();
 
-        let (history_size, display_offset) = state
-            .vt
-            .scrollbar()
-            .map(|(total, offset, len)| {
-                let history = total.saturating_sub(len);
-                (history as usize, history.saturating_sub(offset) as usize)
-            })
-            .unwrap_or((0, 0));
-
-        let (cursor_col, cursor_row, cursor_shape, cursor_visible) = match state.vt.cursor() {
+        let (cursor_col, cursor_row, cursor_shape, cursor_visible) = match render.state.cursor() {
             Some((x, y, shape)) if usize::from(x) < cols && usize::from(y) < rows => {
                 (usize::from(x), usize::from(y), shape, true)
             }
             _ => (0, 0, 0, false),
         };
 
+        need_full |= render.last_dark != Some(dark)
+            || render.last_size != (cols, rows)
+            || render.last_ids.len() != rows;
+
+        if !need_full && dirty == ghostty_vt::RENDER_STATE_DIRTY_FALSE {
+            return Some(TerminalSnapshot {
+                cols,
+                rows,
+                kind: SnapshotKind::Rows(Vec::new()),
+                cursor_col,
+                cursor_row,
+                cursor_visible,
+                cursor_shape,
+                display_offset,
+                history_size,
+                cells: Vec::new(),
+            });
+        }
+
+        if !need_full && dirty == ghostty_vt::RENDER_STATE_DIRTY_PARTIAL {
+            let mut dirty_rows = Vec::new();
+            let mut row_ids = Vec::new();
+            render.state.visit_dirty_rows(|y, mut row| {
+                if usize::from(y) >= rows {
+                    return;
+                }
+                let id = row.id();
+                let mut row_cells = vec![CellSnapshot::blank(dark); cols];
+                while let Some((x, raw, style)) = row.next_cell() {
+                    if usize::from(x) >= cols {
+                        break;
+                    }
+                    row_cells[usize::from(x)] = cell_snapshot(raw, &style, palette);
+                }
+                row_ids.push((usize::from(y), id));
+                dirty_rows.push(DirtyRow {
+                    row: y,
+                    cells: row_cells,
+                });
+            });
+            for (y, id) in row_ids {
+                render.last_ids[y] = id;
+            }
+            render.state.clean();
+            return Some(TerminalSnapshot {
+                cols,
+                rows,
+                kind: SnapshotKind::Rows(dirty_rows),
+                cursor_col,
+                cursor_row,
+                cursor_visible,
+                cursor_shape,
+                display_offset,
+                history_size,
+                cells: Vec::new(),
+            });
+        }
+
         let mut ids = vec![GhosttyRowId { bits: [0; 2] }; rows];
         let mut cells = vec![CellSnapshot::blank(dark); cols.saturating_mul(rows)];
-        state.vt.visit_rows(|y, mut row| {
+        render.state.visit_rows(|y, mut row| {
             if y < 0 || y as usize >= rows {
                 return;
             }
@@ -558,14 +808,13 @@ impl TerminalSession {
             }
         });
 
-        // A theme flip recolours every cell, and a shadow grid from a
-        // different palette cannot be patched; those, and anything whose
-        // rows are not a pure scroll of the last frame, go out whole.
-        let pure_scroll = state.last_ids.len() == rows && state.last_dark == Some(dark);
+        let pure_scroll = !need_full
+            && render.last_ids.len() == rows
+            && render.last_dark == Some(dark);
         let shift = pure_scroll
             .then(|| {
                 (1..rows)
-                    .filter(|&k| (0..rows - k).all(|i| ids[i] == state.last_ids[i + k]))
+                    .filter(|&k| (0..rows - k).all(|i| ids[i] == render.last_ids[i + k]))
                     .max()
             })
             .flatten();
@@ -575,8 +824,10 @@ impl TerminalSession {
             None => (SnapshotKind::Full, cells),
         };
 
-        state.last_ids = ids;
-        state.last_dark = Some(dark);
+        render.last_ids = ids;
+        render.last_dark = Some(dark);
+        render.last_size = (cols, rows);
+        render.state.clean();
 
         Some(TerminalSnapshot {
             cols,
@@ -964,5 +1215,136 @@ mod tests {
             0xff12_3456
         );
         assert_eq!(dim(0xff30_3030) >> 24, 0xff);
+    }
+
+    fn test_vt() -> (Vt<WritePtyUserdata>, Arc<AtomicBool>) {
+        let render_held = Arc::new(AtomicBool::new(false));
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(Box::new(Vec::new())));
+        let vt = Vt::new(
+            80,
+            24,
+            100,
+            write_pty_callback,
+            title_changed_callback,
+            pwd_changed_callback,
+            render_hold_callback,
+            Box::new(WritePtyUserdata {
+                writer,
+                reported_pwd: Arc::new(Mutex::new(None)),
+                reported_title: Arc::new(Mutex::new(None)),
+                render_held: Arc::clone(&render_held),
+            }),
+        )
+        .expect("vt");
+        (vt, render_held)
+    }
+
+    #[test]
+    fn render_state_clean_enables_clean_and_partial_dirty_frames() {
+        let (mut vt, _held) = test_vt();
+        let mut render = RenderState::new().expect("render");
+
+        assert!(render.begin_update(&vt));
+        assert!(render.end_update());
+        assert_eq!(render.dirty(), ghostty_vt::RENDER_STATE_DIRTY_FULL);
+        render.clean();
+
+        // No writes since clean(): next update is clean.
+        assert!(render.begin_update(&vt));
+        assert!(render.end_update());
+        assert_eq!(render.dirty(), ghostty_vt::RENDER_STATE_DIRTY_FALSE);
+
+        // Single-line write: partial dirty with only row 0 dirty.
+        vt.write(b"hello");
+        assert!(render.begin_update(&vt));
+        assert!(render.end_update());
+        assert_eq!(render.dirty(), ghostty_vt::RENDER_STATE_DIRTY_PARTIAL);
+        let mut dirty_rows = Vec::new();
+        render.visit_dirty_rows(|y, _row| dirty_rows.push(y));
+        assert_eq!(dirty_rows, vec![0]);
+        render.clean();
+    }
+
+    #[test]
+    fn key_mouse_focus_and_render_hold_follow_terminal_modes() {
+        let (mut vt, held) = test_vt();
+
+        // Cursor up: normal vs DECCKM (?1h).
+        assert_eq!(
+            vt.encode_key(ghostty_vt::KEY_ACTION_PRESS, ghostty_vt::KEY_ARROW_UP, 0, 0, 0, "", false),
+            b"\x1b[A"
+        );
+        vt.write(b"\x1b[?1h");
+        assert_eq!(
+            vt.encode_key(ghostty_vt::KEY_ACTION_PRESS, ghostty_vt::KEY_ARROW_UP, 0, 0, 0, "", false),
+            b"\x1bOA"
+        );
+
+        // Ctrl+C and Alt+x.
+        assert_eq!(
+            vt.encode_key(
+                ghostty_vt::KEY_ACTION_PRESS,
+                22, // GHOSTTY_KEY_C
+                ghostty_vt::MODS_CTRL,
+                0,
+                b'c' as u32,
+                "",
+                false
+            ),
+            b"\x03"
+        );
+        assert_eq!(
+            vt.encode_key(
+                ghostty_vt::KEY_ACTION_PRESS,
+                43, // GHOSTTY_KEY_X
+                ghostty_vt::MODS_ALT,
+                0,
+                b'x' as u32,
+                "x",
+                false
+            ),
+            b"\x1bx"
+        );
+
+        // Focus reporting (mode 1004).
+        assert_eq!(vt.encode_focus(true), None);
+        vt.write(b"\x1b[?1004h");
+        assert_eq!(vt.encode_focus(true).as_deref(), Some(b"\x1b[I".as_slice()));
+        assert_eq!(vt.encode_focus(false).as_deref(), Some(b"\x1b[O".as_slice()));
+
+        // Mouse tracking (?1000h + ?1006h SGR).
+        assert!(!vt.mouse_tracking());
+        vt.write(b"\x1b[?1000h\x1b[?1006h");
+        assert!(vt.mouse_tracking());
+        let size = GhosttyMouseEncoderSize {
+            size: size_of::<GhosttyMouseEncoderSize>(),
+            screen_width: 800,
+            screen_height: 480,
+            cell_width: 10,
+            cell_height: 20,
+            padding_top: 0,
+            padding_bottom: 0,
+            padding_right: 0,
+            padding_left: 0,
+        };
+        assert_eq!(
+            vt.encode_mouse(
+                ghostty_vt::MOUSE_ACTION_PRESS,
+                Some(ghostty_vt::MOUSE_BUTTON_LEFT),
+                0,
+                15.0,
+                25.0,
+                size,
+                false,
+            ),
+            b"\x1b[<0;2;2M"
+        );
+
+        // Synchronized output render hold (mode 2026).
+        assert!(!held.load(Ordering::Acquire));
+        vt.write(b"\x1b[?2026h");
+        assert!(held.load(Ordering::Acquire));
+        vt.write(b"\x1b[?2026l");
+        assert!(!held.load(Ordering::Acquire));
     }
 }

@@ -4,6 +4,7 @@
 #include <QFontDatabase>
 #include <QFontMetricsF>
 #include <QGuiApplication>
+#include <QHoverEvent>
 #include <QInputMethod>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
@@ -118,13 +119,140 @@ QColor terminalAccent(bool dark)
     return dark ? QColor(0x6b, 0xca, 0xc9) : QColor(0x00, 0x7a, 0x7b);
 }
 
+int ghosttyMods(Qt::KeyboardModifiers modifiers)
+{
+    int mods = 0;
+    if (modifiers.testFlag(Qt::ShiftModifier))
+        mods |= 1 << 0;
+    if (modifiers.testFlag(Qt::ControlModifier))
+        mods |= 1 << 1;
+    if (modifiers.testFlag(Qt::AltModifier))
+        mods |= 1 << 2;
+    if (modifiers.testFlag(Qt::MetaModifier))
+        mods |= 1 << 3;
+    return mods;
+}
+
+int ghosttyMouseButton(Qt::MouseButton button)
+{
+    switch (button) {
+    case Qt::LeftButton: return 1;
+    case Qt::RightButton: return 2;
+    case Qt::MiddleButton: return 3;
+    default: return -1;
+    }
+}
+
+void mapQtKey(int qtKey, Qt::KeyboardModifiers modifiers, int& ghosttyKey, quint32& unshifted)
+{
+    const bool keypad = modifiers.testFlag(Qt::KeypadModifier);
+    if (qtKey >= Qt::Key_A && qtKey <= Qt::Key_Z) {
+        const int offset = qtKey - Qt::Key_A;
+        ghosttyKey = 20 + offset;
+        unshifted = quint32('a' + offset);
+        return;
+    }
+    if (qtKey >= Qt::Key_0 && qtKey <= Qt::Key_9) {
+        const int offset = qtKey - Qt::Key_0;
+        ghosttyKey = (keypad ? 80 : 6) + offset;
+        unshifted = quint32('0' + offset);
+        return;
+    }
+    if (qtKey >= Qt::Key_F1 && qtKey <= Qt::Key_F24) {
+        ghosttyKey = 121 + (qtKey - Qt::Key_F1);
+        unshifted = 0;
+        return;
+    }
+    unshifted = 0;
+    switch (qtKey) {
+    case Qt::Key_QuoteLeft: ghosttyKey = 1; unshifted = '`'; break;
+    case Qt::Key_AsciiTilde: ghosttyKey = 1; unshifted = '`'; break;
+    case Qt::Key_Backslash: ghosttyKey = 2; unshifted = '\\'; break;
+    case Qt::Key_Bar: ghosttyKey = 2; unshifted = '\\'; break;
+    case Qt::Key_BracketLeft: ghosttyKey = 3; unshifted = '['; break;
+    case Qt::Key_BraceLeft: ghosttyKey = 3; unshifted = '['; break;
+    case Qt::Key_BracketRight: ghosttyKey = 4; unshifted = ']'; break;
+    case Qt::Key_BraceRight: ghosttyKey = 4; unshifted = ']'; break;
+    case Qt::Key_Comma: ghosttyKey = 5; unshifted = ','; break;
+    case Qt::Key_Less: ghosttyKey = 5; unshifted = ','; break;
+    case Qt::Key_Exclam: ghosttyKey = 7; unshifted = '1'; break;
+    case Qt::Key_At: ghosttyKey = 8; unshifted = '2'; break;
+    case Qt::Key_NumberSign: ghosttyKey = 9; unshifted = '3'; break;
+    case Qt::Key_Dollar: ghosttyKey = 10; unshifted = '4'; break;
+    case Qt::Key_Percent: ghosttyKey = 11; unshifted = '5'; break;
+    case Qt::Key_AsciiCircum: ghosttyKey = 12; unshifted = '6'; break;
+    case Qt::Key_Ampersand: ghosttyKey = 13; unshifted = '7'; break;
+    case Qt::Key_Asterisk: ghosttyKey = keypad ? 104 : 14; unshifted = keypad ? '*' : '8'; break;
+    case Qt::Key_ParenLeft: ghosttyKey = 15; unshifted = '9'; break;
+    case Qt::Key_ParenRight: ghosttyKey = 6; unshifted = '0'; break;
+    case Qt::Key_Equal: ghosttyKey = keypad ? 98 : 16; unshifted = '='; break;
+    case Qt::Key_Plus: ghosttyKey = keypad ? 90 : 16; unshifted = keypad ? '+' : '='; break;
+    case Qt::Key_Minus: ghosttyKey = keypad ? 107 : 46; unshifted = '-'; break;
+    case Qt::Key_Underscore: ghosttyKey = 46; unshifted = '-'; break;
+    case Qt::Key_Period: ghosttyKey = keypad ? 95 : 47; unshifted = '.'; break;
+    case Qt::Key_Greater: ghosttyKey = 47; unshifted = '.'; break;
+    case Qt::Key_Apostrophe: ghosttyKey = 48; unshifted = '\''; break;
+    case Qt::Key_QuoteDbl: ghosttyKey = 48; unshifted = '\''; break;
+    case Qt::Key_Semicolon: ghosttyKey = 49; unshifted = ';'; break;
+    case Qt::Key_Colon: ghosttyKey = 49; unshifted = ';'; break;
+    case Qt::Key_Slash: ghosttyKey = keypad ? 96 : 50; unshifted = '/'; break;
+    case Qt::Key_Question: ghosttyKey = 50; unshifted = '/'; break;
+    case Qt::Key_Alt: ghosttyKey = 51; break;
+    case Qt::Key_AltGr: ghosttyKey = 52; break;
+    case Qt::Key_Backspace: ghosttyKey = 53; break;
+    case Qt::Key_CapsLock: ghosttyKey = 54; break;
+    case Qt::Key_Menu: ghosttyKey = 55; break;
+    case Qt::Key_Control: ghosttyKey = 56; break;
+    case Qt::Key_Return: ghosttyKey = 58; break;
+    case Qt::Key_Enter: ghosttyKey = keypad ? 97 : 58; break;
+    case Qt::Key_Meta: ghosttyKey = 59; break;
+    case Qt::Key_Shift: ghosttyKey = 61; break;
+    case Qt::Key_Space: ghosttyKey = 63; unshifted = ' '; break;
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab: ghosttyKey = 64; break;
+    case Qt::Key_Delete: ghosttyKey = 68; break;
+    case Qt::Key_End: ghosttyKey = 69; break;
+    case Qt::Key_Help: ghosttyKey = 70; break;
+    case Qt::Key_Home: ghosttyKey = 71; break;
+    case Qt::Key_Insert: ghosttyKey = 72; break;
+    case Qt::Key_PageDown: ghosttyKey = 73; break;
+    case Qt::Key_PageUp: ghosttyKey = 74; break;
+    case Qt::Key_Down: ghosttyKey = 75; break;
+    case Qt::Key_Left: ghosttyKey = 76; break;
+    case Qt::Key_Right: ghosttyKey = 77; break;
+    case Qt::Key_Up: ghosttyKey = 78; break;
+    case Qt::Key_NumLock: ghosttyKey = 79; break;
+    case Qt::Key_Escape: ghosttyKey = 120; break;
+    case Qt::Key_Print: ghosttyKey = 148; break;
+    case Qt::Key_ScrollLock: ghosttyKey = 149; break;
+    case Qt::Key_Pause: ghosttyKey = 150; break;
+    default: ghosttyKey = 0; break;
+    }
+}
+
+QString printableKeyText(const QKeyEvent* event, Qt::KeyboardModifiers modifiers)
+{
+    if (modifiers.testFlag(Qt::ControlModifier) || modifiers.testFlag(Qt::AltModifier)
+        || modifiers.testFlag(Qt::MetaModifier)) {
+        return QString();
+    }
+    const QString text = event->text();
+    if (text.isEmpty())
+        return QString();
+    const uint first = text.at(0).unicode();
+    if (first < 0x20 || first == 0x7f || (first >= 0xf700 && first <= 0xf8ff))
+        return QString();
+    return text;
+}
+
 } // namespace
 
 TerminalItem::TerminalItem(QQuickItem* parent)
     : QQuickPaintedItem(parent)
 {
     setAntialiasing(true);
-    setAcceptedMouseButtons(Qt::LeftButton);
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton | Qt::MiddleButton);
+    setAcceptHoverEvents(true);
     setFlag(ItemAcceptsInputMethod, true);
     setFocus(true);
     setActiveFocusOnTab(true);
@@ -178,6 +306,7 @@ void TerminalItem::setSession(QObject* session)
     emit sessionChanged();
     // The previous session's grid size says nothing about this one; the size
     // is re-sent so a session bound after a tab switch still learns it.
+    m_hasFrame = false;
     m_lastCols = -1;
     m_lastRows = -1;
     clearSelection();
@@ -315,12 +444,28 @@ void TerminalItem::refresh()
     pullSearchRects();
 
     QByteArray frame;
-    const bool pulled = QMetaObject::invokeMethod(m_session.data(), "snapshot",
-                                                  Q_RETURN_ARG(QByteArray, frame),
-                                                  Q_ARG(bool, m_dark));
-    // A session that has not produced a frame yet (starting, or just switched
-    // to) must not keep showing the previous tab's grid.
-    if (!pulled || !decodeFrame(frame)) {
+    const char* method = m_hasFrame ? "snapshot" : "snapshotFull";
+    bool pulled = QMetaObject::invokeMethod(m_session.data(), method,
+                                            Q_RETURN_ARG(QByteArray, frame),
+                                            Q_ARG(bool, m_dark));
+    if (pulled && !decodeFrame(frame)) {
+        if (m_hasFrame) {
+            // A partial/shift frame arrived against stale dimensions; retry full.
+            pulled = QMetaObject::invokeMethod(m_session.data(), "snapshotFull",
+                                               Q_RETURN_ARG(QByteArray, frame),
+                                               Q_ARG(bool, m_dark));
+        }
+        if (!pulled || !decodeFrame(frame)) {
+            m_hasFrame = false;
+            m_cells.clear();
+            m_cols = 0;
+            m_rows = 0;
+            m_historySize = 0;
+            m_displayOffset = 0;
+            m_cursorVisible = false;
+            clearSelection();
+        }
+    } else if (!pulled) {
         m_hasFrame = false;
         m_cells.clear();
         m_cols = 0;
@@ -395,6 +540,27 @@ bool TerminalItem::decodeFrame(const QByteArray& frame)
             cell += FrameCell;
         }
         clearSelection();
+    } else if (kind == 2) {
+        // Dirty-row patch: `count` rows, each `u16 row` + `cols` cells.
+        const qsizetype rowStride = 2 + qsizetype(cols) * FrameCell;
+        const qsizetype expected = qsizetype(FrameHeader) + qsizetype(count) * rowStride;
+        if (cols != m_cols || rows != m_rows || !m_hasFrame || frame.size() < expected)
+            return false;
+        const uchar* cursor = data + FrameHeader;
+        for (int r = 0; r < count; ++r) {
+            const int rowIndex = readU16(cursor);
+            cursor += 2;
+            if (rowIndex >= rows)
+                return false;
+            TerminalCell* target = m_cells.data() + qsizetype(rowIndex) * cols;
+            for (int c = 0; c < cols; ++c) {
+                target[c].ch = readU32(cursor);
+                target[c].fg = readU32(cursor + 4);
+                target[c].bg = readU32(cursor + 8);
+                target[c].flags = cursor[12];
+                cursor += FrameCell;
+            }
+        }
     } else {
         if (kind != 0 || count != 0)
             return false;
@@ -633,85 +799,34 @@ void TerminalItem::keyPressEvent(QKeyEvent* event)
         clearSelection();
         update();
     }
-    if ((control || meta) && key >= Qt::Key_A && key <= Qt::Key_Z) {
-        const char byte = char(key - Qt::Key_A + 1);
-        sendBytes(QByteArray(1, byte));
-        event->accept();
-        return;
-    }
-    if (meta || (control && key > Qt::Key_Z)) {
-        // Other command/control combinations belong to the shell UI.
+    if (meta) {
+        // Super/Command combinations belong to the shell UI.
         event->ignore();
         return;
     }
 
-    QByteArray sequence;
-    switch (key) {
-    case Qt::Key_Return:
-    case Qt::Key_Enter:
-        sequence = "\r";
-        break;
-    case Qt::Key_Backspace:
-        sequence = "\x7f";
-        break;
-    case Qt::Key_Tab:
-        sequence = "\t";
-        break;
-    case Qt::Key_Backtab:
-        sequence = "\x1b[Z";
-        break;
-    case Qt::Key_Escape:
-        sequence = "\x1b";
-        break;
-    case Qt::Key_Delete:
-        sequence = "\x1b[3~";
-        break;
-    case Qt::Key_Insert:
-        sequence = "\x1b[2~";
-        break;
-    case Qt::Key_Up:
-        sequence = "\x1b[A";
-        break;
-    case Qt::Key_Down:
-        sequence = "\x1b[B";
-        break;
-    case Qt::Key_Right:
-        sequence = "\x1b[C";
-        break;
-    case Qt::Key_Left:
-        sequence = "\x1b[D";
-        break;
-    case Qt::Key_Home:
-        sequence = "\x1b[H";
-        break;
-    case Qt::Key_End:
-        sequence = "\x1b[F";
-        break;
-    case Qt::Key_PageUp:
-        sequence = "\x1b[5~";
-        break;
-    case Qt::Key_PageDown:
-        sequence = "\x1b[6~";
-        break;
-    default:
-        break;
-    }
-    if (!sequence.isEmpty()) {
-        sendBytes(sequence);
+    const int action = event->isAutoRepeat() ? 2 : 1; // REPEAT : PRESS
+    if (sendKeyEvent(action, event)) {
         event->accept();
         return;
     }
+    if (!modifierKey)
+        event->ignore();
+    else
+        event->accept();
+}
 
-    const QString text = event->text();
-    if (!text.isEmpty() && !control) {
-        if (alt)
-            sendBytes(QByteArray(1, '\x1b') + text.toUtf8());
-        else
-            sendText(text);
+void TerminalItem::keyReleaseEvent(QKeyEvent* event)
+{
+    if (!m_session || event->modifiers().testFlag(Qt::MetaModifier)) {
+        QQuickPaintedItem::keyReleaseEvent(event);
+        return;
+    }
+    if (sendKeyEvent(0, event)) { // RELEASE
         event->accept();
         return;
     }
-    event->ignore();
+    QQuickPaintedItem::keyReleaseEvent(event);
 }
 
 void TerminalItem::inputMethodEvent(QInputMethodEvent* event)
@@ -745,6 +860,15 @@ void TerminalItem::wheelEvent(QWheelEvent* event)
         event->ignore();
         return;
     }
+    if (!event->modifiers().testFlag(Qt::ShiftModifier) && isMouseTracking()) {
+        const int button = steps > 0 ? 4 : 5;
+        const int count = qAbs(steps);
+        for (int i = 0; i < count; ++i) {
+            sendMouseEvent(0, button, event->modifiers(), event->position(), false);
+        }
+        event->accept();
+        return;
+    }
     // The session decides: on the alternate screen (vim, less) the wheel
     // becomes arrow keys for the program; on the primary screen it walks
     // the scrollback.
@@ -755,19 +879,19 @@ void TerminalItem::wheelEvent(QWheelEvent* event)
 void TerminalItem::mousePressEvent(QMouseEvent* event)
 {
     forceActiveFocus();
-    if (event->button() != Qt::LeftButton || !m_hasFrame) {
+    if (!m_hasFrame) {
         event->accept();
         return;
     }
 
     // A Ctrl+Click opens the path under the pointer instead of selecting.
-    if (event->modifiers().testFlag(Qt::ControlModifier)) {
+    if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::ControlModifier)) {
         openLinkAt(event->position());
         event->accept();
         return;
     }
     const QPointF position = event->position();
-    if (scrollbarVisible()
+    if (event->button() == Qt::LeftButton && scrollbarVisible()
         && scrollbarTrack().adjusted(-ScrollbarMargin, 0.0, ScrollbarMargin, 0.0)
                .contains(position)) {
         const QRectF thumb = scrollbarThumb();
@@ -775,6 +899,19 @@ void TerminalItem::mousePressEvent(QMouseEvent* event)
         m_scrollbarGrabOffset = thumb.contains(position) ? position.y() - thumb.top()
                                                          : thumb.height() / 2.0;
         updateScrollbarDrag(position);
+        event->accept();
+        return;
+    }
+    if (!event->modifiers().testFlag(Qt::ShiftModifier) && isMouseTracking()) {
+        const int button = ghosttyMouseButton(event->button());
+        if (button >= 0) {
+            sendMouseEvent(0, button, event->modifiers(), position,
+                           event->buttons() != Qt::NoButton);
+        }
+        event->accept();
+        return;
+    }
+    if (event->button() != Qt::LeftButton) {
         event->accept();
         return;
     }
@@ -837,6 +974,19 @@ void TerminalItem::mouseMoveEvent(QMouseEvent* event)
         event->accept();
         return;
     }
+    if (!event->modifiers().testFlag(Qt::ShiftModifier) && isMouseTracking()) {
+        int button = -1;
+        if (event->buttons().testFlag(Qt::LeftButton))
+            button = 1;
+        else if (event->buttons().testFlag(Qt::RightButton))
+            button = 2;
+        else if (event->buttons().testFlag(Qt::MiddleButton))
+            button = 3;
+        sendMouseEvent(2, button, event->modifiers(), event->position(),
+                       event->buttons() != Qt::NoButton);
+        event->accept();
+        return;
+    }
     QQuickPaintedItem::mouseMoveEvent(event);
 }
 
@@ -862,18 +1012,37 @@ void TerminalItem::mouseReleaseEvent(QMouseEvent* event)
         event->accept();
         return;
     }
+    if (!event->modifiers().testFlag(Qt::ShiftModifier) && isMouseTracking()) {
+        const int button = ghosttyMouseButton(event->button());
+        if (button >= 0) {
+            sendMouseEvent(1, button, event->modifiers(), event->position(),
+                           event->buttons() != Qt::NoButton);
+        }
+        event->accept();
+        return;
+    }
     QQuickPaintedItem::mouseReleaseEvent(event);
 }
 
 void TerminalItem::mouseDoubleClickEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && m_hasFrame) {
+    if (event->button() == Qt::LeftButton && m_hasFrame
+        && (event->modifiers().testFlag(Qt::ShiftModifier) || !isMouseTracking())) {
         selectWordAt(qBound(0, int(event->position().y() / m_cellHeight), m_rows - 1),
                      qBound(0, int(event->position().x() / m_cellWidth), m_cols - 1));
         event->accept();
         return;
     }
     QQuickPaintedItem::mouseDoubleClickEvent(event);
+}
+
+void TerminalItem::hoverMoveEvent(QHoverEvent* event)
+{
+    if (m_session && m_hasFrame && !event->modifiers().testFlag(Qt::ShiftModifier)
+        && isMouseTracking()) {
+        sendMouseEvent(2, -1, event->modifiers(), event->position(), false);
+    }
+    QQuickPaintedItem::hoverMoveEvent(event);
 }
 
 void TerminalItem::geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry)
@@ -888,12 +1057,16 @@ void TerminalItem::focusInEvent(QFocusEvent* event)
 {
     QQuickPaintedItem::focusInEvent(event);
     QGuiApplication::inputMethod()->update(Qt::ImQueryAll);
+    if (m_session)
+        QMetaObject::invokeMethod(m_session.data(), "sendFocus", Q_ARG(bool, true));
 }
 
 void TerminalItem::focusOutEvent(QFocusEvent* event)
 {
     QQuickPaintedItem::focusOutEvent(event);
     m_preedit.clear();
+    if (m_session)
+        QMetaObject::invokeMethod(m_session.data(), "sendFocus", Q_ARG(bool, false));
     update();
 }
 
@@ -909,6 +1082,56 @@ void TerminalItem::sendText(const QString& text)
     if (!m_session || text.isEmpty())
         return;
     QMetaObject::invokeMethod(m_session.data(), "write", Q_ARG(QString, text));
+}
+
+bool TerminalItem::sendKeyEvent(int action, QKeyEvent* event)
+{
+    if (!m_session)
+        return false;
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    int ghosttyKey = 0;
+    quint32 unshifted = 0;
+    mapQtKey(event->key(), modifiers, ghosttyKey, unshifted);
+    const QString text = printableKeyText(event, modifiers);
+    if (ghosttyKey == 0 && text.isEmpty())
+        return false;
+    const int mods = ghosttyMods(modifiers);
+    const int consumedMods = (!modifiers.testFlag(Qt::ControlModifier)
+                              && !modifiers.testFlag(Qt::AltModifier)
+                              && modifiers.testFlag(Qt::ShiftModifier) && !text.isEmpty())
+        ? (1 << 0)
+        : 0;
+    bool sent = false;
+    QMetaObject::invokeMethod(m_session.data(), "sendKey", Q_RETURN_ARG(bool, sent),
+                              Q_ARG(int, action), Q_ARG(int, ghosttyKey), Q_ARG(int, mods),
+                              Q_ARG(int, int(unshifted)), Q_ARG(int, consumedMods),
+                              Q_ARG(QString, text), Q_ARG(bool, false));
+    return sent;
+}
+
+bool TerminalItem::sendMouseEvent(int action, int button, Qt::KeyboardModifiers modifiers,
+                                  const QPointF& position, bool anyPressed)
+{
+    if (!m_session)
+        return false;
+    bool sent = false;
+    QMetaObject::invokeMethod(
+        m_session.data(), "sendMouse", Q_RETURN_ARG(bool, sent), Q_ARG(int, action),
+        Q_ARG(int, button), Q_ARG(int, ghosttyMods(modifiers)), Q_ARG(double, position.x()),
+        Q_ARG(double, position.y()), Q_ARG(int, qMax(1, int(qRound(width())))),
+        Q_ARG(int, qMax(1, int(qRound(height())))), Q_ARG(int, qMax(1, int(qRound(m_cellWidth)))),
+        Q_ARG(int, qMax(1, int(qRound(m_cellHeight)))), Q_ARG(bool, anyPressed));
+    return sent;
+}
+
+bool TerminalItem::isMouseTracking() const
+{
+    if (!m_session)
+        return false;
+    bool tracking = false;
+    QMetaObject::invokeMethod(m_session.data(), "mouseTracking",
+                              Q_RETURN_ARG(bool, tracking));
+    return tracking;
 }
 
 void TerminalItem::paste()

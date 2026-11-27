@@ -112,6 +112,7 @@ signals:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
     void inputMethodEvent(QInputMethodEvent* event) override;
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     void wheelEvent(QWheelEvent* event) override;
@@ -119,6 +120,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void hoverMoveEvent(QHoverEvent* event) override;
     void geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) override;
     void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
@@ -144,6 +146,10 @@ private:
     void applySizeToSession();
     void sendBytes(const QByteArray& bytes);
     void sendText(const QString& text);
+    bool sendKeyEvent(int action, QKeyEvent* event);
+    bool sendMouseEvent(int action, int button, Qt::KeyboardModifiers modifiers,
+                        const QPointF& position, bool anyPressed);
+    bool isMouseTracking() const;
     void paste();
     QColor colour(QRgb argb) const;
     QFont styleFont(quint8 flags) const;

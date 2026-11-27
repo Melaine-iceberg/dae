@@ -9,20 +9,60 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use dae_core::pty::{
-    FLAG_SPACER, SnapshotKind, TerminalEvent, TerminalSession, TerminalSnapshot,
+    CellSnapshot, FLAG_SPACER, SnapshotKind, TerminalEvent, TerminalSession, TerminalSnapshot,
 };
 
-fn grid_text(snapshot: &TerminalSnapshot) -> String {
-    let mut text = String::new();
-    for row in snapshot.cells.chunks(snapshot.cols) {
-        for cell in row {
-            if cell.flags & FLAG_SPACER == 0 {
-                text.push(cell.ch);
+struct ShadowGrid {
+    cols: usize,
+    rows: usize,
+    cells: Vec<CellSnapshot>,
+}
+
+impl ShadowGrid {
+    fn new() -> Self {
+        Self {
+            cols: 0,
+            rows: 0,
+            cells: Vec::new(),
+        }
+    }
+
+    fn apply(&mut self, snapshot: &TerminalSnapshot) {
+        match &snapshot.kind {
+            SnapshotKind::Full => {
+                self.cols = snapshot.cols;
+                self.rows = snapshot.rows;
+                self.cells = snapshot.cells.clone();
+            }
+            SnapshotKind::Shift(k) => {
+                assert_eq!((self.cols, self.rows), (snapshot.cols, snapshot.rows));
+                let total = self.cols * self.rows;
+                let shift = k * self.cols;
+                self.cells.copy_within(shift..total, 0);
+                self.cells[total - shift..].copy_from_slice(&snapshot.cells);
+            }
+            SnapshotKind::Rows(dirty) => {
+                assert_eq!((self.cols, self.rows), (snapshot.cols, snapshot.rows));
+                for row in dirty {
+                    let start = usize::from(row.row) * self.cols;
+                    self.cells[start..start + self.cols].copy_from_slice(&row.cells);
+                }
             }
         }
-        text.push('\n');
     }
-    text
+
+    fn text(&self) -> String {
+        let mut text = String::new();
+        for row in self.cells.chunks(self.cols.max(1)) {
+            for cell in row {
+                if cell.flags & FLAG_SPACER == 0 {
+                    text.push(cell.ch);
+                }
+            }
+            text.push('\n');
+        }
+        text
+    }
 }
 
 /// Runs `echo <needle>` and waits until the answer appears on a line of its own.
@@ -37,15 +77,24 @@ fn answered(session: &TerminalSession, needle: &str) {
     let command = format!("echo {needle}\r");
     let deadline = Instant::now() + Duration::from_secs(20);
     let mut rewrite = Instant::now();
+    let mut grid = ShadowGrid::new();
+    let mut initialized = false;
     loop {
         if Instant::now() >= rewrite {
             session.write(command.as_bytes()).expect("write");
             rewrite = Instant::now() + Duration::from_secs(2);
         }
-        let last = session.snapshot(true).map(|snapshot| grid_text(&snapshot));
-        if let Some(text) = &last
-            && text.lines().any(|line| line.trim() == needle)
-        {
+        let snapshot = if !initialized {
+            initialized = true;
+            session.snapshot_full(true)
+        } else {
+            session.snapshot(true)
+        };
+        if let Some(snapshot) = snapshot {
+            grid.apply(&snapshot);
+        }
+        let last = grid.text();
+        if last.lines().any(|line| line.trim() == needle) {
             return;
         }
         if Instant::now() >= deadline {
@@ -78,7 +127,7 @@ fn the_shell_answers_a_command_in_the_grid() {
     // finishes drawing its first prompt.
     answered(&session, "vt-smoke-ok");
 
-    let snapshot = session.snapshot(true).expect("snapshot");
+    let snapshot = session.snapshot_full(true).expect("snapshot");
     assert_eq!((snapshot.cols, snapshot.rows), (80, 24));
     assert_eq!(snapshot.cells.len(), 80 * 24);
     assert!(snapshot.cursor_visible);
@@ -135,13 +184,21 @@ fn snapshots_stay_consistent_while_output_streams() {
     let mut frames = 0usize;
     let mut full = 0usize;
     let mut shifted = 0usize;
+    let mut partial = 0usize;
+    let mut first = true;
     while Instant::now() < deadline {
         for line in 0..5 {
             session
                 .write(format!("echo vt-churn-{line}\r").as_bytes())
                 .expect("write");
         }
-        if let Some(snapshot) = session.snapshot(true) {
+        let snapshot = if first {
+            first = false;
+            session.snapshot_full(true)
+        } else {
+            session.snapshot(true)
+        };
+        if let Some(snapshot) = snapshot {
             match snapshot.kind {
                 SnapshotKind::Full => {
                     assert_eq!(snapshot.cells.len(), snapshot.cols * snapshot.rows);
@@ -153,6 +210,11 @@ fn snapshots_stay_consistent_while_output_streams() {
                     assert_eq!(snapshot.cells.len(), k * snapshot.cols);
                     shifted += 1;
                 }
+                SnapshotKind::Rows(rows) => {
+                    assert!(rows.iter().all(|r| usize::from(r.row) < snapshot.rows));
+                    assert!(rows.iter().all(|r| r.cells.len() == snapshot.cols));
+                    partial += 1;
+                }
             }
             frames += 1;
         }
@@ -160,6 +222,7 @@ fn snapshots_stay_consistent_while_output_streams() {
     assert!(frames > 100, "took {frames} snapshots");
     assert!(shifted > 0, "a streaming shell never sent a shift frame");
     assert!(full > 0, "the first frame was never full");
+    assert!(partial > 0, "idle/partial snapshots never emitted Rows");
     assert!(!events.lock().unwrap().is_empty());
 }
 

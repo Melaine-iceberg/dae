@@ -37,17 +37,25 @@ pub const TERMINAL_OPT_TITLE_CHANGED: c_int = 6;
 pub const TERMINAL_OPT_PWD_CHANGED: c_int = 26;
 pub const TERMINAL_OPT_SCROLLBACK_MAX_BYTES: c_int = 28;
 pub const TERMINAL_OPT_SCROLLBACK_MAX_LINES: c_int = 29;
+/// Disable pulling scrollback rows back on resize when the host PTY (such as
+/// Windows ConPTY) keeps its own screen buffer without scrollback.
+pub const TERMINAL_OPT_RESIZE_PULL_SCROLLBACK: c_int = 41;
+/// `GhosttyTerminalRenderHoldFn` — synchronized output (mode 2026) hold/release.
+pub const TERMINAL_OPT_RENDER_HOLD: c_int = 42;
 
 // ghostty_terminal_get data kinds
 pub const TERMINAL_DATA_SCROLLBAR: c_int = 9;
 /// The active screen (`GhosttyTerminalScreen`): 0 primary, 1 alternate.
 pub const TERMINAL_DATA_ACTIVE_SCREEN: c_int = 6;
+/// Whether any mouse tracking mode (X10, normal, button, any-event) is active.
+pub const TERMINAL_DATA_MOUSE_TRACKING: c_int = 11;
 /// The value of one mode (`GhosttyTerminalModeConfig`): initialize the
 /// `mode` word, receive the boolean.
 pub const TERMINAL_DATA_MODE: c_int = 37;
 
 /// A DEC private mode number, as `ghostty_mode_new(value, false)` packs
 /// it: the bare number.
+pub const MODE_FOCUS_EVENT: u16 = 1004;
 pub const MODE_BRACKETED_PASTE: u16 = 2004;
 pub const MODE_ALT_SCREEN: u16 = 1047;
 
@@ -66,10 +74,16 @@ pub const SEARCH_DATA_VIEWPORT_MATCHES: c_int = 7;
 // ghostty_terminal_point_from_grid_ref tags
 pub const POINT_TAG_VIEWPORT: c_int = 1;
 
-pub const RENDER_STATE_DATA_ROW_ITERATOR: c_int = 4;
-pub const RENDER_STATE_DATA_CURSOR: c_int = 18;
+pub const RENDER_STATE_DATA_COLS: c_int = 1;
+pub const RENDER_STATE_DATA_ROWS: c_int = 2;
 /// `GhosttyRenderStateDirty`: 0 clean, 1 partial (some rows), 2 full.
 pub const RENDER_STATE_DATA_DIRTY: c_int = 3;
+pub const RENDER_STATE_DATA_ROW_ITERATOR: c_int = 4;
+pub const RENDER_STATE_DATA_CURSOR: c_int = 18;
+
+pub const RENDER_STATE_DIRTY_FALSE: u8 = 0;
+pub const RENDER_STATE_DIRTY_PARTIAL: u8 = 1;
+pub const RENDER_STATE_DIRTY_FULL: u8 = 2;
 // ghostty_render_state_row_get data kinds
 pub const ROW_DATA_CELLS: c_int = 3;
 pub const ROW_DATA_VIEWPORT_Y: c_int = 6;
@@ -208,6 +222,10 @@ pub struct GhosttyString {
 /// via [`terminal_string`].
 pub type GhosttyTerminalStringChangedFn = unsafe extern "C" fn(GhosttyTerminal, *mut c_void);
 
+/// `GhosttyTerminalRenderHoldFn`: called with `held = true` when mode 2026
+/// (synchronized output) begins, and `held = false` when it ends.
+pub type GhosttyTerminalRenderHoldFn = unsafe extern "C" fn(GhosttyTerminal, *mut c_void, bool);
+
 /// Reads a `GhosttyString` data kind (title, pwd) into an owned String.
 /// The library borrows the bytes, so this must run before the terminal is
 /// mutated again — inside a change callback or under the caller's lock.
@@ -273,6 +291,71 @@ pub struct GhosttyTerminalModeConfig {
 }
 
 pub type GhosttySearch = *mut c_void;
+pub type GhosttyKeyEncoder = *mut c_void;
+pub type GhosttyKeyEvent = *mut c_void;
+pub type GhosttyMouseEncoder = *mut c_void;
+pub type GhosttyMouseEvent = *mut c_void;
+
+// GhosttyFocusEvent
+pub const FOCUS_GAINED: c_int = 0;
+pub const FOCUS_LOST: c_int = 1;
+
+// GhosttyKeyAction
+pub const KEY_ACTION_RELEASE: c_int = 0;
+pub const KEY_ACTION_PRESS: c_int = 1;
+pub const KEY_ACTION_REPEAT: c_int = 2;
+
+// GhosttyMods
+pub const MODS_SHIFT: u16 = 1 << 0;
+pub const MODS_CTRL: u16 = 1 << 1;
+pub const MODS_ALT: u16 = 1 << 2;
+pub const MODS_SUPER: u16 = 1 << 3;
+pub const MODS_CAPS_LOCK: u16 = 1 << 4;
+pub const MODS_NUM_LOCK: u16 = 1 << 5;
+
+// GhosttyKey values used directly in Rust (remaining keys are mapped in dae-qt).
+pub const KEY_UNIDENTIFIED: c_int = 0;
+pub const KEY_ARROW_DOWN: c_int = 75;
+pub const KEY_ARROW_UP: c_int = 78;
+
+// GhosttyMouseAction
+pub const MOUSE_ACTION_PRESS: c_int = 0;
+pub const MOUSE_ACTION_RELEASE: c_int = 1;
+pub const MOUSE_ACTION_MOTION: c_int = 2;
+
+// GhosttyMouseButton
+pub const MOUSE_BUTTON_UNKNOWN: c_int = 0;
+pub const MOUSE_BUTTON_LEFT: c_int = 1;
+pub const MOUSE_BUTTON_RIGHT: c_int = 2;
+pub const MOUSE_BUTTON_MIDDLE: c_int = 3;
+pub const MOUSE_BUTTON_FOUR: c_int = 4;
+pub const MOUSE_BUTTON_FIVE: c_int = 5;
+
+// GhosttyMouseEncoderOption
+pub const MOUSE_ENCODER_OPT_SIZE: c_int = 3;
+pub const MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED: c_int = 4;
+pub const MOUSE_ENCODER_OPT_TRACK_LAST_CELL: c_int = 5;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyMousePosition {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyMouseEncoderSize {
+    pub size: usize,
+    pub screen_width: u32,
+    pub screen_height: u32,
+    pub cell_width: u32,
+    pub cell_height: u32,
+    pub padding_top: u32,
+    pub padding_bottom: u32,
+    pub padding_right: u32,
+    pub padding_left: u32,
+}
 
 unsafe extern "C" {
     pub fn ghostty_terminal_new(
@@ -314,6 +397,12 @@ unsafe extern "C" {
         state: GhosttyRenderState,
         terminal: GhosttyTerminal,
     ) -> GhosttyResult;
+    pub fn ghostty_render_state_begin_update(
+        state: GhosttyRenderState,
+        terminal: GhosttyTerminal,
+    ) -> GhosttyResult;
+    pub fn ghostty_render_state_end_update(state: GhosttyRenderState) -> GhosttyResult;
+    pub fn ghostty_render_state_clean(state: GhosttyRenderState) -> GhosttyResult;
     pub fn ghostty_render_state_get(
         state: GhosttyRenderState,
         data: c_int,
@@ -326,6 +415,10 @@ unsafe extern "C" {
     ) -> GhosttyResult;
     pub fn ghostty_render_state_row_iterator_free(iterator: GhosttyRenderStateRowIterator);
     pub fn ghostty_render_state_row_iterator_next(iterator: GhosttyRenderStateRowIterator) -> bool;
+    pub fn ghostty_render_state_row_iterator_next_dirty(
+        iterator: GhosttyRenderStateRowIterator,
+        out_y: *mut u16,
+    ) -> bool;
     pub fn ghostty_render_state_row_get(
         iterator: GhosttyRenderStateRowIterator,
         data: c_int,
@@ -359,6 +452,93 @@ unsafe extern "C" {
         buffer_len: usize,
         out_written: *mut usize,
     ) -> GhosttyResult;
+    pub fn ghostty_focus_encode(
+        event: c_int,
+        buf: *mut u8,
+        buf_len: usize,
+        out_written: *mut usize,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_encoder_new(
+        allocator: *const c_void,
+        encoder: *mut GhosttyKeyEncoder,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_encoder_free(encoder: GhosttyKeyEncoder);
+    pub fn ghostty_key_encoder_set_from_terminal(
+        encoder: GhosttyKeyEncoder,
+        terminal: GhosttyTerminal,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_encoder_encode(
+        encoder: GhosttyKeyEncoder,
+        event: GhosttyKeyEvent,
+        buf: *mut u8,
+        buf_len: usize,
+        out_written: *mut usize,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_event_new(
+        allocator: *const c_void,
+        event: *mut GhosttyKeyEvent,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_event_free(event: GhosttyKeyEvent);
+    pub fn ghostty_key_event_set_action(event: GhosttyKeyEvent, action: c_int) -> GhosttyResult;
+    pub fn ghostty_key_event_set_key(event: GhosttyKeyEvent, key: c_int) -> GhosttyResult;
+    pub fn ghostty_key_event_set_mods(event: GhosttyKeyEvent, mods: u16) -> GhosttyResult;
+    pub fn ghostty_key_event_set_consumed_mods(
+        event: GhosttyKeyEvent,
+        consumed_mods: u16,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_event_set_composing(
+        event: GhosttyKeyEvent,
+        composing: bool,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_event_set_utf8(
+        event: GhosttyKeyEvent,
+        utf8: GhosttyString,
+    ) -> GhosttyResult;
+    pub fn ghostty_key_event_set_unshifted_codepoint(
+        event: GhosttyKeyEvent,
+        codepoint: u32,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_encoder_new(
+        allocator: *const c_void,
+        encoder: *mut GhosttyMouseEncoder,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_encoder_free(encoder: GhosttyMouseEncoder);
+    pub fn ghostty_mouse_encoder_set(
+        encoder: GhosttyMouseEncoder,
+        option: c_int,
+        value: *const c_void,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_encoder_set_from_terminal(
+        encoder: GhosttyMouseEncoder,
+        terminal: GhosttyTerminal,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_encoder_encode(
+        encoder: GhosttyMouseEncoder,
+        event: GhosttyMouseEvent,
+        buf: *mut u8,
+        buf_len: usize,
+        out_written: *mut usize,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_event_new(
+        allocator: *const c_void,
+        event: *mut GhosttyMouseEvent,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_event_free(event: GhosttyMouseEvent);
+    pub fn ghostty_mouse_event_set_action(
+        event: GhosttyMouseEvent,
+        action: c_int,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_event_set_button(
+        event: GhosttyMouseEvent,
+        button: c_int,
+    ) -> GhosttyResult;
+    pub fn ghostty_mouse_event_clear_button(event: GhosttyMouseEvent) -> GhosttyResult;
+    pub fn ghostty_mouse_event_set_mods(event: GhosttyMouseEvent, mods: u16) -> GhosttyResult;
+    pub fn ghostty_mouse_event_set_position(
+        event: GhosttyMouseEvent,
+        position: GhosttyMousePosition,
+    ) -> GhosttyResult;
+
     pub fn ghostty_search_free(search: GhosttySearch);
     pub fn ghostty_search_set(
         search: GhosttySearch,
@@ -382,17 +562,18 @@ unsafe extern "C" {
     ) -> GhosttyResult;
 }
 
-/// One libghostty-vt terminal plus the render-state handles used to read it.
+/// One libghostty-vt terminal plus its reusable input encoders.
 ///
 /// Every method takes `&mut self` because the C library mutates internal
 /// caches even on reads; callers serialize access with their own lock.
-/// `U` is the write-pty callback context; it is kept alive until after the
-/// terminal handle is freed, which is what stops the callbacks.
+/// `U` is the write-pty/effect callback context; it is kept alive until after
+/// the terminal handle is freed, which is what stops the callbacks.
 pub struct Vt<U> {
     terminal: GhosttyTerminal,
-    render: GhosttyRenderState,
-    rows: GhosttyRenderStateRowIterator,
-    cells: GhosttyRenderStateRowCells,
+    key_encoder: GhosttyKeyEncoder,
+    key_event: GhosttyKeyEvent,
+    mouse_encoder: GhosttyMouseEncoder,
+    mouse_event: GhosttyMouseEvent,
     _userdata: Box<U>,
 }
 
@@ -401,13 +582,220 @@ pub struct Vt<U> {
 // the Vt, so only one thread is inside the C library at a time.
 unsafe impl<U> Send for Vt<U> {}
 
+/// Decoupled render state for lock-minimized two-phase updates.
+///
+/// Lock the terminal only for [`Self::begin_update`], then release the
+/// terminal lock and run [`Self::end_update`], row reads, and [`Self::clean`].
+pub struct RenderState {
+    render: GhosttyRenderState,
+    rows: GhosttyRenderStateRowIterator,
+    cells: GhosttyRenderStateRowCells,
+}
+
+unsafe impl Send for RenderState {}
+
+impl RenderState {
+    pub fn new() -> Result<Self, String> {
+        let mut render: GhosttyRenderState = std::ptr::null_mut();
+        let mut row_iter: GhosttyRenderStateRowIterator = std::ptr::null_mut();
+        let mut row_cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
+        unsafe {
+            let ok = ghostty_render_state_new(std::ptr::null(), &mut render) == GHOSTTY_SUCCESS
+                && ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_iter)
+                    == GHOSTTY_SUCCESS
+                && ghostty_render_state_row_cells_new(std::ptr::null(), &mut row_cells)
+                    == GHOSTTY_SUCCESS;
+            let state = Self {
+                render,
+                rows: row_iter,
+                cells: row_cells,
+            };
+            if !ok {
+                return Err("term.vt_render_state_failed".to_string());
+            }
+            Ok(state)
+        }
+    }
+
+    /// Captures dirty terminal state into this render state. Must be paired
+    /// with [`Self::end_update`] after releasing the terminal lock.
+    pub fn begin_update<U>(&mut self, vt: &Vt<U>) -> bool {
+        unsafe { ghostty_render_state_begin_update(self.render, vt.terminal) == GHOSTTY_SUCCESS }
+    }
+
+    /// Completes deferred work on render-state-owned memory without touching
+    /// the terminal.
+    pub fn end_update(&mut self) -> bool {
+        unsafe { ghostty_render_state_end_update(self.render) == GHOSTTY_SUCCESS }
+    }
+
+    /// Marks all global and per-row dirty flags as consumed so the next update
+    /// can report `DIRTY_FALSE` or `DIRTY_PARTIAL`.
+    pub fn clean(&mut self) {
+        unsafe {
+            ghostty_render_state_clean(self.render);
+        }
+    }
+
+    /// The `(cols, rows)` captured by the last update.
+    pub fn dimensions(&self) -> (usize, usize) {
+        let mut cols: u16 = 0;
+        let mut rows: u16 = 0;
+        unsafe {
+            ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_COLS,
+                &mut cols as *mut _ as *mut c_void,
+            );
+            ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_ROWS,
+                &mut rows as *mut _ as *mut c_void,
+            );
+        }
+        (usize::from(cols), usize::from(rows))
+    }
+
+    /// Visits every viewport row top to bottom.
+    pub fn visit_rows(&mut self, mut visit_row: impl FnMut(i32, Row<'_>)) {
+        unsafe {
+            if ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_ROW_ITERATOR,
+                &mut self.rows as *mut _ as *mut c_void,
+            ) != GHOSTTY_SUCCESS
+            {
+                return;
+            }
+            while ghostty_render_state_row_iterator_next(self.rows) {
+                let mut y: i32 = 0;
+                if ghostty_render_state_row_get(
+                    self.rows,
+                    ROW_DATA_VIEWPORT_Y,
+                    &mut y as *mut _ as *mut c_void,
+                ) != GHOSTTY_SUCCESS
+                {
+                    continue;
+                }
+                if ghostty_render_state_row_get(
+                    self.rows,
+                    ROW_DATA_CELLS,
+                    &mut self.cells as *mut _ as *mut c_void,
+                ) != GHOSTTY_SUCCESS
+                {
+                    continue;
+                }
+                visit_row(
+                    y,
+                    Row {
+                        row: self.rows,
+                        cells: self.cells,
+                        column: 0,
+                        _marker: std::marker::PhantomData,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Visits only the rows requiring a redraw according to the dirty state.
+    pub fn visit_dirty_rows(&mut self, mut visit_row: impl FnMut(u16, Row<'_>)) {
+        unsafe {
+            if ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_ROW_ITERATOR,
+                &mut self.rows as *mut _ as *mut c_void,
+            ) != GHOSTTY_SUCCESS
+            {
+                return;
+            }
+            let mut y: u16 = 0;
+            while ghostty_render_state_row_iterator_next_dirty(self.rows, &mut y) {
+                if ghostty_render_state_row_get(
+                    self.rows,
+                    ROW_DATA_CELLS,
+                    &mut self.cells as *mut _ as *mut c_void,
+                ) != GHOSTTY_SUCCESS
+                {
+                    continue;
+                }
+                visit_row(
+                    y,
+                    Row {
+                        row: self.rows,
+                        cells: self.cells,
+                        column: 0,
+                        _marker: std::marker::PhantomData,
+                    },
+                );
+            }
+        }
+    }
+
+    /// The dirty level of the last update: 0 nothing changed,
+    /// 1 some rows changed, 2 redraw all.
+    pub fn dirty(&self) -> u8 {
+        let mut dirty: c_int = 0;
+        unsafe {
+            ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_DIRTY,
+                &mut dirty as *mut _ as *mut c_void,
+            );
+        }
+        dirty.clamp(0, 2) as u8
+    }
+
+    /// The cursor as the viewport sees it: `(x, y, shape)` when visible,
+    /// where shape is 0 block, 1 underline, 2 beam, 3 hollow block.
+    pub fn cursor(&self) -> Option<(u16, u16, u8)> {
+        let mut cursor = GhosttyRenderStateCursor {
+            size: size_of::<GhosttyRenderStateCursor>(),
+            viewport_has_value: false,
+            viewport_x: 0,
+            viewport_y: 0,
+            wide_tail: false,
+            visible: false,
+            blinking: false,
+            password_input: false,
+            visual_style: CURSOR_STYLE_BLOCK,
+        };
+        let result = unsafe {
+            ghostty_render_state_get(
+                self.render,
+                RENDER_STATE_DATA_CURSOR,
+                &mut cursor as *mut _ as *mut c_void,
+            )
+        };
+        if result != GHOSTTY_SUCCESS || !cursor.visible || !cursor.viewport_has_value {
+            return None;
+        }
+        let shape = match cursor.visual_style {
+            CURSOR_STYLE_BAR => 2,
+            CURSOR_STYLE_UNDERLINE => 1,
+            CURSOR_STYLE_BLOCK_HOLLOW => 3,
+            _ => 0,
+        };
+        Some((cursor.viewport_x, cursor.viewport_y, shape))
+    }
+}
+
+impl Drop for RenderState {
+    fn drop(&mut self) {
+        unsafe {
+            ghostty_render_state_row_cells_free(self.cells);
+            ghostty_render_state_row_iterator_free(self.rows);
+            ghostty_render_state_free(self.render);
+        }
+    }
+}
+
 impl<U> Vt<U> {
     /// Creates a terminal whose escape-sequence replies (cursor position,
     /// device attributes, size reports) are written back through `write_pty`,
-    /// and whose title (OSC 0/2) and working directory (OSC 7/9/1337) changes
-    /// are reported through `title_changed` / `pwd_changed`. All callbacks run
-    /// inside [`Self::write`] on the calling thread and receive a pointer to
-    /// the boxed `userdata`.
+    /// title (OSC 0/2) and working directory (OSC 7/9/1337) changes are
+    /// reported through `title_changed` / `pwd_changed`, and synchronized
+    /// output holds (mode 2026) are reported through `render_hold`.
     pub fn new(
         cols: u16,
         rows: u16,
@@ -415,32 +803,36 @@ impl<U> Vt<U> {
         write_pty: GhosttyTerminalWritePtyFn,
         title_changed: GhosttyTerminalStringChangedFn,
         pwd_changed: GhosttyTerminalStringChangedFn,
+        render_hold: GhosttyTerminalRenderHoldFn,
         mut userdata: Box<U>,
     ) -> Result<Self, String> {
         let mut terminal: GhosttyTerminal = std::ptr::null_mut();
-        let mut render: GhosttyRenderState = std::ptr::null_mut();
-        let mut row_iter: GhosttyRenderStateRowIterator = std::ptr::null_mut();
-        let mut row_cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
+        let mut key_encoder: GhosttyKeyEncoder = std::ptr::null_mut();
+        let mut key_event: GhosttyKeyEvent = std::ptr::null_mut();
+        let mut mouse_encoder: GhosttyMouseEncoder = std::ptr::null_mut();
+        let mut mouse_event: GhosttyMouseEvent = std::ptr::null_mut();
         let userdata_ptr = &mut *userdata as *mut U as *mut c_void;
         unsafe {
             if ghostty_terminal_new(std::ptr::null(), &mut terminal, cols, rows) != GHOSTTY_SUCCESS
             {
                 return Err("term.vt_create_failed".to_string());
             }
-            let ok = ghostty_render_state_new(std::ptr::null(), &mut render) == GHOSTTY_SUCCESS
-                && ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_iter)
+            let ok = ghostty_key_encoder_new(std::ptr::null(), &mut key_encoder)
+                == GHOSTTY_SUCCESS
+                && ghostty_key_event_new(std::ptr::null(), &mut key_event) == GHOSTTY_SUCCESS
+                && ghostty_mouse_encoder_new(std::ptr::null(), &mut mouse_encoder)
                     == GHOSTTY_SUCCESS
-                && ghostty_render_state_row_cells_new(std::ptr::null(), &mut row_cells)
-                    == GHOSTTY_SUCCESS;
+                && ghostty_mouse_event_new(std::ptr::null(), &mut mouse_event) == GHOSTTY_SUCCESS;
             let vt = Self {
                 terminal,
-                render,
-                rows: row_iter,
-                cells: row_cells,
+                key_encoder,
+                key_event,
+                mouse_encoder,
+                mouse_event,
                 _userdata: userdata,
             };
             if !ok {
-                return Err("term.vt_render_state_failed".to_string());
+                return Err("term.vt_encoder_failed".to_string());
             }
             ghostty_terminal_set(vt.terminal, TERMINAL_OPT_USERDATA, userdata_ptr);
             // The C API takes the function pointer *value* in the `const void*`
@@ -450,9 +842,6 @@ impl<U> Vt<U> {
                 TERMINAL_OPT_WRITE_PTY,
                 write_pty as *const c_void,
             );
-            // The shell reports its title (OSC 0/2) and working directory
-            // (OSC 7/9/1337) through these; both read the value inside the
-            // callback via `terminal_string`.
             ghostty_terminal_set(
                 vt.terminal,
                 TERMINAL_OPT_TITLE_CHANGED,
@@ -463,6 +852,23 @@ impl<U> Vt<U> {
                 TERMINAL_OPT_PWD_CHANGED,
                 pwd_changed as *const c_void,
             );
+            ghostty_terminal_set(
+                vt.terminal,
+                TERMINAL_OPT_RENDER_HOLD,
+                render_hold as *const c_void,
+            );
+            // Windows ConPTY keeps its own screen buffer without scrollback,
+            // so pulling scrollback lines down on resize makes the local grid
+            // disagree with ConPTY.
+            #[cfg(target_os = "windows")]
+            {
+                let pull_scrollback = false;
+                ghostty_terminal_set(
+                    vt.terminal,
+                    TERMINAL_OPT_RESIZE_PULL_SCROLLBACK,
+                    &pull_scrollback as *const _ as *const c_void,
+                );
+            }
             // The byte limit defaults to 10 KB, which would prune history
             // long before the line limit; let the line limit govern.
             let unlimited_bytes = usize::MAX;
@@ -475,6 +881,12 @@ impl<U> Vt<U> {
                 vt.terminal,
                 TERMINAL_OPT_SCROLLBACK_MAX_LINES,
                 &scrollback_lines as *const _ as *const c_void,
+            );
+            let track_last_cell = true;
+            ghostty_mouse_encoder_set(
+                vt.mouse_encoder,
+                MOUSE_ENCODER_OPT_TRACK_LAST_CELL,
+                &track_last_cell as *const _ as *const c_void,
             );
             Ok(vt)
         }
@@ -530,102 +942,155 @@ impl<U> Vt<U> {
         (result == GHOSTTY_SUCCESS).then_some((scrollbar.total, scrollbar.offset, scrollbar.len))
     }
 
-    /// Refreshes the render state from the terminal. Must run before
-    /// [`Self::visit_rows`] or [`Self::cursor`].
-    pub fn update(&mut self) -> bool {
-        unsafe { ghostty_render_state_update(self.render, self.terminal) == GHOSTTY_SUCCESS }
-    }
-
-    /// Visits every viewport row top to bottom. For each row, `visit_row`
-    /// receives the viewport y and a reader positioned before the first
-    /// cell; call [`Row::next_cell`] until it returns `None`. `Row::dirty`
-    /// says whether the last [`Self::update`] changed that row.
-    pub fn visit_rows(&mut self, mut visit_row: impl FnMut(i32, Row<'_>)) {
+    /// Encodes a key event using the terminal's active modes (cursor/keypad
+    /// application, alt-esc prefix, backarrow, modifyOtherKeys, Kitty protocol).
+    pub fn encode_key(
+        &mut self,
+        action: c_int,
+        key: c_int,
+        mods: u16,
+        consumed_mods: u16,
+        unshifted_codepoint: u32,
+        utf8: &str,
+        composing: bool,
+    ) -> Vec<u8> {
         unsafe {
-            if ghostty_render_state_get(
-                self.render,
-                RENDER_STATE_DATA_ROW_ITERATOR,
-                &mut self.rows as *mut _ as *mut c_void,
-            ) != GHOSTTY_SUCCESS
-            {
-                return;
+            ghostty_key_encoder_set_from_terminal(self.key_encoder, self.terminal);
+            ghostty_key_event_set_action(self.key_event, action);
+            if ghostty_key_event_set_key(self.key_event, key) != GHOSTTY_SUCCESS {
+                ghostty_key_event_set_key(self.key_event, KEY_UNIDENTIFIED);
             }
-            while ghostty_render_state_row_iterator_next(self.rows) {
-                let mut y: i32 = 0;
-                if ghostty_render_state_row_get(
-                    self.rows,
-                    ROW_DATA_VIEWPORT_Y,
-                    &mut y as *mut _ as *mut c_void,
-                ) != GHOSTTY_SUCCESS
-                {
-                    continue;
-                }
-                if ghostty_render_state_row_get(
-                    self.rows,
-                    ROW_DATA_CELLS,
-                    &mut self.cells as *mut _ as *mut c_void,
-                ) != GHOSTTY_SUCCESS
-                {
-                    continue;
-                }
-                visit_row(
-                    y,
-                    Row {
-                        row: self.rows,
-                        cells: self.cells,
-                        column: 0,
-                        _marker: std::marker::PhantomData,
-                    },
-                );
-            }
-        }
-    }
+            ghostty_key_event_set_mods(self.key_event, mods);
+            ghostty_key_event_set_consumed_mods(self.key_event, consumed_mods);
+            ghostty_key_event_set_composing(self.key_event, composing);
+            ghostty_key_event_set_unshifted_codepoint(self.key_event, unshifted_codepoint);
+            let text = GhosttyString {
+                ptr: if utf8.is_empty() {
+                    std::ptr::null()
+                } else {
+                    utf8.as_ptr()
+                },
+                len: utf8.len(),
+            };
+            ghostty_key_event_set_utf8(self.key_event, text);
 
-    /// The dirty level of the last [`Self::update`]: 0 nothing changed,
-    /// 1 some rows changed (query per row via [`Row::dirty`]), 2 redraw all.
-    pub fn dirty(&mut self) -> u8 {
-        let mut dirty: c_int = 0;
-        unsafe {
-            ghostty_render_state_get(
-                self.render,
-                RENDER_STATE_DATA_DIRTY,
-                &mut dirty as *mut _ as *mut c_void,
+            let mut buf = [0u8; 128];
+            let mut written = 0usize;
+            let res = ghostty_key_encoder_encode(
+                self.key_encoder,
+                self.key_event,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut written,
             );
+            let out = if res == GHOSTTY_SUCCESS {
+                buf[..written].to_vec()
+            } else if res == GHOSTTY_OUT_OF_SPACE && written > 0 {
+                let mut dyn_buf = vec![0u8; written];
+                let mut dyn_written = 0usize;
+                if ghostty_key_encoder_encode(
+                    self.key_encoder,
+                    self.key_event,
+                    dyn_buf.as_mut_ptr(),
+                    dyn_buf.len(),
+                    &mut dyn_written,
+                ) == GHOSTTY_SUCCESS
+                {
+                    dyn_buf.truncate(dyn_written);
+                    dyn_buf
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+            ghostty_key_event_set_utf8(
+                self.key_event,
+                GhosttyString {
+                    ptr: std::ptr::null(),
+                    len: 0,
+                },
+            );
+            out
         }
-        dirty.clamp(0, 2) as u8
     }
 
-    /// The cursor as the viewport sees it: `(x, y, shape)` when visible,
-    /// where shape is 0 block, 1 underline, 2 beam, 3 hollow block.
-    pub fn cursor(&mut self) -> Option<(u16, u16, u8)> {
-        let mut cursor = GhosttyRenderStateCursor {
-            size: size_of::<GhosttyRenderStateCursor>(),
-            viewport_has_value: false,
-            viewport_x: 0,
-            viewport_y: 0,
-            wide_tail: false,
-            visible: false,
-            blinking: false,
-            password_input: false,
-            visual_style: CURSOR_STYLE_BLOCK,
-        };
-        let result = unsafe {
-            ghostty_render_state_get(
-                self.render,
-                RENDER_STATE_DATA_CURSOR,
-                &mut cursor as *mut _ as *mut c_void,
-            )
-        };
-        if result != GHOSTTY_SUCCESS || !cursor.visible || !cursor.viewport_has_value {
+    /// Encodes a mouse event using the terminal's active mouse tracking mode
+    /// and format (X10, UTF-8, SGR, URxvt, SGR-Pixels).
+    pub fn encode_mouse(
+        &mut self,
+        action: c_int,
+        button: Option<c_int>,
+        mods: u16,
+        x: f32,
+        y: f32,
+        size: GhosttyMouseEncoderSize,
+        any_button_pressed: bool,
+    ) -> Vec<u8> {
+        unsafe {
+            ghostty_mouse_encoder_set_from_terminal(self.mouse_encoder, self.terminal);
+            ghostty_mouse_encoder_set(
+                self.mouse_encoder,
+                MOUSE_ENCODER_OPT_SIZE,
+                &size as *const _ as *const c_void,
+            );
+            ghostty_mouse_encoder_set(
+                self.mouse_encoder,
+                MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED,
+                &any_button_pressed as *const _ as *const c_void,
+            );
+            ghostty_mouse_event_set_action(self.mouse_event, action);
+            match button {
+                Some(btn) => {
+                    ghostty_mouse_event_set_button(self.mouse_event, btn);
+                }
+                None => {
+                    ghostty_mouse_event_clear_button(self.mouse_event);
+                }
+            }
+            ghostty_mouse_event_set_mods(self.mouse_event, mods);
+            ghostty_mouse_event_set_position(self.mouse_event, GhosttyMousePosition { x, y });
+
+            let mut buf = [0u8; 128];
+            let mut written = 0usize;
+            if ghostty_mouse_encoder_encode(
+                self.mouse_encoder,
+                self.mouse_event,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut written,
+            ) == GHOSTTY_SUCCESS
+            {
+                buf[..written].to_vec()
+            } else {
+                Vec::new()
+            }
+        }
+    }
+
+    /// Encodes focus gained/lost if the running program enabled mode 1004.
+    pub fn encode_focus(&mut self, gained: bool) -> Option<Vec<u8>> {
+        if !self.mode(MODE_FOCUS_EVENT) {
             return None;
         }
-        let shape = match cursor.visual_style {
-            CURSOR_STYLE_BAR => 2,
-            CURSOR_STYLE_UNDERLINE => 1,
-            CURSOR_STYLE_BLOCK_HOLLOW => 3,
-            _ => 0,
-        };
-        Some((cursor.viewport_x, cursor.viewport_y, shape))
+        let event = if gained { FOCUS_GAINED } else { FOCUS_LOST };
+        let mut buf = [0u8; 16];
+        let mut written = 0usize;
+        let res = unsafe { ghostty_focus_encode(event, buf.as_mut_ptr(), buf.len(), &mut written) };
+        (res == GHOSTTY_SUCCESS && written > 0).then(|| buf[..written].to_vec())
+    }
+
+    /// Whether any mouse tracking mode (1000/1002/1003/9) is active.
+    pub fn mouse_tracking(&mut self) -> bool {
+        let mut tracking = false;
+        unsafe {
+            ghostty_terminal_get(
+                self.terminal,
+                TERMINAL_DATA_MOUSE_TRACKING,
+                &mut tracking as *mut _ as *mut c_void,
+            );
+        }
+        tracking
     }
 
     /// Creates a search bound to this terminal. The handle is kept by the
@@ -863,9 +1328,10 @@ impl Drop for Search {
 impl<U> Drop for Vt<U> {
     fn drop(&mut self) {
         unsafe {
-            ghostty_render_state_row_cells_free(self.cells);
-            ghostty_render_state_row_iterator_free(self.rows);
-            ghostty_render_state_free(self.render);
+            ghostty_mouse_event_free(self.mouse_event);
+            ghostty_mouse_encoder_free(self.mouse_encoder);
+            ghostty_key_event_free(self.key_event);
+            ghostty_key_encoder_free(self.key_encoder);
             // Freeing the terminal stops any write_pty callback; the
             // userdata Box is dropped with the struct, after this call.
             ghostty_terminal_free(self.terminal);

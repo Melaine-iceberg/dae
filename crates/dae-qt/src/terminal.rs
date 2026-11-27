@@ -153,6 +153,52 @@ pub mod qobject {
         #[qinvokable]
         fn snapshot(&self, dark: bool) -> QByteArray;
 
+        /// Forces a complete grid frame (e.g. when switching session tabs).
+        #[qinvokable]
+        #[cxx_name = "snapshotFull"]
+        fn snapshot_full(&self, dark: bool) -> QByteArray;
+
+        /// Encodes and writes a key event via libghostty-vt's key encoder.
+        #[qinvokable]
+        #[cxx_name = "sendKey"]
+        fn send_key(
+            self: Pin<&mut TerminalSession>,
+            action: i32,
+            key: i32,
+            mods: i32,
+            unshifted: i32,
+            consumed_mods: i32,
+            text: &QString,
+            composing: bool,
+        ) -> bool;
+
+        /// Encodes and writes a mouse event when mouse tracking is active.
+        #[qinvokable]
+        #[cxx_name = "sendMouse"]
+        fn send_mouse(
+            self: Pin<&mut TerminalSession>,
+            action: i32,
+            button: i32,
+            mods: i32,
+            x: f64,
+            y: f64,
+            screen_w: i32,
+            screen_h: i32,
+            cell_w: i32,
+            cell_h: i32,
+            any_pressed: bool,
+        ) -> bool;
+
+        /// Whether the running program has enabled mouse tracking.
+        #[qinvokable]
+        #[cxx_name = "mouseTracking"]
+        fn mouse_tracking(&self) -> bool;
+
+        /// Sends a focus gained/lost report when mode 1004 is enabled.
+        #[qinvokable]
+        #[cxx_name = "sendFocus"]
+        fn send_focus(self: Pin<&mut TerminalSession>, gained: bool);
+
         /// New grid content (or the shell's state) is ready to paint.
         #[qsignal]
         fn updated(self: Pin<&mut TerminalSession>);
@@ -372,6 +418,89 @@ impl qobject::TerminalSession {
         QByteArray::from(encode_frame(&snapshot).as_slice())
     }
 
+    fn snapshot_full(&self, dark: bool) -> QByteArray {
+        let Some(session) = self.session.as_ref() else {
+            return QByteArray::default();
+        };
+        let Some(snapshot) = session.snapshot_full(dark) else {
+            return QByteArray::default();
+        };
+        QByteArray::from(encode_frame(&snapshot).as_slice())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn send_key(
+        self: Pin<&mut Self>,
+        action: i32,
+        key: i32,
+        mods: i32,
+        unshifted: i32,
+        consumed_mods: i32,
+        text: &QString,
+        composing: bool,
+    ) -> bool {
+        let Some(session) = self.session.as_ref() else {
+            return false;
+        };
+        session
+            .key_event(
+                action,
+                key,
+                mods.clamp(0, u16::MAX as i32) as u16,
+                consumed_mods.clamp(0, u16::MAX as i32) as u16,
+                unshifted.max(0) as u32,
+                &text.to_string(),
+                composing,
+            )
+            .unwrap_or(false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn send_mouse(
+        self: Pin<&mut Self>,
+        action: i32,
+        button: i32,
+        mods: i32,
+        x: f64,
+        y: f64,
+        screen_w: i32,
+        screen_h: i32,
+        cell_w: i32,
+        cell_h: i32,
+        any_pressed: bool,
+    ) -> bool {
+        let Some(session) = self.session.as_ref() else {
+            return false;
+        };
+        let button = (button >= 0).then_some(button);
+        session
+            .mouse_event(
+                action,
+                button,
+                mods.clamp(0, u16::MAX as i32) as u16,
+                x as f32,
+                y as f32,
+                screen_w.max(1) as u32,
+                screen_h.max(1) as u32,
+                cell_w.max(1) as u32,
+                cell_h.max(1) as u32,
+                any_pressed,
+            )
+            .unwrap_or(false)
+    }
+
+    fn mouse_tracking(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.mouse_tracking())
+    }
+
+    fn send_focus(self: Pin<&mut Self>, gained: bool) {
+        if let Some(session) = self.session.as_ref() {
+            let _ = session.focus_event(gained);
+        }
+    }
+
     /// Copies the OSC-reported title and working directory onto the QObject
     /// so QML bindings can follow them. Runs on the Qt thread with every
     /// output wake; the copies only allocate when a report actually changed.
@@ -405,17 +534,23 @@ impl qobject::TerminalSession {
 /// shape | display offset | history size | kind | count.
 ///
 /// Little endian, one 13-byte record per cell: Unicode scalar, fg ARGB, bg
-/// ARGB, attribute bits. A full frame (kind 0, count 0) carries every
-/// viewport cell. A shift frame (kind 1, count k) carries the k rows of new
-/// cells the scroll brought in at the bottom, top to bottom. The painter
-/// decodes exactly this; keeping the format next to the encoder is why it
-/// has no serde dependency.
+/// ARGB, attribute bits.
+/// - kind 0 (full, count 0): every viewport cell.
+/// - kind 1 (shift, count k): the k new bottom rows, top to bottom.
+/// - kind 2 (rows, count n): n dirty rows, each prefixed with `row` (`u16` LE)
+///   followed by `cols` cells (n == 0 when the frame is clean).
 fn encode_frame(snapshot: &TerminalSnapshot) -> Vec<u8> {
-    let shifted = match &snapshot.kind {
-        SnapshotKind::Full => 0usize,
-        SnapshotKind::Shift(lines) => *lines,
+    let (kind_byte, count, payload_cells) = match &snapshot.kind {
+        SnapshotKind::Full => (0u8, 0usize, snapshot.cells.len()),
+        SnapshotKind::Shift(lines) => (1u8, *lines, snapshot.cells.len()),
+        SnapshotKind::Rows(rows) => (
+            2u8,
+            rows.len(),
+            rows.iter().map(|r| r.cells.len()).sum::<usize>(),
+        ),
     };
-    let mut frame = Vec::with_capacity(HEADER_LEN + snapshot.cells.len() * CELL_LEN);
+    let row_headers = if kind_byte == 2 { count * 2 } else { 0 };
+    let mut frame = Vec::with_capacity(HEADER_LEN + row_headers + payload_cells * CELL_LEN);
     frame.extend_from_slice(FRAME_MAGIC);
     frame.push(FRAME_VERSION);
     frame.extend_from_slice(&(snapshot.cols as u16).to_le_bytes());
@@ -426,22 +561,36 @@ fn encode_frame(snapshot: &TerminalSnapshot) -> Vec<u8> {
     frame.push(snapshot.cursor_shape);
     frame.extend_from_slice(&(snapshot.display_offset as u32).to_le_bytes());
     frame.extend_from_slice(&(snapshot.history_size as u32).to_le_bytes());
-    frame.push(match &snapshot.kind {
-        SnapshotKind::Full => 0u8,
-        SnapshotKind::Shift(_) => 1u8,
-    });
-    frame.extend_from_slice(&(shifted as u16).to_le_bytes());
-    for cell in &snapshot.cells {
-        frame.extend_from_slice(&(cell.ch as u32).to_le_bytes());
-        frame.extend_from_slice(&cell.fg.to_le_bytes());
-        frame.extend_from_slice(&cell.bg.to_le_bytes());
-        frame.push(cell.flags);
+    frame.push(kind_byte);
+    frame.extend_from_slice(&(count as u16).to_le_bytes());
+    match &snapshot.kind {
+        SnapshotKind::Full | SnapshotKind::Shift(_) => {
+            for cell in &snapshot.cells {
+                frame.extend_from_slice(&(cell.ch as u32).to_le_bytes());
+                frame.extend_from_slice(&cell.fg.to_le_bytes());
+                frame.extend_from_slice(&cell.bg.to_le_bytes());
+                frame.push(cell.flags);
+            }
+        }
+        SnapshotKind::Rows(rows) => {
+            for row in rows {
+                frame.extend_from_slice(&row.row.to_le_bytes());
+                for cell in &row.cells {
+                    frame.extend_from_slice(&(cell.ch as u32).to_le_bytes());
+                    frame.extend_from_slice(&cell.fg.to_le_bytes());
+                    frame.extend_from_slice(&cell.bg.to_le_bytes());
+                    frame.push(cell.flags);
+                }
+            }
+        }
     }
     frame
 }
 
 #[cfg(test)]
 mod tests {
+    use dae_core::pty::DirtyRow;
+
     use super::*;
 
     #[test]
@@ -486,6 +635,30 @@ mod tests {
         assert_eq!(read_u16(&frame, 24), 1);
         // One new row of two cells, and nothing else.
         assert_eq!(frame.len(), HEADER_LEN + 2 * CELL_LEN);
+    }
+
+    #[test]
+    fn a_rows_frame_carries_only_dirty_rows() {
+        let snapshot = TerminalSnapshot {
+            cols: 2,
+            rows: 3,
+            kind: SnapshotKind::Rows(vec![DirtyRow {
+                row: 1,
+                cells: vec![Default::default(); 2],
+            }]),
+            cursor_col: 0,
+            cursor_row: 1,
+            cursor_visible: true,
+            cursor_shape: 0,
+            display_offset: 0,
+            history_size: 0,
+            cells: Vec::new(),
+        };
+        let frame = encode_frame(&snapshot);
+        assert_eq!(frame[23], 2);
+        assert_eq!(read_u16(&frame, 24), 1);
+        assert_eq!(read_u16(&frame, HEADER_LEN), 1);
+        assert_eq!(frame.len(), HEADER_LEN + 2 + 2 * CELL_LEN);
     }
 
     fn read_u16(frame: &[u8], at: usize) -> u16 {
