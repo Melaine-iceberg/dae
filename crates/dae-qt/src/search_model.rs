@@ -10,14 +10,12 @@
 //! stops the walk; this one stops an answer that was queued on the Qt thread
 //! before the query changed.
 
-use std::pin::Pin;
-
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
-};
 use dae_core::fs::search;
 use dae_core::fs::vfs;
+use qtbridge::qtbridge_type_lib::{
+    QByteArray, QHash_i32_QByteArray, QModelIndex, QString, QVariant,
+};
+use qtbridge::{QAbstractItemModel, QAbstractItemModelBase, QmlElement, QmlObject, qobject};
 
 use crate::model::{category_of, extension_of, icon_version_of, thumbnail_for, type_label};
 use crate::selection::{SelectableRow, Selection};
@@ -83,230 +81,6 @@ const CONTENT_LINE_NUMBER: i32 = 0x0304;
 const CONTENT_LINE_TEXT: i32 = 0x0305;
 const CONTENT_LINE_HTML: i32 = 0x0306;
 const CONTENT_MATCH_COUNT: i32 = 0x0307;
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-
-        include!("cxx-qt-lib/core/qlist/qlist_i32.h");
-        type QList_i32 = cxx_qt_lib::QList<i32>;
-    }
-
-    unsafe extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(i32, loaded)]
-        /// Results currently selected. The shared delegate reads the
-        /// `selected` role; this is what the status bar counts.
-        #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
-        /// The selected results' total size, in the same formatted shape the
-        /// size column prints. Folders contribute nothing, as in the listing.
-        #[qproperty(QString, selected_size_text, cxx_name = "selectedSizeText")]
-        #[qproperty(bool, busy)]
-        #[qproperty(bool, finished)]
-        #[qproperty(bool, truncated)]
-        #[qproperty(QString, status)]
-        #[qproperty(QString, query)]
-        #[qproperty(QString, path)]
-        /// §10.7: results are grouped by their relative directory. This is
-        /// the section count list the shared list delegate paints, in the same
-        /// shape the listing model publishes.
-        #[qproperty(QString, group_counts, cxx_name = "groupCounts")]
-        type SearchModel = super::SearchModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        /// Searches `query` under `scope` (`current`, `favorites`, `recent`
-        /// or `volumes`). The other three narrow by the same buckets the
-        /// listing filter offers; `query` may also carry `tag:` tokens.
-        #[qinvokable]
-        fn search(
-            self: Pin<&mut SearchModel>,
-            path: &QString,
-            query: &QString,
-            scope: &QString,
-            kind: &QString,
-            modified: &QString,
-            size: &QString,
-        );
-
-        #[qinvokable]
-        fn cancel(self: Pin<&mut SearchModel>);
-
-        #[qinvokable]
-        fn reload(self: Pin<&mut SearchModel>);
-
-        #[qinvokable]
-        #[cxx_name = "indexOfPath"]
-        fn index_of_path(&self, path: &QString) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "pathAt"]
-        fn path_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "nameAt"]
-        fn name_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "relativePathAt"]
-        fn relative_path_at(&self, row: i32) -> QString;
-
-        /// The section label of `row`, for the pinned header the shared list
-        /// delegate draws (§7.4).
-        #[qinvokable]
-        #[cxx_name = "groupLabelAt"]
-        fn group_label_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "isDirectoryAt"]
-        fn is_directory_at(&self, row: i32) -> bool;
-
-        #[qinvokable]
-        fn dispose(self: Pin<&mut SearchModel>);
-
-        /// Selection, in the same shape the listing model offers: the shared
-        /// delegate reads the `selected` role, and a result list is clicked,
-        /// Shift-clicked, Ctrl-clicked and cleared exactly like a listing.
-        #[qinvokable]
-        #[cxx_name = "selectOnly"]
-        fn select_only(self: Pin<&mut SearchModel>, row: i32);
-
-        #[qinvokable]
-        #[cxx_name = "toggleAt"]
-        fn toggle_at(self: Pin<&mut SearchModel>, row: i32);
-
-        #[qinvokable]
-        #[cxx_name = "selectRange"]
-        fn select_range(self: Pin<&mut SearchModel>, first: i32, last: i32);
-
-        #[qinvokable]
-        #[cxx_name = "selectAll"]
-        fn select_all_rows(self: Pin<&mut SearchModel>);
-
-        #[qinvokable]
-        #[cxx_name = "clearSelection"]
-        fn clear_selection(self: Pin<&mut SearchModel>);
-
-        #[qinvokable]
-        #[cxx_name = "selectedPaths"]
-        fn selected_paths(&self) -> QStringList;
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut SearchModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut SearchModel>);
-
-        #[inherit]
-        #[rust_name = "model_index"]
-        unsafe fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
-
-        #[inherit]
-        #[rust_name = "data_changed"]
-        unsafe fn dataChanged(
-            self: Pin<&mut SearchModel>,
-            top_left: &QModelIndex,
-            bottom_right: &QModelIndex,
-            roles: &QList_i32,
-        );
-    }
-
-    unsafe extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(i32, loaded)]
-        #[qproperty(bool, busy)]
-        #[qproperty(bool, finished)]
-        #[qproperty(bool, truncated)]
-        #[qproperty(i32, file_count, cxx_name = "fileCount")]
-        #[qproperty(i32, match_count, cxx_name = "matchCount")]
-        #[qproperty(QString, status)]
-        #[qproperty(QString, query)]
-        #[qproperty(QString, path)]
-        type ContentSearchModel = super::ContentSearchModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        #[qinvokable]
-        fn search(
-            self: Pin<&mut ContentSearchModel>,
-            path: &QString,
-            query: &QString,
-            is_regex: bool,
-            case_sensitive: bool,
-            file_filter: &QString,
-        );
-
-        #[qinvokable]
-        fn cancel(self: Pin<&mut ContentSearchModel>);
-
-        #[qinvokable]
-        fn reload(self: Pin<&mut ContentSearchModel>);
-
-        #[qinvokable]
-        #[cxx_name = "pathAt"]
-        fn path_at(&self, row: i32) -> QString;
-
-        /// The directory that contains `row`'s file, for the reveal button.
-        #[qinvokable]
-        #[cxx_name = "directoryAt"]
-        fn directory_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        fn dispose(self: Pin<&mut ContentSearchModel>);
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut ContentSearchModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut ContentSearchModel>);
-    }
-
-    impl cxx_qt::Threading for SearchModel {}
-    impl cxx_qt::Threading for ContentSearchModel {}
-}
 
 struct SearchRow {
     name: String,
@@ -399,500 +173,571 @@ struct SearchArgs {
     size: String,
 }
 
-#[derive(Default)]
-pub struct SearchModelRust {
-    loaded: i32,
-    selected_count: i32,
-    selected_size_text: QString,
-    busy: bool,
-    finished: bool,
-    truncated: bool,
-    status: QString,
-    query: QString,
-    path: QString,
-    group_counts: QString,
-    rows: Vec<SearchRow>,
-    selection: Selection,
-    generation: u64,
-    /// Everything needed to re-run the current query after the files changed.
-    reload_args: Option<SearchArgs>,
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
 }
 
-impl qobject::SearchModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
-        }
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod search_rows {
+    use super::*;
+
+    #[derive(Default)]
+    pub struct SearchModel {
+        loaded: i32,
+        /// Results currently selected. The shared delegate reads the
+        /// `selected` role; this is what the status bar counts.
+        selected_count: i32,
+        /// The selected results' total size, in the same formatted shape the
+        /// size column prints. Folders contribute nothing, as in the listing.
+        selected_size_text: String,
+        busy: bool,
+        finished: bool,
+        truncated: bool,
+        status: String,
+        query: String,
+        path: String,
+        /// §10.7: results are grouped by their relative directory. This is
+        /// the section count list the shared list delegate paints, in the same
+        /// shape the listing model publishes.
+        group_counts: String,
+        rows: Vec<SearchRow>,
+        selection: Selection,
+        generation: u64,
+        /// Everything needed to re-run the current query after the files changed.
+        reload_args: Option<SearchArgs>,
     }
 
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
-        }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match role {
-            SEARCH_NAME => QVariant::from(&QString::from(row.name.as_str())),
-            SEARCH_PATH => QVariant::from(&QString::from(row.path.as_str())),
-            SEARCH_RELATIVE => QVariant::from(&QString::from(row.relative_path.as_str())),
-            SEARCH_SIZE => {
-                let text = if row.kind == EntryKind::Directory {
-                    "—".to_owned()
-                } else {
-                    format::size(row.size.unwrap_or(0))
-                };
-                QVariant::from(&QString::from(text))
+    impl QAbstractItemModel for SearchModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
             }
-            SEARCH_MODIFIED => QVariant::from(&QString::from(format::timestamp(
-                row.modified_at.unwrap_or(0),
-            ))),
-            SEARCH_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
-            SEARCH_HIDDEN => QVariant::from(&row.hidden),
-            SEARCH_READ_ONLY => QVariant::from(&row.read_only),
-            SEARCH_GIT => QVariant::from(&QString::default()),
-            SEARCH_SELECTED => QVariant::from(&row.selected),
-            SEARCH_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
-            SEARCH_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
-            SEARCH_THUMBNAIL => {
-                // A result two levels below the root is still a local file, so
-                // the thumbnail provider can answer for it exactly as it does
-                // for a listing row.
-                let remote = !vfs::is_local_path(&row.path);
-                if remote {
-                    QVariant::from(&QString::default())
-                } else {
-                    let version = icon_version_of(row.modified_at, row.size);
+            self.create_index(row, column, 0)
+        }
+
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
+            }
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match role {
+                SEARCH_NAME => QVariant::from(&QString::from(row.name.as_str())),
+                SEARCH_PATH => QVariant::from(&QString::from(row.path.as_str())),
+                SEARCH_RELATIVE => QVariant::from(&QString::from(row.relative_path.as_str())),
+                SEARCH_SIZE => {
+                    let text = if row.kind == EntryKind::Directory {
+                        "—".to_owned()
+                    } else {
+                        format::size(row.size.unwrap_or(0))
+                    };
+                    QVariant::from(&QString::from(text))
+                }
+                SEARCH_MODIFIED => QVariant::from(&QString::from(format::timestamp(
+                    row.modified_at.unwrap_or(0),
+                ))),
+                SEARCH_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
+                SEARCH_HIDDEN => QVariant::from(&row.hidden),
+                SEARCH_READ_ONLY => QVariant::from(&row.read_only),
+                SEARCH_GIT => QVariant::from(&QString::default()),
+                SEARCH_SELECTED => QVariant::from(&row.selected),
+                SEARCH_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
+                SEARCH_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
+                SEARCH_THUMBNAIL => {
+                    // A result two levels below the root is still a local file, so
+                    // the thumbnail provider can answer for it exactly as it does
+                    // for a listing row.
+                    let remote = !vfs::is_local_path(&row.path);
+                    if remote {
+                        QVariant::from(&QString::default())
+                    } else {
+                        let version = icon_version_of(row.modified_at, row.size);
+                        QVariant::from(&QString::from(
+                            thumbnail_for(&row.path, &row.name, row.kind, &version).as_str(),
+                        ))
+                    }
+                }
+                SEARCH_ICON => {
+                    let version =
+                        format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0));
+                    // Network rows only carry a usable extension in their name;
+                    // passing the full remote path to the OS icon lookup would
+                    // never match anything. Directories have no fallback icon name
+                    // that the provider can resolve, so they stay URL-less.
+                    let remote = !vfs::is_local_path(&row.path);
+                    if remote && row.kind == EntryKind::Directory {
+                        return QVariant::from(&QString::default());
+                    }
+                    let icon_path = if remote {
+                        row.name.as_str()
+                    } else {
+                        row.path.as_str()
+                    };
                     QVariant::from(&QString::from(
-                        thumbnail_for(&row.path, &row.name, row.kind, &version).as_str(),
+                        crate::icons::source_for(
+                            icon_path,
+                            row.kind == EntryKind::Directory,
+                            &version,
+                        )
+                        .as_str(),
                     ))
                 }
-            }
-            SEARCH_ICON => {
-                let version = format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0));
-                // Network rows only carry a usable extension in their name;
-                // passing the full remote path to the OS icon lookup would
-                // never match anything. Directories have no fallback icon name
-                // that the provider can resolve, so they stay URL-less.
-                let remote = !vfs::is_local_path(&row.path);
-                if remote && row.kind == EntryKind::Directory {
-                    return QVariant::from(&QString::default());
+                SEARCH_CREATED => QVariant::from(&QString::default()),
+                SEARCH_CREATED_FALLBACK => QVariant::from(&false),
+                SEARCH_TAGS | SEARCH_TAG_IDS | SEARCH_TAG_COLORS => {
+                    QVariant::from(&QString::default())
                 }
-                let icon_path = if remote {
-                    row.name.as_str()
-                } else {
-                    row.path.as_str()
-                };
-                QVariant::from(&QString::from(
-                    crate::icons::source_for(icon_path, row.kind == EntryKind::Directory, &version)
-                        .as_str(),
-                ))
-            }
-            SEARCH_CREATED => QVariant::from(&QString::default()),
-            SEARCH_CREATED_FALLBACK => QVariant::from(&false),
-            SEARCH_TAGS | SEARCH_TAG_IDS | SEARCH_TAG_COLORS => {
-                QVariant::from(&QString::default())
-            }
-            // §10.7: the section a result belongs to is the relative
-            // directory it was found in; a hit directly in the search root is
-            // its own section, spelled empty and labelled by the view.
-            SEARCH_GROUP => {
-                QVariant::from(&QString::from(group_of(&row.relative_path).as_str()))
-            }
-            SEARCH_TYPE_NAME => {
-                QVariant::from(&QString::from(type_label(row.kind, &row.name)))
-            }
-            SEARCH_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
-            SEARCH_CREATED_AT => QVariant::from(&0.0),
-            SEARCH_SELECTED_PREV => {
-                let previous = index.row() > 0
-                    && self
+                // §10.7: the section a result belongs to is the relative
+                // directory it was found in; a hit directly in the search root is
+                // its own section, spelled empty and labelled by the view.
+                SEARCH_GROUP => {
+                    QVariant::from(&QString::from(group_of(&row.relative_path).as_str()))
+                }
+                SEARCH_TYPE_NAME => {
+                    QVariant::from(&QString::from(type_label(row.kind, &row.name)))
+                }
+                SEARCH_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
+                SEARCH_CREATED_AT => QVariant::from(&0.0),
+                SEARCH_SELECTED_PREV => {
+                    let previous = index.row() > 0
+                        && self
+                            .rows
+                            .get(index.row() as usize - 1)
+                            .is_some_and(|row| row.selected);
+                    QVariant::from(&previous)
+                }
+                SEARCH_SELECTED_NEXT => {
+                    let next = self
                         .rows
-                        .get(index.row() as usize - 1)
+                        .get(index.row() as usize + 1)
                         .is_some_and(|row| row.selected);
-                QVariant::from(&previous)
-            }
-            SEARCH_SELECTED_NEXT => {
-                let next = self
-                    .rows
-                    .get(index.row() as usize + 1)
-                    .is_some_and(|row| row.selected);
-                QVariant::from(&next)
-            }
-            SEARCH_BROKEN_LINK => QVariant::from(&false),
-            _ => QVariant::default(),
-        }
-    }
-
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        roles(&[
-            (SEARCH_NAME, "fileName"),
-            (SEARCH_PATH, "filePath"),
-            (SEARCH_RELATIVE, "relativePath"),
-            (SEARCH_SIZE, "sizeText"),
-            (SEARCH_MODIFIED, "modifiedText"),
-            (SEARCH_IS_DIR, "isDir"),
-            (SEARCH_HIDDEN, "hidden"),
-            (SEARCH_READ_ONLY, "readOnly"),
-            (SEARCH_ICON, "iconSource"),
-            (SEARCH_GIT, "gitStatus"),
-            (SEARCH_CATEGORY, "category"),
-            (SEARCH_EXTENSION, "extension"),
-            (SEARCH_THUMBNAIL, "thumbnailSource"),
-            (SEARCH_SELECTED, "selected"),
-            (SEARCH_CREATED, "createdText"),
-            (SEARCH_CREATED_FALLBACK, "createdFallback"),
-            (SEARCH_TAGS, "tagNames"),
-            (SEARCH_TAG_IDS, "tagIds"),
-            (SEARCH_TAG_COLORS, "tagColors"),
-            (SEARCH_GROUP, "groupLabel"),
-            (SEARCH_TYPE_NAME, "typeName"),
-            (SEARCH_MODIFIED_AT, "modifiedAt"),
-            (SEARCH_SELECTED_PREV, "previousSelected"),
-            (SEARCH_SELECTED_NEXT, "nextSelected"),
-            (SEARCH_CREATED_AT, "createdAt"),
-            (SEARCH_BROKEN_LINK, "brokenLink"),
-        ])
-    }
-
-    fn search(
-        mut self: Pin<&mut Self>,
-        path: &QString,
-        query: &QString,
-        scope: &QString,
-        kind: &QString,
-        modified: &QString,
-        size: &QString,
-    ) {
-        let args = SearchArgs {
-            path: path.to_string(),
-            query: query.to_string(),
-            scope: scope.to_string(),
-            kind: kind.to_string(),
-            modified: modified.to_string(),
-            size: size.to_string(),
-        };
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.generation = generation;
-            rust.path = QString::from(args.path.as_str());
-            rust.query = QString::from(args.query.as_str());
-            rust.reload_args = Some(args.clone());
-        }
-
-        self.as_mut().reset_rows();
-        if args.query.trim().is_empty() {
-            search::cancel_search();
-            self.as_mut().set_loaded(0);
-            self.as_mut().set_busy(false);
-            self.as_mut().set_finished(true);
-            self.as_mut().set_truncated(false);
-            self.as_mut().set_status(QString::default());
-            return;
-        }
-
-        self.as_mut().set_busy(true);
-        self.as_mut().set_finished(false);
-        self.as_mut().set_truncated(false);
-        self.as_mut().set_status(QString::from("Searching…"));
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let request = match build_request(&args) {
-                Ok(request) => request,
-                Err(message) => {
-                    let _ = thread.queue(move |mut model| {
-                        model.as_mut().set_busy(false);
-                        model.as_mut().set_finished(true);
-                        model.as_mut().set_status(QString::from(message.as_str()));
-                    });
-                    return;
+                    QVariant::from(&next)
                 }
-            };
-            let result = search::search(request).await;
-            let _ = thread.queue(move |mut model| model.as_mut().apply_search(generation, result));
-        });
-    }
-
-    fn cancel(mut self: Pin<&mut Self>) {
-        search::cancel_search();
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut().reset_rows();
-        self.as_mut().rust_mut().reload_args = None;
-        self.as_mut().set_loaded(0);
-        self.as_mut().set_busy(false);
-        self.as_mut().set_finished(true);
-        self.as_mut().set_truncated(false);
-        self.as_mut().set_status(QString::default());
-    }
-
-    fn reload(mut self: Pin<&mut Self>) {
-        let Some(args) = self.reload_args.clone() else {
-            return;
-        };
-        self.as_mut().search(
-            &QString::from(args.path.as_str()),
-            &QString::from(args.query.as_str()),
-            &QString::from(args.scope.as_str()),
-            &QString::from(args.kind.as_str()),
-            &QString::from(args.modified.as_str()),
-            &QString::from(args.size.as_str()),
-        );
-    }
-
-    fn index_of_path(&self, path: &QString) -> i32 {
-        let path = path.to_string();
-        self.rows
-            .iter()
-            .position(|row| row.path == path)
-            .map(|index| index as i32)
-            .unwrap_or(-1)
-    }
-
-    fn path_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.path.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn name_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.name.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn relative_path_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.relative_path.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn group_label_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(group_of(&entry.relative_path).as_str()))
-            .unwrap_or_default()
-    }
-
-    fn is_directory_at(&self, row: i32) -> bool {
-        self.rows
-            .get(row as usize)
-            .map(|entry| entry.kind == EntryKind::Directory)
-            .unwrap_or(false)
-    }
-
-    /// Republishes the selected count and repaints the spans whose flags moved.
-    /// Same contract as the listing model's: one `dataChanged` per contiguous
-    /// run, widened by one row on each side because the delegate merges a
-    /// block's corners from the neighbour flags.
-    fn publish_selection(mut self: Pin<&mut Self>, runs: Vec<crate::selection::Run>) {
-        self.as_mut().publish_selection_count();
-        let len = self.rows.len();
-        if runs.is_empty() || len == 0 {
-            return;
+                SEARCH_BROKEN_LINK => QVariant::from(&false),
+                _ => QVariant::default(),
+            }
         }
-        unsafe {
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            roles(&[
+                (SEARCH_NAME, "fileName"),
+                (SEARCH_PATH, "filePath"),
+                (SEARCH_RELATIVE, "relativePath"),
+                (SEARCH_SIZE, "sizeText"),
+                (SEARCH_MODIFIED, "modifiedText"),
+                (SEARCH_IS_DIR, "isDir"),
+                (SEARCH_HIDDEN, "hidden"),
+                (SEARCH_READ_ONLY, "readOnly"),
+                (SEARCH_ICON, "iconSource"),
+                (SEARCH_GIT, "gitStatus"),
+                (SEARCH_CATEGORY, "category"),
+                (SEARCH_EXTENSION, "extension"),
+                (SEARCH_THUMBNAIL, "thumbnailSource"),
+                (SEARCH_SELECTED, "selected"),
+                (SEARCH_CREATED, "createdText"),
+                (SEARCH_CREATED_FALLBACK, "createdFallback"),
+                (SEARCH_TAGS, "tagNames"),
+                (SEARCH_TAG_IDS, "tagIds"),
+                (SEARCH_TAG_COLORS, "tagColors"),
+                (SEARCH_GROUP, "groupLabel"),
+                (SEARCH_TYPE_NAME, "typeName"),
+                (SEARCH_MODIFIED_AT, "modifiedAt"),
+                (SEARCH_SELECTED_PREV, "previousSelected"),
+                (SEARCH_SELECTED_NEXT, "nextSelected"),
+                (SEARCH_CREATED_AT, "createdAt"),
+                (SEARCH_BROKEN_LINK, "brokenLink"),
+            ])
+        }
+
+        fn set_data(&mut self, _index: &QModelIndex, _value: &QVariant, _role: i32) -> bool {
+            false
+        }
+    }
+
+    impl SearchModel {
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("selectedCount", Member = selected_count, Notify = selected_count_changed);
+        qproperty!("selectedSizeText", Member = selected_size_text, Notify = selected_size_text_changed);
+        qproperty!("busy", Member = busy, Notify = busy_changed);
+        qproperty!("finished", Member = finished, Notify = finished_changed);
+        qproperty!("truncated", Member = truncated, Notify = truncated_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
+        qproperty!("query", Member = query, Notify = query_changed);
+        qproperty!("path", Member = path, Notify = path_changed);
+        qproperty!("groupCounts", Member = group_counts, Notify = group_counts_changed);
+
+        #[qsignal]
+        fn loaded_changed(&mut self);
+        #[qsignal]
+        fn selected_count_changed(&mut self);
+        #[qsignal]
+        fn selected_size_text_changed(&mut self);
+        #[qsignal]
+        fn busy_changed(&mut self);
+        #[qsignal]
+        fn finished_changed(&mut self);
+        #[qsignal]
+        fn truncated_changed(&mut self);
+        #[qsignal]
+        fn status_changed(&mut self);
+        #[qsignal]
+        fn query_changed(&mut self);
+        #[qsignal]
+        fn path_changed(&mut self);
+        #[qsignal]
+        fn group_counts_changed(&mut self);
+
+        notifying_setters! {
+            set_loaded(i32) => loaded, loaded_changed;
+            set_selected_count(i32) => selected_count, selected_count_changed;
+            set_selected_size_text(String) => selected_size_text, selected_size_text_changed;
+            set_busy(bool) => busy, busy_changed;
+            set_finished(bool) => finished, finished_changed;
+            set_truncated(bool) => truncated, truncated_changed;
+            set_status(String) => status, status_changed;
+            set_group_counts(String) => group_counts, group_counts_changed;
+        }
+
+        /// Searches `query` under `scope` (`current`, `favorites`, `recent`
+        /// or `volumes`). The other three narrow by the same buckets the
+        /// listing filter offers; `query` may also carry `tag:` tokens.
+        #[qslot]
+        fn search(
+            &mut self,
+            path: String,
+            query: String,
+            scope: String,
+            kind: String,
+            modified: String,
+            size: String,
+        ) {
+            let args = SearchArgs {
+                path,
+                query,
+                scope,
+                kind,
+                modified,
+                size,
+            };
+            let generation = self.generation.wrapping_add(1);
+
+            self.generation = generation;
+            self.path = args.path.clone();
+            self.path_changed();
+            self.query = args.query.clone();
+            self.query_changed();
+            self.reload_args = Some(args.clone());
+
+            self.reset_rows();
+            if args.query.trim().is_empty() {
+                search::cancel_search();
+                self.set_loaded(0);
+                self.set_busy(false);
+                self.set_finished(true);
+                self.set_truncated(false);
+                self.set_status(String::new());
+                return;
+            }
+
+            self.set_busy(true);
+            self.set_finished(false);
+            self.set_truncated(false);
+            self.set_status("Searching…".to_owned());
+
+            let handle = self.get_thread_handle();
+            runtime::spawn(async move {
+                let request = match build_request(&args) {
+                    Ok(request) => request,
+                    Err(message) => {
+                        handle.invoke_mut(move |model| {
+                            model.set_busy(false);
+                            model.set_finished(true);
+                            model.set_status(message);
+                        });
+                        return;
+                    }
+                };
+                let result = search::search(request).await;
+                handle.invoke_mut(move |model| model.apply_search(generation, result));
+            });
+        }
+
+        #[qslot]
+        fn cancel(&mut self) {
+            search::cancel_search();
+            self.generation = self.generation.wrapping_add(1);
+            self.reset_rows();
+            self.reload_args = None;
+            self.set_loaded(0);
+            self.set_busy(false);
+            self.set_finished(true);
+            self.set_truncated(false);
+            self.set_status(String::new());
+        }
+
+        #[qslot]
+        fn reload(&mut self) {
+            let Some(args) = self.reload_args.clone() else {
+                return;
+            };
+            self.search(
+                args.path,
+                args.query,
+                args.scope,
+                args.kind,
+                args.modified,
+                args.size,
+            );
+        }
+
+        #[qslot]
+        fn index_of_path(&self, path: String) -> i32 {
+            self.rows
+                .iter()
+                .position(|row| row.path == path)
+                .map(|index| index as i32)
+                .unwrap_or(-1)
+        }
+
+        #[qslot]
+        fn path_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.path.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn name_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.name.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn relative_path_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.relative_path.clone())
+                .unwrap_or_default()
+        }
+
+        /// The section label of `row`, for the pinned header the shared list
+        /// delegate draws (§7.4).
+        #[qslot]
+        fn group_label_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| group_of(&entry.relative_path))
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn is_directory_at(&self, row: i32) -> bool {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.kind == EntryKind::Directory)
+                .unwrap_or(false)
+        }
+
+        /// Republishes the selected count and repaints the spans whose flags moved.
+        /// Same contract as the listing model's: one `dataChanged` per contiguous
+        /// run, widened by one row on each side because the delegate merges a
+        /// block's corners from the neighbour flags.
+        fn publish_selection(&mut self, runs: Vec<crate::selection::Run>) {
+            self.publish_selection_count();
+            let len = self.rows.len();
+            if runs.is_empty() || len == 0 {
+                return;
+            }
             let parent = QModelIndex::default();
-            let mut roles = cxx_qt_lib::QList::<i32>::default();
-            roles.append(SEARCH_SELECTED);
-            roles.append(SEARCH_SELECTED_PREV);
-            roles.append(SEARCH_SELECTED_NEXT);
             for (first, last) in runs {
                 let first = first.saturating_sub(1);
                 let last = (last + 1).min(len - 1);
-                let top = self.as_mut().model_index(first as i32, 0, &parent);
-                let bottom = self.as_mut().model_index(last as i32, 0, &parent);
-                self.as_mut().data_changed(&top, &bottom, &roles);
+                let top = self.index(first as i32, 0, &parent);
+                let bottom = self.index(last as i32, 0, &parent);
+                self.data_changed(&top, &bottom);
             }
         }
-    }
 
-    fn publish_selection_count(mut self: Pin<&mut Self>) {
-        let count = self.selection.count();
-        let mut total: u64 = 0;
-        let mut counted = false;
-        if count > 0 {
-            for row in &self.rows {
-                if !row.selected || row.kind != EntryKind::File {
-                    continue;
-                }
-                if let Some(size) = row.size {
-                    total = total.saturating_add(size);
-                    counted = true;
-                }
-            }
-        }
-        let text = if counted {
-            QString::from(crate::format::size(total).as_str())
-        } else {
-            QString::default()
-        };
-        if self.selected_count != count {
-            self.as_mut().set_selected_count(count);
-        }
-        if self.selected_size_text != text {
-            self.as_mut().set_selected_size_text(text);
-        }
-    }
-
-    fn select_only(mut self: Pin<&mut Self>, row: i32) {
-        // A negative row is past the last one too: both clear the selection,
-        // which is what a click on a result that is no longer there means.
-        let row = usize::try_from(row).unwrap_or(usize::MAX);
-        let runs = {
-            let SearchModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.select_only(rows, row)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn toggle_at(mut self: Pin<&mut Self>, row: i32) {
-        let Ok(row) = usize::try_from(row) else {
-            return;
-        };
-        let runs = {
-            let SearchModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.toggle(rows, row)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn select_range(mut self: Pin<&mut Self>, first: i32, last: i32) {
-        let runs = {
-            let SearchModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.select_range(rows, first, last)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn select_all_rows(mut self: Pin<&mut Self>) {
-        let runs = {
-            let SearchModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.select_all(rows)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn clear_selection(mut self: Pin<&mut Self>) {
-        let runs = {
-            let SearchModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.clear(rows)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn selected_paths(&self) -> QStringList {
-        let mut paths = QStringList::default();
-        for row in self.rows.iter().filter(|row| row.selected) {
-            paths.append(QString::from(row.path.as_str()));
-        }
-        paths
-    }
-
-    fn dispose(mut self: Pin<&mut Self>) {
-        self.as_mut().cancel();
-        self.as_mut().set_status(QString::from("Closed"));
-    }
-
-    fn reset_rows(mut self: Pin<&mut Self>) {
-        unsafe {
-            self.as_mut().begin_reset_model();
-            {
-                let SearchModelRust {
-                    rows, selection, ..
-                } = &mut *self.as_mut().rust_mut();
-                rows.clear();
-                selection.reset();
-            }
-            self.as_mut().end_reset_model();
-        }
-        self.as_mut().publish_selection_count();
-        self.as_mut().set_group_counts(QString::from("[]"));
-    }
-
-    fn apply_search(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        result: Result<SearchResponse, dae_core::FileSystemError>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-
-        self.as_mut().set_busy(false);
-        match result {
-            Ok(response) => {
-                let mut rows: Vec<SearchRow> = response
-                    .entries
-                    .into_iter()
-                    .map(SearchRow::from_entry)
-                    .collect();
-                // §10.7 groups results by directory, and a QML ListView only
-                // paints one header per contiguous run. The rank order is kept
-                // inside each directory: `sort_by_key` is stable, so the best
-                // match in a folder stays its first row.
-                rows.sort_by(|left, right| {
-                    group_slice(&left.relative_path).cmp(group_slice(&right.relative_path))
-                });
-                let count = rows.len() as i32;
-                let groups = group_counts_json(&rows);
-                unsafe {
-                    self.as_mut().begin_reset_model();
-                    {
-                        let SearchModelRust {
-                            rows: stored,
-                            selection,
-                            ..
-                        } = &mut *self.as_mut().rust_mut();
-                        *stored = rows;
-                        // A new result set is a new list of rows: the flags of
-                        // the old one address results that are gone.
-                        selection.reset();
+        fn publish_selection_count(&mut self) {
+            let count = self.selection.count();
+            let mut total: u64 = 0;
+            let mut counted = false;
+            if count > 0 {
+                for row in &self.rows {
+                    if !row.selected || row.kind != EntryKind::File {
+                        continue;
                     }
-                    self.as_mut().end_reset_model();
+                    if let Some(size) = row.size {
+                        total = total.saturating_add(size);
+                        counted = true;
+                    }
                 }
-                self.as_mut()
-                    .set_group_counts(QString::from(groups.as_str()));
-                self.as_mut().publish_selection_count();
-                self.as_mut().set_loaded(count);
-                self.as_mut().set_truncated(response.truncated);
-                let mut status = if count == 0 {
-                    "No matches".to_owned()
-                } else {
-                    format!("Results: {count}")
-                };
-                if response.truncated {
-                    status.push_str(" · Truncated");
-                }
-                self.as_mut().set_status(QString::from(status.as_str()));
             }
-            Err(error) => {
-                self.as_mut().set_status(QString::from(
-                    friendly_search_error(&error.to_string()).as_str(),
-                ));
-                self.as_mut().set_truncated(false);
+            let text = if counted {
+                crate::format::size(total)
+            } else {
+                String::new()
+            };
+            if self.selected_count != count {
+                self.set_selected_count(count);
+            }
+            if self.selected_size_text != text {
+                self.set_selected_size_text(text);
             }
         }
-        self.as_mut().set_finished(true);
+
+        /// Selection, in the same shape the listing model offers: the shared
+        /// delegate reads the `selected` role, and a result list is clicked,
+        /// Shift-clicked, Ctrl-clicked and cleared exactly like a listing.
+        #[qslot]
+        fn select_only(&mut self, row: i32) {
+            // A negative row is past the last one too: both clear the selection,
+            // which is what a click on a result that is no longer there means.
+            let row = usize::try_from(row).unwrap_or(usize::MAX);
+            let runs = self.selection.select_only(&mut self.rows, row);
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn toggle_at(&mut self, row: i32) {
+            let Ok(row) = usize::try_from(row) else {
+                return;
+            };
+            let runs = self.selection.toggle(&mut self.rows, row);
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn select_range(&mut self, first: i32, last: i32) {
+            let runs = self.selection.select_range(&mut self.rows, first, last);
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn select_all(&mut self) {
+            let runs = self.selection.select_all(&mut self.rows);
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn clear_selection(&mut self) {
+            let runs = self.selection.clear(&mut self.rows);
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn selected_paths(&self) -> Vec<String> {
+            self.rows
+                .iter()
+                .filter(|row| row.selected)
+                .map(|row| row.path.clone())
+                .collect()
+        }
+
+        #[qslot]
+        fn dispose(&mut self) {
+            self.cancel();
+            self.set_status("Closed".to_owned());
+        }
+
+        fn reset_rows(&mut self) {
+            self.begin_reset_model();
+            self.rows.clear();
+            self.selection.reset();
+            self.end_reset_model();
+            self.publish_selection_count();
+            self.set_group_counts("[]".to_owned());
+        }
+
+        fn apply_search(
+            &mut self,
+            generation: u64,
+            result: Result<SearchResponse, dae_core::FileSystemError>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+
+            self.set_busy(false);
+            match result {
+                Ok(response) => {
+                    let mut rows: Vec<SearchRow> = response
+                        .entries
+                        .into_iter()
+                        .map(SearchRow::from_entry)
+                        .collect();
+                    // §10.7 groups results by directory, and a QML ListView only
+                    // paints one header per contiguous run. The rank order is kept
+                    // inside each directory: `sort_by_key` is stable, so the best
+                    // match in a folder stays its first row.
+                    rows.sort_by(|left, right| {
+                        group_slice(&left.relative_path).cmp(group_slice(&right.relative_path))
+                    });
+                    let count = rows.len() as i32;
+                    let groups = group_counts_json(&rows);
+                    self.begin_reset_model();
+                    self.rows = rows;
+                    // A new result set is a new list of rows: the flags of
+                    // the old one address results that are gone.
+                    self.selection.reset();
+                    self.end_reset_model();
+                    self.set_group_counts(groups);
+                    self.publish_selection_count();
+                    self.set_loaded(count);
+                    self.set_truncated(response.truncated);
+                    let mut status = if count == 0 {
+                        "No matches".to_owned()
+                    } else {
+                        format!("Results: {count}")
+                    };
+                    if response.truncated {
+                        status.push_str(" · Truncated");
+                    }
+                    self.set_status(status);
+                }
+                Err(error) => {
+                    self.set_status(friendly_search_error(&error.to_string()));
+                    self.set_truncated(false);
+                }
+            }
+            self.set_finished(true);
+        }
     }
+}
+
+pub use search_rows::SearchModel;
+
+impl QmlElement for SearchModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "SearchModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 /// Translates one request into the roots and bounds the core search takes.
@@ -1007,249 +852,321 @@ impl ContentRow {
     }
 }
 
-#[derive(Default)]
-pub struct ContentSearchModelRust {
-    loaded: i32,
-    busy: bool,
-    finished: bool,
-    truncated: bool,
-    file_count: i32,
-    match_count: i32,
-    status: QString,
-    query: QString,
-    path: QString,
-    rows: Vec<ContentRow>,
-    generation: u64,
-    reload_args: Option<(String, String, bool, bool, Option<String>)>,
-}
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod content_rows {
+    use super::*;
 
-impl qobject::ContentSearchModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
+    #[derive(Default)]
+    pub struct ContentSearchModel {
+        loaded: i32,
+        busy: bool,
+        finished: bool,
+        truncated: bool,
+        file_count: i32,
+        match_count: i32,
+        status: String,
+        query: String,
+        path: String,
+        rows: Vec<ContentRow>,
+        generation: u64,
+        reload_args: Option<(String, String, bool, bool, Option<String>)>,
+    }
+
+    impl QAbstractItemModel for ContentSearchModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
+            }
+            self.create_index(row, column, 0)
+        }
+
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
+            }
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match (role, row) {
+                (CONTENT_IS_HEADER, ContentRow::Header { .. }) => QVariant::from(&true),
+                (CONTENT_IS_HEADER, ContentRow::Match { .. }) => QVariant::from(&false),
+                (CONTENT_NAME, ContentRow::Header { name, .. } | ContentRow::Match { name, .. }) => {
+                    QVariant::from(&QString::from(name.as_str()))
+                }
+                (CONTENT_PATH, ContentRow::Header { path, .. } | ContentRow::Match { path, .. }) => {
+                    QVariant::from(&QString::from(path.as_str()))
+                }
+                (
+                    CONTENT_RELATIVE,
+                    ContentRow::Header { relative_path, .. }
+                    | ContentRow::Match { relative_path, .. },
+                ) => QVariant::from(&QString::from(relative_path.as_str())),
+                (
+                    CONTENT_LINE_NUMBER,
+                    ContentRow::Header { .. } | ContentRow::Match { line_number: 0, .. },
+                ) => QVariant::from(&0),
+                (CONTENT_LINE_NUMBER, ContentRow::Match { line_number, .. }) => {
+                    QVariant::from(line_number)
+                }
+                (CONTENT_LINE_TEXT, ContentRow::Match { line_text, .. }) => {
+                    QVariant::from(&QString::from(line_text.as_str()))
+                }
+                (CONTENT_LINE_TEXT, ContentRow::Header { .. }) => QVariant::from(&QString::default()),
+                (CONTENT_LINE_HTML, ContentRow::Match { line_html, .. }) => {
+                    QVariant::from(&QString::from(line_html.as_str()))
+                }
+                (CONTENT_LINE_HTML, ContentRow::Header { .. }) => QVariant::from(&QString::default()),
+                (CONTENT_MATCH_COUNT, ContentRow::Header { match_count, .. }) => {
+                    QVariant::from(match_count)
+                }
+                (CONTENT_MATCH_COUNT, ContentRow::Match { .. }) => QVariant::from(&0),
+                _ => QVariant::default(),
+            }
+        }
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            roles(&[
+                (CONTENT_IS_HEADER, "isHeader"),
+                (CONTENT_NAME, "fileName"),
+                (CONTENT_PATH, "filePath"),
+                (CONTENT_RELATIVE, "relativePath"),
+                (CONTENT_LINE_NUMBER, "lineNumber"),
+                (CONTENT_LINE_TEXT, "lineText"),
+                (CONTENT_LINE_HTML, "lineHtml"),
+                (CONTENT_MATCH_COUNT, "matchCount"),
+            ])
+        }
+
+        fn set_data(&mut self, _index: &QModelIndex, _value: &QVariant, _role: i32) -> bool {
+            false
         }
     }
 
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
+    impl ContentSearchModel {
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("busy", Member = busy, Notify = busy_changed);
+        qproperty!("finished", Member = finished, Notify = finished_changed);
+        qproperty!("truncated", Member = truncated, Notify = truncated_changed);
+        qproperty!("fileCount", Member = file_count, Notify = file_count_changed);
+        qproperty!("matchCount", Member = match_count, Notify = match_count_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
+        qproperty!("query", Member = query, Notify = query_changed);
+        qproperty!("path", Member = path, Notify = path_changed);
+
+        #[qsignal]
+        fn loaded_changed(&mut self);
+        #[qsignal]
+        fn busy_changed(&mut self);
+        #[qsignal]
+        fn finished_changed(&mut self);
+        #[qsignal]
+        fn truncated_changed(&mut self);
+        #[qsignal]
+        fn file_count_changed(&mut self);
+        #[qsignal]
+        fn match_count_changed(&mut self);
+        #[qsignal]
+        fn status_changed(&mut self);
+        #[qsignal]
+        fn query_changed(&mut self);
+        #[qsignal]
+        fn path_changed(&mut self);
+
+        notifying_setters! {
+            set_loaded(i32) => loaded, loaded_changed;
+            set_busy(bool) => busy, busy_changed;
+            set_finished(bool) => finished, finished_changed;
+            set_truncated(bool) => truncated, truncated_changed;
+            set_file_count(i32) => file_count, file_count_changed;
+            set_match_count(i32) => match_count, match_count_changed;
+            set_status(String) => status, status_changed;
         }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match (role, row) {
-            (CONTENT_IS_HEADER, ContentRow::Header { .. }) => QVariant::from(&true),
-            (CONTENT_IS_HEADER, ContentRow::Match { .. }) => QVariant::from(&false),
-            (CONTENT_NAME, ContentRow::Header { name, .. } | ContentRow::Match { name, .. }) => {
-                QVariant::from(&QString::from(name.as_str()))
-            }
-            (CONTENT_PATH, ContentRow::Header { path, .. } | ContentRow::Match { path, .. }) => {
-                QVariant::from(&QString::from(path.as_str()))
-            }
-            (
-                CONTENT_RELATIVE,
-                ContentRow::Header { relative_path, .. } | ContentRow::Match { relative_path, .. },
-            ) => QVariant::from(&QString::from(relative_path.as_str())),
-            (
-                CONTENT_LINE_NUMBER,
-                ContentRow::Header { .. } | ContentRow::Match { line_number: 0, .. },
-            ) => QVariant::from(&0),
-            (CONTENT_LINE_NUMBER, ContentRow::Match { line_number, .. }) => {
-                QVariant::from(line_number)
-            }
-            (CONTENT_LINE_TEXT, ContentRow::Match { line_text, .. }) => {
-                QVariant::from(&QString::from(line_text.as_str()))
-            }
-            (CONTENT_LINE_TEXT, ContentRow::Header { .. }) => QVariant::from(&QString::default()),
-            (CONTENT_LINE_HTML, ContentRow::Match { line_html, .. }) => {
-                QVariant::from(&QString::from(line_html.as_str()))
-            }
-            (CONTENT_LINE_HTML, ContentRow::Header { .. }) => QVariant::from(&QString::default()),
-            (CONTENT_MATCH_COUNT, ContentRow::Header { match_count, .. }) => {
-                QVariant::from(match_count)
-            }
-            (CONTENT_MATCH_COUNT, ContentRow::Match { .. }) => QVariant::from(&0),
-            _ => QVariant::default(),
-        }
-    }
 
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        roles(&[
-            (CONTENT_IS_HEADER, "isHeader"),
-            (CONTENT_NAME, "fileName"),
-            (CONTENT_PATH, "filePath"),
-            (CONTENT_RELATIVE, "relativePath"),
-            (CONTENT_LINE_NUMBER, "lineNumber"),
-            (CONTENT_LINE_TEXT, "lineText"),
-            (CONTENT_LINE_HTML, "lineHtml"),
-            (CONTENT_MATCH_COUNT, "matchCount"),
-        ])
-    }
+        #[qslot]
+        fn search(
+            &mut self,
+            requested_path: String,
+            requested_query: String,
+            is_regex: bool,
+            case_sensitive: bool,
+            file_filter: String,
+        ) {
+            let filter = (!file_filter.trim().is_empty()).then_some(file_filter);
+            let generation = self.generation.wrapping_add(1);
 
-    fn search(
-        mut self: Pin<&mut Self>,
-        path: &QString,
-        query: &QString,
-        is_regex: bool,
-        case_sensitive: bool,
-        file_filter: &QString,
-    ) {
-        let requested_path = path.to_string();
-        let requested_query = query.to_string();
-        let filter = file_filter.to_string();
-        let filter = (!filter.trim().is_empty()).then_some(filter);
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.generation = generation;
-            rust.path = QString::from(requested_path.as_str());
-            rust.query = QString::from(requested_query.as_str());
-            rust.reload_args = Some((
+            self.generation = generation;
+            self.path = requested_path.clone();
+            self.path_changed();
+            self.query = requested_query.clone();
+            self.query_changed();
+            self.reload_args = Some((
                 requested_path.clone(),
                 requested_query.clone(),
                 is_regex,
                 case_sensitive,
                 filter.clone(),
             ));
+
+            self.reset_rows();
+            if requested_query.trim().is_empty() {
+                search::cancel_search();
+                self.set_loaded(0);
+                self.set_busy(false);
+                self.set_finished(true);
+                self.set_truncated(false);
+                self.set_file_count(0);
+                self.set_match_count(0);
+                self.set_status(String::new());
+                return;
+            }
+
+            self.set_busy(true);
+            self.set_finished(false);
+            self.set_truncated(false);
+            self.set_file_count(0);
+            self.set_match_count(0);
+            self.set_status("Searching file contents…".to_owned());
+
+            let handle = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = search::search_file_contents(
+                    requested_path,
+                    requested_query,
+                    is_regex,
+                    case_sensitive,
+                    filter,
+                )
+                .await;
+                handle.invoke_mut(move |model| model.apply_search(generation, result));
+            });
         }
 
-        self.as_mut().reset_rows();
-        if requested_query.trim().is_empty() {
+        #[qslot]
+        fn cancel(&mut self) {
             search::cancel_search();
-            self.as_mut().set_loaded(0);
-            self.as_mut().set_busy(false);
-            self.as_mut().set_finished(true);
-            self.as_mut().set_truncated(false);
-            self.as_mut().set_file_count(0);
-            self.as_mut().set_match_count(0);
-            self.as_mut().set_status(QString::default());
-            return;
+            self.generation = self.generation.wrapping_add(1);
+            self.reset_rows();
+            self.reload_args = None;
+            self.set_loaded(0);
+            self.set_busy(false);
+            self.set_finished(true);
+            self.set_truncated(false);
+            self.set_file_count(0);
+            self.set_match_count(0);
+            self.set_status(String::new());
         }
 
-        self.as_mut().set_busy(true);
-        self.as_mut().set_finished(false);
-        self.as_mut().set_truncated(false);
-        self.as_mut().set_file_count(0);
-        self.as_mut().set_match_count(0);
-        self.as_mut()
-            .set_status(QString::from("Searching file contents…"));
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = search::search_file_contents(
-                requested_path,
-                requested_query,
+        #[qslot]
+        fn reload(&mut self) {
+            let Some((path, query, is_regex, case_sensitive, filter)) = self.reload_args.clone()
+            else {
+                return;
+            };
+            self.search(
+                path,
+                query,
                 is_regex,
                 case_sensitive,
-                filter,
-            )
-            .await;
-            let _ = thread.queue(move |mut model| model.as_mut().apply_search(generation, result));
-        });
-    }
-
-    fn cancel(mut self: Pin<&mut Self>) {
-        search::cancel_search();
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut().reset_rows();
-        self.as_mut().rust_mut().reload_args = None;
-        self.as_mut().set_loaded(0);
-        self.as_mut().set_busy(false);
-        self.as_mut().set_finished(true);
-        self.as_mut().set_truncated(false);
-        self.as_mut().set_file_count(0);
-        self.as_mut().set_match_count(0);
-        self.as_mut().set_status(QString::default());
-    }
-
-    fn reload(mut self: Pin<&mut Self>) {
-        let Some((path, query, is_regex, case_sensitive, filter)) = self.reload_args.clone() else {
-            return;
-        };
-        let path = QString::from(path.as_str());
-        let query = QString::from(query.as_str());
-        let filter = filter
-            .map(|value| QString::from(value.as_str()))
-            .unwrap_or_default();
-        self.as_mut()
-            .search(&path, &query, is_regex, case_sensitive, &filter);
-    }
-
-    fn path_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.path()))
-            .unwrap_or_default()
-    }
-
-    fn directory_at(&self, row: i32) -> QString {
-        let Some(path) = self.rows.get(row as usize) else {
-            return QString::default();
-        };
-        QString::from(parent_directory(path.path()).as_str())
-    }
-
-    fn dispose(mut self: Pin<&mut Self>) {
-        self.as_mut().cancel();
-        self.as_mut().set_status(QString::from("Closed"));
-    }
-
-    fn reset_rows(mut self: Pin<&mut Self>) {
-        unsafe {
-            self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows.clear();
-            self.as_mut().end_reset_model();
-        }
-    }
-
-    fn apply_search(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        result: Result<dae_core::types::ContentSearchResponse, dae_core::FileSystemError>,
-    ) {
-        if self.generation != generation {
-            return;
+                filter.unwrap_or_default(),
+            );
         }
 
-        self.as_mut().set_busy(false);
-        match result {
-            Ok(response) => {
-                let (rows, files, matches) = flatten_content(response.files);
-                let count = rows.len() as i32;
-                unsafe {
-                    self.as_mut().begin_reset_model();
-                    self.as_mut().rust_mut().rows = rows;
-                    self.as_mut().end_reset_model();
-                }
-                self.as_mut().set_loaded(count);
-                self.as_mut().set_file_count(files);
-                self.as_mut().set_match_count(matches);
-                self.as_mut().set_truncated(response.truncated);
-                let mut status = format!("Files: {files} · Matches: {matches}");
-                if files == 0 {
-                    status = "No matching content".to_owned();
-                } else if response.truncated {
-                    status.push_str(" · Truncated");
-                }
-                self.as_mut().set_status(QString::from(status.as_str()));
+        #[qslot]
+        fn path_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.path().to_owned())
+                .unwrap_or_default()
+        }
+
+        /// The directory that contains `row`'s file, for the reveal button.
+        #[qslot]
+        fn directory_at(&self, row: i32) -> String {
+            let Some(path) = self.rows.get(row as usize) else {
+                return String::new();
+            };
+            parent_directory(path.path())
+        }
+
+        #[qslot]
+        fn dispose(&mut self) {
+            self.cancel();
+            self.set_status("Closed".to_owned());
+        }
+
+        fn reset_rows(&mut self) {
+            self.begin_reset_model();
+            self.rows.clear();
+            self.end_reset_model();
+        }
+
+        fn apply_search(
+            &mut self,
+            generation: u64,
+            result: Result<dae_core::types::ContentSearchResponse, dae_core::FileSystemError>,
+        ) {
+            if self.generation != generation {
+                return;
             }
-            Err(error) => {
-                self.as_mut().set_status(QString::from(
-                    friendly_search_error(&error.to_string()).as_str(),
-                ));
-                self.as_mut().set_truncated(false);
+
+            self.set_busy(false);
+            match result {
+                Ok(response) => {
+                    let (rows, files, matches) = flatten_content(response.files);
+                    let count = rows.len() as i32;
+                    self.begin_reset_model();
+                    self.rows = rows;
+                    self.end_reset_model();
+                    self.set_loaded(count);
+                    self.set_file_count(files);
+                    self.set_match_count(matches);
+                    self.set_truncated(response.truncated);
+                    let mut status = format!("Files: {files} · Matches: {matches}");
+                    if files == 0 {
+                        status = "No matching content".to_owned();
+                    } else if response.truncated {
+                        status.push_str(" · Truncated");
+                    }
+                    self.set_status(status);
+                }
+                Err(error) => {
+                    self.set_status(friendly_search_error(&error.to_string()));
+                    self.set_truncated(false);
+                }
             }
+            self.set_finished(true);
         }
-        self.as_mut().set_finished(true);
     }
 }
 
-fn roles(pairs: &[(i32, &str)]) -> QHash<QHashPair_i32_QByteArray> {
-    let mut names = QHash::<QHashPair_i32_QByteArray>::default();
+pub use content_rows::ContentSearchModel;
+
+impl QmlElement for ContentSearchModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "ContentSearchModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
+}
+
+fn roles(pairs: &[(i32, &str)]) -> QHash_i32_QByteArray {
+    let mut names = QHash_i32_QByteArray::default();
     for (role, name) in pairs {
         names.insert(*role, QByteArray::from(*name));
     }

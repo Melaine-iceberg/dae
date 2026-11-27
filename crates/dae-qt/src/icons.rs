@@ -30,24 +30,21 @@ const DEFAULT_EDGE: u32 = 36;
 /// sharing one answer per extension would draw the wrong thing.
 const PER_FILE_EXTENSIONS: &[&str] = &["exe", "lnk", "url", "ico", "appref-ms", "msi"];
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qqmlapplicationengine.h");
-        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
-
         include!("image_provider.h");
         #[namespace = "dae_qt"]
         #[rust_name = "register_file_icon_provider"]
-        unsafe fn dae_qt_register_file_icon_provider(engine: *mut QQmlApplicationEngine);
+        fn dae_qt_register_file_icon_provider_ptr(engine_ptr: usize);
 
         #[namespace = "dae_qt"]
         #[rust_name = "register_file_glyph_provider"]
-        unsafe fn dae_qt_register_file_glyph_provider(engine: *mut QQmlApplicationEngine);
+        fn dae_qt_register_file_glyph_provider_ptr(engine_ptr: usize);
 
         #[namespace = "dae_qt"]
         #[rust_name = "register_glyph_provider"]
-        unsafe fn dae_qt_register_glyph_provider(engine: *mut QQmlApplicationEngine);
+        fn dae_qt_register_glyph_provider_ptr(engine_ptr: usize);
     }
 
     extern "Rust" {
@@ -83,17 +80,15 @@ pub mod qobject {
 }
 
 /// Registers the provider before the QML root is loaded.
-pub fn register_provider(engine: *mut cxx_qt_lib::QQmlApplicationEngine) {
-    unsafe {
-        qobject::register_file_icon_provider(engine);
-        // The built-in file glyphs (§12.3): one cached raster per family and
-        // pixel edge, painted by `FileIcon.qml` as a plain `Image`.
-        qobject::register_file_glyph_provider(engine);
-        // The interface glyphs (§6.3.1, §12.3): the Material marks, rasterised
-        // once per (kind, edge, dp, ink, wash) and painted by `Glyph.qml` as a
-        // plain `Image`.
-        qobject::register_glyph_provider(engine);
-    }
+pub fn register_provider(engine_ptr: usize) {
+    ffi::register_file_icon_provider(engine_ptr);
+    // The built-in file glyphs (§12.3): one cached raster per family and
+    // pixel edge, painted by `FileIcon.qml` as a plain `Image`.
+    ffi::register_file_glyph_provider(engine_ptr);
+    // The interface glyphs (§6.3.1, §12.3): the Material marks, rasterised
+    // once per (kind, edge, dp, ink, wash) and painted by `Glyph.qml` as a
+    // plain `Image`.
+    ffi::register_glyph_provider(engine_ptr);
 }
 
 /// The `image://fileicon/...` URL for a listing row.

@@ -1336,9 +1336,9 @@ Item {
     function startDrag(paths, mode) {
         if (!paths || paths.length === 0)
             return
-        Workspace.startDragOut(paths, mode, Theme.accent, paths.length,
+        Workspace.startDragOut(paths, mode, String(Theme.accent), paths.length,
                               root.dragVerdictText(mode, paths.length),
-                              Theme.ink, Theme.canvas)
+                              String(Theme.ink), String(Theme.canvas))
     }
 
     function dragOutMode(modifiers) {

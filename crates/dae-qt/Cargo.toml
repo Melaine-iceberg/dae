@@ -5,26 +5,13 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Qt Quick shell bridge for dae: directory model, native window state (Win32, with portable fallbacks) and the IME focus guard"
 publish = false
-# `dae-app`'s build script reads the QML module this crate's build script
-# exports (`plugin.qmltypes`). Cargo only orders a package's build script after
-# its *build-dependencies*, not after its normal dependencies, so without this
-# the two scripts can run in either order — and on a cold `target/` the shell's
-# script wins the race and panics with "did dae-qt build?". `links` is the
-# documented way to get that ordering: `dae-app` lists this crate under
-# `[build-dependencies]`, and cargo then runs this script first.
-links = "dae_qt_qml"
 
 # This crate is the only place allowed to know Qt. Domain code stays in
-# `dae-core`; a `QObject`, `QQuickWindow` or `cxx_qt::` import must not appear
+# `dae-core`; a `QObject`, `QQuickWindow` or `cxx::` import must not appear
 # there. See docs/decisions/engine-qt-quick.md §4.
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cxx = "1"
-cxx-qt = "0.10"
-cxx-qt-lib = { version = "0.10", features = ["full"] }
-# The migration target. Types move here one module at a time; the QML module
-# name is kept by a manual `QmlElement` impl per type (see `src/startup.rs`),
-# so no `.qml` file changes while both bridges are live.
 qtbridge = "0.4.1"
 dae-core = { path = "../dae-core" }
 # The sink for `dae-core`'s own `log` calls. Same crate version, so one logger
@@ -125,7 +112,7 @@ windows-future = "0.3"
 
 [build-dependencies]
 cc = "1"
-cxx-qt-build = "0.10"
+cxx-build = "1"
 
 [dev-dependencies]
 # The tag bridge tests build a store over a throwaway config directory.

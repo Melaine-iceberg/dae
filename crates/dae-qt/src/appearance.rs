@@ -24,27 +24,27 @@ const MATERIALS: &[&str] = &["mica", "mica-alt", "acrylic", "none"];
 /// helpers. The engine address is exchanged as `size_t` because an opaque
 /// `QObject` type would be a second declaration of the same C++ class; the
 /// helper casts it back to `QObject*` before the `qobject_cast`.
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
         include!("translator.h");
         #[namespace = "dae_qt"]
         fn dae_qt_i18n_attach_engine(engine: usize);
 
         include!("translator.h");
         #[namespace = "dae_qt"]
-        fn dae_qt_i18n_apply(language: &QString) -> bool;
+        #[rust_name = "dae_qt_i18n_apply"]
+        fn dae_qt_i18n_apply_rs(language: &str) -> bool;
 
         include!("translator.h");
         #[namespace = "dae_qt"]
-        fn dae_qt_i18n_apply_deferred(language: &QString);
+        #[rust_name = "dae_qt_i18n_apply_deferred"]
+        fn dae_qt_i18n_apply_deferred_rs(language: &str);
 
         include!("translator.h");
         #[namespace = "dae_qt"]
-        fn dae_qt_i18n_system_language() -> QString;
+        #[rust_name = "dae_qt_i18n_system_language"]
+        fn dae_qt_i18n_system_language_rs() -> String;
     }
 }
 

@@ -443,16 +443,16 @@ void TerminalItem::refresh()
 
     pullSearchRects();
 
-    QByteArray frame;
+    QList<quint8> frame;
     const char* method = m_hasFrame ? "snapshot" : "snapshotFull";
     bool pulled = QMetaObject::invokeMethod(m_session.data(), method,
-                                            Q_RETURN_ARG(QByteArray, frame),
+                                            Q_RETURN_ARG(QList<quint8>, frame),
                                             Q_ARG(bool, m_dark));
     if (pulled && !decodeFrame(frame)) {
         if (m_hasFrame) {
             // A partial/shift frame arrived against stale dimensions; retry full.
             pulled = QMetaObject::invokeMethod(m_session.data(), "snapshotFull",
-                                               Q_RETURN_ARG(QByteArray, frame),
+                                               Q_RETURN_ARG(QList<quint8>, frame),
                                                Q_ARG(bool, m_dark));
         }
         if (!pulled || !decodeFrame(frame)) {
@@ -486,9 +486,9 @@ void TerminalItem::refresh()
 void TerminalItem::pullSearchRects()
 {
     m_searchRects.clear();
-    QByteArray payload;
+    QList<quint8> payload;
     if (!QMetaObject::invokeMethod(m_session.data(), "searchRects",
-                                   Q_RETURN_ARG(QByteArray, payload))
+                                   Q_RETURN_ARG(QList<quint8>, payload))
         || payload.size() < 2) {
         return;
     }
@@ -503,7 +503,7 @@ void TerminalItem::pullSearchRects()
     }
 }
 
-bool TerminalItem::decodeFrame(const QByteArray& frame)
+bool TerminalItem::decodeFrame(const QList<quint8>& frame)
 {
     if (frame.size() < FrameHeader)
         return false;
@@ -1074,7 +1074,11 @@ void TerminalItem::sendBytes(const QByteArray& bytes)
 {
     if (!m_session || bytes.isEmpty())
         return;
-    QMetaObject::invokeMethod(m_session.data(), "writeBytes", Q_ARG(QByteArray, bytes));
+    QList<quint8> payload;
+    payload.reserve(bytes.size());
+    for (char byte : bytes)
+        payload.append(static_cast<quint8>(byte));
+    QMetaObject::invokeMethod(m_session.data(), "writeBytes", Q_ARG(QList<quint8>, payload));
 }
 
 void TerminalItem::sendText(const QString& text)

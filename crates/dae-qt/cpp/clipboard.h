@@ -10,6 +10,8 @@
 
 #include <QString>
 
+#include "rust/cxx.h"
+
 namespace dae_qt {
 
 /// Replaces the clipboard's text and, where the platform has a separate
@@ -17,5 +19,11 @@ namespace dae_qt {
 /// same path. An empty string clears the clipboard rather than leaving the
 /// previous contents behind.
 void dae_qt_set_clipboard_text(const QString& text);
+
+inline void dae_qt_set_clipboard_text_rs(rust::Str text)
+{
+    dae_qt_set_clipboard_text(
+        QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size())));
+}
 
 } // namespace dae_qt

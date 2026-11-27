@@ -5,7 +5,7 @@
 #include <QStyleHints>
 
 // Declares dae_qt_theme_changed, the Rust half of the bridge.
-#include "dae-qt/src/workspace.cxxqt.h"
+#include "dae-qt/src/workspace.rs.h"
 
 namespace dae_qt {
 namespace {

@@ -319,7 +319,7 @@ Item {
         const action = Shell.startTabDrag(token, title, index,
                                           Math.round(grabX), Math.round(grabY),
                                           chipW, tabHeightValue,
-                                          Theme.toolbar, accent, textColor)
+                                          String(Theme.toolbar), String(accent), String(textColor))
 
         const drop = ShellState.takeTabDrop()
         const globalX = Shell.cursorLogicalX()

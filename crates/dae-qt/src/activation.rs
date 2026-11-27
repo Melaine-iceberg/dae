@@ -27,21 +27,13 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use cxx_qt_lib::{QString, QStringList};
-
 /// The most targets one activation may open. The native side applies the same
 /// limit to forwarded arguments.
 const MAX_TARGETS: usize = 32;
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-
         include!("activation.h");
         #[namespace = "dae_qt"]
         #[rust_name = "activation_claim"]
@@ -52,21 +44,22 @@ pub mod qobject {
         fn dae_qt_install_macos_menu();
     }
 
+    #[namespace = "dae_qt"]
     extern "Rust" {
         /// Turns a forwarded command line into openable directories. Called by
         /// the native server in `cpp/activation.cpp` before it wakes QML.
         fn dae_qt_activation_resolve(
-            args: &QStringList,
-            working_directory: &QString,
-        ) -> QStringList;
+            args: &[String],
+            working_directory: &str,
+        ) -> Vec<String>;
 
         /// The `reveal` verb's half of the same pipeline: one JSON object per
         /// target, `{"directory":…,"select":…}`, as a list of strings so the
         /// native side can buffer and dedupe them without parsing JSON.
         fn dae_qt_activation_resolve_reveals(
-            args: &QStringList,
-            working_directory: &QString,
-        ) -> QStringList;
+            args: &[String],
+            working_directory: &str,
+        ) -> Vec<String>;
     }
 }
 
@@ -78,7 +71,7 @@ pub mod qobject {
 /// registers the URL scheme; registering from a forwarded launch would rewrite
 /// the registry on every open.
 pub fn claim() -> bool {
-    if !qobject::activation_claim() {
+    if !ffi::activation_claim() {
         return false;
     }
 
@@ -113,7 +106,7 @@ pub fn claim() -> bool {
     // Services and the Window menu. Qt's own NSView answers the edit
     // selectors through the responder chain, so this is the whole menu.
     #[cfg(target_os = "macos")]
-    qobject::dae_qt_install_macos_menu();
+    ffi::dae_qt_install_macos_menu();
 
     true
 }
@@ -156,22 +149,21 @@ pub fn target_for_arg(arg: &OsStr, working_directory: &Path) -> Option<LaunchTar
 
 /// The Rust side of the native server: resolve every forwarded argument, drop
 /// duplicates, and return the paths QML should open.
-fn dae_qt_activation_resolve(args: &QStringList, working_directory: &QString) -> QStringList {
+fn dae_qt_activation_resolve(args: &[String], working_directory: &str) -> Vec<String> {
     let base = base_directory(working_directory);
 
     let mut seen = Vec::new();
-    let mut resolved = QStringList::default();
-    for arg in args.iter() {
-        let text = arg.to_string();
-        let Some(target) = target_for_arg(OsStr::new(&text), &base) else {
+    let mut resolved = Vec::new();
+    for text in args {
+        let Some(target) = target_for_arg(OsStr::new(text), &base) else {
             continue;
         };
         if seen.contains(&target.path) {
             continue;
         }
         seen.push(target.path.clone());
-        resolved.append(QString::from(target.path.to_string_lossy().as_ref()));
-        if resolved.len() >= MAX_TARGETS as isize {
+        resolved.push(target.path.to_string_lossy().into_owned());
+        if resolved.len() >= MAX_TARGETS {
             break;
         }
     }
@@ -187,17 +179,13 @@ struct RevealTarget {
     select: String,
 }
 
-fn dae_qt_activation_resolve_reveals(
-    args: &QStringList,
-    working_directory: &QString,
-) -> QStringList {
+fn dae_qt_activation_resolve_reveals(args: &[String], working_directory: &str) -> Vec<String> {
     let base = base_directory(working_directory);
 
     let mut seen = Vec::new();
-    let mut resolved = QStringList::default();
-    for arg in args.iter() {
-        let text = arg.to_string();
-        let Some(target) = reveal_target_for_arg(OsStr::new(&text), &base) else {
+    let mut resolved = Vec::new();
+    for text in args {
+        let Some(target) = reveal_target_for_arg(OsStr::new(text), &base) else {
             continue;
         };
         let key = (target.directory.clone(), target.select.clone());
@@ -209,20 +197,19 @@ fn dae_qt_activation_resolve_reveals(
         if json.is_empty() {
             continue;
         }
-        resolved.append(QString::from(json.as_str()));
-        if resolved.len() >= MAX_TARGETS as isize {
+        resolved.push(json);
+        if resolved.len() >= MAX_TARGETS {
             break;
         }
     }
     resolved
 }
 
-fn base_directory(working_directory: &QString) -> PathBuf {
-    let text = working_directory.to_string();
-    if text.is_empty() {
+fn base_directory(working_directory: &str) -> PathBuf {
+    if working_directory.is_empty() {
         std::env::current_dir().unwrap_or_default()
     } else {
-        PathBuf::from(text)
+        PathBuf::from(working_directory)
     }
 }
 
@@ -604,35 +591,33 @@ mod tests {
         let child = temp.path().join("child");
         std::fs::create_dir_all(&child).expect("create child directory");
 
-        let mut args = QStringList::default();
-        args.append(QString::from("--flag"));
-        args.append(QString::from("child"));
-        args.append(QString::from(child.to_string_lossy().as_ref()));
+        let args = vec![
+            "--flag".to_owned(),
+            "child".to_owned(),
+            child.to_string_lossy().into_owned(),
+        ];
 
         let resolved = dae_qt_activation_resolve(
             &args,
-            &QString::from(temp.path().to_string_lossy().as_ref()),
+            temp.path().to_string_lossy().as_ref(),
         );
         assert_eq!(resolved.len(), 1);
         assert_eq!(
-            resolved.get(0).unwrap().to_string(),
+            resolved[0],
             child.to_string_lossy()
         );
     }
 
     fn reveals(args: &[&str], base: &Path) -> Vec<serde_json::Value> {
-        let mut list = QStringList::default();
-        for arg in args {
-            list.append(QString::from(*arg));
-        }
+        let list: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
         let resolved =
-            dae_qt_activation_resolve_reveals(&list, &QString::from(base.to_string_lossy().as_ref()));
+            dae_qt_activation_resolve_reveals(&list, base.to_string_lossy().as_ref());
         let mut joined = String::from("[");
-        for index in 0..resolved.len() {
+        for (index, entry) in resolved.iter().enumerate() {
             if index > 0 {
                 joined.push(',');
             }
-            joined.push_str(&resolved.get(index).unwrap().to_string());
+            joined.push_str(entry);
         }
         joined.push(']');
         serde_json::from_str(&joined).expect("reveal resolver emits a JSON array")

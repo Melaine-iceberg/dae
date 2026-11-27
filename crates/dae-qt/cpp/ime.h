@@ -91,6 +91,7 @@
 #include <QVariant>
 
 #include "lookup.h"
+#include "rust/cxx.h"
 
 namespace dae_qt {
 
@@ -210,6 +211,12 @@ inline bool install_ime_guard(QQuickWindow* window)
 inline bool dae_qt_install_focus_cancel_guard(const QString& token)
 {
     return install_ime_guard(find_window_by_token(token));
+}
+
+inline bool dae_qt_install_focus_cancel_guard_rs(rust::Str token)
+{
+    return dae_qt_install_focus_cancel_guard(
+        QString::fromUtf8(token.data(), static_cast<qsizetype>(token.size())));
 }
 
 } // namespace dae_qt

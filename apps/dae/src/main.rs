@@ -20,7 +20,8 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use qtbridge::QApp;
+use qtbridge::qtbridge_type_lib::QQmlEngine;
 
 // Defined in `cpp/qml_cache_init.cpp`. The call does nothing on its own: it is
 // the reference the linker needs to keep the generated QML units (and the loader
@@ -66,7 +67,12 @@ fn main() {
         }
     }
 
-    let mut application = QGuiApplication::new();
+    // Registers the precompiled QML units before the engine is created so any
+    // component load can resolve cached units immediately. This is also the only
+    // reference to `cpp/qml_cache_init.cpp`, keeping the static units linked.
+    unsafe { dae_qml_cache_init() };
+
+    let mut app = QApp::new();
     dae_qt::window::startup_mark("qgui-application");
 
     // Before `claim`: a failed scheme registration or a refused instance lock
@@ -77,8 +83,8 @@ fn main() {
     dae_qt::window::startup_mark("logging");
 
     // A later launch must not create a second shell. The owner receives the
-    // command line over a local socket; this process exits before the engine or
-    // any window exists. Claiming also registers `dae://` for this user.
+    // command line over a local socket; this process exits before any window
+    // exists. Claiming also registers `dae://` for this user.
     if !dae_qt::activation::claim() {
         return;
     }
@@ -114,43 +120,30 @@ fn main() {
         dae_qt::window::startup_mark("shell");
     }
 
-    // Registers the precompiled QML units before anything can ask for them.
-    // This is also the only reference to `cpp/qml_cache_init.cpp`, which is what
-    // keeps the units linked at all.
-    unsafe { dae_qml_cache_init() };
-
-    let mut engine = QQmlApplicationEngine::new();
-    let engine_ptr = engine.as_mut_ptr();
+    let engine_ptr = unsafe {
+        app.qml_engine().get_unchecked_mut() as *mut QQmlEngine as usize
+    };
     dae_qt::window::startup_mark("qml-engine");
     // The persisted language has to be installed before `Main.qml` is loaded,
     // otherwise the first window paints its source strings once and only
     // retranslates on the next switch. The engine is attached so a change from
     // the settings panel can retranslate live.
-    dae_qt::i18n::attach_engine(engine_ptr as usize);
+    dae_qt::i18n::attach_engine(engine_ptr);
     dae_qt::i18n::apply_stored();
-    if let Some(mut engine) = engine.as_mut() {
-        dae_qt::preview::register_image_providers(engine_ptr);
-        // Hooked before the root exists: the hook listens to `objectCreated` as
-        // well as the roots already there, which is what the deferred load
-        // needs.
-        dae_qt::window::watch_first_frame(engine_ptr as usize);
-        if shell_first {
-            // The load runs from the event loop, once the stand-in window has a
-            // frame on screen; the C++ side marks `qml-loaded` then.
-            dae_qt::window::load_after_shell(engine_ptr as usize, "qrc:/qt/qml/dae/qml/Main.qml");
-        } else {
-            engine
-                .as_mut()
-                .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));
-            dae_qt::window::startup_mark("qml-loaded");
-        }
+    dae_qt::preview::register_image_providers(engine_ptr);
+    // Hooked before the root exists: the hook listens to `objectCreated` as
+    // well as the roots already there, which is what the deferred load needs.
+    dae_qt::window::watch_first_frame(engine_ptr);
+    if shell_first {
+        // The load runs from the event loop, once the stand-in window has a
+        // frame on screen; the C++ side marks `qml-loaded` then.
+        dae_qt::window::load_after_shell(engine_ptr, "qrc:/qt/qml/dae/qml/Main.qml");
     } else {
-        log::error!(target: "dae", "could not create QQmlApplicationEngine");
+        app.load_qml_from_file("qrc:/qt/qml/dae/qml/Main.qml");
+        dae_qt::window::startup_mark("qml-loaded");
     }
 
-    if let Some(application) = application.as_mut() {
-        application.exec();
-    }
+    app.run();
 }
 
 /// Quits on a timer, for the profiled builds only.

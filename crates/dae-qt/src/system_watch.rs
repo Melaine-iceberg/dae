@@ -30,21 +30,22 @@
 //! A watcher that has to be polled, joined or woken is a watcher nobody shuts
 //! down cleanly; process exit reaps the threads.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-use cxx_qt::CxxQtThread;
+use qtbridge::QThreadHandle;
 
-use crate::workspace::qobject::Workspace;
+use crate::workspace::Workspace;
 
 /// The Qt thread captured when the first window starts the watchers. The C++
 /// style-hint signal and the non-Windows accent poll both need a way back to
 /// the singleton, and neither owns a `Workspace` reference.
-static WORKSPACE_THREAD: OnceLock<CxxQtThread<Workspace>> = OnceLock::new();
+static WORKSPACE_THREAD: OnceLock<Arc<QThreadHandle<Workspace>>> = OnceLock::new();
 
 /// Starts the platform watchers once for the process. Calling it again from a
 /// later window is a no-op.
-pub(crate) fn start(thread: CxxQtThread<Workspace>) {
-    let _ = WORKSPACE_THREAD.set(thread.clone());
+pub(crate) fn start(thread: QThreadHandle<Workspace>) {
+    let thread = Arc::new(thread);
+    let _ = WORKSPACE_THREAD.set(Arc::clone(&thread));
 
     #[cfg(windows)]
     windows_backend::start(thread);
@@ -68,8 +69,8 @@ pub(crate) fn theme_changed(dark: bool) {
     let Some(thread) = WORKSPACE_THREAD.get() else {
         return;
     };
-    let _ = thread.queue(move |mut workspace| {
-        workspace.as_mut().apply_system_theme(Some(dark));
+    thread.invoke_mut(move |workspace| {
+        workspace.apply_system_theme(Some(dark));
     });
 }
 
@@ -89,8 +90,8 @@ fn start_accent_poll() {
         .spawn(move || {
             let mut last = crate::platform::accent();
             if let Some(accent) = last.clone() {
-                let _ = thread.queue(move |mut workspace| {
-                    workspace.as_mut().apply_system_accent(Some(accent));
+                thread.invoke_mut(move |workspace| {
+                    workspace.apply_system_accent(Some(accent));
                 });
             }
             loop {
@@ -101,8 +102,8 @@ fn start_accent_poll() {
                 }
                 last = now.clone();
                 if let Some(accent) = now {
-                    let _ = thread.queue(move |mut workspace| {
-                        workspace.as_mut().apply_system_accent(Some(accent));
+                    thread.invoke_mut(move |workspace| {
+                        workspace.apply_system_accent(Some(accent));
                     });
                 }
             }
@@ -137,8 +138,8 @@ fn start_volume_poll() {
                     continue;
                 }
                 last = now;
-                let _ = thread.queue(|mut workspace| {
-                    workspace.as_mut().notify_volumes_changed();
+                thread.invoke_mut(move |workspace| {
+                    workspace.notify_volumes_changed();
                 });
             }
         })
@@ -149,10 +150,10 @@ fn start_volume_poll() {
 
 #[cfg(windows)]
 mod windows_backend {
-    use std::sync::OnceLock;
+    use std::sync::{Arc, OnceLock};
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use cxx_qt::CxxQtThread;
+    use qtbridge::QThreadHandle;
     use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Registry::{
@@ -167,7 +168,7 @@ mod windows_backend {
     };
     use windows::core::PCWSTR;
 
-    use crate::workspace::qobject::Workspace;
+    use crate::workspace::Workspace;
 
     const DWM_KEY: &str = r"Software\Microsoft\Windows\DWM";
     const PERSONALIZE_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
@@ -188,30 +189,30 @@ mod windows_backend {
 
     #[derive(Clone)]
     struct Sink {
-        thread: CxxQtThread<Workspace>,
+        thread: Arc<QThreadHandle<Workspace>>,
     }
 
     impl Sink {
         fn accent(&self, accent: Option<String>) {
-            let _ = self.thread.queue(move |mut workspace| {
-                workspace.as_mut().apply_system_accent(accent);
+            self.thread.invoke_mut(move |workspace| {
+                workspace.apply_system_accent(accent);
             });
         }
 
         fn theme(&self, dark: Option<bool>) {
-            let _ = self.thread.queue(move |mut workspace| {
-                workspace.as_mut().apply_system_theme(dark);
+            self.thread.invoke_mut(move |workspace| {
+                workspace.apply_system_theme(dark);
             });
         }
 
         fn volumes(&self) {
-            let _ = self.thread.queue(|mut workspace| {
-                workspace.as_mut().notify_volumes_changed();
+            self.thread.invoke_mut(move |workspace| {
+                workspace.notify_volumes_changed();
             });
         }
     }
 
-    pub(crate) fn start(thread: CxxQtThread<Workspace>) {
+    pub(crate) fn start(thread: Arc<QThreadHandle<Workspace>>) {
         static STARTED: OnceLock<()> = OnceLock::new();
 
         let sink = Sink { thread };

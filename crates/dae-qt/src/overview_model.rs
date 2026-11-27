@@ -13,17 +13,18 @@
 //! four independent refresh paths. The board in `OverviewView.qml` groups the
 //! rows by that `section` role itself.
 
-use core::pin::Pin;
 use std::collections::HashSet;
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::fs::git::{self, GitEntryStatusKind};
 use dae_core::fs::recents::{self, RecentItem};
 use dae_core::fs::sidebar::{self, PlaceKind, SystemPlace};
 use dae_core::fs::tags;
 use dae_core::fs::vfs;
 use dae_core::types::{EntryKind, display_name_from_path};
+use qtbridge::qtbridge_type_lib::{
+    QByteArray, QHash_i32_QByteArray, QModelIndex, QString, QVariant,
+};
+use qtbridge::{QAbstractItemModel, QAbstractItemModelBase, QmlElement, QmlObject, qobject};
 
 use crate::format;
 use crate::runtime;
@@ -51,113 +52,6 @@ const ROLE_BRANCH: i32 = 0x0607;
 const ROLE_CHANGE_TEXT: i32 = 0x0608;
 const ROLE_TIME_TEXT: i32 = 0x0609;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-    }
-
-    unsafe extern "RustQt" {
-        /// The overview's flattened, sectioned rows.
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(i32, count)]
-        #[qproperty(bool, loaded)]
-        #[qproperty(bool, project_busy, cxx_name = "projectBusy")]
-        #[qproperty(QString, status)]
-        type OverviewModel = super::OverviewModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        /// Rebuilds the cheap sections, then scans the recent work trees.
-        #[qinvokable]
-        fn refresh(self: Pin<&mut OverviewModel>);
-
-        /// Hides the named sections and rebuilds. Unknown names are ignored,
-        /// so a stale preference cannot blank the whole page.
-        #[qinvokable]
-        #[cxx_name = "setHiddenSections"]
-        fn set_hidden_sections(self: Pin<&mut OverviewModel>, sections: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "kindAt"]
-        fn kind_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "nameAt"]
-        fn name_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "pathAt"]
-        fn path_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "detailAt"]
-        fn detail_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "sectionAt"]
-        fn section_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "isDirAt"]
-        fn is_dir_at(&self, row: i32) -> bool;
-
-        /// The remaining facts the landing grid prints on a note. Same shape
-        /// as the accessors above: the board is a `Repeater`, which has no
-        /// roles to bind, so it reads the rows through this side instead of
-        /// keeping a second model in QML.
-        #[qinvokable]
-        #[cxx_name = "iconAt"]
-        fn icon_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "branchAt"]
-        fn branch_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "changeTextAt"]
-        fn change_text_at(&self, row: i32) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "timeTextAt"]
-        fn time_text_at(&self, row: i32) -> QString;
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut OverviewModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut OverviewModel>);
-    }
-
-    impl cxx_qt::Threading for OverviewModel {}
-}
-
 #[derive(Clone)]
 struct OverviewRow {
     section: &'static str,
@@ -178,310 +72,383 @@ struct ProjectCandidate {
     accessed_at: u64,
 }
 
-#[derive(Default)]
-pub struct OverviewModelRust {
-    rows: Vec<OverviewRow>,
-    base_rows: Vec<OverviewRow>,
-    count: i32,
-    loaded: bool,
-    project_busy: bool,
-    status: QString,
-    generation: u64,
-    /// Section names the landing page must not show, comma-separated
-    /// (`Projects`, `Favorites`, `Recent`, `Tags`). Set from the shell's
-    /// preference so hiding a widget survives a restart; empty shows all.
-    hidden_sections: String,
-}
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod rows {
+    use super::*;
 
-impl qobject::OverviewModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
-        }
-    }
-
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
-        }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match role {
-            ROLE_SECTION => QVariant::from(&QString::from(row.section)),
-            ROLE_KIND => QVariant::from(&QString::from(row.kind)),
-            ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
-            ROLE_PATH => QVariant::from(&QString::from(row.path.as_str())),
-            ROLE_DETAIL => QVariant::from(&QString::from(row.detail.as_str())),
-            ROLE_ICON => QVariant::from(&QString::from(row.icon)),
-            ROLE_IS_DIR => QVariant::from(&row.is_directory),
-            ROLE_BRANCH => QVariant::from(&QString::from(row.branch.as_str())),
-            ROLE_CHANGE_TEXT => QVariant::from(&QString::from(row.change_text.as_str())),
-            ROLE_TIME_TEXT => QVariant::from(&QString::from(row.time_text.as_str())),
-            _ => QVariant::default(),
-        }
-    }
-
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        roles.insert(ROLE_SECTION, QByteArray::from("section"));
-        roles.insert(ROLE_KIND, QByteArray::from("kind"));
-        roles.insert(ROLE_NAME, QByteArray::from("name"));
-        roles.insert(ROLE_PATH, QByteArray::from("path"));
-        roles.insert(ROLE_DETAIL, QByteArray::from("detail"));
-        roles.insert(ROLE_ICON, QByteArray::from("icon"));
-        roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
-        roles.insert(ROLE_BRANCH, QByteArray::from("branch"));
-        roles.insert(ROLE_CHANGE_TEXT, QByteArray::from("changeText"));
-        roles.insert(ROLE_TIME_TEXT, QByteArray::from("timeText"));
-        roles
-    }
-
-    fn set_hidden_sections(mut self: Pin<&mut Self>, sections: &QString) {
-        let next = sections.to_string();
-        if self.hidden_sections == next {
-            return;
-        }
-        self.as_mut().rust_mut().hidden_sections = next;
-        self.as_mut().refresh();
-    }
-
-    fn refresh(mut self: Pin<&mut Self>) {
-        let generation = self.generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-
-        // The section sources are JSON reads and a disk listing — cheap only
-        // on a warm cache, and this refresh sits on the window-creation path
-        // — so the rows are built on the blocking pool and only the landing
-        // runs on the Qt thread (`listing-shell-costs.md` §7). The generation
-        // checked in `apply_base`/`apply_projects` drops a build from an
-        // older refresh (a tab switch, a hidden-section change).
-        let hidden: Vec<String> = self
-            .hidden_sections
-            .split(',')
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-            .map(str::to_owned)
-            .collect();
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let Ok((mut rows, candidates)) =
-                tokio::task::spawn_blocking(Self::build_overview_base).await
-            else {
-                return;
-            };
-            if !hidden.is_empty() {
-                rows.retain(|row| !hidden.iter().any(|name| name == row.section));
-            }
-            let scanning = !candidates.is_empty();
-            let count = rows.len() as i32;
-            let _ = thread.queue(move |mut model| {
-                model.as_mut().apply_base(generation, count, rows, scanning);
-            });
-            if !scanning {
-                return;
-            }
-            let projects = scan_projects(candidates).await;
-            let _ = thread.queue(move |mut model| {
-                model.as_mut().apply_projects(generation, projects);
-            });
-        });
-    }
-
-    /// Lands the rows a background `refresh` built. Stale generations are
-    /// dropped; a fresh one publishes the base rows and, when a project scan
-    /// is still running, arms the busy flag the board's spinner reads.
-    fn apply_base(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        count: i32,
+    /// The overview's flattened, sectioned rows.
+    #[derive(Default)]
+    pub struct OverviewModel {
         rows: Vec<OverviewRow>,
-        scanning: bool,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-        self.as_mut().rust_mut().base_rows = rows.clone();
-        self.as_mut().replace_rows(rows);
-        self.as_mut().set_count(count);
-        self.as_mut().set_loaded(true);
-        self.as_mut().set_project_busy(scanning);
-        self.as_mut().set_status(QString::default());
+        base_rows: Vec<OverviewRow>,
+        count: i32,
+        loaded: bool,
+        project_busy: bool,
+        status: String,
+        generation: u64,
+        /// Section names the landing page must not show, comma-separated
+        /// (`Projects`, `Favorites`, `Recent`, `Tags`). Set from the shell's
+        /// preference so hiding a widget survives a restart; empty shows all.
+        hidden_sections: String,
     }
 
-    fn kind_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.kind))
-            .unwrap_or_default()
-    }
-
-    fn name_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.name.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn path_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.path.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn detail_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.detail.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn section_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.section))
-            .unwrap_or_default()
-    }
-
-    fn is_dir_at(&self, row: i32) -> bool {
-        self.rows
-            .get(row as usize)
-            .map(|row| row.is_directory)
-            .unwrap_or(false)
-    }
-
-    fn icon_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.icon))
-            .unwrap_or_default()
-    }
-
-    fn branch_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.branch.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn change_text_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.change_text.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn time_text_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.time_text.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn apply_projects(mut self: Pin<&mut Self>, generation: u64, projects: Vec<OverviewRow>) {
-        if self.generation != generation {
-            return;
-        }
-
-        let mut rows = projects;
-        rows.extend(self.base_rows.iter().cloned());
-        let count = rows.len() as i32;
-        self.as_mut().replace_rows(rows);
-        self.as_mut().set_count(count);
-        self.as_mut().set_project_busy(false);
-    }
-
-    fn build_overview_base() -> (Vec<OverviewRow>, Vec<ProjectCandidate>) {
-        let mut rows = Vec::new();
-        let mut candidates = Vec::new();
-        let mut seen_paths = HashSet::new();
-
-        let places = sidebar::system_places();
-        let hidden = sidebar::load_hidden_places().unwrap_or_default();
-        for place in &places {
-            if hidden.contains(&place.kind) {
-                continue;
+    impl QAbstractItemModel for OverviewModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
             }
-            push_place(&mut rows, &mut seen_paths, place);
+            self.create_index(row, column, 0)
         }
 
-        match sidebar::load_favorites() {
-            Ok(favorites) => {
-                for favorite in favorites {
-                    let key = normalize_path(&favorite.path);
-                    if !seen_paths.insert(key) {
-                        continue;
-                    }
-                    rows.push(OverviewRow {
-                        section: SECTION_FAVORITES,
-                        kind: "favorite",
-                        name: favorite.name,
-                        path: favorite.path.clone(),
-                        detail: favorite.path.clone(),
-                        icon: "star",
-                        is_directory: true,
-                        branch: String::new(),
-                        change_text: String::new(),
-                        time_text: String::new(),
-                    });
-                    if candidates.len() < MAX_CANDIDATES && vfs::is_local_path(&favorite.path) {
-                        candidates.push(ProjectCandidate {
-                            path: favorite.path,
-                            accessed_at: 0,
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
+            }
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match role {
+                ROLE_SECTION => QVariant::from(&QString::from(row.section)),
+                ROLE_KIND => QVariant::from(&QString::from(row.kind)),
+                ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
+                ROLE_PATH => QVariant::from(&QString::from(row.path.as_str())),
+                ROLE_DETAIL => QVariant::from(&QString::from(row.detail.as_str())),
+                ROLE_ICON => QVariant::from(&QString::from(row.icon)),
+                ROLE_IS_DIR => QVariant::from(&row.is_directory),
+                ROLE_BRANCH => QVariant::from(&QString::from(row.branch.as_str())),
+                ROLE_CHANGE_TEXT => QVariant::from(&QString::from(row.change_text.as_str())),
+                ROLE_TIME_TEXT => QVariant::from(&QString::from(row.time_text.as_str())),
+                _ => QVariant::default(),
+            }
+        }
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            let mut roles = QHash_i32_QByteArray::default();
+            roles.insert(ROLE_SECTION, QByteArray::from("section"));
+            roles.insert(ROLE_KIND, QByteArray::from("kind"));
+            roles.insert(ROLE_NAME, QByteArray::from("name"));
+            roles.insert(ROLE_PATH, QByteArray::from("path"));
+            roles.insert(ROLE_DETAIL, QByteArray::from("detail"));
+            roles.insert(ROLE_ICON, QByteArray::from("icon"));
+            roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
+            roles.insert(ROLE_BRANCH, QByteArray::from("branch"));
+            roles.insert(ROLE_CHANGE_TEXT, QByteArray::from("changeText"));
+            roles.insert(ROLE_TIME_TEXT, QByteArray::from("timeText"));
+            roles
+        }
+
+        fn set_data(&mut self, _index: &QModelIndex, _value: &QVariant, _role: i32) -> bool {
+            false
+        }
+    }
+
+    impl OverviewModel {
+        qproperty!("count", Member = count, Notify = count_changed);
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("projectBusy", Member = project_busy, Notify = project_busy_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
+
+        #[qsignal]
+        fn count_changed(&mut self);
+        #[qsignal]
+        fn loaded_changed(&mut self);
+        #[qsignal]
+        fn project_busy_changed(&mut self);
+        #[qsignal]
+        fn status_changed(&mut self);
+
+        /// Hides the named sections and rebuilds. Unknown names are ignored,
+        /// so a stale preference cannot blank the whole page.
+        #[qslot]
+        fn set_hidden_sections(&mut self, sections: String) {
+            if self.hidden_sections == sections {
+                return;
+            }
+            self.hidden_sections = sections;
+            self.refresh();
+        }
+
+        /// Rebuilds the cheap sections, then scans the recent work trees.
+        #[qslot]
+        fn refresh(&mut self) {
+            let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+
+            // The section sources are JSON reads and a disk listing — cheap only
+            // on a warm cache, and this refresh sits on the window-creation path
+            // — so the rows are built on the blocking pool and only the landing
+            // runs on the Qt thread (`listing-shell-costs.md` §7). The generation
+            // checked in `apply_base`/`apply_projects` drops a build from an
+            // older refresh (a tab switch, a hidden-section change).
+            let hidden: Vec<String> = self
+                .hidden_sections
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect();
+            let handle = self.get_thread_handle();
+            runtime::spawn(async move {
+                let Ok((mut rows, candidates)) =
+                    tokio::task::spawn_blocking(Self::build_overview_base).await
+                else {
+                    return;
+                };
+                if !hidden.is_empty() {
+                    rows.retain(|row| !hidden.iter().any(|name| name == row.section));
+                }
+                let scanning = !candidates.is_empty();
+                let count = rows.len() as i32;
+                handle.invoke_mut(move |model| {
+                    model.apply_base(generation, count, rows, scanning);
+                });
+                if !scanning {
+                    return;
+                }
+                let projects = scan_projects(candidates).await;
+                handle.invoke_mut(move |model| {
+                    model.apply_projects(generation, projects);
+                });
+            });
+        }
+
+        /// Lands the rows a background `refresh` built. Stale generations are
+        /// dropped; a fresh one publishes the base rows and, when a project scan
+        /// is still running, arms the busy flag the board's spinner reads.
+        fn apply_base(
+            &mut self,
+            generation: u64,
+            count: i32,
+            rows: Vec<OverviewRow>,
+            scanning: bool,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+            self.base_rows = rows.clone();
+            self.replace_rows(rows);
+            self.count = count;
+            self.count_changed();
+            self.loaded = true;
+            self.loaded_changed();
+            self.project_busy = scanning;
+            self.project_busy_changed();
+            self.status.clear();
+            self.status_changed();
+        }
+
+        #[qslot]
+        fn kind_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.kind.to_owned())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn name_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.name.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn path_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.path.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn detail_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.detail.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn section_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.section.to_owned())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn is_dir_at(&self, row: i32) -> bool {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.is_directory)
+                .unwrap_or(false)
+        }
+
+        /// The remaining facts the landing grid prints on a note. Same shape
+        /// as the accessors above: the board is a `Repeater`, which has no
+        /// roles to bind, so it reads the rows through this side instead of
+        /// keeping a second model in QML.
+        #[qslot]
+        fn icon_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.icon.to_owned())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn branch_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.branch.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn change_text_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.change_text.clone())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn time_text_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.time_text.clone())
+                .unwrap_or_default()
+        }
+
+        fn apply_projects(&mut self, generation: u64, projects: Vec<OverviewRow>) {
+            if self.generation != generation {
+                return;
+            }
+
+            let mut rows = projects;
+            rows.extend(self.base_rows.iter().cloned());
+            let count = rows.len() as i32;
+            self.replace_rows(rows);
+            self.count = count;
+            self.count_changed();
+            self.project_busy = false;
+            self.project_busy_changed();
+        }
+
+        fn build_overview_base() -> (Vec<OverviewRow>, Vec<ProjectCandidate>) {
+            let mut rows = Vec::new();
+            let mut candidates = Vec::new();
+            let mut seen_paths = HashSet::new();
+
+            let places = sidebar::system_places();
+            let hidden = sidebar::load_hidden_places().unwrap_or_default();
+            for place in &places {
+                if hidden.contains(&place.kind) {
+                    continue;
+                }
+                push_place(&mut rows, &mut seen_paths, place);
+            }
+
+            match sidebar::load_favorites() {
+                Ok(favorites) => {
+                    for favorite in favorites {
+                        let key = normalize_path(&favorite.path);
+                        if !seen_paths.insert(key) {
+                            continue;
+                        }
+                        rows.push(OverviewRow {
+                            section: SECTION_FAVORITES,
+                            kind: "favorite",
+                            name: favorite.name,
+                            path: favorite.path.clone(),
+                            detail: favorite.path.clone(),
+                            icon: "star",
+                            is_directory: true,
+                            branch: String::new(),
+                            change_text: String::new(),
+                            time_text: String::new(),
                         });
+                        if candidates.len() < MAX_CANDIDATES && vfs::is_local_path(&favorite.path) {
+                            candidates.push(ProjectCandidate {
+                                path: favorite.path,
+                                accessed_at: 0,
+                            });
+                        }
                     }
                 }
-            }
-            Err(error) => {
-                report_aux_error("overview", &error.to_string());
-            }
-        }
-
-        match recents::list_recents() {
-            Ok(items) => {
-                let mut shown = 0;
-                for item in items {
-                    if shown >= MAX_RECENTS {
-                        break;
-                    }
-                    rows.push(recent_row(&item));
-                    shown += 1;
-                    if item.kind == EntryKind::Directory
-                        && candidates.len() < MAX_CANDIDATES
-                        && vfs::is_local_path(&item.path)
-                    {
-                        candidates.push(ProjectCandidate {
-                            path: item.path,
-                            accessed_at: item.accessed_at,
-                        });
-                    }
+                Err(error) => {
+                    report_aux_error("overview", &error.to_string());
                 }
             }
-            Err(error) => {
-                report_aux_error("overview", &error.to_string());
+
+            match recents::list_recents() {
+                Ok(items) => {
+                    let mut shown = 0;
+                    for item in items {
+                        if shown >= MAX_RECENTS {
+                            break;
+                        }
+                        rows.push(recent_row(&item));
+                        shown += 1;
+                        if item.kind == EntryKind::Directory
+                            && candidates.len() < MAX_CANDIDATES
+                            && vfs::is_local_path(&item.path)
+                        {
+                            candidates.push(ProjectCandidate {
+                                path: item.path,
+                                accessed_at: item.accessed_at,
+                            });
+                        }
+                    }
+                }
+                Err(error) => {
+                    report_aux_error("overview", &error.to_string());
+                }
             }
+
+            rows.extend(tag_rows(tags::definitions(), &tags::counts()));
+            rows.extend(drive_rows(sidebar::list_disks_sync()));
+            (rows, candidates)
         }
 
-        rows.extend(tag_rows(tags::definitions(), &tags::counts()));
-        rows.extend(drive_rows(sidebar::list_disks_sync()));
-        (rows, candidates)
-    }
-
-    fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<OverviewRow>) {
-        unsafe {
-            self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows = rows;
+        fn replace_rows(&mut self, rows: Vec<OverviewRow>) {
+            self.begin_reset_model();
+            self.rows = rows;
             // Rows are published, but the views have not processed the reset
             // yet. A QML `onModelReset`/`onCountChanged` handler runs after the
             // view's own model connection, so it would report the layout pass
             // as the data moment; this is the split the startup timeline needs.
             crate::window::startup_mark_once("qml-first-model");
-            self.as_mut().end_reset_model();
+            self.end_reset_model();
         }
     }
+}
+
+pub use rows::OverviewModel;
+
+impl QmlElement for OverviewModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "OverviewModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 /// The overview's tag widget: every definition, with how many files carry it.

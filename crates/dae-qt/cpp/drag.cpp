@@ -18,7 +18,7 @@
 
 #include <string>
 
-#include "dae-qt/src/icons.cxxqt.h"
+#include "dae-qt/src/icons.rs.h"
 #include "lookup.h"
 
 namespace dae_qt {
@@ -179,9 +179,9 @@ QPixmap tab_preview(const QString& title, int width, int height,
 } // namespace
 
 bool dae_qt_start_file_drag(const QStringList& paths, int actions,
-                            const QColor& signal, int count,
-                            const QString& verdict, const QColor& ink,
-                            const QColor& canvas)
+                            const QString& signal, int count,
+                            const QString& verdict, const QString& ink,
+                            const QString& canvas)
 {
     if (paths.isEmpty() || s_drag_in_progress)
         return false;
@@ -217,8 +217,9 @@ bool dae_qt_start_file_drag(const QStringList& paths, int actions,
     QPixmap icon = drag_preview(paths, edge);
     if (!icon.isNull()) {
         icon.setDevicePixelRatio(ratio);
-        const QPixmap preview = framed_preview(icon, kFramePadding, ratio, signal,
-                                               count, verdict, ink, canvas);
+        const QPixmap preview = framed_preview(
+            icon, kFramePadding, ratio, QColor::fromString(signal), count,
+            verdict, QColor::fromString(ink), QColor::fromString(canvas));
         drag->setPixmap(preview);
         // QDrag's hot spot is in device-independent pixels; Qt scales it for
         // the platform's drag image (OLE multiplies by the screen factor).
@@ -237,8 +238,8 @@ bool dae_qt_start_file_drag(const QStringList& paths, int actions,
 
 int dae_qt_start_tab_drag(const QString& source_token, const QString& title,
                           int tab_index, int grab_x, int grab_y, int width,
-                          int height, const QColor& background,
-                          const QColor& border, const QColor& text)
+                          int height, const QString& background,
+                          const QString& border, const QString& text)
 {
     if (s_drag_in_progress || width <= 0 || height <= 0)
         return Qt::IgnoreAction;
@@ -259,7 +260,10 @@ int dae_qt_start_tab_drag(const QString& source_token, const QString& title,
     drag->setMimeData(mime);
 
     const qreal ratio = qMax<qreal>(1.0, source->devicePixelRatio());
-    drag->setPixmap(tab_preview(title, width, height, background, border, text,
+    drag->setPixmap(tab_preview(title, width, height,
+                                QColor::fromString(background),
+                                QColor::fromString(border),
+                                QColor::fromString(text),
                                 ratio));
     drag->setHotSpot(
         QPoint(qBound(0, grab_x, width - 1), qBound(0, grab_y, height - 1)));

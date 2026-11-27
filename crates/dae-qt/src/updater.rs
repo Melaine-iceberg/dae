@@ -10,213 +10,242 @@
 //! update is advertised, not installed silently: restarting a file manager
 //! under someone's hands without a click is worse than one extra click.
 
-use core::pin::Pin;
-
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::QString;
+use qtbridge::{QmlElement, QmlObject, qobject};
 use dae_core::update::{self, AvailableUpdate, UpdateError};
 
 use crate::runtime;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(#[allow(dead_code)]
+        fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
+}
+
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+mod updater_impl {
+    use super::*;
+
+    pub struct Updater {
+        supported: bool,
+        packaged: bool,
+        current_version: String,
+        checking: bool,
+        checked: bool,
+        available: bool,
+        latest_version: String,
+        notes: String,
+        downloading: bool,
+        install_progress: i32,
+        restarting: bool,
+        error: String,
+        update: Option<AvailableUpdate>,
     }
 
-    unsafe extern "RustQt" {
-        /// Process-wide update state, reachable from QML as `Updater`.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        #[qproperty(bool, supported)]
-        /// True when this process runs from an installed Windows app package.
-        /// Release MSIX builds still enable `supported` and update via Windows
-        /// `PackageManager`; non-updatable packaged builds fall back to telling
-        /// the user updates arrive with the installer.
-        #[qproperty(bool, packaged)]
-        #[qproperty(QString, current_version, cxx_name = "currentVersion")]
-        #[qproperty(bool, checking)]
-        #[qproperty(bool, checked)]
-        #[qproperty(bool, available)]
-        #[qproperty(QString, latest_version, cxx_name = "latestVersion")]
-        #[qproperty(QString, notes)]
-        #[qproperty(bool, downloading)]
-        #[qproperty(i32, install_progress, cxx_name = "installProgress")]
-        #[qproperty(bool, restarting)]
-        #[qproperty(QString, error)]
-        type Updater = super::UpdaterRust;
+    impl Default for Updater {
+        fn default() -> Self {
+            Self {
+                supported: update::updates_enabled(),
+                packaged: dae_core::package::is_packaged(),
+                current_version: env!("CARGO_PKG_VERSION").to_owned(),
+                checking: false,
+                checked: false,
+                available: false,
+                latest_version: String::new(),
+                notes: String::new(),
+                downloading: false,
+                install_progress: 0,
+                restarting: false,
+                error: String::new(),
+                update: None,
+            }
+        }
+    }
 
-        /// Checks the signed feed. `manual` checks surface a failure in the
-        /// dialog; the startup check only logs it, so being offline does not
-        /// greet the user with an error.
-        #[qinvokable]
-        fn check(self: Pin<&mut Updater>, manual: bool);
 
-        /// Downloads, verifies and starts the installer. The process must exit
-        /// when `restartRequested` arrives.
-        #[qinvokable]
-        #[cxx_name = "downloadAndInstall"]
-        fn download_and_install(self: Pin<&mut Updater>);
+    impl Updater {
+        qproperty!("supported", Member = supported, Notify = supported_changed);
+        qproperty!("packaged", Member = packaged, Notify = packaged_changed);
+        qproperty!("currentVersion", Member = current_version, Notify = current_version_changed);
+        qproperty!("checking", Member = checking, Notify = checking_changed);
+        qproperty!("checked", Member = checked, Notify = checked_changed);
+        qproperty!("available", Member = available, Notify = available_changed);
+        qproperty!("latestVersion", Member = latest_version, Notify = latest_version_changed);
+        qproperty!("notes", Member = notes, Notify = notes_changed);
+        qproperty!("downloading", Member = downloading, Notify = downloading_changed);
+        qproperty!("installProgress", Member = install_progress, Notify = install_progress_changed);
+        qproperty!("restarting", Member = restarting, Notify = restarting_changed);
+        qproperty!("error", Member = error, Notify = error_changed);
 
         #[qsignal]
-        #[cxx_name = "restartRequested"]
-        fn restart_requested(self: Pin<&mut Updater>);
-    }
+        fn supported_changed(&mut self);
+        #[qsignal]
+        fn packaged_changed(&mut self);
+        #[qsignal]
+        fn current_version_changed(&mut self);
+        #[qsignal]
+        fn checking_changed(&mut self);
+        #[qsignal]
+        fn checked_changed(&mut self);
+        #[qsignal]
+        fn available_changed(&mut self);
+        #[qsignal]
+        fn latest_version_changed(&mut self);
+        #[qsignal]
+        fn notes_changed(&mut self);
+        #[qsignal]
+        fn downloading_changed(&mut self);
+        #[qsignal]
+        fn install_progress_changed(&mut self);
+        #[qsignal]
+        fn restarting_changed(&mut self);
+        #[qsignal]
+        fn error_changed(&mut self);
 
-    impl cxx_qt::Threading for Updater {}
-}
-
-pub struct UpdaterRust {
-    supported: bool,
-    packaged: bool,
-    current_version: QString,
-    checking: bool,
-    checked: bool,
-    available: bool,
-    latest_version: QString,
-    notes: QString,
-    downloading: bool,
-    install_progress: i32,
-    restarting: bool,
-    error: QString,
-    update: Option<AvailableUpdate>,
-}
-
-impl Default for UpdaterRust {
-    fn default() -> Self {
-        Self {
-            supported: update::updates_enabled(),
-            packaged: dae_core::package::is_packaged(),
-            current_version: QString::from(env!("CARGO_PKG_VERSION")),
-            checking: false,
-            checked: false,
-            available: false,
-            latest_version: QString::default(),
-            notes: QString::default(),
-            downloading: false,
-            install_progress: 0,
-            restarting: false,
-            error: QString::default(),
-            update: None,
+        notifying_setters! {
+            set_supported(bool) => supported, supported_changed;
+            set_packaged(bool) => packaged, packaged_changed;
+            set_current_version(String) => current_version, current_version_changed;
+            set_checking(bool) => checking, checking_changed;
+            set_checked(bool) => checked, checked_changed;
+            set_available(bool) => available, available_changed;
+            set_latest_version(String) => latest_version, latest_version_changed;
+            set_notes(String) => notes, notes_changed;
+            set_downloading(bool) => downloading, downloading_changed;
+            set_install_progress(i32) => install_progress, install_progress_changed;
+            set_restarting(bool) => restarting, restarting_changed;
+            set_error(String) => error, error_changed;
         }
-    }
-}
 
-impl qobject::Updater {
-    fn check(mut self: Pin<&mut Self>, manual: bool) {
-        if self.checking || self.downloading {
-            return;
-        }
-        if !self.supported {
-            // A packaged install is not a broken configuration: the tree it
-            // runs from belongs to the system installer, so the dialog gets the
-            // "updates arrive as a package" note instead of an error.
-            if manual && !self.packaged {
-                self.as_mut().set_error(QString::from(
-                    "This build does not support automatic updates",
-                ));
+        #[qsignal]
+        fn restart_requested(&mut self);
+
+
+        #[qslot]
+
+        fn check(&mut self, manual: bool) {
+            if self.checking || self.downloading {
+                return;
             }
-            self.as_mut().set_checked(true);
-            return;
-        }
-
-        self.as_mut().set_checking(true);
-        self.as_mut().set_checked(false);
-        self.as_mut().set_error(QString::default());
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result =
-                update::check_for_update(&update::feed_url(), env!("CARGO_PKG_VERSION")).await;
-            let _ = thread.queue(move |mut updater| {
-                updater.as_mut().apply_check(result, manual);
-            });
-        });
-    }
-
-    fn download_and_install(mut self: Pin<&mut Self>) {
-        if self.downloading || self.checking {
-            return;
-        }
-        let Some(update) = self.update.clone() else {
-            self.as_mut()
-                .set_error(QString::from("No update is available to install"));
-            return;
-        };
-
-        self.as_mut().set_downloading(true);
-        self.as_mut().set_install_progress(0);
-        self.as_mut().set_restarting(false);
-        self.as_mut().set_error(QString::default());
-
-        let thread = self.as_mut().qt_thread();
-        let progress_thread = thread.clone();
-        runtime::spawn(async move {
-            let progress = move |percent: u8| {
-                let _ = progress_thread.queue(move |mut updater| {
-                    updater.as_mut().set_install_progress(percent as i32);
-                });
-            };
-            let result = update::download_and_install(&update, progress).await;
-            let _ = thread.queue(move |mut updater| updater.as_mut().apply_install(result));
-        });
-    }
-}
-
-impl qobject::Updater {
-    fn apply_check(
-        mut self: Pin<&mut Self>,
-        result: Result<Option<AvailableUpdate>, UpdateError>,
-        manual: bool,
-    ) {
-        self.as_mut().set_checking(false);
-        self.as_mut().set_checked(true);
-
-        match result {
-            Ok(Some(update)) => {
-                self.as_mut()
-                    .set_latest_version(QString::from(update.version_text().as_str()));
-                self.as_mut()
-                    .set_notes(QString::from(update.notes.as_str()));
-                self.as_mut().rust_mut().update = Some(update);
-                self.as_mut().set_available(true);
-                self.as_mut().set_error(QString::default());
-            }
-            Ok(None) => {
-                self.as_mut().rust_mut().update = None;
-                self.as_mut().set_available(false);
-                self.as_mut().set_latest_version(QString::default());
-                self.as_mut().set_notes(QString::default());
-                self.as_mut().set_error(QString::default());
-            }
-            Err(error) => {
-                if !manual {
-                    log::warn!(target: "dae::update", "update check failed: {error}");
+            if !self.supported {
+                // A packaged install is not a broken configuration: the tree it
+                // runs from belongs to the system installer, so the dialog gets the
+                // "updates arrive as a package" note instead of an error.
+                if manual && !self.packaged {
+                    self.set_error(
+                        "This build does not support automatic updates".to_owned(),
+                    );
                 }
-                let message = friendly_update_error(&error);
-                self.as_mut().set_error(QString::from(message.as_str()));
+                self.set_checked(true);
+                return;
             }
-        }
-    }
 
-    fn apply_install(mut self: Pin<&mut Self>, result: Result<(), UpdateError>) {
-        self.as_mut().set_downloading(false);
-        match result {
-            Ok(()) => {
-                self.as_mut().set_install_progress(100);
-                self.as_mut().set_error(QString::default());
-                self.as_mut().set_restarting(true);
-                self.as_mut().restart_requested();
+            self.set_checking(true);
+            self.set_checked(false);
+            self.set_error(String::new());
+
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result =
+                    update::check_for_update(&update::feed_url(), env!("CARGO_PKG_VERSION")).await;
+                thread.invoke_mut(move |updater| {
+                    updater.apply_check(result, manual);
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn download_and_install(&mut self) {
+            if self.downloading || self.checking {
+                return;
             }
-            Err(error) => {
-                log::warn!(target: "dae::update", "update install failed: {error}");
-                let message = friendly_update_error(&error);
-                self.as_mut().set_error(QString::from(message.as_str()));
+            let Some(update) = self.update.clone() else {
+                self.set_error("No update is available to install".to_owned());
+                return;
+            };
+
+            self.set_downloading(true);
+            self.set_install_progress(0);
+            self.set_restarting(false);
+            self.set_error(String::new());
+
+            let thread = self.get_thread_handle();
+            let progress_thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let progress = move |percent: u8| {
+                    progress_thread.invoke_mut(move |updater| {
+                        updater.set_install_progress(percent as i32);
+                    });
+                };
+                let result = update::download_and_install(&update, progress).await;
+                thread.invoke_mut(move |updater| updater.apply_install(result));
+            });
+        }
+
+        fn apply_check(
+            &mut self,
+            result: Result<Option<AvailableUpdate>, UpdateError>,
+            manual: bool,
+        ) {
+            self.set_checking(false);
+            self.set_checked(true);
+
+            match result {
+                Ok(Some(update)) => {
+                    self.set_latest_version(update.version_text().to_owned());
+                    self.set_notes(update.notes.to_owned());
+                    self.update = Some(update);
+                    self.set_available(true);
+                    self.set_error(String::new());
+                }
+                Ok(None) => {
+                    self.update = None;
+                    self.set_available(false);
+                    self.set_latest_version(String::new());
+                    self.set_notes(String::new());
+                    self.set_error(String::new());
+                }
+                Err(error) => {
+                    if !manual {
+                        log::warn!(target: "dae::update", "update check failed: {error}");
+                    }
+                    let message = friendly_update_error(&error);
+                    self.set_error(message.to_owned());
+                }
+            }
+        }
+
+        fn apply_install(&mut self, result: Result<(), UpdateError>) {
+            self.set_downloading(false);
+            match result {
+                Ok(()) => {
+                    self.set_install_progress(100);
+                    self.set_error(String::new());
+                    self.set_restarting(true);
+                    self.restart_requested();
+                }
+                Err(error) => {
+                    log::warn!(target: "dae::update", "update install failed: {error}");
+                    let message = friendly_update_error(&error);
+                    self.set_error(message.to_owned());
+                }
             }
         }
     }
+}
+
+pub use updater_impl::Updater;
+
+impl QmlElement for Updater {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "Updater";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
 }
 
 fn friendly_update_error(error: &UpdateError) -> String {

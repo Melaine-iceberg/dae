@@ -102,6 +102,23 @@ pub fn init() {
     appearance::Appearance::register();
     network_discovery::NetworkDiscovery::register();
     preferences::ExplorerPrefs::register();
+    sidebar_model::SidebarModel::register();
+    markdown_model::MarkdownModel::register();
+    trash_model::TrashModel::register();
+    shell_command_model::ShellCommandModel::register();
+    open_with_model::OpenWithModel::register();
+    overview_model::OverviewModel::register();
+    sidebar_tree_model::SidebarTreeModel::register();
+    search_model::SearchModel::register();
+    search_model::ContentSearchModel::register();
+    model::DirectoryListModel::register();
+    updater::Updater::register();
+    shell::Shell::register();
+    window::WindowController::register();
+    terminal::TerminalSession::register();
+    preview::PreviewController::register();
+    properties::PropertiesController::register();
+    workspace::Workspace::register();
     // First, so the settings/profile lines below and every `dae-core` warning
     // reach the file. Idempotent: the binary calls it before claiming the
     // instance lock, and this call is then a no-op.

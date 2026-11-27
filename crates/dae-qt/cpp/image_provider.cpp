@@ -1,6 +1,6 @@
 #include "image_provider.h"
 
-#include "dae-qt/src/icons.cxxqt.h"
+#include "dae-qt/src/icons.rs.h"
 #include "material_marks.h"
 
 #include <QFileInfo>
@@ -583,6 +583,34 @@ void dae_qt_register_thumbnail_provider(QQmlApplicationEngine* engine)
     if (engine)
         engine->addImageProvider(QStringLiteral("thumbnail"),
                                  new ThumbnailImageProvider());
+}
+
+void dae_qt_register_thumbnail_provider_ptr(std::size_t enginePtr)
+{
+    auto* engine = qobject_cast<QQmlApplicationEngine*>(
+        reinterpret_cast<QQmlEngine*>(enginePtr));
+    dae_qt_register_thumbnail_provider(engine);
+}
+
+void dae_qt_register_file_icon_provider_ptr(std::size_t enginePtr)
+{
+    auto* engine = qobject_cast<QQmlApplicationEngine*>(
+        reinterpret_cast<QQmlEngine*>(enginePtr));
+    dae_qt_register_file_icon_provider(engine);
+}
+
+void dae_qt_register_file_glyph_provider_ptr(std::size_t enginePtr)
+{
+    auto* engine = qobject_cast<QQmlApplicationEngine*>(
+        reinterpret_cast<QQmlEngine*>(enginePtr));
+    dae_qt_register_file_glyph_provider(engine);
+}
+
+void dae_qt_register_glyph_provider_ptr(std::size_t enginePtr)
+{
+    auto* engine = qobject_cast<QQmlApplicationEngine*>(
+        reinterpret_cast<QQmlEngine*>(enginePtr));
+    dae_qt_register_glyph_provider(engine);
 }
 
 } // namespace dae_qt

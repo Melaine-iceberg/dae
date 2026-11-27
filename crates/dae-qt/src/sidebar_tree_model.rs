@@ -10,17 +10,16 @@
 //! section is local by construction; network and cloud trees remain flat in
 //! the sidebar until those backends get their own listers.
 
-use core::pin::Pin;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant,
-};
 use dae_core::fs::local::LocalBackend;
 use dae_core::fs::vfs::FileSystemBackend;
 use dae_core::types::EntryKind;
+use qtbridge::qtbridge_type_lib::{
+    QByteArray, QHash_i32_QByteArray, QModelIndex, QString, QVariant,
+};
+use qtbridge::{QAbstractItemModel, QAbstractItemModelBase, QmlElement, QmlObject, qobject};
 
 use crate::runtime;
 
@@ -30,118 +29,6 @@ const ROLE_DEPTH: i32 = 0x0702;
 const ROLE_EXPANDED: i32 = 0x0703;
 const ROLE_MAY_HAVE_CHILDREN: i32 = 0x0704;
 const ROLE_LOADED: i32 = 0x0705;
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-
-        include!("cxx-qt-lib/core/qlist/qlist_i32.h");
-        type QList_i32 = cxx_qt_lib::QList<i32>;
-    }
-
-    unsafe extern "RustQt" {
-        /// A flattened view of one expanded volume tree.
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(i32, count)]
-        #[qproperty(bool, busy)]
-        #[qproperty(bool, loaded)]
-        #[qproperty(QString, status)]
-        type SidebarTreeModel = super::SidebarTreeModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        /// Starts over at `root`; the root itself is implicit (the volume row)
-        /// and its direct children are the first rows.
-        #[qinvokable]
-        fn load(self: Pin<&mut SidebarTreeModel>, root: &QString, show_hidden: bool);
-
-        /// Expands a node and lazily reads its child folders, or collapses it.
-        #[qinvokable]
-        fn toggle(self: Pin<&mut SidebarTreeModel>, path: &QString);
-
-        /// A folder that the user asked to expand could not be read. The row
-        /// goes back to its closed state and keeps its chevron, but it has no
-        /// children to show, so the shell has to say why: a silent no-op reads
-        /// as a broken chevron.
-        #[qsignal]
-        #[cxx_name = "readFailed"]
-        fn read_failed(self: Pin<&mut SidebarTreeModel>, path: &QString, message: &QString);
-
-        #[inherit]
-        #[rust_name = "begin_insert_rows"]
-        unsafe fn beginInsertRows(
-            self: Pin<&mut SidebarTreeModel>,
-            parent: &QModelIndex,
-            first: i32,
-            last: i32,
-        );
-
-        #[inherit]
-        #[rust_name = "end_insert_rows"]
-        unsafe fn endInsertRows(self: Pin<&mut SidebarTreeModel>);
-
-        #[inherit]
-        #[rust_name = "begin_remove_rows"]
-        unsafe fn beginRemoveRows(
-            self: Pin<&mut SidebarTreeModel>,
-            parent: &QModelIndex,
-            first: i32,
-            last: i32,
-        );
-
-        #[inherit]
-        #[rust_name = "end_remove_rows"]
-        unsafe fn endRemoveRows(self: Pin<&mut SidebarTreeModel>);
-
-        #[inherit]
-        #[rust_name = "model_index"]
-        unsafe fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
-
-        #[inherit]
-        #[rust_name = "data_changed"]
-        unsafe fn dataChanged(
-            self: Pin<&mut SidebarTreeModel>,
-            top_left: &QModelIndex,
-            bottom_right: &QModelIndex,
-            roles: &QList_i32,
-        );
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut SidebarTreeModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut SidebarTreeModel>);
-    }
-
-    impl cxx_qt::Threading for SidebarTreeModel {}
-}
 
 #[derive(Clone)]
 struct TreeChild {
@@ -159,336 +46,376 @@ struct TreeRow {
     loaded: bool,
 }
 
-pub struct SidebarTreeModelRust {
-    root: String,
-    show_hidden: bool,
-    expanded_paths: HashSet<String>,
-    children: HashMap<String, Vec<TreeChild>>,
-    loaded_paths: HashSet<String>,
-    loading_paths: HashSet<String>,
-    rows: Vec<TreeRow>,
-    count: i32,
-    busy: bool,
-    loaded: bool,
-    status: QString,
-    generation: u64,
-}
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod rows {
+    use super::*;
 
-impl Default for SidebarTreeModelRust {
-    fn default() -> Self {
-        Self {
-            root: String::new(),
-            // The listing's default: hidden entries are visible until the
-            // user turns them off in Settings.
-            show_hidden: true,
-            expanded_paths: HashSet::new(),
-            children: HashMap::new(),
-            loaded_paths: HashSet::new(),
-            loading_paths: HashSet::new(),
-            rows: Vec::new(),
-            count: 0,
-            busy: false,
-            loaded: false,
-            status: QString::default(),
-            generation: 0,
-        }
-    }
-}
-
-impl qobject::SidebarTreeModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
-        }
-    }
-
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
-        }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match role {
-            ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
-            ROLE_PATH => QVariant::from(&QString::from(row.path.as_str())),
-            ROLE_DEPTH => QVariant::from(&row.depth),
-            ROLE_EXPANDED => QVariant::from(&row.expanded),
-            ROLE_MAY_HAVE_CHILDREN => QVariant::from(&row.may_have_children),
-            ROLE_LOADED => QVariant::from(&row.loaded),
-            _ => QVariant::default(),
-        }
-    }
-
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        roles.insert(ROLE_NAME, QByteArray::from("treeName"));
-        roles.insert(ROLE_PATH, QByteArray::from("treePath"));
-        roles.insert(ROLE_DEPTH, QByteArray::from("depth"));
-        roles.insert(ROLE_EXPANDED, QByteArray::from("expanded"));
-        roles.insert(ROLE_MAY_HAVE_CHILDREN, QByteArray::from("mayHaveChildren"));
-        roles.insert(ROLE_LOADED, QByteArray::from("loaded"));
-        roles
-    }
-
-    fn load(mut self: Pin<&mut Self>, root: &QString, show_hidden: bool) {
-        let generation = self.generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut().rust_mut().root = root.to_string();
-        self.as_mut().rust_mut().show_hidden = show_hidden;
-        self.as_mut().rust_mut().expanded_paths.clear();
-        self.as_mut().rust_mut().children.clear();
-        self.as_mut().rust_mut().loaded_paths.clear();
-        self.as_mut().rust_mut().loading_paths.clear();
-        self.as_mut().set_rows(Vec::new());
-        self.as_mut().set_loaded(false);
-        self.as_mut().set_busy(false);
-        self.as_mut().set_status(QString::default());
-
-        let root = root.to_string();
-        if root.is_empty() {
-            return;
-        }
-
-        self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from("Loading folder…"));
-        self.as_mut().request_children(root, generation);
-    }
-
-    fn toggle(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        if path.is_empty() || path == self.root {
-            return;
-        }
-
-        if self.as_mut().rust_mut().expanded_paths.remove(&path) {
-            self.as_mut().rebuild();
-            return;
-        }
-
-        self.as_mut().rust_mut().expanded_paths.insert(path.clone());
-        // Turn the chevron now rather than when the read finishes: the folder
-        // is open from the moment it is clicked, and a blocking read on a slow
-        // disk would otherwise leave the click looking ignored.
-        self.as_mut().rebuild();
-        if self.children.contains_key(&path) || self.loading_paths.contains(&path) {
-            return;
-        }
-
-        let generation = self.generation;
-        self.as_mut().set_busy(true);
-        self.as_mut().request_children(path, generation);
-    }
-
-    fn request_children(mut self: Pin<&mut Self>, path: String, generation: u64) {
-        self.as_mut().rust_mut().loading_paths.insert(path.clone());
-        let show_hidden = self.show_hidden;
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let target = path.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                let backend = LocalBackend;
-                backend
-                    .read_dir(&target)
-                    .map(|view| children_from(view.entries, show_hidden))
-                    .map_err(|error| error.to_string())
-            })
-            .await
-            .map_err(|error| error.to_string())
-            .and_then(|result| result);
-
-            let _ = thread.queue(move |mut model| {
-                model.as_mut().apply_children(generation, path, result);
-            });
-        });
-    }
-
-    fn apply_children(
-        mut self: Pin<&mut Self>,
+    /// A flattened view of one expanded volume tree.
+    pub struct SidebarTreeModel {
+        root: String,
+        show_hidden: bool,
+        expanded_paths: HashSet<String>,
+        children: HashMap<String, Vec<TreeChild>>,
+        loaded_paths: HashSet<String>,
+        loading_paths: HashSet<String>,
+        rows: Vec<TreeRow>,
+        count: i32,
+        busy: bool,
+        loaded: bool,
+        status: String,
         generation: u64,
-        path: String,
-        result: Result<Vec<TreeChild>, String>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
+    }
 
-        self.as_mut().rust_mut().loading_paths.remove(&path);
-        let root = self.root.clone();
-        let is_root = path == root;
-        let failed = result.is_err();
-
-        match result {
-            Ok(children) => {
-                let count = children.len();
-                self.as_mut()
-                    .rust_mut()
-                    .children
-                    .insert(path.clone(), children);
-                self.as_mut().rust_mut().loaded_paths.insert(path.clone());
-                if is_root {
-                    self.as_mut().set_loaded(true);
-                    self.as_mut()
-                        .set_status(QString::from(tree_status(count).as_str()));
-                }
+    impl Default for SidebarTreeModel {
+        fn default() -> Self {
+            Self {
+                root: String::new(),
+                // The listing's default: hidden entries are visible until the
+                // user turns them off in Settings.
+                show_hidden: true,
+                expanded_paths: HashSet::new(),
+                children: HashMap::new(),
+                loaded_paths: HashSet::new(),
+                loading_paths: HashSet::new(),
+                rows: Vec::new(),
+                count: 0,
+                busy: false,
+                loaded: false,
+                status: String::new(),
+                generation: 0,
             }
-            Err(error) => {
-                let message = crate::errors::friendly_error(&error);
-                if is_root {
-                    // The volume row's tree stays open on an empty list so the
-                    // status below it can say why nothing arrived.
-                    self.as_mut()
-                        .rust_mut()
-                        .children
-                        .insert(path.clone(), Vec::new());
-                    self.as_mut().rust_mut().loaded_paths.insert(path.clone());
-                    self.as_mut().set_loaded(true);
-                    self.as_mut()
-                        .set_status(QString::from("Could not read folder"));
-                } else {
-                    // A failed folder is not an open folder. Close the branch
-                    // and leave it out of `loaded_paths`, so its chevron stays
-                    // and the next click retries the read instead of reusing
-                    // an empty child list.
-                    self.as_mut().rust_mut().expanded_paths.remove(&path);
-                    self.as_mut().read_failed(
-                        &QString::from(path.as_str()),
-                        &QString::from(message.as_str()),
-                    );
-                }
-                log::warn!(target: "dae::sidebar", "sidebar tree read failed: {message}");
-            }
-        }
-
-        if is_root || self.expanded_paths.contains(&path) || failed {
-            self.as_mut().rebuild();
-        }
-        if self.loading_paths.is_empty() {
-            self.as_mut().set_busy(false);
         }
     }
 
-    fn rebuild(mut self: Pin<&mut Self>) {
-        let rows = flatten(
-            &self.root,
-            &self.expanded_paths,
-            &self.children,
-            &self.loaded_paths,
-        );
-        self.as_mut().apply_rows(rows);
+    impl QAbstractItemModel for SidebarTreeModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
+            }
+            self.create_index(row, column, 0)
+        }
+
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
+            }
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match role {
+                ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
+                ROLE_PATH => QVariant::from(&QString::from(row.path.as_str())),
+                ROLE_DEPTH => QVariant::from(&row.depth),
+                ROLE_EXPANDED => QVariant::from(&row.expanded),
+                ROLE_MAY_HAVE_CHILDREN => QVariant::from(&row.may_have_children),
+                ROLE_LOADED => QVariant::from(&row.loaded),
+                _ => QVariant::default(),
+            }
+        }
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            let mut roles = QHash_i32_QByteArray::default();
+            roles.insert(ROLE_NAME, QByteArray::from("treeName"));
+            roles.insert(ROLE_PATH, QByteArray::from("treePath"));
+            roles.insert(ROLE_DEPTH, QByteArray::from("depth"));
+            roles.insert(ROLE_EXPANDED, QByteArray::from("expanded"));
+            roles.insert(ROLE_MAY_HAVE_CHILDREN, QByteArray::from("mayHaveChildren"));
+            roles.insert(ROLE_LOADED, QByteArray::from("loaded"));
+            roles
+        }
+
+        fn set_data(&mut self, _index: &QModelIndex, _value: &QVariant, _role: i32) -> bool {
+            false
+        }
     }
 
-    /// Replaces the flattened rows without resetting the model.
-    ///
-    /// A reset throws away every delegate in the tree and builds them again,
-    /// which is the flash the sidebar showed whenever a folder was expanded.
-    /// Expansion and collapse only touch one contiguous run: the row whose
-    /// `expanded` flag flipped, and the subtree introduced or dropped below
-    /// it. Matching by path keeps the other rows in place; only the toggled
-    /// row is repainted, and only the run is inserted or removed.
-    fn apply_rows(mut self: Pin<&mut Self>, next: Vec<TreeRow>) {
-        let previous = self.as_mut().rust_mut().rows.clone();
-        let (edit_at, previous_mid_end, next_mid_end) = row_delta(&previous, &next);
+    impl SidebarTreeModel {
+        qproperty!("count", Member = count, Notify = count_changed);
+        qproperty!("busy", Member = busy, Notify = busy_changed);
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
 
-        // Repaint the rows that stayed where they were but changed — the
-        // toggled row's `expanded` flag. This runs before the run below moves
-        // indexes, so the row numbers are still the old ones.
-        let mut changed: Option<(usize, usize)> = None;
-        for index in 0..edit_at {
-            if previous[index] == next[index] {
-                continue;
+        #[qsignal]
+        fn count_changed(&mut self);
+        #[qsignal]
+        fn busy_changed(&mut self);
+        #[qsignal]
+        fn loaded_changed(&mut self);
+        #[qsignal]
+        fn status_changed(&mut self);
+
+        /// A folder that the user asked to expand could not be read. The row
+        /// goes back to its closed state and keeps its chevron, but it has no
+        /// children to show, so the shell has to say why: a silent no-op reads
+        /// as a broken chevron.
+        #[qsignal]
+        fn read_failed(&mut self, path: String, message: String);
+
+        /// Starts over at `root`; the root itself is implicit (the volume row)
+        /// and its direct children are the first rows.
+        #[qslot]
+        fn load(&mut self, root: String, show_hidden: bool) {
+            let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+            self.root = root.clone();
+            self.show_hidden = show_hidden;
+            self.expanded_paths.clear();
+            self.children.clear();
+            self.loaded_paths.clear();
+            self.loading_paths.clear();
+            self.set_rows(Vec::new());
+            self.loaded = false;
+            self.loaded_changed();
+            self.busy = false;
+            self.busy_changed();
+            self.status.clear();
+            self.status_changed();
+
+            if root.is_empty() {
+                return;
             }
-            self.as_mut().rust_mut().rows[index] = next[index].clone();
-            changed = Some(match changed {
-                Some((first, _)) => (first, index),
-                None => (index, index),
+
+            self.busy = true;
+            self.busy_changed();
+            self.status = "Loading folder…".to_owned();
+            self.status_changed();
+            self.request_children(root, generation);
+        }
+
+        /// Expands a node and lazily reads its child folders, or collapses it.
+        #[qslot]
+        fn toggle(&mut self, path: String) {
+            if path.is_empty() || path == self.root {
+                return;
+            }
+
+            if self.expanded_paths.remove(&path) {
+                self.rebuild();
+                return;
+            }
+
+            self.expanded_paths.insert(path.clone());
+            // Turn the chevron now rather than when the read finishes: the folder
+            // is open from the moment it is clicked, and a blocking read on a slow
+            // disk would otherwise leave the click looking ignored.
+            self.rebuild();
+            if self.children.contains_key(&path) || self.loading_paths.contains(&path) {
+                return;
+            }
+
+            let generation = self.generation;
+            self.busy = true;
+            self.busy_changed();
+            self.request_children(path, generation);
+        }
+
+        fn request_children(&mut self, path: String, generation: u64) {
+            self.loading_paths.insert(path.clone());
+            let show_hidden = self.show_hidden;
+            let handle = self.get_thread_handle();
+            runtime::spawn(async move {
+                let target = path.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let backend = LocalBackend;
+                    backend
+                        .read_dir(&target)
+                        .map(|view| children_from(view.entries, show_hidden))
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|result| result);
+
+                handle.invoke_mut(move |model| {
+                    model.apply_children(generation, path, result);
+                });
             });
         }
-        if let Some((first, last)) = changed {
-            self.as_mut().emit_rows_changed(first as i32, last as i32);
+
+        fn apply_children(
+            &mut self,
+            generation: u64,
+            path: String,
+            result: Result<Vec<TreeChild>, String>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+
+            self.loading_paths.remove(&path);
+            let is_root = path == self.root;
+            let failed = result.is_err();
+
+            match result {
+                Ok(children) => {
+                    let count = children.len();
+                    self.children.insert(path.clone(), children);
+                    self.loaded_paths.insert(path.clone());
+                    if is_root {
+                        self.loaded = true;
+                        self.loaded_changed();
+                        self.status = tree_status(count);
+                        self.status_changed();
+                    }
+                }
+                Err(error) => {
+                    let message = crate::errors::friendly_error(&error);
+                    if is_root {
+                        // The volume row's tree stays open on an empty list so the
+                        // status below it can say why nothing arrived.
+                        self.children.insert(path.clone(), Vec::new());
+                        self.loaded_paths.insert(path.clone());
+                        self.loaded = true;
+                        self.loaded_changed();
+                        self.status = "Could not read folder".to_owned();
+                        self.status_changed();
+                    } else {
+                        // A failed folder is not an open folder. Close the branch
+                        // and leave it out of `loaded_paths`, so its chevron stays
+                        // and the next click retries the read instead of reusing
+                        // an empty child list.
+                        self.expanded_paths.remove(&path);
+                        self.read_failed(path.clone(), message.clone());
+                    }
+                    log::warn!(target: "dae::sidebar", "sidebar tree read failed: {message}");
+                }
+            }
+
+            if is_root || self.expanded_paths.contains(&path) || failed {
+                self.rebuild();
+            }
+            if self.loading_paths.is_empty() {
+                self.busy = false;
+                self.busy_changed();
+            }
         }
 
-        unsafe {
+        fn rebuild(&mut self) {
+            let rows = flatten(
+                &self.root,
+                &self.expanded_paths,
+                &self.children,
+                &self.loaded_paths,
+            );
+            self.apply_rows(rows);
+        }
+
+        /// Replaces the flattened rows without resetting the model.
+        ///
+        /// A reset throws away every delegate in the tree and builds them again,
+        /// which is the flash the sidebar showed whenever a folder was expanded.
+        /// Expansion and collapse only touch one contiguous run: the row whose
+        /// `expanded` flag flipped, and the subtree introduced or dropped below
+        /// it. Matching by path keeps the other rows in place; only the toggled
+        /// row is repainted, and only the run is inserted or removed.
+        fn apply_rows(&mut self, next: Vec<TreeRow>) {
+            let previous = self.rows.clone();
+            let (edit_at, previous_mid_end, next_mid_end) = row_delta(&previous, &next);
+
+            // Repaint the rows that stayed where they were but changed — the
+            // toggled row's `expanded` flag. This runs before the run below moves
+            // indexes, so the row numbers are still the old ones.
+            let mut changed: Option<(usize, usize)> = None;
+            for index in 0..edit_at {
+                if previous[index] == next[index] {
+                    continue;
+                }
+                self.rows[index] = next[index].clone();
+                changed = Some(match changed {
+                    Some((first, _)) => (first, index),
+                    None => (index, index),
+                });
+            }
+            if let Some((first, last)) = changed {
+                self.emit_rows_changed(first as i32, last as i32);
+            }
+
             if edit_at < previous_mid_end {
-                self.as_mut().begin_remove_rows(
+                self.begin_remove_rows(
                     &QModelIndex::default(),
                     edit_at as i32,
                     (previous_mid_end - 1) as i32,
                 );
-                self.as_mut()
-                    .rust_mut()
-                    .rows
-                    .drain(edit_at..previous_mid_end);
-                self.as_mut().end_remove_rows();
+                self.rows.drain(edit_at..previous_mid_end);
+                self.end_remove_rows();
             }
             if edit_at < next_mid_end {
-                self.as_mut().begin_insert_rows(
+                self.begin_insert_rows(
                     &QModelIndex::default(),
                     edit_at as i32,
                     (next_mid_end - 1) as i32,
                 );
-                self.as_mut().rust_mut().rows.splice(
-                    edit_at..edit_at,
-                    next[edit_at..next_mid_end].iter().cloned(),
-                );
-                self.as_mut().end_insert_rows();
+                self.rows
+                    .splice(edit_at..edit_at, next[edit_at..next_mid_end].iter().cloned());
+                self.end_insert_rows();
             }
-        }
 
-        // The shared tail cannot change its paths; a change there (an
-        // ancestor's `mayHaveChildren`) is still a repaint, at the indexes the
-        // insert or removal above left them.
-        let mut changed: Option<(usize, usize)> = None;
-        for index in next_mid_end..next.len() {
-            if self.as_mut().rust_mut().rows[index] == next[index] {
-                continue;
+            // The shared tail cannot change its paths; a change there (an
+            // ancestor's `mayHaveChildren`) is still a repaint, at the indexes the
+            // insert or removal above left them.
+            let mut changed: Option<(usize, usize)> = None;
+            for index in next_mid_end..next.len() {
+                if self.rows[index] == next[index] {
+                    continue;
+                }
+                self.rows[index] = next[index].clone();
+                changed = Some(match changed {
+                    Some((first, _)) => (first, index),
+                    None => (index, index),
+                });
             }
-            self.as_mut().rust_mut().rows[index] = next[index].clone();
-            changed = Some(match changed {
-                Some((first, _)) => (first, index),
-                None => (index, index),
-            });
-        }
-        if let Some((first, last)) = changed {
-            self.as_mut().emit_rows_changed(first as i32, last as i32);
+            if let Some((first, last)) = changed {
+                self.emit_rows_changed(first as i32, last as i32);
+            }
+
+            self.count = next.len() as i32;
+            self.count_changed();
         }
 
-        self.as_mut().set_count(next.len() as i32);
-    }
-
-    /// Tells the view that `first..=last` kept its rows but changed their
-    /// values. The tree only has the six roles below, so they are all sent.
-    fn emit_rows_changed(mut self: Pin<&mut Self>, first: i32, last: i32) {
-        unsafe {
+        /// Tells the view that `first..=last` kept its rows but changed their
+        /// values.
+        fn emit_rows_changed(&mut self, first: i32, last: i32) {
             let parent = QModelIndex::default();
-            let top = self.as_mut().model_index(first, 0, &parent);
-            let bottom = self.as_mut().model_index(last, 0, &parent);
-            let mut roles = QList::<i32>::default();
-            for role in [
-                ROLE_NAME,
-                ROLE_PATH,
-                ROLE_DEPTH,
-                ROLE_EXPANDED,
-                ROLE_MAY_HAVE_CHILDREN,
-                ROLE_LOADED,
-            ] {
-                roles.append(role);
-            }
-            self.as_mut().data_changed(&top, &bottom, &roles);
+            let top = self.index(first, 0, &parent);
+            let bottom = self.index(last, 0, &parent);
+            self.data_changed(&top, &bottom);
         }
-    }
 
-    fn set_rows(mut self: Pin<&mut Self>, rows: Vec<TreeRow>) {
-        let count = rows.len() as i32;
-        unsafe {
-            self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows = rows;
-            self.as_mut().end_reset_model();
+        fn set_rows(&mut self, rows: Vec<TreeRow>) {
+            let count = rows.len() as i32;
+            self.begin_reset_model();
+            self.rows = rows;
+            self.end_reset_model();
+            self.count = count;
+            self.count_changed();
         }
-        self.as_mut().set_count(count);
     }
+}
+
+pub use rows::SidebarTreeModel;
+
+impl QmlElement for SidebarTreeModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "SidebarTreeModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 fn children_from(

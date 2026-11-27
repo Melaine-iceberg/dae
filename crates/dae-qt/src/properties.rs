@@ -14,11 +14,9 @@
 //! complete snapshot instead of an intermediate state — the same ordering
 //! `PreviewController` uses.
 
-use std::pin::Pin;
 use std::sync::Arc;
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::QString;
+use qtbridge::{QmlElement, QmlObject, QThreadHandle, qobject};
 use dae_core::fs::service;
 use dae_core::fs::vfs;
 use dae_core::fs::{directory_size, hashing, security};
@@ -31,222 +29,6 @@ use crate::errors::friendly_error;
 use crate::format;
 use crate::model::category_of;
 use crate::runtime;
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    unsafe extern "RustQt" {
-        /// QML usage: `PropertiesController { id: controller }` then
-        /// `controller.open(path)`. The dialog binds to the properties; the
-        /// two `start*`/`cancel*` pairs drive work that outlives a frame.
-        #[qobject]
-        #[qml_element]
-        #[qproperty(QString, path)]
-        #[qproperty(QString, name)]
-        /// The containing folder, as the dialog's "位置" row spells it.
-        #[qproperty(QString, location)]
-        #[qproperty(QString, kind_text, cxx_name = "kindText")]
-        /// The listing's icon family (`folder`, `image`, `archive`, …), so the
-        /// two-column preview draws the same glyph the row does.
-        #[qproperty(QString, category)]
-        /// A symlink's destination, empty for anything else.
-        #[qproperty(QString, target_text, cxx_name = "targetText")]
-        #[qproperty(QString, size_text, cxx_name = "sizeText")]
-        #[qproperty(QString, created_text, cxx_name = "createdText")]
-        #[qproperty(QString, modified_text, cxx_name = "modifiedText")]
-        #[qproperty(QString, accessed_text, cxx_name = "accessedText")]
-        #[qproperty(bool, is_directory, cxx_name = "isDirectory")]
-        #[qproperty(bool, is_symlink, cxx_name = "isSymlink")]
-        /// True for `smb://`, `sftp://` and `cloud://` paths. Their metadata is
-        /// readable but nothing here is editable: attributes are a local file
-        /// system idea and the checksum reader only opens local files.
-        #[qproperty(bool, remote)]
-        #[qproperty(bool, editable)]
-        /// `unix`, `windows` or `basic` — which editor the dialog shows.
-        #[qproperty(QString, platform_kind, cxx_name = "platformKind")]
-        /// POSIX permission bits, low 12 only (`0o7777`).
-        #[qproperty(i32, mode)]
-        #[qproperty(QString, user_name, cxx_name = "userName")]
-        #[qproperty(QString, group_name, cxx_name = "groupName")]
-        #[qproperty(bool, read_only, cxx_name = "readOnly")]
-        #[qproperty(bool, hidden)]
-        #[qproperty(bool, archive)]
-        #[qproperty(bool, system)]
-        #[qproperty(bool, loading)]
-        #[qproperty(QString, error)]
-        #[qproperty(bool, saving)]
-        #[qproperty(QString, save_error, cxx_name = "saveError")]
-        #[qproperty(bool, size_scanning, cxx_name = "sizeScanning")]
-        #[qproperty(QString, size_scan_text, cxx_name = "sizeScanText")]
-        #[qproperty(f64, size_scan_bytes, cxx_name = "sizeScanBytes")]
-        #[qproperty(bool, size_scan_done, cxx_name = "sizeScanDone")]
-        #[qproperty(bool, hashing)]
-        #[qproperty(f64, hash_progress, cxx_name = "hashProgress")]
-        #[qproperty(QString, hash_md5, cxx_name = "hashMd5")]
-        #[qproperty(QString, hash_sha1, cxx_name = "hashSha1")]
-        #[qproperty(QString, hash_sha256, cxx_name = "hashSha256")]
-        #[qproperty(QString, hash_error, cxx_name = "hashError")]
-        #[qproperty(bool, hash_done, cxx_name = "hashDone")]
-        /// Authenticode verdict (`valid`, `unsigned`, `untrusted`, `invalid`).
-        /// Windows only; `signatureSupported` hides the tab elsewhere.
-        #[qproperty(QString, signature_status, cxx_name = "signatureStatus")]
-        #[qproperty(QString, signature_signer, cxx_name = "signatureSigner")]
-        #[qproperty(QString, signature_issuer, cxx_name = "signatureIssuer")]
-        #[qproperty(QString, signature_detail, cxx_name = "signatureDetail")]
-        #[qproperty(bool, signature_supported, cxx_name = "signatureSupported")]
-        /// The discretionary ACL: owner, group and the editable entry list.
-        /// Windows DACL and Linux POSIX ACL; `aclSupported` hides the tab
-        /// elsewhere.
-        #[qproperty(QString, acl_owner, cxx_name = "aclOwner")]
-        #[qproperty(QString, acl_group, cxx_name = "aclGroup")]
-        /// The entries as a JSON array of `AclEntry` objects, so the dialog
-        /// can render and edit each one rather than a preformatted blob.
-        #[qproperty(QString, acl_entries_json, cxx_name = "aclEntriesJson")]
-        /// Windows: whether the DACL inherits from its parent. POSIX: false.
-        #[qproperty(bool, acl_inheritance, cxx_name = "aclInheritance")]
-        /// Whether the platform can write the ACL back.
-        #[qproperty(bool, acl_editable, cxx_name = "aclEditable")]
-        #[qproperty(bool, acl_supported, cxx_name = "aclSupported")]
-        type PropertiesController = super::PropertiesControllerRust;
-
-        #[qinvokable]
-        fn open(self: Pin<&mut PropertiesController>, path: &QString);
-
-        /// Stops every run and forgets the snapshot. The dialog calls it when
-        /// it closes, so a scan cannot outlive the window that started it.
-        #[qinvokable]
-        fn close(self: Pin<&mut PropertiesController>);
-
-        /// Writes the edits back. `mode` is the low 12 bits, `user`/`group`
-        /// empty means "unchanged", and `recursive` applies the same change to
-        /// every enclosed entry of a local folder.
-        #[qinvokable]
-        fn save(
-            self: Pin<&mut PropertiesController>,
-            mode: i32,
-            user: &QString,
-            group: &QString,
-            read_only: bool,
-            hidden: bool,
-            archive: bool,
-            system: bool,
-            recursive: bool,
-        );
-
-        /// Writes the ACL editor's draft back. `entries_json` is a JSON array
-        /// of `{principal, allow, rights}` specs — the explicit entries only;
-        /// `inheritance` is the Windows DACL switch and is ignored on POSIX.
-        #[qinvokable]
-        #[cxx_name = "saveAcl"]
-        fn save_acl(
-            self: Pin<&mut PropertiesController>,
-            entries_json: &QString,
-            inheritance: bool,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "startSizeScan"]
-        fn start_size_scan(self: Pin<&mut PropertiesController>);
-
-        #[qinvokable]
-        #[cxx_name = "cancelSizeScan"]
-        fn cancel_size_scan(self: Pin<&mut PropertiesController>);
-
-        #[qinvokable]
-        #[cxx_name = "startHashing"]
-        fn start_hashing(self: Pin<&mut PropertiesController>);
-
-        #[qinvokable]
-        #[cxx_name = "cancelHashing"]
-        fn cancel_hashing(self: Pin<&mut PropertiesController>);
-
-        #[qsignal]
-        fn saved(self: Pin<&mut PropertiesController>);
-
-        #[qsignal]
-        #[cxx_name = "saveFailed"]
-        fn save_failed(self: Pin<&mut PropertiesController>, message: &QString);
-    }
-
-    impl cxx_qt::Threading for PropertiesController {}
-}
-
-#[derive(Default)]
-pub struct PropertiesControllerRust {
-    path: QString,
-    name: QString,
-    location: QString,
-    kind_text: QString,
-    category: QString,
-    target_text: QString,
-    size_text: QString,
-    created_text: QString,
-    modified_text: QString,
-    accessed_text: QString,
-    is_directory: bool,
-    is_symlink: bool,
-    remote: bool,
-    editable: bool,
-    platform_kind: QString,
-    mode: i32,
-    user_name: QString,
-    group_name: QString,
-    read_only: bool,
-    hidden: bool,
-    archive: bool,
-    system: bool,
-    loading: bool,
-    error: QString,
-    saving: bool,
-    save_error: QString,
-    size_scanning: bool,
-    size_scan_text: QString,
-    size_scan_bytes: f64,
-    size_scan_done: bool,
-    hashing: bool,
-    hash_progress: f64,
-    hash_md5: QString,
-    hash_sha1: QString,
-    hash_sha256: QString,
-    hash_error: QString,
-    hash_done: bool,
-    signature_status: QString,
-    signature_signer: QString,
-    signature_issuer: QString,
-    signature_detail: QString,
-    signature_supported: bool,
-    acl_owner: QString,
-    acl_group: QString,
-    acl_entries_json: QString,
-    acl_inheritance: bool,
-    acl_editable: bool,
-    acl_supported: bool,
-    /// The snapshot the edits are compared against, so a field the user did
-    /// not touch never reaches `chmod`/`chown`/`SetFileAttributesW`.
-    loaded: Option<FileProperties>,
-    /// Bumped by every `open()`, so a slow read cannot paint over a newer one.
-    generation: u64,
-    size_operation: String,
-    hash_operation: String,
-    next_operation: u64,
-}
-
-/// Turns core events into queued Qt updates for one controller.
-struct PropertiesHost {
-    thread: cxx_qt::CxxQtThread<qobject::PropertiesController>,
-}
-
-impl Host for PropertiesHost {
-    fn emit(&self, event: Event) {
-        let _ = self
-            .thread
-            .queue(move |mut controller| controller.as_mut().apply_event(event));
-    }
-}
 
 /// The platform's permission editor is only meaningful for local paths.
 fn platform_kind(properties: &FileProperties, remote: bool) -> &'static str {
@@ -277,676 +59,947 @@ fn kind_label(kind: EntryKind) -> &'static str {
     }
 }
 
-impl PropertiesControllerRust {
-    /// A fresh id per run: the dialog may start a scan, close it and start
-    /// another before the first one's final event arrives.
-    fn next_operation_id(&mut self, prefix: &str) -> String {
-        self.next_operation = self.next_operation.wrapping_add(1);
-        format!("qt-{prefix}-{}", self.next_operation)
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
+}
+
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+mod properties_impl {
+    use super::*;
+
+    #[derive(Default)]
+    pub struct PropertiesController {
+        path: String,
+        name: String,
+        location: String,
+        kind_text: String,
+        category: String,
+        target_text: String,
+        size_text: String,
+        created_text: String,
+        modified_text: String,
+        accessed_text: String,
+        is_directory: bool,
+        is_symlink: bool,
+        remote: bool,
+        editable: bool,
+        platform_kind: String,
+        mode: i32,
+        user_name: String,
+        group_name: String,
+        read_only: bool,
+        hidden: bool,
+        archive: bool,
+        system: bool,
+        loading: bool,
+        error: String,
+        saving: bool,
+        save_error: String,
+        size_scanning: bool,
+        size_scan_text: String,
+        size_scan_bytes: f64,
+        size_scan_done: bool,
+        hashing: bool,
+        hash_progress: f64,
+        hash_md5: String,
+        hash_sha1: String,
+        hash_sha256: String,
+        hash_error: String,
+        hash_done: bool,
+        signature_status: String,
+        signature_signer: String,
+        signature_issuer: String,
+        signature_detail: String,
+        signature_supported: bool,
+        acl_owner: String,
+        acl_group: String,
+        acl_entries_json: String,
+        acl_inheritance: bool,
+        acl_editable: bool,
+        acl_supported: bool,
+        /// The snapshot the edits are compared against, so a field the user did
+        /// not touch never reaches `chmod`/`chown`/`SetFileAttributesW`.
+        loaded: Option<FileProperties>,
+        /// Bumped by every `open()`, so a slow read cannot paint over a newer one.
+        generation: u64,
+        size_operation: String,
+        hash_operation: String,
+        next_operation: u64,
+    }
+
+    /// Turns core events into queued Qt updates for one controller.
+
+    impl PropertiesController {
+        qproperty!("path", Member = path, Notify = path_changed);
+        qproperty!("name", Member = name, Notify = name_changed);
+        qproperty!("location", Member = location, Notify = location_changed);
+        qproperty!("kindText", Member = kind_text, Notify = kind_text_changed);
+        qproperty!("category", Member = category, Notify = category_changed);
+        qproperty!("targetText", Member = target_text, Notify = target_text_changed);
+        qproperty!("sizeText", Member = size_text, Notify = size_text_changed);
+        qproperty!("createdText", Member = created_text, Notify = created_text_changed);
+        qproperty!("modifiedText", Member = modified_text, Notify = modified_text_changed);
+        qproperty!("accessedText", Member = accessed_text, Notify = accessed_text_changed);
+        qproperty!("isDirectory", Member = is_directory, Notify = is_directory_changed);
+        qproperty!("isSymlink", Member = is_symlink, Notify = is_symlink_changed);
+        qproperty!("remote", Member = remote, Notify = remote_changed);
+        qproperty!("editable", Member = editable, Notify = editable_changed);
+        qproperty!("platformKind", Member = platform_kind, Notify = platform_kind_changed);
+        qproperty!("mode", Member = mode, Notify = mode_changed);
+        qproperty!("userName", Member = user_name, Notify = user_name_changed);
+        qproperty!("groupName", Member = group_name, Notify = group_name_changed);
+        qproperty!("readOnly", Member = read_only, Notify = read_only_changed);
+        qproperty!("hidden", Member = hidden, Notify = hidden_changed);
+        qproperty!("archive", Member = archive, Notify = archive_changed);
+        qproperty!("system", Member = system, Notify = system_changed);
+        qproperty!("loading", Member = loading, Notify = loading_changed);
+        qproperty!("error", Member = error, Notify = error_changed);
+        qproperty!("saving", Member = saving, Notify = saving_changed);
+        qproperty!("saveError", Member = save_error, Notify = save_error_changed);
+        qproperty!("sizeScanning", Member = size_scanning, Notify = size_scanning_changed);
+        qproperty!("sizeScanText", Member = size_scan_text, Notify = size_scan_text_changed);
+        qproperty!("sizeScanBytes", Member = size_scan_bytes, Notify = size_scan_bytes_changed);
+        qproperty!("sizeScanDone", Member = size_scan_done, Notify = size_scan_done_changed);
+        qproperty!("hashing", Member = hashing, Notify = hashing_changed);
+        qproperty!("hashProgress", Member = hash_progress, Notify = hash_progress_changed);
+        qproperty!("hashMd5", Member = hash_md5, Notify = hash_md5_changed);
+        qproperty!("hashSha1", Member = hash_sha1, Notify = hash_sha1_changed);
+        qproperty!("hashSha256", Member = hash_sha256, Notify = hash_sha256_changed);
+        qproperty!("hashError", Member = hash_error, Notify = hash_error_changed);
+        qproperty!("hashDone", Member = hash_done, Notify = hash_done_changed);
+        qproperty!("signatureStatus", Member = signature_status, Notify = signature_status_changed);
+        qproperty!("signatureSigner", Member = signature_signer, Notify = signature_signer_changed);
+        qproperty!("signatureIssuer", Member = signature_issuer, Notify = signature_issuer_changed);
+        qproperty!("signatureDetail", Member = signature_detail, Notify = signature_detail_changed);
+        qproperty!("signatureSupported", Member = signature_supported, Notify = signature_supported_changed);
+        qproperty!("aclOwner", Member = acl_owner, Notify = acl_owner_changed);
+        qproperty!("aclGroup", Member = acl_group, Notify = acl_group_changed);
+        qproperty!("aclEntriesJson", Member = acl_entries_json, Notify = acl_entries_json_changed);
+        qproperty!("aclInheritance", Member = acl_inheritance, Notify = acl_inheritance_changed);
+        qproperty!("aclEditable", Member = acl_editable, Notify = acl_editable_changed);
+        qproperty!("aclSupported", Member = acl_supported, Notify = acl_supported_changed);
+
+        #[qsignal]
+        fn path_changed(&mut self);
+        #[qsignal]
+        fn name_changed(&mut self);
+        #[qsignal]
+        fn location_changed(&mut self);
+        #[qsignal]
+        fn kind_text_changed(&mut self);
+        #[qsignal]
+        fn category_changed(&mut self);
+        #[qsignal]
+        fn target_text_changed(&mut self);
+        #[qsignal]
+        fn size_text_changed(&mut self);
+        #[qsignal]
+        fn created_text_changed(&mut self);
+        #[qsignal]
+        fn modified_text_changed(&mut self);
+        #[qsignal]
+        fn accessed_text_changed(&mut self);
+        #[qsignal]
+        fn is_directory_changed(&mut self);
+        #[qsignal]
+        fn is_symlink_changed(&mut self);
+        #[qsignal]
+        fn remote_changed(&mut self);
+        #[qsignal]
+        fn editable_changed(&mut self);
+        #[qsignal]
+        fn platform_kind_changed(&mut self);
+        #[qsignal]
+        fn mode_changed(&mut self);
+        #[qsignal]
+        fn user_name_changed(&mut self);
+        #[qsignal]
+        fn group_name_changed(&mut self);
+        #[qsignal]
+        fn read_only_changed(&mut self);
+        #[qsignal]
+        fn hidden_changed(&mut self);
+        #[qsignal]
+        fn archive_changed(&mut self);
+        #[qsignal]
+        fn system_changed(&mut self);
+        #[qsignal]
+        fn loading_changed(&mut self);
+        #[qsignal]
+        fn error_changed(&mut self);
+        #[qsignal]
+        fn saving_changed(&mut self);
+        #[qsignal]
+        fn save_error_changed(&mut self);
+        #[qsignal]
+        fn size_scanning_changed(&mut self);
+        #[qsignal]
+        fn size_scan_text_changed(&mut self);
+        #[qsignal]
+        fn size_scan_bytes_changed(&mut self);
+        #[qsignal]
+        fn size_scan_done_changed(&mut self);
+        #[qsignal]
+        fn hashing_changed(&mut self);
+        #[qsignal]
+        fn hash_progress_changed(&mut self);
+        #[qsignal]
+        fn hash_md5_changed(&mut self);
+        #[qsignal]
+        fn hash_sha1_changed(&mut self);
+        #[qsignal]
+        fn hash_sha256_changed(&mut self);
+        #[qsignal]
+        fn hash_error_changed(&mut self);
+        #[qsignal]
+        fn hash_done_changed(&mut self);
+        #[qsignal]
+        fn signature_status_changed(&mut self);
+        #[qsignal]
+        fn signature_signer_changed(&mut self);
+        #[qsignal]
+        fn signature_issuer_changed(&mut self);
+        #[qsignal]
+        fn signature_detail_changed(&mut self);
+        #[qsignal]
+        fn signature_supported_changed(&mut self);
+        #[qsignal]
+        fn acl_owner_changed(&mut self);
+        #[qsignal]
+        fn acl_group_changed(&mut self);
+        #[qsignal]
+        fn acl_entries_json_changed(&mut self);
+        #[qsignal]
+        fn acl_inheritance_changed(&mut self);
+        #[qsignal]
+        fn acl_editable_changed(&mut self);
+        #[qsignal]
+        fn acl_supported_changed(&mut self);
+
+        notifying_setters! {
+            set_path(String) => path, path_changed;
+            set_name(String) => name, name_changed;
+            set_location(String) => location, location_changed;
+            set_kind_text(String) => kind_text, kind_text_changed;
+            set_category(String) => category, category_changed;
+            set_target_text(String) => target_text, target_text_changed;
+            set_size_text(String) => size_text, size_text_changed;
+            set_created_text(String) => created_text, created_text_changed;
+            set_modified_text(String) => modified_text, modified_text_changed;
+            set_accessed_text(String) => accessed_text, accessed_text_changed;
+            set_is_directory(bool) => is_directory, is_directory_changed;
+            set_is_symlink(bool) => is_symlink, is_symlink_changed;
+            set_remote(bool) => remote, remote_changed;
+            set_editable(bool) => editable, editable_changed;
+            set_platform_kind(String) => platform_kind, platform_kind_changed;
+            set_mode(i32) => mode, mode_changed;
+            set_user_name(String) => user_name, user_name_changed;
+            set_group_name(String) => group_name, group_name_changed;
+            set_read_only(bool) => read_only, read_only_changed;
+            set_hidden(bool) => hidden, hidden_changed;
+            set_archive(bool) => archive, archive_changed;
+            set_system(bool) => system, system_changed;
+            set_loading(bool) => loading, loading_changed;
+            set_error(String) => error, error_changed;
+            set_saving(bool) => saving, saving_changed;
+            set_save_error(String) => save_error, save_error_changed;
+            set_size_scanning(bool) => size_scanning, size_scanning_changed;
+            set_size_scan_text(String) => size_scan_text, size_scan_text_changed;
+            set_size_scan_bytes(f64) => size_scan_bytes, size_scan_bytes_changed;
+            set_size_scan_done(bool) => size_scan_done, size_scan_done_changed;
+            set_hashing(bool) => hashing, hashing_changed;
+            set_hash_progress(f64) => hash_progress, hash_progress_changed;
+            set_hash_md5(String) => hash_md5, hash_md5_changed;
+            set_hash_sha1(String) => hash_sha1, hash_sha1_changed;
+            set_hash_sha256(String) => hash_sha256, hash_sha256_changed;
+            set_hash_error(String) => hash_error, hash_error_changed;
+            set_hash_done(bool) => hash_done, hash_done_changed;
+            set_signature_status(String) => signature_status, signature_status_changed;
+            set_signature_signer(String) => signature_signer, signature_signer_changed;
+            set_signature_issuer(String) => signature_issuer, signature_issuer_changed;
+            set_signature_detail(String) => signature_detail, signature_detail_changed;
+            set_signature_supported(bool) => signature_supported, signature_supported_changed;
+            set_acl_owner(String) => acl_owner, acl_owner_changed;
+            set_acl_group(String) => acl_group, acl_group_changed;
+            set_acl_entries_json(String) => acl_entries_json, acl_entries_json_changed;
+            set_acl_inheritance(bool) => acl_inheritance, acl_inheritance_changed;
+            set_acl_editable(bool) => acl_editable, acl_editable_changed;
+            set_acl_supported(bool) => acl_supported, acl_supported_changed;
+        }
+
+        #[qsignal]
+        fn saved(&mut self);
+        #[qsignal]
+        fn save_failed(&mut self, message: String);
+
+
+        /// A fresh id per run: the dialog may start a scan, close it and start
+        /// another before the first one's final event arrives.
+        fn next_operation_id(&mut self, prefix: &str) -> String {
+            self.next_operation = self.next_operation.wrapping_add(1);
+            format!("qt-{prefix}-{}", self.next_operation)
+        }
+
+        #[qslot]
+
+        fn open(&mut self, path: String) {
+                    let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+            self.loaded = None;
+
+            self.stop_runs();
+            self.set_path(path.to_owned());
+            self.set_error(String::new());
+            self.set_save_error(String::new());
+            self.set_saving(false);
+            self.set_loading(true);
+            self.set_remote(!vfs::is_local_path(&path));
+            self.reset_size_scan();
+            self.reset_hash();
+            self.reset_security();
+
+            let thread = self.get_thread_handle();
+            let security_path = path.clone();
+            runtime::spawn(async move {
+                let result = service::get_file_properties(path).await;
+                // Signature and ACL are blocking platform reads; they run beside
+                // the metadata read rather than after it, so a slow WinVerifyTrust
+                // cannot hold the whole dialog.
+                let security = if vfs::is_local_path(&security_path) {
+                    tokio::task::spawn_blocking(move || {
+                        (
+                            security::signature(&security_path),
+                            security::acl(&security_path),
+                        )
+                    })
+                    .await
+                    .ok()
+                } else {
+                    None
+                };
+                thread.invoke_mut(move |controller| {
+                    controller.apply_properties(generation, result);
+                    controller.apply_security(generation, security);
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn close(&mut self) {
+            let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+            self.stop_runs();
+            self.loaded = None;
+        }
+
+        fn apply_properties(
+            &mut self,
+            generation: u64,
+            result: Result<FileProperties, dae_core::error::FileSystemError>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+
+            match result {
+                Ok(properties) => {
+                    let remote = !vfs::is_local_path(&properties.path);
+                    self.set_path(properties.path.to_owned());
+                    self.set_name(properties.name.to_owned());
+                    self.set_location(parent_of(&properties.path).to_owned());
+                    self.set_kind_text(kind_label(properties.kind).to_owned());
+                    self.set_category(
+                        category_of(properties.kind, &properties.name).to_owned(),
+                    );
+                    self.set_target_text(properties.target.as_deref().unwrap_or("").to_owned());
+                    self.set_size_text(
+                        properties
+                            .size
+                            .map(format::size)
+                            .unwrap_or_else(|| "—".to_owned()),
+                    );
+                    self.set_created_text(
+                        properties
+                            .created_at
+                            .map(format::timestamp)
+                            .unwrap_or_else(|| "—".to_owned()),
+                    );
+                    self.set_modified_text(
+                        properties
+                            .modified_at
+                            .map(format::timestamp)
+                            .unwrap_or_else(|| "—".to_owned()),
+                    );
+                    self.set_accessed_text(
+                        properties
+                            .accessed_at
+                            .map(format::timestamp)
+                            .unwrap_or_else(|| "—".to_owned()),
+                    );
+                    self.set_is_directory(properties.kind == EntryKind::Directory);
+                    self.set_is_symlink(properties.kind == EntryKind::Symlink);
+                    self.set_remote(remote);
+
+                    let kind = platform_kind(&properties, remote);
+                    self.set_platform_kind(kind.to_owned());
+                    self.set_editable(!remote && kind != "basic");
+
+                    match &properties.platform {
+                        PlatformProperties::Unix(unix) => {
+                            self.set_mode((unix.mode & 0o7777) as i32);
+                            self.set_user_name(
+                                unix.user_name
+                                    .clone()
+                                    .unwrap_or_else(|| unix.uid.to_string()),
+                            );
+                            self.set_group_name(
+                                unix.group_name
+                                    .clone()
+                                    .unwrap_or_else(|| unix.gid.to_string()),
+                            );
+                        }
+                        PlatformProperties::Windows(windows) => {
+                            self.set_read_only(windows.read_only);
+                            self.set_hidden(windows.hidden);
+                            self.set_archive(windows.archive);
+                            self.set_system(windows.system);
+                        }
+                        PlatformProperties::Basic => {}
+                    }
+
+                    self.loaded = Some(properties);
+                    self.set_error(String::new());
+                }
+                Err(error) => {
+                    self.set_error(friendly_error(&error.to_string()).to_owned());
+                }
+            }
+            self.set_loading(false);
+        }
+
+        /// `open` on a new entry or `close` on the old one: both runs are about to
+        /// become meaningless, and their ids are what cancels them.
+        fn stop_runs(&mut self) {
+            self.cancel_size_scan();
+            self.cancel_hashing();
+        }
+
+        /// Builds the change set from the dialog's draft and the loaded snapshot.
+        /// Empty owner fields are "leave alone" rather than an attempt to clear
+        /// the account name.
+        fn build_changes(
+            &self,
+            mode: i32,
+            user: &str,
+            group: &str,
+            read_only: bool,
+            hidden: bool,
+            archive: bool,
+            system: bool,
+        ) -> PropertyChanges {
+            let mut changes = PropertyChanges::default();
+            let Some(properties) = self.loaded.as_ref() else {
+                return changes;
+            };
+
+            match &properties.platform {
+                PlatformProperties::Unix(unix) => {
+                    let wanted = (mode as u32) & 0o7777;
+                    if wanted != (unix.mode & 0o7777) {
+                        changes.mode = Some(wanted);
+                    }
+
+                    let initial_user = unix
+                        .user_name
+                        .clone()
+                        .unwrap_or_else(|| unix.uid.to_string());
+                    let initial_group = unix
+                        .group_name
+                        .clone()
+                        .unwrap_or_else(|| unix.gid.to_string());
+                    let wanted_user = user.trim();
+                    let wanted_group = group.trim();
+                    let mut owner = OwnerChange {
+                        user: None,
+                        group: None,
+                    };
+                    if !wanted_user.is_empty() && wanted_user != initial_user {
+                        owner.user = Some(wanted_user.to_owned());
+                    }
+                    if !wanted_group.is_empty() && wanted_group != initial_group {
+                        owner.group = Some(wanted_group.to_owned());
+                    }
+                    if owner.user.is_some() || owner.group.is_some() {
+                        changes.owner = Some(owner);
+                    }
+                }
+                PlatformProperties::Windows(windows) => {
+                    if read_only != windows.read_only {
+                        changes.read_only = Some(read_only);
+                    }
+                    if hidden != windows.hidden {
+                        changes.hidden = Some(hidden);
+                    }
+                    if archive != windows.archive {
+                        changes.archive = Some(archive);
+                    }
+                    if system != windows.system {
+                        changes.system = Some(system);
+                    }
+                }
+                PlatformProperties::Basic => {}
+            }
+
+            changes
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        #[qslot]
+        fn save(
+            &mut self,
+            mode: i32,
+            user: String,
+            group: String,
+            read_only: bool,
+            hidden: bool,
+            archive: bool,
+            system: bool,
+            recursive: bool,
+        ) {
+            if self.loading || self.saving {
+                return;
+            }
+            let path = self.path.to_string();
+            if path.is_empty() {
+                return;
+            }
+
+            let changes = self.build_changes(
+                mode,
+                &user,
+                &group,
+                read_only,
+                hidden,
+                archive,
+                system,
+            );
+            // A dialog that changed nothing closes quietly instead of writing the
+            // same attributes back.
+            let has_changes = changes.mode.is_some()
+                || changes.owner.is_some()
+                || changes.read_only.is_some()
+                || changes.hidden.is_some()
+                || changes.archive.is_some()
+                || changes.system.is_some();
+
+            if !has_changes {
+                self.saved();
+                return;
+            }
+
+            self.set_saving(true);
+            self.set_save_error(String::new());
+
+            let operation = self.next_operation_id("props");
+            let generation = self.generation;
+            let thread = self.get_thread_handle();
+            let host = Arc::new(PropertiesHost {
+                thread: self.get_thread_handle(),
+            }) as Arc<dyn Host>;
+            runtime::spawn(async move {
+                let result = if recursive {
+                    service::update_file_properties_recursive(operation, path.clone(), changes, host)
+                        .await
+                        .map(|_| ())
+                } else {
+                    service::update_file_properties(path.clone(), changes).await
+                };
+                // Re-read on success: the platform may normalize what it stored
+                // (a `chmod` through a umask, an archive bit Windows adds on its
+                // own), and the dialog should show what is there, not what was
+                // asked for.
+                let refreshed = match &result {
+                    Ok(()) => service::get_file_properties(path).await.ok(),
+                    Err(_) => None,
+                };
+                thread.invoke_mut(move |controller| {
+                    controller
+                        .apply_save(generation, result, refreshed)
+                });
+            });
+        }
+
+        fn apply_save(
+            &mut self,
+            generation: u64,
+            result: Result<(), dae_core::error::FileSystemError>,
+            refreshed: Option<FileProperties>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+            self.set_saving(false);
+            match result {
+                Ok(()) => {
+                    if let Some(properties) = refreshed {
+                        self.apply_refreshed(properties);
+                    }
+                    self.saved();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_save_error(message.clone());
+                    self.save_failed(String::from(message.as_str()));
+                }
+            }
+        }
+
+        /// Applies a post-save re-read without touching the run state: a size scan
+        /// or checksum pass may be in flight and must not be reset by a save.
+        fn apply_refreshed(&mut self, properties: FileProperties) {
+            let remote = !vfs::is_local_path(&properties.path);
+            self.set_remote(remote);
+            match &properties.platform {
+                PlatformProperties::Unix(unix) => {
+                    self.set_mode((unix.mode & 0o7777) as i32);
+                    self.set_user_name(
+                        unix.user_name
+                            .clone()
+                            .unwrap_or_else(|| unix.uid.to_string()),
+                    );
+                    self.set_group_name(
+                        unix.group_name
+                            .clone()
+                            .unwrap_or_else(|| unix.gid.to_string()),
+                    );
+                }
+                PlatformProperties::Windows(windows) => {
+                    self.set_read_only(windows.read_only);
+                    self.set_hidden(windows.hidden);
+                    self.set_archive(windows.archive);
+                    self.set_system(windows.system);
+                }
+                PlatformProperties::Basic => {}
+            }
+            self.loaded = Some(properties);
+        }
+
+        fn reset_size_scan(&mut self) {
+            self.set_size_scanning(false);
+            self.set_size_scan_text(String::new());
+            self.set_size_scan_bytes(0.0);
+            self.set_size_scan_done(false);
+        }
+
+        #[qslot]
+
+        fn start_size_scan(&mut self) {
+            if !self.is_directory || self.remote || self.size_scanning {
+                return;
+            }
+            let path = self.path.to_string();
+            if path.is_empty() {
+                return;
+            }
+
+            self.reset_size_scan();
+            self.set_size_scanning(true);
+            let operation = self.next_operation_id("size");
+            self.size_operation = operation.clone();
+
+            let host = Arc::new(PropertiesHost {
+                thread: self.get_thread_handle(),
+            }) as Arc<dyn Host>;
+            match directory_size::start_directory_size_calculation(operation.clone(), vec![path], host)
+            {
+                Ok(()) => {}
+                Err(error) => {
+                    self.size_operation.clear();
+                    self.set_size_scanning(false);
+                    self.set_size_scan_text(friendly_error(&error.to_string()).to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn cancel_size_scan(&mut self) {
+            let operation = std::mem::take(&mut self.size_operation);
+            if operation.is_empty() {
+                return;
+            }
+            directory_size::cancel_directory_size_calculation(operation);
+            self.set_size_scanning(false);
+        }
+
+        fn reset_hash(&mut self) {
+            self.set_hashing(false);
+            self.set_hash_progress(0.0);
+            self.set_hash_md5(String::new());
+            self.set_hash_sha1(String::new());
+            self.set_hash_sha256(String::new());
+            self.set_hash_error(String::new());
+            self.set_hash_done(false);
+        }
+
+        fn reset_security(&mut self) {
+            self.set_signature_supported(security::signature_supported());
+            self.set_acl_supported(security::acl_supported());
+            self.set_signature_status(String::new());
+            self.set_signature_signer(String::new());
+            self.set_signature_issuer(String::new());
+            self.set_signature_detail(String::new());
+            self.set_acl_owner(String::new());
+            self.set_acl_group(String::new());
+            self.set_acl_entries_json(String::new());
+            self.set_acl_inheritance(false);
+            self.set_acl_editable(false);
+        }
+
+        fn apply_security(
+            &mut self,
+            generation: u64,
+            result: Option<(
+                Result<security::FileSignature, dae_core::error::FileSystemError>,
+                Result<security::FileAcl, dae_core::error::FileSystemError>,
+            )>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+            let Some((signature, acl)) = result else {
+                return;
+            };
+
+            if let Ok(signature) = signature {
+                self.set_signature_status(signature.status.to_owned());
+                self.set_signature_signer(signature.signer.as_deref().unwrap_or("").to_owned());
+                self.set_signature_issuer(signature.issuer.as_deref().unwrap_or("").to_owned());
+                self.set_signature_detail(signature.detail.as_deref().unwrap_or("").to_owned());
+            }
+
+            if let Ok(acl) = acl {
+                self.apply_acl(acl);
+            }
+        }
+
+        /// Publishes one ACL snapshot. The JSON goes last so the dialog's
+        /// `onAclEntriesJsonChanged` handler sees the final inheritance and
+        /// editable flags when it re-syncs its draft.
+        fn apply_acl(&mut self, acl: security::FileAcl) {
+            self.set_acl_owner(acl.owner.as_deref().unwrap_or("").to_owned());
+            self.set_acl_group(acl.group.as_deref().unwrap_or("").to_owned());
+            self.set_acl_inheritance(acl.inheritance);
+            self.set_acl_editable(acl.editable);
+            let json = serde_json::to_string(&acl.entries).unwrap_or_else(|_| "[]".to_owned());
+            self.set_acl_entries_json(json.to_owned());
+        }
+
+        #[qslot]
+
+        fn save_acl(&mut self, entries_json: String, inheritance: bool) {
+            if self.loading || self.saving {
+                return;
+            }
+            let path = self.path.to_string();
+            if path.is_empty() {
+                return;
+            }
+
+            let entries: Vec<security::AclEntrySpec> =
+                match serde_json::from_str(&entries_json) {
+                    Ok(entries) => entries,
+                    Err(error) => {
+                        let message = friendly_error(&format!("Invalid ACL entries: {error}"));
+                        self.set_save_error(message.clone());
+                        self.save_failed(String::from(message.as_str()));
+                        return;
+                    }
+                };
+            let changes = security::AclChanges { entries, inheritance };
+
+            self.set_saving(true);
+            self.set_save_error(String::new());
+
+            let generation = self.generation;
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let write_path = path.clone();
+                let result = tokio::task::spawn_blocking(move || security::set_acl(&write_path, &changes))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(dae_core::error::FileSystemError::Internal(
+                            "The ACL write was interrupted".into(),
+                        ))
+                    });
+                // Re-read on success: the platform normalizes what it stored (the
+                // propagated inherited ACEs, the recomputed POSIX mask), and the
+                // dialog should show what is there, not what was asked for.
+                let refreshed = if result.is_ok() {
+                    tokio::task::spawn_blocking(move || security::acl(&path))
+                        .await
+                        .ok()
+                        .and_then(|result| result.ok())
+                } else {
+                    None
+                };
+                thread.invoke_mut(move |controller| {
+                    controller
+                        .apply_acl_save(generation, result, refreshed)
+                });
+            });
+        }
+
+        fn apply_acl_save(
+            &mut self,
+            generation: u64,
+            result: Result<(), dae_core::error::FileSystemError>,
+            refreshed: Option<security::FileAcl>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+            self.set_saving(false);
+            match result {
+                Ok(()) => {
+                    if let Some(acl) = refreshed {
+                        self.apply_acl(acl);
+                    }
+                    self.saved();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_save_error(message.clone());
+                    self.save_failed(String::from(message.as_str()));
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn start_hashing(&mut self) {
+            if self.is_directory || self.remote || self.hashing {
+                return;
+            }
+            let path = self.path.to_string();
+            if path.is_empty() {
+                return;
+            }
+
+            self.reset_hash();
+            self.set_hashing(true);
+            let operation = self.next_operation_id("hash");
+            self.hash_operation = operation.clone();
+
+            let host = Arc::new(PropertiesHost {
+                thread: self.get_thread_handle(),
+            }) as Arc<dyn Host>;
+            match hashing::start_file_hash_calculation(operation.clone(), path, host) {
+                Ok(()) => {}
+                Err(error) => {
+                    self.hash_operation.clear();
+                    self.set_hashing(false);
+                    let message = friendly_error(&error.to_string());
+                    self.set_hash_error(message.to_owned());
+                    self.set_hash_done(true);
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn cancel_hashing(&mut self) {
+            let operation = std::mem::take(&mut self.hash_operation);
+            if operation.is_empty() {
+                return;
+            }
+            hashing::cancel_file_hash_calculation(operation);
+            self.set_hashing(false);
+        }
+
+        pub(super) fn apply_event(&mut self, event: Event) {
+            match event {
+                Event::DirectorySizeProgress {
+                    operation_id,
+                    size,
+                    completed,
+                    ..
+                } => {
+                    if operation_id.is_empty() || operation_id != self.size_operation {
+                        return;
+                    }
+                    self.set_size_scan_bytes(size as f64);
+                    self.set_size_scan_text(format::size(size).to_owned());
+                    if completed {
+                        self.size_operation.clear();
+                        self.set_size_scanning(false);
+                        self.set_size_scan_done(true);
+                    }
+                }
+                Event::FileHashProgress {
+                    operation_id,
+                    bytes_read,
+                    total_bytes,
+                    completed,
+                    digests,
+                    error,
+                    ..
+                } => {
+                    if operation_id.is_empty() || operation_id != self.hash_operation {
+                        return;
+                    }
+                    let fraction = if total_bytes == 0 {
+                        0.0
+                    } else {
+                        (bytes_read as f64 / total_bytes as f64).clamp(0.0, 1.0)
+                    };
+                    self.set_hash_progress(fraction);
+                    if completed {
+                        self.hash_operation.clear();
+                        self.set_hashing(false);
+                        self.set_hash_done(true);
+                        if let Some(digests) = digests {
+                            self.set_hash_md5(digests.md5.to_owned());
+                            self.set_hash_sha1(digests.sha1.to_owned());
+                            self.set_hash_sha256(digests.sha256.to_owned());
+                        }
+                        if let Some(error) = error {
+                            let message = friendly_error(&error);
+                            self.set_hash_error(message.to_owned());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 
-impl qobject::PropertiesController {
-    fn open(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut().rust_mut().loaded = None;
+pub use properties_impl::PropertiesController;
 
-        self.as_mut().stop_runs();
-        self.as_mut().set_path(QString::from(path.as_str()));
-        self.as_mut().set_error(QString::default());
-        self.as_mut().set_save_error(QString::default());
-        self.as_mut().set_saving(false);
-        self.as_mut().set_loading(true);
-        self.as_mut().set_remote(!vfs::is_local_path(&path));
-        self.as_mut().reset_size_scan();
-        self.as_mut().reset_hash();
-        self.as_mut().reset_security();
+impl QmlElement for PropertiesController {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "PropertiesController";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
+}
 
-        let thread = self.as_mut().qt_thread();
-        let security_path = path.clone();
-        runtime::spawn(async move {
-            let result = service::get_file_properties(path).await;
-            // Signature and ACL are blocking platform reads; they run beside
-            // the metadata read rather than after it, so a slow WinVerifyTrust
-            // cannot hold the whole dialog.
-            let security = if vfs::is_local_path(&security_path) {
-                tokio::task::spawn_blocking(move || {
-                    (
-                        security::signature(&security_path),
-                        security::acl(&security_path),
-                    )
-                })
-                .await
-                .ok()
-            } else {
-                None
-            };
-            let _ = thread.queue(move |mut controller| {
-                controller.as_mut().apply_properties(generation, result);
-                controller.as_mut().apply_security(generation, security);
-            });
-        });
-    }
+struct PropertiesHost {
+    thread: QThreadHandle<PropertiesController>,
+}
 
-    fn close(mut self: Pin<&mut Self>) {
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut().stop_runs();
-        self.as_mut().rust_mut().loaded = None;
-    }
-
-    fn apply_properties(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        result: Result<FileProperties, dae_core::error::FileSystemError>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-
-        match result {
-            Ok(properties) => {
-                let remote = !vfs::is_local_path(&properties.path);
-                self.as_mut()
-                    .set_path(QString::from(properties.path.as_str()));
-                self.as_mut()
-                    .set_name(QString::from(properties.name.as_str()));
-                self.as_mut()
-                    .set_location(QString::from(parent_of(&properties.path).as_str()));
-                self.as_mut()
-                    .set_kind_text(QString::from(kind_label(properties.kind)));
-                self.as_mut().set_category(QString::from(category_of(
-                    properties.kind,
-                    &properties.name,
-                )));
-                self.as_mut()
-                    .set_target_text(QString::from(properties.target.as_deref().unwrap_or("")));
-                self.as_mut().set_size_text(QString::from(
-                    properties
-                        .size
-                        .map(format::size)
-                        .unwrap_or_else(|| "—".to_owned())
-                        .as_str(),
-                ));
-                self.as_mut().set_created_text(QString::from(
-                    properties
-                        .created_at
-                        .map(format::timestamp)
-                        .unwrap_or_else(|| "—".to_owned())
-                        .as_str(),
-                ));
-                self.as_mut().set_modified_text(QString::from(
-                    properties
-                        .modified_at
-                        .map(format::timestamp)
-                        .unwrap_or_else(|| "—".to_owned())
-                        .as_str(),
-                ));
-                self.as_mut().set_accessed_text(QString::from(
-                    properties
-                        .accessed_at
-                        .map(format::timestamp)
-                        .unwrap_or_else(|| "—".to_owned())
-                        .as_str(),
-                ));
-                self.as_mut()
-                    .set_is_directory(properties.kind == EntryKind::Directory);
-                self.as_mut()
-                    .set_is_symlink(properties.kind == EntryKind::Symlink);
-                self.as_mut().set_remote(remote);
-
-                let kind = platform_kind(&properties, remote);
-                self.as_mut().set_platform_kind(QString::from(kind));
-                self.as_mut().set_editable(!remote && kind != "basic");
-
-                match &properties.platform {
-                    PlatformProperties::Unix(unix) => {
-                        self.as_mut().set_mode((unix.mode & 0o7777) as i32);
-                        self.as_mut().set_user_name(QString::from(
-                            unix.user_name
-                                .clone()
-                                .unwrap_or_else(|| unix.uid.to_string())
-                                .as_str(),
-                        ));
-                        self.as_mut().set_group_name(QString::from(
-                            unix.group_name
-                                .clone()
-                                .unwrap_or_else(|| unix.gid.to_string())
-                                .as_str(),
-                        ));
-                    }
-                    PlatformProperties::Windows(windows) => {
-                        self.as_mut().set_read_only(windows.read_only);
-                        self.as_mut().set_hidden(windows.hidden);
-                        self.as_mut().set_archive(windows.archive);
-                        self.as_mut().set_system(windows.system);
-                    }
-                    PlatformProperties::Basic => {}
-                }
-
-                self.as_mut().rust_mut().loaded = Some(properties);
-                self.as_mut().set_error(QString::default());
-            }
-            Err(error) => {
-                self.as_mut()
-                    .set_error(QString::from(friendly_error(&error.to_string()).as_str()));
-            }
-        }
-        self.as_mut().set_loading(false);
-    }
-
-    /// `open` on a new entry or `close` on the old one: both runs are about to
-    /// become meaningless, and their ids are what cancels them.
-    fn stop_runs(mut self: Pin<&mut Self>) {
-        self.as_mut().cancel_size_scan();
-        self.as_mut().cancel_hashing();
-    }
-
-    /// Builds the change set from the dialog's draft and the loaded snapshot.
-    /// Empty owner fields are "leave alone" rather than an attempt to clear
-    /// the account name.
-    fn build_changes(
-        &self,
-        mode: i32,
-        user: &str,
-        group: &str,
-        read_only: bool,
-        hidden: bool,
-        archive: bool,
-        system: bool,
-    ) -> PropertyChanges {
-        let mut changes = PropertyChanges::default();
-        let Some(properties) = self.loaded.as_ref() else {
-            return changes;
-        };
-
-        match &properties.platform {
-            PlatformProperties::Unix(unix) => {
-                let wanted = (mode as u32) & 0o7777;
-                if wanted != (unix.mode & 0o7777) {
-                    changes.mode = Some(wanted);
-                }
-
-                let initial_user = unix
-                    .user_name
-                    .clone()
-                    .unwrap_or_else(|| unix.uid.to_string());
-                let initial_group = unix
-                    .group_name
-                    .clone()
-                    .unwrap_or_else(|| unix.gid.to_string());
-                let wanted_user = user.trim();
-                let wanted_group = group.trim();
-                let mut owner = OwnerChange {
-                    user: None,
-                    group: None,
-                };
-                if !wanted_user.is_empty() && wanted_user != initial_user {
-                    owner.user = Some(wanted_user.to_owned());
-                }
-                if !wanted_group.is_empty() && wanted_group != initial_group {
-                    owner.group = Some(wanted_group.to_owned());
-                }
-                if owner.user.is_some() || owner.group.is_some() {
-                    changes.owner = Some(owner);
-                }
-            }
-            PlatformProperties::Windows(windows) => {
-                if read_only != windows.read_only {
-                    changes.read_only = Some(read_only);
-                }
-                if hidden != windows.hidden {
-                    changes.hidden = Some(hidden);
-                }
-                if archive != windows.archive {
-                    changes.archive = Some(archive);
-                }
-                if system != windows.system {
-                    changes.system = Some(system);
-                }
-            }
-            PlatformProperties::Basic => {}
-        }
-
-        changes
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn save(
-        mut self: Pin<&mut Self>,
-        mode: i32,
-        user: &QString,
-        group: &QString,
-        read_only: bool,
-        hidden: bool,
-        archive: bool,
-        system: bool,
-        recursive: bool,
-    ) {
-        if self.loading || self.saving {
-            return;
-        }
-        let path = self.path.to_string();
-        if path.is_empty() {
-            return;
-        }
-
-        let changes = self.build_changes(
-            mode,
-            &user.to_string(),
-            &group.to_string(),
-            read_only,
-            hidden,
-            archive,
-            system,
-        );
-        // A dialog that changed nothing closes quietly instead of writing the
-        // same attributes back.
-        let has_changes = changes.mode.is_some()
-            || changes.owner.is_some()
-            || changes.read_only.is_some()
-            || changes.hidden.is_some()
-            || changes.archive.is_some()
-            || changes.system.is_some();
-
-        if !has_changes {
-            self.as_mut().saved();
-            return;
-        }
-
-        self.as_mut().set_saving(true);
-        self.as_mut().set_save_error(QString::default());
-
-        let operation = self.as_mut().rust_mut().next_operation_id("props");
-        let generation = self.generation;
-        let thread = self.as_mut().qt_thread();
-        let host = Arc::new(PropertiesHost {
-            thread: thread.clone(),
-        }) as Arc<dyn Host>;
-        runtime::spawn(async move {
-            let result = if recursive {
-                service::update_file_properties_recursive(operation, path.clone(), changes, host)
-                    .await
-                    .map(|_| ())
-            } else {
-                service::update_file_properties(path.clone(), changes).await
-            };
-            // Re-read on success: the platform may normalize what it stored
-            // (a `chmod` through a umask, an archive bit Windows adds on its
-            // own), and the dialog should show what is there, not what was
-            // asked for.
-            let refreshed = match &result {
-                Ok(()) => service::get_file_properties(path).await.ok(),
-                Err(_) => None,
-            };
-            let _ = thread.queue(move |mut controller| {
-                controller
-                    .as_mut()
-                    .apply_save(generation, result, refreshed)
-            });
-        });
-    }
-
-    fn apply_save(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        result: Result<(), dae_core::error::FileSystemError>,
-        refreshed: Option<FileProperties>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-        self.as_mut().set_saving(false);
-        match result {
-            Ok(()) => {
-                if let Some(properties) = refreshed {
-                    self.as_mut().apply_refreshed(properties);
-                }
-                self.as_mut().saved();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_save_error(QString::from(message.as_str()));
-                self.as_mut().save_failed(&QString::from(message.as_str()));
-            }
-        }
-    }
-
-    /// Applies a post-save re-read without touching the run state: a size scan
-    /// or checksum pass may be in flight and must not be reset by a save.
-    fn apply_refreshed(mut self: Pin<&mut Self>, properties: FileProperties) {
-        let remote = !vfs::is_local_path(&properties.path);
-        self.as_mut().set_remote(remote);
-        match &properties.platform {
-            PlatformProperties::Unix(unix) => {
-                self.as_mut().set_mode((unix.mode & 0o7777) as i32);
-                self.as_mut().set_user_name(QString::from(
-                    unix.user_name
-                        .clone()
-                        .unwrap_or_else(|| unix.uid.to_string())
-                        .as_str(),
-                ));
-                self.as_mut().set_group_name(QString::from(
-                    unix.group_name
-                        .clone()
-                        .unwrap_or_else(|| unix.gid.to_string())
-                        .as_str(),
-                ));
-            }
-            PlatformProperties::Windows(windows) => {
-                self.as_mut().set_read_only(windows.read_only);
-                self.as_mut().set_hidden(windows.hidden);
-                self.as_mut().set_archive(windows.archive);
-                self.as_mut().set_system(windows.system);
-            }
-            PlatformProperties::Basic => {}
-        }
-        self.as_mut().rust_mut().loaded = Some(properties);
-    }
-
-    fn reset_size_scan(mut self: Pin<&mut Self>) {
-        self.as_mut().set_size_scanning(false);
-        self.as_mut().set_size_scan_text(QString::default());
-        self.as_mut().set_size_scan_bytes(0.0);
-        self.as_mut().set_size_scan_done(false);
-    }
-
-    fn start_size_scan(mut self: Pin<&mut Self>) {
-        if !self.is_directory || self.remote || self.size_scanning {
-            return;
-        }
-        let path = self.path.to_string();
-        if path.is_empty() {
-            return;
-        }
-
-        self.as_mut().reset_size_scan();
-        self.as_mut().set_size_scanning(true);
-        let operation = self.as_mut().rust_mut().next_operation_id("size");
-        self.as_mut().rust_mut().size_operation = operation.clone();
-
-        let host = Arc::new(PropertiesHost {
-            thread: self.as_mut().qt_thread(),
-        }) as Arc<dyn Host>;
-        match directory_size::start_directory_size_calculation(operation.clone(), vec![path], host)
-        {
-            Ok(()) => {}
-            Err(error) => {
-                self.as_mut().rust_mut().size_operation.clear();
-                self.as_mut().set_size_scanning(false);
-                self.as_mut()
-                    .set_size_scan_text(QString::from(friendly_error(&error.to_string()).as_str()));
-            }
-        }
-    }
-
-    fn cancel_size_scan(mut self: Pin<&mut Self>) {
-        let operation = std::mem::take(&mut self.as_mut().rust_mut().size_operation);
-        if operation.is_empty() {
-            return;
-        }
-        directory_size::cancel_directory_size_calculation(operation);
-        self.as_mut().set_size_scanning(false);
-    }
-
-    fn reset_hash(mut self: Pin<&mut Self>) {
-        self.as_mut().set_hashing(false);
-        self.as_mut().set_hash_progress(0.0);
-        self.as_mut().set_hash_md5(QString::default());
-        self.as_mut().set_hash_sha1(QString::default());
-        self.as_mut().set_hash_sha256(QString::default());
-        self.as_mut().set_hash_error(QString::default());
-        self.as_mut().set_hash_done(false);
-    }
-
-    fn reset_security(mut self: Pin<&mut Self>) {
-        self.as_mut()
-            .set_signature_supported(security::signature_supported());
-        self.as_mut().set_acl_supported(security::acl_supported());
-        self.as_mut().set_signature_status(QString::default());
-        self.as_mut().set_signature_signer(QString::default());
-        self.as_mut().set_signature_issuer(QString::default());
-        self.as_mut().set_signature_detail(QString::default());
-        self.as_mut().set_acl_owner(QString::default());
-        self.as_mut().set_acl_group(QString::default());
-        self.as_mut().set_acl_entries_json(QString::default());
-        self.as_mut().set_acl_inheritance(false);
-        self.as_mut().set_acl_editable(false);
-    }
-
-    fn apply_security(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        result: Option<(
-            Result<security::FileSignature, dae_core::error::FileSystemError>,
-            Result<security::FileAcl, dae_core::error::FileSystemError>,
-        )>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-        let Some((signature, acl)) = result else {
-            return;
-        };
-
-        if let Ok(signature) = signature {
-            self.as_mut()
-                .set_signature_status(QString::from(signature.status.as_str()));
-            self.as_mut().set_signature_signer(QString::from(
-                signature.signer.as_deref().unwrap_or(""),
-            ));
-            self.as_mut().set_signature_issuer(QString::from(
-                signature.issuer.as_deref().unwrap_or(""),
-            ));
-            self.as_mut().set_signature_detail(QString::from(
-                signature.detail.as_deref().unwrap_or(""),
-            ));
-        }
-
-        if let Ok(acl) = acl {
-            self.as_mut().apply_acl(acl);
-        }
-    }
-
-    /// Publishes one ACL snapshot. The JSON goes last so the dialog's
-    /// `onAclEntriesJsonChanged` handler sees the final inheritance and
-    /// editable flags when it re-syncs its draft.
-    fn apply_acl(mut self: Pin<&mut Self>, acl: security::FileAcl) {
-        self.as_mut()
-            .set_acl_owner(QString::from(acl.owner.as_deref().unwrap_or("")));
-        self.as_mut()
-            .set_acl_group(QString::from(acl.group.as_deref().unwrap_or("")));
-        self.as_mut().set_acl_inheritance(acl.inheritance);
-        self.as_mut().set_acl_editable(acl.editable);
-        let json = serde_json::to_string(&acl.entries).unwrap_or_else(|_| "[]".to_owned());
-        self.as_mut()
-            .set_acl_entries_json(QString::from(json.as_str()));
-    }
-
-    fn save_acl(mut self: Pin<&mut Self>, entries_json: &QString, inheritance: bool) {
-        if self.loading || self.saving {
-            return;
-        }
-        let path = self.path.to_string();
-        if path.is_empty() {
-            return;
-        }
-
-        let entries: Vec<security::AclEntrySpec> =
-            match serde_json::from_str(&entries_json.to_string()) {
-                Ok(entries) => entries,
-                Err(error) => {
-                    let message = friendly_error(&format!("Invalid ACL entries: {error}"));
-                    self.as_mut()
-                        .set_save_error(QString::from(message.as_str()));
-                    self.as_mut()
-                        .save_failed(&QString::from(message.as_str()));
-                    return;
-                }
-            };
-        let changes = security::AclChanges { entries, inheritance };
-
-        self.as_mut().set_saving(true);
-        self.as_mut().set_save_error(QString::default());
-
-        let generation = self.generation;
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let write_path = path.clone();
-            let result = tokio::task::spawn_blocking(move || security::set_acl(&write_path, &changes))
-                .await
-                .unwrap_or_else(|_| {
-                    Err(dae_core::error::FileSystemError::Internal(
-                        "The ACL write was interrupted".into(),
-                    ))
-                });
-            // Re-read on success: the platform normalizes what it stored (the
-            // propagated inherited ACEs, the recomputed POSIX mask), and the
-            // dialog should show what is there, not what was asked for.
-            let refreshed = if result.is_ok() {
-                tokio::task::spawn_blocking(move || security::acl(&path))
-                    .await
-                    .ok()
-                    .and_then(|result| result.ok())
-            } else {
-                None
-            };
-            let _ = thread.queue(move |mut controller| {
-                controller
-                    .as_mut()
-                    .apply_acl_save(generation, result, refreshed)
-            });
-        });
-    }
-
-    fn apply_acl_save(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        result: Result<(), dae_core::error::FileSystemError>,
-        refreshed: Option<security::FileAcl>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-        self.as_mut().set_saving(false);
-        match result {
-            Ok(()) => {
-                if let Some(acl) = refreshed {
-                    self.as_mut().apply_acl(acl);
-                }
-                self.as_mut().saved();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_save_error(QString::from(message.as_str()));
-                self.as_mut()
-                    .save_failed(&QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn start_hashing(mut self: Pin<&mut Self>) {
-        if self.is_directory || self.remote || self.hashing {
-            return;
-        }
-        let path = self.path.to_string();
-        if path.is_empty() {
-            return;
-        }
-
-        self.as_mut().reset_hash();
-        self.as_mut().set_hashing(true);
-        let operation = self.as_mut().rust_mut().next_operation_id("hash");
-        self.as_mut().rust_mut().hash_operation = operation.clone();
-
-        let host = Arc::new(PropertiesHost {
-            thread: self.as_mut().qt_thread(),
-        }) as Arc<dyn Host>;
-        match hashing::start_file_hash_calculation(operation.clone(), path, host) {
-            Ok(()) => {}
-            Err(error) => {
-                self.as_mut().rust_mut().hash_operation.clear();
-                self.as_mut().set_hashing(false);
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_hash_error(QString::from(message.as_str()));
-                self.as_mut().set_hash_done(true);
-            }
-        }
-    }
-
-    fn cancel_hashing(mut self: Pin<&mut Self>) {
-        let operation = std::mem::take(&mut self.as_mut().rust_mut().hash_operation);
-        if operation.is_empty() {
-            return;
-        }
-        hashing::cancel_file_hash_calculation(operation);
-        self.as_mut().set_hashing(false);
-    }
-
-    fn apply_event(mut self: Pin<&mut Self>, event: Event) {
-        match event {
-            Event::DirectorySizeProgress {
-                operation_id,
-                size,
-                completed,
-                ..
-            } => {
-                if operation_id.is_empty() || operation_id != self.size_operation {
-                    return;
-                }
-                self.as_mut().set_size_scan_bytes(size as f64);
-                self.as_mut()
-                    .set_size_scan_text(QString::from(format::size(size).as_str()));
-                if completed {
-                    self.as_mut().rust_mut().size_operation.clear();
-                    self.as_mut().set_size_scanning(false);
-                    self.as_mut().set_size_scan_done(true);
-                }
-            }
-            Event::FileHashProgress {
-                operation_id,
-                bytes_read,
-                total_bytes,
-                completed,
-                digests,
-                error,
-                ..
-            } => {
-                if operation_id.is_empty() || operation_id != self.hash_operation {
-                    return;
-                }
-                let fraction = if total_bytes == 0 {
-                    0.0
-                } else {
-                    (bytes_read as f64 / total_bytes as f64).clamp(0.0, 1.0)
-                };
-                self.as_mut().set_hash_progress(fraction);
-                if completed {
-                    self.as_mut().rust_mut().hash_operation.clear();
-                    self.as_mut().set_hashing(false);
-                    self.as_mut().set_hash_done(true);
-                    if let Some(digests) = digests {
-                        self.as_mut()
-                            .set_hash_md5(QString::from(digests.md5.as_str()));
-                        self.as_mut()
-                            .set_hash_sha1(QString::from(digests.sha1.as_str()));
-                        self.as_mut()
-                            .set_hash_sha256(QString::from(digests.sha256.as_str()));
-                    }
-                    if let Some(error) = error {
-                        let message = friendly_error(&error);
-                        self.as_mut()
-                            .set_hash_error(QString::from(message.as_str()));
-                    }
-                }
-            }
-            _ => {}
-        }
+impl Host for PropertiesHost {
+    fn emit(&self, event: Event) {
+        let _ = self
+            .thread
+            .invoke_mut(move |controller| controller.apply_event(event));
     }
 }
 

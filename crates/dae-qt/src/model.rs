@@ -18,16 +18,15 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QStringList, QVariant,
+use qtbridge::qtbridge_type_lib::{
+    QByteArray, QHash_i32_QByteArray, QModelIndex, QString, QVariant,
 };
+use qtbridge::{QAbstractItemModel, QAbstractItemModelBase, QmlElement, QmlObject, QThreadHandle, qobject};
 use dae_core::fs::entry_codec::{self, ListingRow};
 use dae_core::fs::git::{self, GitBranches, GitDirectoryStatus, GitEntryStatusKind};
 use dae_core::fs::listing::{self, Batch, BatchTarget};
@@ -106,435 +105,6 @@ const ROLE_CREATED_AT: i32 = 0x0118;
 /// `danger` and the row carries a warning suffix; the backend decided it once
 /// while building the row rather than in the delegate.
 const ROLE_BROKEN_LINK: i32 = 0x0119;
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-
-        include!("cxx-qt-lib/core/qlist/qlist_i32.h");
-        type QList_i32 = cxx_qt_lib::QList<i32>;
-    }
-
-    unsafe extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(i32, loaded)]
-        /// Image files and file rows in the finished listing. The adaptive
-        /// layout reads them once per directory; nothing else needs a second
-        /// pass over the rows.
-        #[qproperty(i32, images)]
-        #[qproperty(i32, files)]
-        /// The same pass also counts directories and finds the newest change,
-        /// which is what the listing's heading prints under the folder name.
-        /// A second pass per directory to answer "2 folders, 60 files" would be
-        /// a second walk over 120k rows for a line of text.
-        #[qproperty(i32, folders)]
-        /// File counts per family for the finished listing, as JSON:
-        /// `[{"id":"image","count":3}, …]`, most frequent first. The
-        /// inspector's no-selection state prints this distribution, and the
-        /// same single pass that counts folders and files fills it — a
-        /// 120k-row directory is not walked twice for a line of text.
-        #[qproperty(QString, family_counts, cxx_name = "familyCounts")]
-        /// Row counts per active section label, as JSON:
-        /// `[{"label":"A","count":3}, …]`. Filled by the same pass as the
-        /// family counts, so a section header prints its own size without
-        /// walking the model from QML.
-        #[qproperty(QString, group_counts, cxx_name = "groupCounts")]
-        #[qproperty(QString, newest_modified, cxx_name = "newestModifiedText")]
-        /// Rows currently selected. Maintained as the selection changes, so the
-        /// status bar reads a number instead of walking the selection.
-        #[qproperty(i32, selected_count, cxx_name = "selectedCount")]
-        /// The selected files' total size, formatted by the same helpers the
-        /// size column uses. Folders are not walked and therefore contribute
-        /// nothing, which is what the action bar's `N 项 · 56.6 KB` means.
-        #[qproperty(QString, selected_size_text, cxx_name = "selectedSizeText")]
-        #[qproperty(bool, finished)]
-        #[qproperty(QString, status)]
-        #[qproperty(QString, path)]
-        /// The clickable path from the root to the shown directory, one entry
-        /// per ancestor, spelled by the backend that read it: `C:`, `Users`,
-        /// `Mt342`; `smb://nas.local`, `share`, `docs`; the cloud provider's
-        /// own segments. The breadcrumb bar paints them and navigating asks the
-        /// model to load the one that was clicked, so the ancestor list only
-        /// has to be right here, once, instead of in a copy of the splitting
-        /// rules per backend.
-        ///
-        /// Two parallel lists rather than one list of `{ name, path }` maps:
-        /// cxx-qt can only export a property whose value type is comparable
-        /// (`QVariant` and `QVariantList` are not), and `QStringList` is. They
-        /// are always written together from one `Vec<Breadcrumb>`, so the
-        /// pairing cannot drift.
-        #[qproperty(QStringList, breadcrumb_names, cxx_name = "breadcrumbNames")]
-        #[qproperty(QStringList, breadcrumb_paths, cxx_name = "breadcrumbPaths")]
-        /// True when this model was loaded through a network backend. The
-        /// shell reads it to keep local-only actions off `smb://`, `sftp://`
-        /// and `cloud://` paths instead of letting them fail on click.
-        #[qproperty(bool, remote)]
-        /// The worktree root above the shown directory, or empty when the
-        /// directory is not inside a Git worktree.
-        #[qproperty(QString, git_root, cxx_name = "gitRoot")]
-        #[qproperty(QString, git_branch, cxx_name = "gitBranch")]
-        #[qproperty(bool, git_detached, cxx_name = "gitDetached")]
-        #[qproperty(bool, git_has_upstream, cxx_name = "gitHasUpstream")]
-        #[qproperty(i32, git_ahead, cxx_name = "gitAhead")]
-        #[qproperty(i32, git_behind, cxx_name = "gitBehind")]
-        /// True while a checkout/create/fetch/pull/push/sync command runs. The
-        /// status-bar chip spins and the branch panel disables its actions.
-        #[qproperty(bool, git_busy, cxx_name = "gitBusy")]
-        #[qproperty(QStringList, git_remotes, cxx_name = "gitRemotes")]
-        #[qproperty(QStringList, git_local_branches, cxx_name = "gitLocalBranches")]
-        #[qproperty(QStringList, git_remote_branches, cxx_name = "gitRemoteBranches")]
-        /// The current local branch, empty on a detached HEAD. The panel marks
-        /// this row rather than comparing names itself.
-        #[qproperty(QString, git_current_branch, cxx_name = "gitCurrentBranch")]
-        type DirectoryListModel = super::DirectoryListModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        #[qinvokable]
-        fn load(self: Pin<&mut DirectoryListModel>, path: &QString);
-
-        #[qinvokable]
-        fn reload(self: Pin<&mut DirectoryListModel>);
-
-        /// Re-reads the current directory through one elevated child. This is
-        /// the permission-denied empty state's "retry as administrator": only
-        /// this snapshot is elevated, the window stays at the user's token.
-        #[qinvokable]
-        #[cxx_name = "loadElevated"]
-        fn load_elevated(self: Pin<&mut DirectoryListModel>);
-
-        /// Sets the display order. Re-sorts the rows already loaded and
-        /// returns immediately; large listings sort on a worker and emit
-        /// `sortApplied` when the permutation lands. Batches that arrive later
-        /// are appended in stream order and the completed listing is sorted
-        /// once more.
-        #[qinvokable]
-        #[cxx_name = "setOrder"]
-        fn set_order(
-            self: Pin<&mut DirectoryListModel>,
-            sort_key: &QString,
-            sort_order: &QString,
-            folder_order: &QString,
-        );
-
-        /// Sections the listing by `group_key` (`name`, `modified`, `created`,
-        /// `size`, `type`, `tag`, or empty for none); dates are bucketed by
-        /// `group_date` (`year`, `month`, `day`). The grouping is part of the
-        /// order, so changing it re-sorts.
-        #[qinvokable]
-        #[cxx_name = "setGroup"]
-        fn set_group(self: Pin<&mut DirectoryListModel>, group_key: &QString, group_date: &QString);
-
-        /// Reads the tags of the rows in `[first, last]`. The view calls this
-        /// for the rows it is about to paint, so tagging never touches the
-        /// enumeration path.
-        #[qinvokable]
-        #[cxx_name = "requestTags"]
-        fn request_tags(self: Pin<&mut DirectoryListModel>, first: i32, last: i32);
-
-        /// Records a measured byte total for one directory and repaints its
-        /// size cell. Written by the shell after `Workspace.measureFolders`
-        /// answers; a folder with no entry keeps showing the em dash.
-        #[qinvokable]
-        #[cxx_name = "setDirectorySize"]
-        fn set_directory_size(self: Pin<&mut DirectoryListModel>, path: &QString, bytes: f64);
-
-        /// Re-reads the tags of `paths` after the tag editor changed them, and
-        /// repaints those rows. Also re-applies a tag sort or grouping.
-        #[qinvokable]
-        #[cxx_name = "refreshTags"]
-        fn refresh_tags(self: Pin<&mut DirectoryListModel>, paths: &QStringList);
-
-        /// Re-reads `tags.toml` after the tag manager created, renamed or
-        /// removed a definition.
-        #[qinvokable]
-        #[cxx_name = "refreshTagDefinitions"]
-        fn refresh_tag_definitions(self: Pin<&mut DirectoryListModel>);
-
-        /// Sets the visibility filter. A filter change re-reads the directory:
-        /// a listing that changed which rows exist has to be rebuilt, and the
-        /// streamed reader is the one place that already knows how to do that
-        /// without blocking the GUI thread.
-        #[qinvokable]
-        #[cxx_name = "setFilters"]
-        fn set_filters(
-            self: Pin<&mut DirectoryListModel>,
-            show_hidden: bool,
-            kind: &QString,
-            modified: &QString,
-            size: &QString,
-            name: &QString,
-        );
-
-        /// Emitted before a load clears the rows. The view reads its scroll
-        /// position here, because the reset that follows discards it.
-        #[qsignal]
-        #[cxx_name = "aboutToReload"]
-        fn about_to_reload(self: Pin<&mut DirectoryListModel>);
-
-        /// Emitted after a worker re-sort applies. Its reset dropped the
-        /// viewport position that `aboutToReload` saved just before it, so the
-        /// view restores it here (and not only on `finished`).
-        #[qsignal]
-        #[cxx_name = "sortApplied"]
-        fn sort_applied(self: Pin<&mut DirectoryListModel>);
-
-        /// The row whose full path is `path`, or -1. QML uses this to keep a
-        /// renamed or newly created entry selected after the reload.
-        #[qinvokable]
-        #[cxx_name = "indexOfPath"]
-        fn index_of_path(&self, path: &QString) -> i32;
-
-        /// The full path of `row`, or an empty string. Selection ranges are
-        /// computed in QML from row indices, which only the model can turn
-        /// back into paths.
-        #[qinvokable]
-        #[cxx_name = "pathAt"]
-        fn path_at(&self, row: i32) -> QString;
-
-        /// The group label of `row`, or an empty string when grouping is off.
-        /// The view's pinned section header reads the row under its own top
-        /// edge through this, so it can follow the scroll without a copy of
-        /// the grouping rules.
-        #[qinvokable]
-        #[cxx_name = "groupLabelAt"]
-        fn group_label_at(&self, row: i32) -> QString;
-
-        /// Selects `row` and nothing else. An out-of-range row clears the
-        /// selection, which is what a click on a row that vanished under the
-        /// pointer has to mean.
-        #[qinvokable]
-        #[cxx_name = "selectOnly"]
-        fn select_only(self: Pin<&mut DirectoryListModel>, row: i32);
-
-        /// Flips `row` in the selection, the Ctrl-click case.
-        #[qinvokable]
-        #[cxx_name = "toggleAt"]
-        fn toggle_at(self: Pin<&mut DirectoryListModel>, row: i32);
-
-        /// Replaces the selection with `[first, last]`, clipped to the rows
-        /// that exist: a Shift-click and a marquee both reach past the end on
-        /// purpose.
-        #[qinvokable]
-        #[cxx_name = "selectRange"]
-        fn select_range(self: Pin<&mut DirectoryListModel>, first: i32, last: i32);
-
-        #[qinvokable]
-        #[cxx_name = "selectAll"]
-        fn select_all_rows(self: Pin<&mut DirectoryListModel>);
-
-        /// Flips the selection: the command palette's 反选.
-        #[qinvokable]
-        #[cxx_name = "invertSelection"]
-        fn invert_selection(self: Pin<&mut DirectoryListModel>) -> i32;
-
-        /// Replaces the selection with the rows of one family (`image`,
-        /// `code`, `folder`, …), the palette's 按类型选择. Returns how many
-        /// rows that left selected, so the shell can say "没有这类文件".
-        #[qinvokable]
-        #[cxx_name = "selectFamily"]
-        fn select_family(self: Pin<&mut DirectoryListModel>, family: &QString) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "clearSelection"]
-        fn clear_selection(self: Pin<&mut DirectoryListModel>);
-
-        /// Replaces the selection with the rows whose path is in `paths`. Used
-        /// by history, where the entry was captured before the listing it
-        /// belongs to has been read back: a path whose row has not streamed in
-        /// yet is held and flagged when it arrives.
-        #[qinvokable]
-        #[cxx_name = "setSelectedPaths"]
-        fn set_selected_paths(self: Pin<&mut DirectoryListModel>, paths: &QStringList);
-
-        /// The full paths of the selected rows, in listing order.
-        #[qinvokable]
-        #[cxx_name = "selectedPaths"]
-        fn selected_paths(&self) -> QStringList;
-
-        /// What the selection is made of, as JSON:
-        /// `{"folders":2,"families":[{"id":"image","count":3}, …]}`.
-        /// The inspector's multi-selection state prints it; the rows already
-        /// carry their family, so this is one walk over the selection rather
-        /// than a metadata pass over the disk.
-        #[qinvokable]
-        #[cxx_name = "selectionBreakdown"]
-        fn selection_breakdown(&self) -> QString;
-
-        /// Starts a rubber-band drag. `keep` is the Ctrl case: the band then
-        /// extends the selection instead of replacing it.
-        #[qinvokable]
-        #[cxx_name = "beginMarquee"]
-        fn begin_marquee(self: Pin<&mut DirectoryListModel>, keep: bool);
-
-        /// Sets the selection to the marquee base plus the cells of the band.
-        /// The band is a rectangle of `columns` columns; the detail list passes
-        /// one column, so its band is a row range. A negative row clears the
-        /// band back to the base.
-        #[qinvokable]
-        #[cxx_name = "marqueeCells"]
-        fn marquee_cells(
-            self: Pin<&mut DirectoryListModel>,
-            first_row: i32,
-            first_column: i32,
-            last_row: i32,
-            last_column: i32,
-            columns: i32,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "endMarquee"]
-        fn end_marquee(self: Pin<&mut DirectoryListModel>);
-
-        /// The first row at or after `start` (wrapping once) whose name begins
-        /// with `needle`, or -1. `needle` must already be lowercase: the
-        /// type-ahead folds the buffer once, not once per row.
-        #[qinvokable]
-        #[cxx_name = "indexOfNamePrefix"]
-        fn index_of_name_prefix(&self, needle: &QString, start: i32) -> i32;
-
-        /// Whether `row` is a directory, for Enter/activation.
-        #[qinvokable]
-        #[cxx_name = "isDirectoryAt"]
-        fn is_directory_at(&self, row: i32) -> bool;
-
-        /// Re-reads this directory's Git state, branches included. The branch
-        /// panel calls it when it opens so a checkout made in a terminal shows
-        /// up even when no file in this directory changed.
-        #[qinvokable]
-        #[cxx_name = "refreshGit"]
-        fn refresh_git(self: Pin<&mut DirectoryListModel>);
-
-        #[qinvokable]
-        #[cxx_name = "gitCheckoutBranch"]
-        fn git_checkout_branch(self: Pin<&mut DirectoryListModel>, name: &QString, remote: bool);
-
-        #[qinvokable]
-        #[cxx_name = "gitCreateBranch"]
-        fn git_create_branch(self: Pin<&mut DirectoryListModel>, name: &QString, checkout: bool);
-
-        #[qinvokable]
-        #[cxx_name = "gitFetch"]
-        fn git_fetch(self: Pin<&mut DirectoryListModel>);
-
-        #[qinvokable]
-        #[cxx_name = "gitPull"]
-        fn git_pull(self: Pin<&mut DirectoryListModel>);
-
-        #[qinvokable]
-        #[cxx_name = "gitPush"]
-        fn git_push(self: Pin<&mut DirectoryListModel>);
-
-        #[qinvokable]
-        #[cxx_name = "gitSync"]
-        fn git_sync(self: Pin<&mut DirectoryListModel>);
-
-        /// A branch command succeeded. `operation` is `checkout`, `create`,
-        /// `fetch`, `pull`, `push` or `sync`; the create form uses it to close
-        /// only after its own command landed.
-        #[qsignal]
-        #[cxx_name = "gitOperationFinished"]
-        fn git_operation_finished(
-            self: Pin<&mut DirectoryListModel>,
-            operation: &QString,
-            message: &QString,
-        );
-
-        #[qsignal]
-        #[cxx_name = "gitOperationFailed"]
-        fn git_operation_failed(
-            self: Pin<&mut DirectoryListModel>,
-            operation: &QString,
-            message: &QString,
-        );
-
-        /// Stops the stream and drops every row. A closed tab calls this
-        /// before it is released, so a 120k-row directory is not kept alive by
-        /// a model nobody shows.
-        #[qinvokable]
-        fn dispose(self: Pin<&mut DirectoryListModel>);
-
-        #[inherit]
-        #[rust_name = "begin_insert_rows"]
-        unsafe fn beginInsertRows(
-            self: Pin<&mut DirectoryListModel>,
-            parent: &QModelIndex,
-            first: i32,
-            last: i32,
-        );
-
-        #[inherit]
-        #[rust_name = "end_insert_rows"]
-        unsafe fn endInsertRows(self: Pin<&mut DirectoryListModel>);
-
-        #[inherit]
-        #[rust_name = "begin_remove_rows"]
-        unsafe fn beginRemoveRows(
-            self: Pin<&mut DirectoryListModel>,
-            parent: &QModelIndex,
-            first: i32,
-            last: i32,
-        );
-
-        #[inherit]
-        #[rust_name = "end_remove_rows"]
-        unsafe fn endRemoveRows(self: Pin<&mut DirectoryListModel>);
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut DirectoryListModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut DirectoryListModel>);
-
-        #[inherit]
-        #[rust_name = "model_index"]
-        unsafe fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
-
-        /// Repaints the Git column without rebuilding the rows, so a status
-        /// refresh landing after the listing keeps the scroll position and the
-        /// current row.
-        #[inherit]
-        #[rust_name = "data_changed"]
-        unsafe fn dataChanged(
-            self: Pin<&mut DirectoryListModel>,
-            top_left: &QModelIndex,
-            bottom_right: &QModelIndex,
-            roles: &QList_i32,
-        );
-    }
-
-    impl cxx_qt::Threading for DirectoryListModel {}
-}
 
 /// `PartialEq` is what lets a refresh keep the rows it already has: the diff
 /// compares old and new entries field by field, so an unchanged row costs no
@@ -760,7 +330,7 @@ fn link_is_broken(kind: EntryKind, path: &str) -> bool {
 /// The selected files' byte total, as the action bar prints it. Directories
 /// are skipped on purpose: their size is the on-demand measurement, and a
 /// selection summary must not start a directory walk.
-fn selected_size_text(rows: &[StoredRow]) -> QString {
+fn selected_size_text(rows: &[StoredRow]) -> String {
     let mut total: u64 = 0;
     let mut counted = false;
     for row in rows {
@@ -773,9 +343,9 @@ fn selected_size_text(rows: &[StoredRow]) -> QString {
         }
     }
     if counted {
-        QString::from(crate::format::size(total).as_str())
+        crate::format::size(total)
     } else {
-        QString::default()
+        String::new()
     }
 }
 
@@ -1979,386 +1549,536 @@ impl GitOperation {
     }
 }
 
-pub struct DirectoryListModelRust {
-    loaded: i32,
-    images: i32,
-    files: i32,
-    folders: i32,
-    /// Per-family file counts of the finished listing, as JSON. See the
-    /// property declaration above for the shape.
-    family_counts: QString,
-    /// Per-section row counts of the finished listing, as JSON.
-    group_counts: QString,
-    newest_modified: QString,
-    /// Rows currently selected, published as the `selectedCount` property so
-    /// the status bar never recounts the selection.
-    selected_count: i32,
-    /// Byte total of the selected files, already formatted.
-    selected_size_text: QString,
-    finished: bool,
-    status: QString,
-    path: QString,
-    /// The ancestors of `path`, as the breadcrumb bar reads them. Both lists
-    /// come from the same `Vec<Breadcrumb>`, so they always pair up index for
-    /// index.
-    breadcrumb_names: QStringList,
-    breadcrumb_paths: QStringList,
-    rows: Vec<StoredRow>,
-    base: String,
-    /// `Some` while a same-directory refresh runs; the rows above are the
-    /// previous listing until the stage is swapped in.
-    refresh: Option<RefreshStage>,
-    /// `Some` while a completed refresh waits for its worker sort; the rows
-    /// are the replacement listing, not yet diffed against the visible one.
-    refresh_sort: Option<RefreshSort>,
-    stream_id: Option<String>,
-    generation: u64,
-    /// Rows came from a network backend. Their `name` is the only part that
-    /// carries a file extension, so the icon URL is built from it rather than
-    /// from the full path. Exposed to QML so local-only actions can be gated.
-    remote: bool,
-    /// This model's identity in the core watcher registry. One id for the
-    /// model's whole life: navigation re-targets the observation rather than
-    /// minting a new one, so a slow arm cannot leave a stale watcher behind.
-    watcher_id: String,
-    /// A change arrived while a read was in flight. Re-reading now would cancel
-    /// that read, so the reload waits for it to finish instead.
-    reload_pending: bool,
-    /// The last read failed, so the rows on screen are not a listing of `path`.
-    /// A watcher patch must not add to or edit them; only a read can recover.
-    load_failed: bool,
-    /// `dispose` ran and released the watcher; a reload already queued on the
-    /// Qt thread must not revive a closed model.
-    closed: bool,
-    /// A sort is running on a worker. Patches are refused while it is: they
-    /// plan insertions against the row order, and the rows are still in their
-    /// old order until the permutation lands.
-    sorting: bool,
-    /// Identifies the newest worker sort. A reply carrying an older value is
-    /// stale even when the generation and row count still match, which is how
-    /// an interactive re-sort can be superseded without a load.
-    sort_request: u64,
-    order: ViewOrder,
-    filter: RowFilter,
-    /// Which rows are selected. The flags live on the rows; this is the index
-    /// that keeps a click from scanning the whole listing.
-    selection: Selection,
-    /// The worktree root and the branch facts the status bar paints. Written
-    /// together from one branch listing; the status-only refresh leaves the
-    /// branch lists alone so a 1000-branch repository is not re-enumerated on
-    /// every directory reload.
-    git_root: QString,
-    git_branch: QString,
-    git_detached: bool,
-    git_has_upstream: bool,
-    git_ahead: i32,
-    git_behind: i32,
-    git_busy: bool,
-    git_remotes: QStringList,
-    git_local_branches: QStringList,
-    git_remote_branches: QStringList,
-    git_current_branch: QString,
-    /// Direct children with a working-tree change, keyed by name. Kept beside
-    /// the rows rather than inside `StoredRow`: a status refresh must not make
-    /// the row diff treat the whole directory as changed.
-    git_entries: HashMap<String, GitEntryStatusKind>,
-    /// The same entries keyed by ASCII-lowercased name, so the `ROLE_GIT`
-    /// read of a clean row — the common case — is a hash lookup instead of a
-    /// scan over every dirty entry (`git_badge`). Kept in lockstep with
-    /// `git_entries`; two entries differing only in case keep the first one
-    /// folded, where the old scan's pick was iteration-order anyway.
-    git_entries_folded: HashMap<String, GitEntryStatusKind>,
-    /// Tag ids per full path, filled in batches after the listing lands.
-    /// Keyed by path rather than stored on the row so a refresh can carry the
-    /// ids over when a row's metadata changed but its path did not.
-    tags_cache: HashMap<String, Vec<String>>,
-    /// Drops a tag read that lands after a load or a newer read.
-    tag_generation: u64,
-    /// Every row's tags have been read, so a tag sort does not have to start
-    /// another pass.
-    tags_complete: bool,
-    /// The tag definitions, read once per load and after an edit in the tag
-    /// manager. `data()` runs per visible cell, so it must not open
-    /// `tags.toml`.
-    tag_definitions: Vec<dae_core::fs::tags::TagDefinition>,
-    /// The shown directory is entirely untracked; every child gets the `U`
-    /// badge without an entry per file.
-    git_directory_untracked: bool,
-    /// Drops a Git read that lands after the user navigated away or a newer
-    /// request replaced it.
-    git_generation: u64,
-    /// Byte totals for directories the user asked to measure, keyed by full
-    /// path. Folders are never walked during enumeration; this map only holds
-    /// the totals a "calculate size" pass returned.
-    folder_sizes: HashMap<String, u64>,
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
 }
 
-impl Default for DirectoryListModelRust {
-    fn default() -> Self {
-        Self {
-            loaded: 0,
-            images: 0,
-            files: 0,
-            folders: 0,
-            family_counts: QString::default(),
-            group_counts: QString::default(),
-            newest_modified: QString::default(),
-            selected_count: 0,
-            selected_size_text: QString::default(),
-            finished: false,
-            status: QString::default(),
-            path: QString::default(),
-            breadcrumb_names: QStringList::default(),
-            breadcrumb_paths: QStringList::default(),
-            rows: Vec::new(),
-            base: String::new(),
-            refresh: None,
-            refresh_sort: None,
-            stream_id: None,
-            generation: 0,
-            remote: false,
-            watcher_id: next_watcher_id(),
-            reload_pending: false,
-            load_failed: false,
-            closed: false,
-            sorting: false,
-            sort_request: 0,
-            order: ViewOrder::default(),
-            filter: RowFilter::default(),
-            selection: Selection::default(),
-            git_root: QString::default(),
-            git_branch: QString::default(),
-            git_detached: false,
-            git_has_upstream: false,
-            git_ahead: 0,
-            git_behind: 0,
-            git_busy: false,
-            git_remotes: QStringList::default(),
-            git_local_branches: QStringList::default(),
-            git_remote_branches: QStringList::default(),
-            git_current_branch: QString::default(),
-            git_entries: HashMap::new(),
-            git_entries_folded: HashMap::new(),
-            tags_cache: HashMap::new(),
-            tag_generation: 0,
-            tags_complete: false,
-            tag_definitions: Vec::new(),
-            git_directory_untracked: false,
-            folder_sizes: HashMap::new(),
-            git_generation: 0,
-        }
-    }
-}
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod rows {
+    use super::*;
 
-impl Drop for DirectoryListModelRust {
-    fn drop(&mut self) {
-        // `dispose` normally released this already; a model the shell let go
-        // without disposing must not leave an OS watcher running.
-        watch::unwatch_directory(self.watcher_id.clone());
+    pub struct DirectoryListModel {
+        loaded: i32,
+        images: i32,
+        files: i32,
+        folders: i32,
+        /// Per-family file counts of the finished listing, as JSON. See the
+        /// property declaration above for the shape.
+        family_counts: String,
+        /// Per-section row counts of the finished listing, as JSON.
+        group_counts: String,
+        newest_modified: String,
+        /// Rows currently selected, published as the `selectedCount` property so
+        /// the status bar never recounts the selection.
+        selected_count: i32,
+        /// Byte total of the selected files, already formatted.
+        selected_size_text: String,
+        finished: bool,
+        status: String,
+        path: String,
+        /// The ancestors of `path`, as the breadcrumb bar reads them. Both lists
+        /// come from the same `Vec<Breadcrumb>`, so they always pair up index for
+        /// index.
+        breadcrumb_names: Vec<String>,
+        breadcrumb_paths: Vec<String>,
+        rows: Vec<StoredRow>,
+        base: String,
+        /// `Some` while a same-directory refresh runs; the rows above are the
+        /// previous listing until the stage is swapped in.
+        refresh: Option<RefreshStage>,
+        /// `Some` while a completed refresh waits for its worker sort; the rows
+        /// are the replacement listing, not yet diffed against the visible one.
+        refresh_sort: Option<RefreshSort>,
+        stream_id: Option<String>,
+        generation: u64,
+        /// Rows came from a network backend. Their `name` is the only part that
+        /// carries a file extension, so the icon URL is built from it rather than
+        /// from the full path. Exposed to QML so local-only actions can be gated.
+        remote: bool,
+        /// This model's identity in the core watcher registry. One id for the
+        /// model's whole life: navigation re-targets the observation rather than
+        /// minting a new one, so a slow arm cannot leave a stale watcher behind.
+        watcher_id: String,
+        /// A change arrived while a read was in flight. Re-reading now would cancel
+        /// that read, so the reload waits for it to finish instead.
+        reload_pending: bool,
+        /// The last read failed, so the rows on screen are not a listing of `path`.
+        /// A watcher patch must not add to or edit them; only a read can recover.
+        load_failed: bool,
+        /// `dispose` ran and released the watcher; a reload already queued on the
+        /// Qt thread must not revive a closed model.
+        closed: bool,
+        /// A sort is running on a worker. Patches are refused while it is: they
+        /// plan insertions against the row order, and the rows are still in their
+        /// old order until the permutation lands.
+        sorting: bool,
+        /// Identifies the newest worker sort. A reply carrying an older value is
+        /// stale even when the generation and row count still match, which is how
+        /// an interactive re-sort can be superseded without a load.
+        sort_request: u64,
+        order: ViewOrder,
+        filter: RowFilter,
+        /// Which rows are selected. The flags live on the rows; this is the index
+        /// that keeps a click from scanning the whole listing.
+        selection: Selection,
+        /// The worktree root and the branch facts the status bar paints. Written
+        /// together from one branch listing; the status-only refresh leaves the
+        /// branch lists alone so a 1000-branch repository is not re-enumerated on
+        /// every directory reload.
+        git_root: String,
+        git_branch: String,
+        git_detached: bool,
+        git_has_upstream: bool,
+        git_ahead: i32,
+        git_behind: i32,
+        git_busy: bool,
+        git_remotes: Vec<String>,
+        git_local_branches: Vec<String>,
+        git_remote_branches: Vec<String>,
+        git_current_branch: String,
+        /// Direct children with a working-tree change, keyed by name. Kept beside
+        /// the rows rather than inside `StoredRow`: a status refresh must not make
+        /// the row diff treat the whole directory as changed.
+        git_entries: HashMap<String, GitEntryStatusKind>,
+        /// The same entries keyed by ASCII-lowercased name, so the `ROLE_GIT`
+        /// read of a clean row — the common case — is a hash lookup instead of a
+        /// scan over every dirty entry (`git_badge`). Kept in lockstep with
+        /// `git_entries`; two entries differing only in case keep the first one
+        /// folded, where the old scan's pick was iteration-order anyway.
+        git_entries_folded: HashMap<String, GitEntryStatusKind>,
+        /// Tag ids per full path, filled in batches after the listing lands.
+        /// Keyed by path rather than stored on the row so a refresh can carry the
+        /// ids over when a row's metadata changed but its path did not.
+        tags_cache: HashMap<String, Vec<String>>,
+        /// Drops a tag read that lands after a load or a newer read.
+        tag_generation: u64,
+        /// Every row's tags have been read, so a tag sort does not have to start
+        /// another pass.
+        tags_complete: bool,
+        /// The tag definitions, read once per load and after an edit in the tag
+        /// manager. `data()` runs per visible cell, so it must not open
+        /// `tags.toml`.
+        tag_definitions: Vec<dae_core::fs::tags::TagDefinition>,
+        /// The shown directory is entirely untracked; every child gets the `U`
+        /// badge without an entry per file.
+        git_directory_untracked: bool,
+        /// Drops a Git read that lands after the user navigated away or a newer
+        /// request replaced it.
+        git_generation: u64,
+        /// Byte totals for directories the user asked to measure, keyed by full
+        /// path. Folders are never walked during enumeration; this map only holds
+        /// the totals a "calculate size" pass returned.
+        folder_sizes: HashMap<String, u64>,
     }
-}
 
-impl qobject::DirectoryListModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        // A list model has one level: any valid parent has no children.
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
-        }
-    }
-
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
-        }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match role {
-            ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
-            ROLE_PATH => QVariant::from(&QString::from(row.full_path(&self.base))),
-            ROLE_RELATIVE => QVariant::from(&QString::from(row.name.as_str())),
-            // A folder's byte total is not known without walking it, so the
-            // detail view shows an em dash instead of a made-up "0 B".
-            ROLE_SIZE => {
-                let text = if row.kind == EntryKind::Directory {
-                    self.folder_sizes
-                        .get(&row.full_path(&self.base))
-                        .map(|bytes| crate::format::size(*bytes))
-                        .unwrap_or_else(|| "—".to_owned())
-                } else {
-                    crate::format::size(row.size.unwrap_or(0))
-                };
-                QVariant::from(&QString::from(text))
+    impl Default for DirectoryListModel {
+        fn default() -> Self {
+            Self {
+                loaded: 0,
+                images: 0,
+                files: 0,
+                folders: 0,
+                family_counts: String::new(),
+                group_counts: String::new(),
+                newest_modified: String::new(),
+                selected_count: 0,
+                selected_size_text: String::new(),
+                finished: false,
+                status: String::new(),
+                path: String::new(),
+                breadcrumb_names: Vec::new(),
+                breadcrumb_paths: Vec::new(),
+                rows: Vec::new(),
+                base: String::new(),
+                refresh: None,
+                refresh_sort: None,
+                stream_id: None,
+                generation: 0,
+                remote: false,
+                watcher_id: next_watcher_id(),
+                reload_pending: false,
+                load_failed: false,
+                closed: false,
+                sorting: false,
+                sort_request: 0,
+                order: ViewOrder::default(),
+                filter: RowFilter::default(),
+                selection: Selection::default(),
+                git_root: String::new(),
+                git_branch: String::new(),
+                git_detached: false,
+                git_has_upstream: false,
+                git_ahead: 0,
+                git_behind: 0,
+                git_busy: false,
+                git_remotes: Vec::new(),
+                git_local_branches: Vec::new(),
+                git_remote_branches: Vec::new(),
+                git_current_branch: String::new(),
+                git_entries: HashMap::new(),
+                git_entries_folded: HashMap::new(),
+                tags_cache: HashMap::new(),
+                tag_generation: 0,
+                tags_complete: false,
+                tag_definitions: Vec::new(),
+                git_directory_untracked: false,
+                folder_sizes: HashMap::new(),
+                git_generation: 0,
             }
-            ROLE_MODIFIED => QVariant::from(&QString::from(crate::format::timestamp(
-                row.modified_at.unwrap_or(0),
-            ))),
-            ROLE_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
-            ROLE_HIDDEN => QVariant::from(&row.hidden),
-            ROLE_READ_ONLY => QVariant::from(&row.read_only),
-            ROLE_SELECTED => QVariant::from(&row.selected),
-            ROLE_ICON => {
-                // The desktop icon lookup cannot answer for a remote
-                // directory (a bare name is not a local path), so leave the
-                // URL empty and let the delegate paint its fallback square
-                // instead of asking the provider for an icon it cannot make.
-                if self.remote && row.kind == EntryKind::Directory {
-                    return QVariant::from(&QString::default());
+        }
+    }
+
+    impl Drop for DirectoryListModel {
+        fn drop(&mut self) {
+            // `dispose` normally released this already; a model the shell let go
+            // without disposing must not leave an OS watcher running.
+            watch::unwatch_directory(self.watcher_id.clone());
+        }
+    }
+
+
+    impl QAbstractItemModel for DirectoryListModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
+            }
+            self.create_index(row, column, 0)
+        }
+
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            // A list model has one level: any valid parent has no children.
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
+            }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match role {
+                ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
+                ROLE_PATH => QVariant::from(&QString::from(row.full_path(&self.base))),
+                ROLE_RELATIVE => QVariant::from(&QString::from(row.name.as_str())),
+                // A folder's byte total is not known without walking it, so the
+                // detail view shows an em dash instead of a made-up "0 B".
+                ROLE_SIZE => {
+                    let text = if row.kind == EntryKind::Directory {
+                        self.folder_sizes
+                            .get(&row.full_path(&self.base))
+                            .map(|bytes| crate::format::size(*bytes))
+                            .unwrap_or_else(|| "—".to_owned())
+                    } else {
+                        crate::format::size(row.size.unwrap_or(0))
+                    };
+                    QVariant::from(&QString::from(text))
                 }
-                let path = if self.remote {
-                    row.name.clone()
-                } else {
-                    row.full_path(&self.base)
-                };
-                let version = icon_version(row);
-                QVariant::from(&QString::from(
-                    crate::icons::source_for(&path, row.kind == EntryKind::Directory, &version)
-                        .as_str(),
-                ))
-            }
-            ROLE_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
-            ROLE_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
-            ROLE_THUMBNAIL => {
-                let path = row.full_path(&self.base);
-                QVariant::from(&QString::from(thumbnail_url(
-                    self.remote,
-                    &path,
+                ROLE_MODIFIED => QVariant::from(&QString::from(crate::format::timestamp(
+                    row.modified_at.unwrap_or(0),
+                ))),
+                ROLE_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
+                ROLE_HIDDEN => QVariant::from(&row.hidden),
+                ROLE_READ_ONLY => QVariant::from(&row.read_only),
+                ROLE_SELECTED => QVariant::from(&row.selected),
+                ROLE_ICON => {
+                    // The desktop icon lookup cannot answer for a remote
+                    // directory (a bare name is not a local path), so leave the
+                    // URL empty and let the delegate paint its fallback square
+                    // instead of asking the provider for an icon it cannot make.
+                    if self.remote && row.kind == EntryKind::Directory {
+                        return QVariant::from(&QString::default());
+                    }
+                    let path = if self.remote {
+                        row.name.clone()
+                    } else {
+                        row.full_path(&self.base)
+                    };
+                    let version = icon_version(row);
+                    QVariant::from(&QString::from(
+                        crate::icons::source_for(&path, row.kind == EntryKind::Directory, &version)
+                            .as_str(),
+                    ))
+                }
+                ROLE_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
+                ROLE_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
+                ROLE_THUMBNAIL => {
+                    let path = row.full_path(&self.base);
+                    QVariant::from(&QString::from(thumbnail_url(
+                        self.remote,
+                        &path,
+                        &row.name,
+                        row,
+                    )))
+                }
+                ROLE_GIT => QVariant::from(&QString::from(git_badge(
+                    &self.git_entries,
+                    &self.git_entries_folded,
+                    self.git_directory_untracked,
                     &row.name,
-                    row,
-                )))
-            }
-            ROLE_GIT => QVariant::from(&QString::from(git_badge(
-                &self.git_entries,
-                &self.git_entries_folded,
-                self.git_directory_untracked,
-                &row.name,
-            ))),
-            ROLE_CREATED => QVariant::from(&QString::from(
-                if row.created_at.is_some() {
-                    crate::format::timestamp(row.created_at.unwrap_or(0))
-                } else {
-                    "—".to_owned()
+                ))),
+                ROLE_CREATED => QVariant::from(&QString::from(
+                    if row.created_at.is_some() {
+                        crate::format::timestamp(row.created_at.unwrap_or(0))
+                    } else {
+                        "—".to_owned()
+                    }
+                    .as_str(),
+                )),
+                ROLE_CREATED_FALLBACK => QVariant::from(&row.created_fallback),
+                ROLE_TAGS => QVariant::from(&QString::from(self.tag_names(&row.tag_ids).as_str())),
+                ROLE_TAG_IDS => QVariant::from(&QString::from(row.tag_ids.join(",").as_str())),
+                ROLE_TAG_COLORS => {
+                    QVariant::from(&QString::from(self.tag_colors(&row.tag_ids).as_str()))
                 }
-                .as_str(),
-            )),
-            ROLE_CREATED_FALLBACK => QVariant::from(&row.created_fallback),
-            ROLE_TAGS => QVariant::from(&QString::from(self.tag_names(&row.tag_ids).as_str())),
-            ROLE_TAG_IDS => QVariant::from(&QString::from(row.tag_ids.join(",").as_str())),
-            ROLE_TAG_COLORS => {
-                QVariant::from(&QString::from(self.tag_colors(&row.tag_ids).as_str()))
-            }
-            ROLE_GROUP => QVariant::from(&QString::from(row.group_label.as_str())),
-            ROLE_TYPE_NAME => QVariant::from(&QString::from(type_label(row.kind, &row.name))),
-            ROLE_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
-            ROLE_CREATED_AT => QVariant::from(&(row.created_at.unwrap_or(0) as f64)),
-            ROLE_BROKEN_LINK => QVariant::from(&row.broken_link),
-            ROLE_SELECTED_PREV => {
-                let previous = index.row() > 0
-                    && self
+                ROLE_GROUP => QVariant::from(&QString::from(row.group_label.as_str())),
+                ROLE_TYPE_NAME => QVariant::from(&QString::from(type_label(row.kind, &row.name))),
+                ROLE_MODIFIED_AT => QVariant::from(&(row.modified_at.unwrap_or(0) as f64)),
+                ROLE_CREATED_AT => QVariant::from(&(row.created_at.unwrap_or(0) as f64)),
+                ROLE_BROKEN_LINK => QVariant::from(&row.broken_link),
+                ROLE_SELECTED_PREV => {
+                    let previous = index.row() > 0
+                        && self
+                            .rows
+                            .get(index.row() as usize - 1)
+                            .is_some_and(|row| row.selected);
+                    QVariant::from(&previous)
+                }
+                ROLE_SELECTED_NEXT => {
+                    let next = self
                         .rows
-                        .get(index.row() as usize - 1)
+                        .get(index.row() as usize + 1)
                         .is_some_and(|row| row.selected);
-                QVariant::from(&previous)
+                    QVariant::from(&next)
+                }
+                _ => QVariant::default(),
             }
-            ROLE_SELECTED_NEXT => {
-                let next = self
-                    .rows
-                    .get(index.row() as usize + 1)
-                    .is_some_and(|row| row.selected);
-                QVariant::from(&next)
-            }
-            _ => QVariant::default(),
         }
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            let mut roles = QHash_i32_QByteArray::default();
+            roles.insert(ROLE_NAME, QByteArray::from("fileName"));
+            roles.insert(ROLE_PATH, QByteArray::from("filePath"));
+            roles.insert(ROLE_RELATIVE, QByteArray::from("relativePath"));
+            roles.insert(ROLE_SIZE, QByteArray::from("sizeText"));
+            roles.insert(ROLE_MODIFIED, QByteArray::from("modifiedText"));
+            roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
+            roles.insert(ROLE_HIDDEN, QByteArray::from("hidden"));
+            roles.insert(ROLE_READ_ONLY, QByteArray::from("readOnly"));
+            roles.insert(ROLE_ICON, QByteArray::from("iconSource"));
+            roles.insert(ROLE_CATEGORY, QByteArray::from("category"));
+            roles.insert(ROLE_EXTENSION, QByteArray::from("extension"));
+            roles.insert(ROLE_THUMBNAIL, QByteArray::from("thumbnailSource"));
+            roles.insert(ROLE_GIT, QByteArray::from("gitStatus"));
+            roles.insert(ROLE_SELECTED, QByteArray::from("selected"));
+            roles.insert(ROLE_CREATED, QByteArray::from("createdText"));
+            roles.insert(ROLE_CREATED_FALLBACK, QByteArray::from("createdFallback"));
+            roles.insert(ROLE_TAGS, QByteArray::from("tagNames"));
+            roles.insert(ROLE_TAG_IDS, QByteArray::from("tagIds"));
+            roles.insert(ROLE_TAG_COLORS, QByteArray::from("tagColors"));
+            roles.insert(ROLE_GROUP, QByteArray::from("groupLabel"));
+            roles.insert(ROLE_TYPE_NAME, QByteArray::from("typeName"));
+            roles.insert(ROLE_MODIFIED_AT, QByteArray::from("modifiedAt"));
+            roles.insert(ROLE_SELECTED_PREV, QByteArray::from("previousSelected"));
+            roles.insert(ROLE_SELECTED_NEXT, QByteArray::from("nextSelected"));
+            roles.insert(ROLE_CREATED_AT, QByteArray::from("createdAt"));
+            roles.insert(ROLE_BROKEN_LINK, QByteArray::from("brokenLink"));
+            roles
+        }
+
     }
 
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        roles.insert(ROLE_NAME, QByteArray::from("fileName"));
-        roles.insert(ROLE_PATH, QByteArray::from("filePath"));
-        roles.insert(ROLE_RELATIVE, QByteArray::from("relativePath"));
-        roles.insert(ROLE_SIZE, QByteArray::from("sizeText"));
-        roles.insert(ROLE_MODIFIED, QByteArray::from("modifiedText"));
-        roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
-        roles.insert(ROLE_HIDDEN, QByteArray::from("hidden"));
-        roles.insert(ROLE_READ_ONLY, QByteArray::from("readOnly"));
-        roles.insert(ROLE_ICON, QByteArray::from("iconSource"));
-        roles.insert(ROLE_CATEGORY, QByteArray::from("category"));
-        roles.insert(ROLE_EXTENSION, QByteArray::from("extension"));
-        roles.insert(ROLE_THUMBNAIL, QByteArray::from("thumbnailSource"));
-        roles.insert(ROLE_GIT, QByteArray::from("gitStatus"));
-        roles.insert(ROLE_SELECTED, QByteArray::from("selected"));
-        roles.insert(ROLE_CREATED, QByteArray::from("createdText"));
-        roles.insert(ROLE_CREATED_FALLBACK, QByteArray::from("createdFallback"));
-        roles.insert(ROLE_TAGS, QByteArray::from("tagNames"));
-        roles.insert(ROLE_TAG_IDS, QByteArray::from("tagIds"));
-        roles.insert(ROLE_TAG_COLORS, QByteArray::from("tagColors"));
-        roles.insert(ROLE_GROUP, QByteArray::from("groupLabel"));
-        roles.insert(ROLE_TYPE_NAME, QByteArray::from("typeName"));
-        roles.insert(ROLE_MODIFIED_AT, QByteArray::from("modifiedAt"));
-        roles.insert(ROLE_SELECTED_PREV, QByteArray::from("previousSelected"));
-        roles.insert(ROLE_SELECTED_NEXT, QByteArray::from("nextSelected"));
-        roles.insert(ROLE_CREATED_AT, QByteArray::from("createdAt"));
-        roles.insert(ROLE_BROKEN_LINK, QByteArray::from("brokenLink"));
-        roles
-    }
+    impl DirectoryListModel {
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("images", Member = images, Notify = images_changed);
+        qproperty!("files", Member = files, Notify = files_changed);
+        qproperty!("folders", Member = folders, Notify = folders_changed);
+        qproperty!("familyCounts", Member = family_counts, Notify = family_counts_changed);
+        qproperty!("groupCounts", Member = group_counts, Notify = group_counts_changed);
+        qproperty!("newestModifiedText", Member = newest_modified, Notify = newest_modified_changed);
+        qproperty!("selectedCount", Member = selected_count, Notify = selected_count_changed);
+        qproperty!("selectedSizeText", Member = selected_size_text, Notify = selected_size_text_changed);
+        qproperty!("finished", Member = finished, Notify = finished_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
+        qproperty!("path", Member = path, Notify = path_changed);
+        qproperty!("breadcrumbNames", Member = breadcrumb_names, Notify = breadcrumb_names_changed);
+        qproperty!("breadcrumbPaths", Member = breadcrumb_paths, Notify = breadcrumb_paths_changed);
+        qproperty!("remote", Member = remote, Notify = remote_changed);
+        qproperty!("gitRoot", Member = git_root, Notify = git_root_changed);
+        qproperty!("gitBranch", Member = git_branch, Notify = git_branch_changed);
+        qproperty!("gitDetached", Member = git_detached, Notify = git_detached_changed);
+        qproperty!("gitHasUpstream", Member = git_has_upstream, Notify = git_has_upstream_changed);
+        qproperty!("gitAhead", Member = git_ahead, Notify = git_ahead_changed);
+        qproperty!("gitBehind", Member = git_behind, Notify = git_behind_changed);
+        qproperty!("gitBusy", Member = git_busy, Notify = git_busy_changed);
+        qproperty!("gitRemotes", Member = git_remotes, Notify = git_remotes_changed);
+        qproperty!("gitLocalBranches", Member = git_local_branches, Notify = git_local_branches_changed);
+        qproperty!("gitRemoteBranches", Member = git_remote_branches, Notify = git_remote_branches_changed);
+        qproperty!("gitCurrentBranch", Member = git_current_branch, Notify = git_current_branch_changed);
 
-    fn load(mut self: Pin<&mut Self>, path: &QString) {
-        let requested = path.to_string();
-        if requested.trim().is_empty() {
-            self.as_mut().set_status(QString::from("No path"));
-            return;
+        #[qsignal]
+        fn loaded_changed(&mut self);
+        #[qsignal]
+        fn images_changed(&mut self);
+        #[qsignal]
+        fn files_changed(&mut self);
+        #[qsignal]
+        fn folders_changed(&mut self);
+        #[qsignal]
+        fn family_counts_changed(&mut self);
+        #[qsignal]
+        fn group_counts_changed(&mut self);
+        #[qsignal]
+        fn newest_modified_changed(&mut self);
+        #[qsignal]
+        fn selected_count_changed(&mut self);
+        #[qsignal]
+        fn selected_size_text_changed(&mut self);
+        #[qsignal]
+        fn finished_changed(&mut self);
+        #[qsignal]
+        fn status_changed(&mut self);
+        #[qsignal]
+        fn path_changed(&mut self);
+        #[qsignal]
+        fn breadcrumb_names_changed(&mut self);
+        #[qsignal]
+        fn breadcrumb_paths_changed(&mut self);
+        #[qsignal]
+        fn remote_changed(&mut self);
+        #[qsignal]
+        fn git_root_changed(&mut self);
+        #[qsignal]
+        fn git_branch_changed(&mut self);
+        #[qsignal]
+        fn git_detached_changed(&mut self);
+        #[qsignal]
+        fn git_has_upstream_changed(&mut self);
+        #[qsignal]
+        fn git_ahead_changed(&mut self);
+        #[qsignal]
+        fn git_behind_changed(&mut self);
+        #[qsignal]
+        fn git_busy_changed(&mut self);
+        #[qsignal]
+        fn git_remotes_changed(&mut self);
+        #[qsignal]
+        fn git_local_branches_changed(&mut self);
+        #[qsignal]
+        fn git_remote_branches_changed(&mut self);
+        #[qsignal]
+        fn git_current_branch_changed(&mut self);
+
+        #[qsignal]
+        fn about_to_reload(&mut self);
+        #[qsignal]
+        fn sort_applied(&mut self);
+        #[qsignal]
+        fn git_operation_finished(&mut self, operation: String, message: String);
+        #[qsignal]
+        fn git_operation_failed(&mut self, operation: String, message: String);
+
+        notifying_setters! {
+            set_loaded(i32) => loaded, loaded_changed;
+            set_images(i32) => images, images_changed;
+            set_files(i32) => files, files_changed;
+            set_folders(i32) => folders, folders_changed;
+            set_family_counts(String) => family_counts, family_counts_changed;
+            set_group_counts(String) => group_counts, group_counts_changed;
+            set_newest_modified(String) => newest_modified, newest_modified_changed;
+            set_selected_count(i32) => selected_count, selected_count_changed;
+            set_selected_size_text(String) => selected_size_text, selected_size_text_changed;
+            set_finished(bool) => finished, finished_changed;
+            set_status(String) => status, status_changed;
+            set_path(String) => path, path_changed;
+            set_breadcrumb_names(Vec<String>) => breadcrumb_names, breadcrumb_names_changed;
+            set_breadcrumb_paths(Vec<String>) => breadcrumb_paths, breadcrumb_paths_changed;
+            set_remote(bool) => remote, remote_changed;
+            set_git_root(String) => git_root, git_root_changed;
+            set_git_branch(String) => git_branch, git_branch_changed;
+            set_git_detached(bool) => git_detached, git_detached_changed;
+            set_git_has_upstream(bool) => git_has_upstream, git_has_upstream_changed;
+            set_git_ahead(i32) => git_ahead, git_ahead_changed;
+            set_git_behind(i32) => git_behind, git_behind_changed;
+            set_git_busy(bool) => git_busy, git_busy_changed;
+            set_git_remotes(Vec<String>) => git_remotes, git_remotes_changed;
+            set_git_local_branches(Vec<String>) => git_local_branches, git_local_branches_changed;
+            set_git_remote_branches(Vec<String>) => git_remote_branches, git_remote_branches_changed;
+            set_git_current_branch(String) => git_current_branch, git_current_branch_changed;
         }
 
-        // Reloading the directory already on screen keeps its rows until the
-        // replacement has arrived; the reset is deferred to the swap so the
-        // user never sees an empty list. Navigating elsewhere still clears at
-        // once, or the old rows would appear under the new path.
-        let refreshing = !self.path.as_slice().is_empty() && self.path.to_string() == requested;
-        if !refreshing {
-            // A view can only remember where it was scrolled before the reset
-            // below; afterwards the rows — and the position with them — are gone.
-            self.as_mut().about_to_reload();
-        }
+        #[qslot]
+        fn load(&mut self, path: String) {
+            let requested = path;
+            if requested.trim().is_empty() {
+                self.set_status("No path".to_owned());
+                return;
+            }
 
-        let generation = self.generation.wrapping_add(1);
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.sorting = false;
-            // A reply from a sort started before this load describes rows that
-            // are about to be replaced, even if the row count happens to match.
-            rust.sort_request = rust.sort_request.wrapping_add(1);
-            rust.refresh_sort = None;
-            // Same rule for tag reads, plus a definition re-read: the tag
-            // manager may have changed a name since the last directory.
-            rust.tag_generation = rust.tag_generation.wrapping_add(1);
-            rust.tags_complete = false;
-            rust.tag_definitions = dae_core::fs::tags::definitions();
+            // Reloading the directory already on screen keeps its rows until the
+            // replacement has arrived; the reset is deferred to the swap so the
+            // user never sees an empty list. Navigating elsewhere still clears at
+            // once, or the old rows would appear under the new path.
+            let refreshing = !self.path.is_empty() && self.path.to_string() == requested;
             if !refreshing {
-                rust.tags_cache.clear();
+                // A view can only remember where it was scrolled before the reset
+                // below; afterwards the rows — and the position with them — are gone.
+                self.about_to_reload();
             }
-        }
-        if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
-            listing::cancel_directory_listing(stream_id);
-        }
 
-        // A scheme prefix sends this load through the vfs backend instead of
-        // the local streaming reader. Remote backends list in one piece.
-        let scheme = vfs::scheme_of(&requested);
-        let remote = matches!(scheme, Ok(scheme) if scheme != Scheme::Local);
+            let generation = self.generation.wrapping_add(1);
+            {
+                let rust = &mut *self;
+                rust.sorting = false;
+                // A reply from a sort started before this load describes rows that
+                // are about to be replaced, even if the row count happens to match.
+                rust.sort_request = rust.sort_request.wrapping_add(1);
+                rust.refresh_sort = None;
+                // Same rule for tag reads, plus a definition re-read: the tag
+                // manager may have changed a name since the last directory.
+                rust.tag_generation = rust.tag_generation.wrapping_add(1);
+                rust.tags_complete = false;
+                rust.tag_definitions = dae_core::fs::tags::definitions();
+                if !refreshing {
+                    rust.tags_cache.clear();
+                }
+            }
+            if let Some(stream_id) = self.stream_id.take() {
+                listing::cancel_directory_listing(stream_id);
+            }
 
-        if refreshing {
-            let mut rust = self.as_mut().rust_mut();
-            rust.generation = generation;
-            rust.refresh = Some(RefreshStage::default());
-            rust.reload_pending = false;
-            rust.closed = false;
-        } else {
-            unsafe {
-                self.as_mut().begin_reset_model();
+            // A scheme prefix sends this load through the vfs backend instead of
+            // the local streaming reader. Remote backends list in one piece.
+            let scheme = vfs::scheme_of(&requested);
+            let remote = matches!(scheme, Ok(scheme) if scheme != Scheme::Local);
+
+            if refreshing {
+                let rust = &mut *self;
+                rust.generation = generation;
+                rust.refresh = Some(RefreshStage::default());
+                rust.reload_pending = false;
+                rust.closed = false;
+            } else {
+                self.begin_reset_model();
                 {
-                    let mut rust = self.as_mut().rust_mut();
+                    let rust = &mut *self;
                     rust.generation = generation;
                     rust.rows.clear();
                     rust.base.clear();
@@ -2372,142 +2092,141 @@ impl qobject::DirectoryListModel {
                     rust.reload_pending = false;
                     rust.closed = false;
                 }
-                self.as_mut().end_reset_model();
+                self.end_reset_model();
             }
-        }
-        self.as_mut().set_remote(remote);
-        self.as_mut().rust_mut().load_failed = false;
+            self.set_remote(remote);
+            self.load_failed = false;
 
-        self.as_mut().set_finished(false);
-        if !refreshing {
-            self.as_mut().set_loaded(0);
-            self.as_mut().publish_selection_count();
-            self.as_mut().set_path(QString::from(requested.as_str()));
-            self.as_mut().set_status(QString::from("Loading…"));
+            self.set_finished(false);
+            if !refreshing {
+                self.set_loaded(0);
+                self.publish_selection_count();
+                self.set_path(requested.to_owned());
+                self.set_status("Loading…".to_owned());
 
-            // A navigation that fails — permission denied, a path that no
-            // longer exists — never delivers a view, and without this the bar
-            // would keep naming the directory the user just left while the tab
-            // and the empty state name the new one. Local crumbs are cheap to
-            // derive, so the bar moves before the read starts; a remote
-            // backend reports its own crumbs with the first batch.
-            if vfs::is_local_path(&requested) {
-                let crumbs =
-                    dae_core::fs::local::build_breadcrumbs(std::path::Path::new(&requested));
-                self.as_mut().adopt_breadcrumbs(crumbs);
-            }
-        }
-
-        // Navigation asks for branches too, because the status bar's
-        // ahead/behind numbers come from them. A same-directory reload only
-        // refreshes the working-tree scan: enumerating 1000 branches on every
-        // watcher trip would cost more than the listing itself.
-        self.as_mut().begin_git_load(!refreshing);
-
-        // An unknown scheme is a failure of this path, not of the previous
-        // directory: the model has already adopted `requested` above.
-        if let Err(error) = scheme {
-            self.as_mut().rust_mut().refresh = None;
-            self.as_mut().rust_mut().load_failed = true;
-            let message = crate::errors::friendly_error(&error.to_string());
-            self.as_mut().set_status(QString::from(message.as_str()));
-            self.as_mut().set_finished(true);
-            return;
-        }
-
-        let stream_id = next_stream_id();
-        self.as_mut().rust_mut().stream_id = Some(stream_id.clone());
-
-        let thread = self.as_mut().qt_thread();
-        let target = Arc::new(QtBatchTarget::new(thread.clone(), generation));
-        let watch_host: Arc<dyn Host> = Arc::new(ListingHost::new(thread));
-        let worker = Arc::clone(&target);
-        let requested_path = requested.clone();
-        let watcher_id = self.watcher_id.clone();
-
-        std::thread::spawn(move || {
-            if remote {
-                match vfs::resolve(&requested_path) {
-                    Ok(backend) => {
-                        // Armed before the read, like the local arm: a change
-                        // landing during enumeration is either in the view or
-                        // reported as an event.
-                        watch::arm_polling_watcher(
-                            Arc::clone(&watch_host),
-                            &requested_path,
-                            backend.clone(),
-                            &watcher_id,
-                        );
-                        match backend.read_dir(&requested_path) {
-                            Ok(view) => {
-                                let base = entry_codec::base_of(&view.path);
-                                let rows = view
-                                    .entries
-                                    .iter()
-                                    .map(|entry| StoredRow::from_entry(entry, &base))
-                                    .collect();
-                                worker.deliver_head(base, view.path, view.breadcrumbs, rows, true);
-                            }
-                            Err(error) => {
-                                worker.fail(crate::errors::friendly_error(&error.to_string()))
-                            }
-                        }
-                    }
-                    Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
+                // A navigation that fails — permission denied, a path that no
+                // longer exists — never delivers a view, and without this the bar
+                // would keep naming the directory the user just left while the tab
+                // and the empty state name the new one. Local crumbs are cheap to
+                // derive, so the bar moves before the read starts; a remote
+                // backend reports its own crumbs with the first batch.
+                if vfs::is_local_path(&requested) {
+                    let crumbs =
+                        dae_core::fs::local::build_breadcrumbs(std::path::Path::new(&requested));
+                    self.adopt_breadcrumbs(crumbs);
                 }
+            }
+
+            // Navigation asks for branches too, because the status bar's
+            // ahead/behind numbers come from them. A same-directory reload only
+            // refreshes the working-tree scan: enumerating 1000 branches on every
+            // watcher trip would cost more than the listing itself.
+            self.begin_git_load(!refreshing);
+
+            // An unknown scheme is a failure of this path, not of the previous
+            // directory: the model has already adopted `requested` above.
+            if let Err(error) = scheme {
+                self.refresh = None;
+                self.load_failed = true;
+                let message = crate::errors::friendly_error(&error.to_string());
+                self.set_status(message.to_owned());
+                self.set_finished(true);
                 return;
             }
 
-            match listing::open_streamed_listing(
-                watch_host,
-                PathBuf::from(&requested_path),
-                stream_id,
-                Some(watcher_id),
-                worker.clone(),
-            ) {
-                Ok(view) => {
-                    let done = view.stream_id.is_none();
-                    let base = entry_codec::base_of(&view.path);
-                    let rows = view
-                        .entries
-                        .iter()
-                        .map(|entry| StoredRow::from_entry(entry, &base))
-                        .collect();
-                    worker.deliver_head(base, view.path, view.breadcrumbs, rows, done);
+            let stream_id = next_stream_id();
+            self.stream_id = Some(stream_id.clone());
+
+            let target = Arc::new(QtBatchTarget::new(self.get_thread_handle(), generation));
+            let watch_host: Arc<dyn Host> = Arc::new(ListingHost::new(self.get_thread_handle()));
+            let worker = Arc::clone(&target);
+            let requested_path = requested.clone();
+            let watcher_id = self.watcher_id.clone();
+
+            std::thread::spawn(move || {
+                if remote {
+                    match vfs::resolve(&requested_path) {
+                        Ok(backend) => {
+                            // Armed before the read, like the local arm: a change
+                            // landing during enumeration is either in the view or
+                            // reported as an event.
+                            watch::arm_polling_watcher(
+                                Arc::clone(&watch_host),
+                                &requested_path,
+                                backend.clone(),
+                                &watcher_id,
+                            );
+                            match backend.read_dir(&requested_path) {
+                                Ok(view) => {
+                                    let base = entry_codec::base_of(&view.path);
+                                    let rows = view
+                                        .entries
+                                        .iter()
+                                        .map(|entry| StoredRow::from_entry(entry, &base))
+                                        .collect();
+                                    worker.deliver_head(base, view.path, view.breadcrumbs, rows, true);
+                                }
+                                Err(error) => {
+                                    worker.fail(crate::errors::friendly_error(&error.to_string()))
+                                }
+                            }
+                        }
+                        Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
+                    }
+                    return;
                 }
-                Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
+
+                match listing::open_streamed_listing(
+                    watch_host,
+                    PathBuf::from(&requested_path),
+                    stream_id,
+                    Some(watcher_id),
+                    worker.clone(),
+                ) {
+                    Ok(view) => {
+                        let done = view.stream_id.is_none();
+                        let base = entry_codec::base_of(&view.path);
+                        let rows = view
+                            .entries
+                            .iter()
+                            .map(|entry| StoredRow::from_entry(entry, &base))
+                            .collect();
+                        worker.deliver_head(base, view.path, view.breadcrumbs, rows, done);
+                    }
+                    Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
+                }
+            });
+        }
+
+        #[qslot]
+        fn reload(&mut self) {
+            let path = self.path.clone();
+            if !path.is_empty() {
+                self.load(path);
             }
-        });
-    }
-
-    fn reload(mut self: Pin<&mut Self>) {
-        let path = self.path.clone();
-        if !path.as_slice().is_empty() {
-            self.as_mut().load(&path);
-        }
-    }
-
-    fn load_elevated(mut self: Pin<&mut Self>) {
-        let requested = self.path.to_string();
-        if requested.trim().is_empty() {
-            self.as_mut().set_status(QString::from("No path"));
-            return;
-        }
-        if self.remote {
-            self.as_mut().set_status(QString::from(
-                "Opening as administrator is only available for local folders",
-            ));
-            return;
         }
 
-        if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
-            listing::cancel_directory_listing(stream_id);
-        }
-        let generation = self.generation.wrapping_add(1);
-        unsafe {
-            self.as_mut().begin_reset_model();
+        #[qslot]
+        fn load_elevated(&mut self) {
+            let requested = self.path.to_string();
+            if requested.trim().is_empty() {
+                self.set_status("No path".to_owned());
+                return;
+            }
+            if self.remote {
+                self.set_status(
+                    "Opening as administrator is only available for local folders".to_owned(),
+                );
+                return;
+            }
+
+            if let Some(stream_id) = self.stream_id.take() {
+                listing::cancel_directory_listing(stream_id);
+            }
+            let generation = self.generation.wrapping_add(1);
+            self.begin_reset_model();
             {
-                let mut rust = self.as_mut().rust_mut();
+                let rust = &mut *self;
                 rust.generation = generation;
                 rust.sorting = false;
                 rust.sort_request = rust.sort_request.wrapping_add(1);
@@ -2525,1048 +2244,1028 @@ impl qobject::DirectoryListModel {
                 rust.closed = false;
                 rust.load_failed = false;
             }
-            self.as_mut().end_reset_model();
-        }
-        self.as_mut().set_loaded(0);
-        self.as_mut().publish_selection_count();
-        self.as_mut().set_finished(false);
-        self.as_mut().set_status(QString::from("Opening as administrator…"));
+            self.end_reset_model();
+            self.set_loaded(0);
+            self.publish_selection_count();
+            self.set_finished(false);
+            self.set_status("Opening as administrator…".to_owned());
 
-        let thread = self.as_mut().qt_thread();
-        let target = Arc::new(QtBatchTarget::new(thread, generation));
-        let path = PathBuf::from(requested);
-        std::thread::spawn(move || match dae_core::fs::elevated::run_list(&path) {
-            Ok(view) => {
-                let base = entry_codec::base_of(&view.path);
-                let rows = view
-                    .entries
-                    .iter()
-                    .map(|entry| StoredRow::from_entry(entry, &base))
-                    .collect();
-                target.deliver_head(base, view.path, view.breadcrumbs, rows, true);
-            }
-            Err(error) => target.fail(crate::errors::friendly_error(&error.to_string())),
-        });
-    }
-
-    /// Starts the Git read that belongs to the load above. Navigation clears
-    /// the previous repository's badges and branch facts synchronously, so a
-    /// slow read can never paint them onto the new directory.
-    fn begin_git_load(mut self: Pin<&mut Self>, navigating: bool) {
-        let path = self.path.to_string();
-        let local = !path.is_empty() && matches!(vfs::scheme_of(&path), Ok(Scheme::Local));
-        let generation = self.git_generation.wrapping_add(1);
-        self.as_mut().rust_mut().git_generation = generation;
-        if navigating {
-            self.as_mut().clear_git_state();
-        }
-        if !local || self.closed {
-            return;
-        }
-        self.as_mut().spawn_git_read(generation, navigating);
-    }
-
-    fn refresh_git(mut self: Pin<&mut Self>) {
-        if self.git_busy || self.closed {
-            return;
-        }
-        let path = self.path.to_string();
-        let local = !path.is_empty() && matches!(vfs::scheme_of(&path), Ok(Scheme::Local));
-        let generation = self.git_generation.wrapping_add(1);
-        self.as_mut().rust_mut().git_generation = generation;
-        if !local {
-            self.as_mut().clear_git_state();
-            return;
-        }
-        self.as_mut().spawn_git_read(generation, true);
-    }
-
-    fn spawn_git_read(mut self: Pin<&mut Self>, generation: u64, with_branches: bool) {
-        let path = self.path.to_string();
-        let thread = self.as_mut().qt_thread();
-        crate::runtime::spawn(async move {
-            let status = git::get_git_status(path.clone()).await;
-            let branches = if with_branches && matches!(&status, Ok(Some(_))) {
-                git::list_git_branches(path).await.ok().flatten()
-            } else {
-                None
-            };
-            let _ = thread.queue(move |mut model| {
-                model
-                    .as_mut()
-                    .adopt_git(generation, with_branches, status, branches)
+            let thread = self.get_thread_handle();
+            let target = Arc::new(QtBatchTarget::new(thread, generation));
+            let path = PathBuf::from(requested);
+            std::thread::spawn(move || match dae_core::fs::elevated::run_list(&path) {
+                Ok(view) => {
+                    let base = entry_codec::base_of(&view.path);
+                    let rows = view
+                        .entries
+                        .iter()
+                        .map(|entry| StoredRow::from_entry(entry, &base))
+                        .collect();
+                    target.deliver_head(base, view.path, view.breadcrumbs, rows, true);
+                }
+                Err(error) => target.fail(crate::errors::friendly_error(&error.to_string())),
             });
-        });
-    }
-
-    fn adopt_git(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        with_branches: bool,
-        status: Result<Option<GitDirectoryStatus>, dae_core::error::FileSystemError>,
-        branches: Option<GitBranches>,
-    ) {
-        if self.closed || self.git_generation != generation {
-            return;
-        }
-        // A failed read leaves the last good state in place; only a
-        // successful "not a worktree" answer clears the chip.
-        let Ok(status) = status else {
-            return;
-        };
-        let Some(status) = status else {
-            self.as_mut().clear_git_state();
-            return;
-        };
-
-        let GitDirectoryStatus {
-            root,
-            branch,
-            entries,
-            directory_untracked,
-        } = status;
-        let branch_changed = self.git_branch.to_string() != branch;
-        let entries: HashMap<String, GitEntryStatusKind> = entries
-            .into_iter()
-            .map(|entry| (entry.name, entry.kind))
-            .collect();
-        // The folded twin `git_badge` falls back to; see the field's doc. First
-        // insertion wins a case collision, matching what the scan it replaces
-        // could only ever guarantee by accident.
-        let folded: HashMap<String, GitEntryStatusKind> = entries
-            .iter()
-            .map(|(name, kind)| (name.to_ascii_lowercase(), *kind))
-            .collect();
-        let badges_changed =
-            self.git_entries != entries || self.git_directory_untracked != directory_untracked;
-
-        self.as_mut().set_git_root(QString::from(root.as_str()));
-        self.as_mut().set_git_branch(QString::from(branch.as_str()));
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.git_entries = entries;
-            rust.git_entries_folded = folded;
-            rust.git_directory_untracked = directory_untracked;
-        }
-        if badges_changed {
-            self.as_mut().emit_git_badges_changed();
         }
 
-        if with_branches {
-            if let Some(branches) = branches {
-                self.as_mut().adopt_git_branches(branches);
+        /// Starts the Git read that belongs to the load above. Navigation clears
+        /// the previous repository's badges and branch facts synchronously, so a
+        /// slow read can never paint them onto the new directory.
+        fn begin_git_load(&mut self, navigating: bool) {
+            let path = self.path.to_string();
+            let local = !path.is_empty() && matches!(vfs::scheme_of(&path), Ok(Scheme::Local));
+            let generation = self.git_generation.wrapping_add(1);
+            self.git_generation = generation;
+            if navigating {
+                self.clear_git_state();
             }
-        } else if branch_changed {
-            // HEAD moved outside this shell (a terminal checkout). The status
-            // scan already knows the new name; fetch the branch lists so the
-            // panel and ahead/behind agree with it.
-            self.as_mut().refresh_git();
-        }
-    }
-
-    fn adopt_git_branches(mut self: Pin<&mut Self>, branches: GitBranches) {
-        let mut local = QStringList::default();
-        let mut current = QString::default();
-        for branch in &branches.local {
-            if branch.is_current {
-                current = QString::from(branch.name.as_str());
+            if !local || self.closed {
+                return;
             }
-            local.append(QString::from(branch.name.as_str()));
-        }
-        let mut remote = QStringList::default();
-        for branch in &branches.remote {
-            remote.append(QString::from(branch.name.as_str()));
-        }
-        let mut remotes = QStringList::default();
-        for name in &branches.remotes {
-            remotes.append(QString::from(name.as_str()));
+            self.spawn_git_read(generation, navigating);
         }
 
-        self.as_mut()
-            .set_git_root(QString::from(branches.root.as_str()));
-        self.as_mut()
-            .set_git_branch(QString::from(branches.branch.as_str()));
-        self.as_mut().set_git_detached(branches.detached);
-        self.as_mut().set_git_has_upstream(branches.has_upstream);
-        self.as_mut()
-            .set_git_ahead(branches.ahead.min(i32::MAX as u32) as i32);
-        self.as_mut()
-            .set_git_behind(branches.behind.min(i32::MAX as u32) as i32);
-        self.as_mut().set_git_remotes(remotes);
-        self.as_mut().set_git_local_branches(local);
-        self.as_mut().set_git_remote_branches(remote);
-        self.as_mut().set_git_current_branch(current);
-    }
-
-    /// Drops the badge map and every branch property. The qproperty setters
-    /// are skipped when the value is already empty, because each write emits a
-    /// change signal and would rebind the status bar for nothing.
-    fn clear_git_state(mut self: Pin<&mut Self>) {
-        let had_badges = !self.git_entries.is_empty() || self.git_directory_untracked;
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.git_entries.clear();
-            rust.git_entries_folded.clear();
-            rust.git_directory_untracked = false;
-        }
-        if !self.git_root.as_slice().is_empty() {
-            self.as_mut().set_git_root(QString::default());
-        }
-        if !self.git_branch.as_slice().is_empty() {
-            self.as_mut().set_git_branch(QString::default());
-        }
-        if self.git_detached {
-            self.as_mut().set_git_detached(false);
-        }
-        if self.git_has_upstream {
-            self.as_mut().set_git_has_upstream(false);
-        }
-        if self.git_ahead != 0 {
-            self.as_mut().set_git_ahead(0);
-        }
-        if self.git_behind != 0 {
-            self.as_mut().set_git_behind(0);
-        }
-        if self.git_remotes.len() != 0 {
-            self.as_mut().set_git_remotes(QStringList::default());
-        }
-        if self.git_local_branches.len() != 0 {
-            self.as_mut().set_git_local_branches(QStringList::default());
-        }
-        if self.git_remote_branches.len() != 0 {
-            self.as_mut()
-                .set_git_remote_branches(QStringList::default());
-        }
-        if !self.git_current_branch.as_slice().is_empty() {
-            self.as_mut().set_git_current_branch(QString::default());
-        }
-        if had_badges {
-            self.as_mut().emit_git_badges_changed();
-        }
-    }
-
-    /// Repaints only the Git role for every row. The whole range in one signal
-    /// keeps this O(1) in the model; the view only re-reads its visible
-    /// delegates.
-    fn emit_git_badges_changed(mut self: Pin<&mut Self>) {
-        let count = self.rows.len();
-        if count == 0 {
-            return;
-        }
-        unsafe {
-            let parent = QModelIndex::default();
-            let top = self.as_mut().model_index(0, 0, &parent);
-            let bottom = self.as_mut().model_index(count as i32 - 1, 0, &parent);
-            let mut roles = QList::<i32>::default();
-            roles.append(ROLE_GIT);
-            self.as_mut().data_changed(&top, &bottom, &roles);
-        }
-    }
-
-    fn git_checkout_branch(mut self: Pin<&mut Self>, name: &QString, remote: bool) {
-        let name = name.to_string();
-        if name.trim().is_empty() {
-            self.as_mut()
-                .fail_git_operation("checkout", "Branch name cannot be empty");
-            return;
-        }
-        self.as_mut()
-            .start_git_operation(GitOperation::Checkout { name, remote });
-    }
-
-    fn git_create_branch(mut self: Pin<&mut Self>, name: &QString, checkout: bool) {
-        let name = name.to_string().trim().to_owned();
-        if name.is_empty() {
-            self.as_mut()
-                .fail_git_operation("create", "Branch name cannot be empty");
-            return;
-        }
-        self.as_mut()
-            .start_git_operation(GitOperation::Create { name, checkout });
-    }
-
-    fn git_fetch(mut self: Pin<&mut Self>) {
-        self.as_mut().start_git_operation(GitOperation::Fetch);
-    }
-
-    fn git_pull(mut self: Pin<&mut Self>) {
-        self.as_mut().start_git_operation(GitOperation::Pull);
-    }
-
-    fn git_push(mut self: Pin<&mut Self>) {
-        self.as_mut().start_git_operation(GitOperation::Push);
-    }
-
-    fn git_sync(mut self: Pin<&mut Self>) {
-        self.as_mut().start_git_operation(GitOperation::Sync);
-    }
-
-    fn start_git_operation(mut self: Pin<&mut Self>, operation: GitOperation) {
-        if self.git_busy || self.closed {
-            return;
-        }
-        let path = self.path.to_string();
-        if path.is_empty() || !matches!(vfs::scheme_of(&path), Ok(Scheme::Local)) {
-            let kind = operation.kind();
-            self.as_mut()
-                .fail_git_operation(kind, "Git operations are not supported in this directory");
-            return;
-        }
-
-        let kind = operation.kind().to_owned();
-        let success = operation.success_message();
-        self.as_mut().set_git_busy(true);
-        let thread = self.as_mut().qt_thread();
-        crate::runtime::spawn(async move {
-            let result = match operation {
-                GitOperation::Checkout { name, remote } => {
-                    git::git_checkout_branch(path, name, remote).await
-                }
-                GitOperation::Create { name, checkout } => {
-                    git::git_create_branch(path, name, checkout).await
-                }
-                GitOperation::Fetch => git::git_fetch(path).await,
-                GitOperation::Pull => git::git_pull(path).await,
-                GitOperation::Push => git::git_push(path).await,
-                GitOperation::Sync => git::git_sync(path).await,
-            };
-            let _ = thread
-                .queue(move |mut model| model.as_mut().finish_git_operation(kind, success, result));
-        });
-    }
-
-    fn finish_git_operation(
-        mut self: Pin<&mut Self>,
-        kind: String,
-        success: String,
-        result: Result<(), dae_core::error::FileSystemError>,
-    ) {
-        if self.closed {
-            return;
-        }
-        self.as_mut().set_git_busy(false);
-        match result {
-            Ok(()) => {
-                self.as_mut().git_operation_finished(
-                    &QString::from(kind.as_str()),
-                    &QString::from(success.as_str()),
-                );
-                self.as_mut().refresh_git();
+        #[qslot]
+        fn refresh_git(&mut self) {
+            if self.git_busy || self.closed {
+                return;
             }
-            Err(error) => {
-                let message = crate::errors::friendly_error(&error.to_string());
-                self.as_mut().git_operation_failed(
-                    &QString::from(kind.as_str()),
-                    &QString::from(message.as_str()),
-                );
+            let path = self.path.to_string();
+            let local = !path.is_empty() && matches!(vfs::scheme_of(&path), Ok(Scheme::Local));
+            let generation = self.git_generation.wrapping_add(1);
+            self.git_generation = generation;
+            if !local {
+                self.clear_git_state();
+                return;
             }
+            self.spawn_git_read(generation, true);
         }
-    }
 
-    fn fail_git_operation(mut self: Pin<&mut Self>, kind: &str, message: &str) {
-        self.as_mut()
-            .git_operation_failed(&QString::from(kind), &QString::from(message));
-    }
-
-    fn set_order(
-        mut self: Pin<&mut Self>,
-        sort_key: &QString,
-        sort_order: &QString,
-        folder_order: &QString,
-    ) {
-        let mut next = self.order;
-        next.key = SortKey::parse(&sort_key.to_string());
-        next.order = SortOrder::parse(&sort_order.to_string());
-        next.folders = FolderOrder::parse(&folder_order.to_string());
-        self.as_mut().apply_order(next);
-    }
-
-    fn set_group(mut self: Pin<&mut Self>, group_key: &QString, group_date: &QString) {
-        let mut next = self.order;
-        next.grouping = Grouping {
-            key: GroupKey::parse(&group_key.to_string()),
-            date: GroupDate::parse(&group_date.to_string()),
-        };
-        self.as_mut().apply_order(next);
-    }
-
-    /// Adopts `next`, recomputes the section labels it implies and re-sorts.
-    /// A tag order or tag grouping needs every row's tags first; that read is
-    /// started here and re-applies the sort when it lands.
-    fn apply_order(mut self: Pin<&mut Self>, next: ViewOrder) {
-        if self.order == next {
-            return;
-        }
-        let needs_tags = next.key == SortKey::Tag || next.grouping.key == GroupKey::Tag;
-        let regrouped = self.order.grouping != next.grouping;
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.order = next;
-            assign_groups(&mut rust.rows, next.grouping);
-        }
-        if regrouped {
-            // The section headers print their own size; the labels just
-            // changed, so the counts have to follow before the view paints.
-            self.as_mut().publish_counts();
-        }
-        if needs_tags && !self.tags_complete {
-            self.as_mut().start_full_tag_load();
-        }
-        if self.rows.len() < 2 || rows_are_sorted(&self.rows, &next) {
-            if regrouped {
-                self.as_mut().emit_group_role();
-            }
-            return;
-        }
-        if self.rows.len() < WORKER_SORT_MIN_ROWS {
-            self.as_mut().resort_rows();
-        } else {
-            self.as_mut().start_worker_sort();
-        }
-    }
-
-    fn set_directory_size(mut self: Pin<&mut Self>, path: &QString, bytes: f64) {
-        let path = path.to_string();
-        if path.is_empty() || !bytes.is_finite() || bytes < 0.0 {
-            return;
-        }
-        let bytes = bytes.round() as u64;
-        if self
-            .folder_sizes
-            .get(&path)
-            .is_some_and(|stored| *stored == bytes)
-        {
-            return;
-        }
-        self.as_mut()
-            .rust_mut()
-            .folder_sizes
-            .insert(path.clone(), bytes);
-
-        let Some(index) = self
-            .rows
-            .iter()
-            .position(|row| row.full_path(&self.base) == path)
-        else {
-            return;
-        };
-        unsafe {
-            let parent = QModelIndex::default();
-            let cell = self.as_mut().model_index(index as i32, 0, &parent);
-            let mut roles = QList::<i32>::default();
-            roles.append(ROLE_SIZE);
-            self.as_mut().data_changed(&cell, &cell, &roles);
-        }
-    }
-
-    fn request_tags(mut self: Pin<&mut Self>, first: i32, last: i32) {
-        let Ok(first) = usize::try_from(first) else {
-            return;
-        };
-        let last = usize::try_from(last)
-            .unwrap_or(usize::MAX)
-            .min(self.rows.len().saturating_sub(1));
-        if first > last || first >= self.rows.len() {
-            return;
-        }
-        let mut paths: Vec<String> = Vec::with_capacity(last - first + 1);
-        for row in &self.rows[first..=last] {
-            let path = row.full_path(&self.base);
-            if !self.tags_cache.contains_key(&path) && !paths.contains(&path) {
-                paths.push(path);
-            }
-        }
-        if !paths.is_empty() {
-            self.as_mut().start_tag_load(paths, false);
-        }
-    }
-
-    fn refresh_tags(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let paths: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
-        if paths.is_empty() {
-            return;
-        }
-        {
-            let mut rust = self.as_mut().rust_mut();
-            // An edit invalidates any read that started before it, even one
-            // for a different path: the definitions may have changed with it.
-            rust.tag_generation = rust.tag_generation.wrapping_add(1);
-            for path in &paths {
-                rust.tags_cache.remove(path);
-            }
-        }
-        // A tag edit can change a sort or grouping that reads the tags, so a
-        // refresh also re-runs the order once the new ids are in.
-        self.as_mut().start_tag_load(paths, false);
-    }
-
-    /// Reads `paths`' tags on a blocking thread. Results carry the load's
-    /// generation and the tag epoch; a load that started before an edit (or
-    /// before a navigation) is dropped instead of repainting stale ids.
-    fn start_tag_load(mut self: Pin<&mut Self>, paths: Vec<String>, full: bool) {
-        let generation = self.generation;
-        let epoch = self.tag_generation;
-        let thread = self.as_mut().qt_thread();
-        crate::runtime::spawn(async move {
-            let read = tokio::task::spawn_blocking(move || dae_core::fs::tags::tags_for(&paths));
-            if let Ok(entries) = read.await {
-                let _ = thread.queue(move |mut model| {
-                    model.as_mut().adopt_tags(generation, epoch, full, entries)
-                });
-            }
-        });
-    }
-
-    fn start_full_tag_load(mut self: Pin<&mut Self>) {
-        if self.rows.is_empty() || self.tags_complete {
-            return;
-        }
-        let paths = tag_load_paths(&self.rows, &self.base);
-        self.as_mut().start_tag_load(paths, true);
-    }
-
-    fn adopt_tags(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        epoch: u64,
-        full: bool,
-        entries: Vec<dae_core::fs::tags::EntryTags>,
-    ) {
-        if self.generation != generation || self.tag_generation != epoch {
-            return;
-        }
-        let base = self.base.to_string();
-        let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
-        let mut by_path: HashMap<String, Vec<String>> = HashMap::new();
-        for entry in entries {
-            self.as_mut()
-                .rust_mut()
-                .tags_cache
-                .insert(entry.path.clone(), entry.tag_ids.clone());
-            match entry.path.strip_prefix(base.as_str()) {
-                Some(name) if !name.contains(['/', '\\']) => {
-                    by_name.insert(name.to_owned(), entry.tag_ids);
-                }
-                _ => {
-                    by_path.insert(entry.path, entry.tag_ids);
-                }
-            }
-        }
-        let definitions = self.tag_definitions.clone();
-        {
-            let DirectoryListModelRust {
-                rows, tags_cache, ..
-            } = &mut *self.as_mut().rust_mut();
-            for row in rows.iter_mut() {
-                let ids = match by_name.get(row.name.as_str()) {
-                    Some(ids) => Some(ids),
-                    None => {
-                        let path = row.full_path(&base);
-                        by_path.get(&path).or_else(|| tags_cache.get(&path))
-                    }
+        fn spawn_git_read(&mut self, generation: u64, with_branches: bool) {
+            let path = self.path.to_string();
+            let thread = self.get_thread_handle();
+            crate::runtime::spawn(async move {
+                let status = git::get_git_status(path.clone()).await;
+                let branches = if with_branches && matches!(&status, Ok(Some(_))) {
+                    git::list_git_branches(path).await.ok().flatten()
+                } else {
+                    None
                 };
-                if let Some(ids) = ids
-                    && row.tag_ids != *ids
+                thread.invoke_mut(move |model| {
+                    model.adopt_git(generation, with_branches, status, branches)
+                });
+            });
+        }
+
+        fn adopt_git(
+            &mut self,
+            generation: u64,
+            with_branches: bool,
+            status: Result<Option<GitDirectoryStatus>, dae_core::error::FileSystemError>,
+            branches: Option<GitBranches>,
+        ) {
+            if self.closed || self.git_generation != generation {
+                return;
+            }
+            // A failed read leaves the last good state in place; only a
+            // successful "not a worktree" answer clears the chip.
+            let Ok(status) = status else {
+                return;
+            };
+            let Some(status) = status else {
+                self.clear_git_state();
+                return;
+            };
+
+            let GitDirectoryStatus {
+                root,
+                branch,
+                entries,
+                directory_untracked,
+            } = status;
+            let branch_changed = self.git_branch.to_string() != branch;
+            let entries: HashMap<String, GitEntryStatusKind> = entries
+                .into_iter()
+                .map(|entry| (entry.name, entry.kind))
+                .collect();
+            // The folded twin `git_badge` falls back to; see the field's doc. First
+            // insertion wins a case collision, matching what the scan it replaces
+            // could only ever guarantee by accident.
+            let folded: HashMap<String, GitEntryStatusKind> = entries
+                .iter()
+                .map(|(name, kind)| (name.to_ascii_lowercase(), *kind))
+                .collect();
+            let badges_changed =
+                self.git_entries != entries || self.git_directory_untracked != directory_untracked;
+
+            self.set_git_root(root.to_owned());
+            self.set_git_branch(branch.to_owned());
+            {
+                let rust = &mut *self;
+                rust.git_entries = entries;
+                rust.git_entries_folded = folded;
+                rust.git_directory_untracked = directory_untracked;
+            }
+            if badges_changed {
+                self.emit_git_badges_changed();
+            }
+
+            if with_branches {
+                if let Some(branches) = branches {
+                    self.adopt_git_branches(branches);
+                }
+            } else if branch_changed {
+                // HEAD moved outside this shell (a terminal checkout). The status
+                // scan already knows the new name; fetch the branch lists so the
+                // panel and ahead/behind agree with it.
+                self.refresh_git();
+            }
+        }
+
+        fn adopt_git_branches(&mut self, branches: GitBranches) {
+            let mut local = Vec::new();
+            let mut current = String::new();
+            for branch in &branches.local {
+                if branch.is_current {
+                    current = branch.name.to_owned();
+                }
+                local.push(branch.name.to_owned());
+            }
+            let mut remote = Vec::new();
+            for branch in &branches.remote {
+                remote.push(branch.name.to_owned());
+            }
+            let mut remotes = Vec::new();
+            for name in &branches.remotes {
+                remotes.push(name.to_owned());
+            }
+
+            self.set_git_root(branches.root.to_owned());
+            self.set_git_branch(branches.branch.to_owned());
+            self.set_git_detached(branches.detached);
+            self.set_git_has_upstream(branches.has_upstream);
+            self.set_git_ahead(branches.ahead.min(i32::MAX as u32) as i32);
+            self.set_git_behind(branches.behind.min(i32::MAX as u32) as i32);
+            self.set_git_remotes(remotes);
+            self.set_git_local_branches(local);
+            self.set_git_remote_branches(remote);
+            self.set_git_current_branch(current);
+        }
+
+        /// Drops the badge map and every branch property. The qproperty setters
+        /// are skipped when the value is already empty, because each write emits a
+        /// change signal and would rebind the status bar for nothing.
+        fn clear_git_state(&mut self) {
+            let had_badges = !self.git_entries.is_empty() || self.git_directory_untracked;
+            {
+                let rust = &mut *self;
+                rust.git_entries.clear();
+                rust.git_entries_folded.clear();
+                rust.git_directory_untracked = false;
+            }
+            if !self.git_root.is_empty() {
+                self.set_git_root(String::new());
+            }
+            if !self.git_branch.is_empty() {
+                self.set_git_branch(String::new());
+            }
+            if self.git_detached {
+                self.set_git_detached(false);
+            }
+            if self.git_has_upstream {
+                self.set_git_has_upstream(false);
+            }
+            if self.git_ahead != 0 {
+                self.set_git_ahead(0);
+            }
+            if self.git_behind != 0 {
+                self.set_git_behind(0);
+            }
+            if self.git_remotes.len() != 0 {
+                self.set_git_remotes(Vec::new());
+            }
+            if self.git_local_branches.len() != 0 {
+                self.set_git_local_branches(Vec::new());
+            }
+            if self.git_remote_branches.len() != 0 {
+                self.set_git_remote_branches(Vec::new());
+            }
+            if !self.git_current_branch.is_empty() {
+                self.set_git_current_branch(String::new());
+            }
+            if had_badges {
+                self.emit_git_badges_changed();
+            }
+        }
+
+        /// Repaints only the Git role for every row. The whole range in one signal
+        /// keeps this O(1) in the model; the view only re-reads its visible
+        /// delegates.
+        fn emit_git_badges_changed(&mut self) {
+            let count = self.rows.len();
+            if count == 0 {
+                return;
+            }
+                let parent = QModelIndex::default();
+                let top = self.index(0, 0, &parent);
+                let bottom = self.index(count as i32 - 1, 0, &parent);
+                self.data_changed(&top, &bottom);
+
+        }
+
+        #[qslot]
+        fn git_checkout_branch(&mut self, name: String, remote: bool) {
+            if name.trim().is_empty() {
+                self.fail_git_operation("checkout", "Branch name cannot be empty");
+                return;
+            }
+            self.start_git_operation(GitOperation::Checkout { name, remote });
+        }
+
+        #[qslot]
+        fn git_create_branch(&mut self, name: String, checkout: bool) {
+            let name = name.trim().to_owned();
+            if name.is_empty() {
+                self.fail_git_operation("create", "Branch name cannot be empty");
+                return;
+            }
+            self.start_git_operation(GitOperation::Create { name, checkout });
+        }
+
+        #[qslot]
+        fn git_fetch(&mut self) {
+            self.start_git_operation(GitOperation::Fetch);
+        }
+
+        #[qslot]
+        fn git_pull(&mut self) {
+            self.start_git_operation(GitOperation::Pull);
+        }
+
+        #[qslot]
+        fn git_push(&mut self) {
+            self.start_git_operation(GitOperation::Push);
+        }
+
+        #[qslot]
+        fn git_sync(&mut self) {
+            self.start_git_operation(GitOperation::Sync);
+        }
+
+        fn start_git_operation(&mut self, operation: GitOperation) {
+            if self.git_busy || self.closed {
+                return;
+            }
+            let path = self.path.to_string();
+            if path.is_empty() || !matches!(vfs::scheme_of(&path), Ok(Scheme::Local)) {
+                let kind = operation.kind();
+                self.fail_git_operation(kind, "Git operations are not supported in this directory");
+                return;
+            }
+
+            let kind = operation.kind().to_owned();
+            let success = operation.success_message();
+            self.set_git_busy(true);
+            let thread = self.get_thread_handle();
+            crate::runtime::spawn(async move {
+                let result = match operation {
+                    GitOperation::Checkout { name, remote } => {
+                        git::git_checkout_branch(path, name, remote).await
+                    }
+                    GitOperation::Create { name, checkout } => {
+                        git::git_create_branch(path, name, checkout).await
+                    }
+                    GitOperation::Fetch => git::git_fetch(path).await,
+                    GitOperation::Pull => git::git_pull(path).await,
+                    GitOperation::Push => git::git_push(path).await,
+                    GitOperation::Sync => git::git_sync(path).await,
+                };
+                let _ = thread
+                    .invoke_mut(move |model| model.finish_git_operation(kind, success, result));
+            });
+        }
+
+        fn finish_git_operation(
+            &mut self,
+            kind: String,
+            success: String,
+            result: Result<(), dae_core::error::FileSystemError>,
+        ) {
+            if self.closed {
+                return;
+            }
+            self.set_git_busy(false);
+            match result {
+                Ok(()) => {
+                    self.git_operation_finished(
+                        String::from(kind.as_str()),
+                        String::from(success.as_str()),
+                    );
+                    self.refresh_git();
+                }
+                Err(error) => {
+                    let message = crate::errors::friendly_error(&error.to_string());
+                    self.git_operation_failed(
+                        String::from(kind.as_str()),
+                        String::from(message.as_str()),
+                    );
+                }
+            }
+        }
+
+        fn fail_git_operation(&mut self, kind: &str, message: &str) {
+            self.git_operation_failed(String::from(kind), String::from(message));
+        }
+
+        #[qslot]
+        fn set_order(
+            &mut self,
+            sort_key: String,
+            sort_order: String,
+            folder_order: String,
+        ) {
+            let mut next = self.order;
+            next.key = SortKey::parse(&sort_key);
+            next.order = SortOrder::parse(&sort_order);
+            next.folders = FolderOrder::parse(&folder_order);
+            self.apply_order(next);
+        }
+
+        #[qslot]
+        fn set_group(&mut self, group_key: String, group_date: String) {
+            let mut next = self.order;
+            next.grouping = Grouping {
+                key: GroupKey::parse(&group_key),
+                date: GroupDate::parse(&group_date),
+            };
+            self.apply_order(next);
+        }
+
+        /// Adopts `next`, recomputes the section labels it implies and re-sorts.
+        /// A tag order or tag grouping needs every row's tags first; that read is
+        /// started here and re-applies the sort when it lands.
+        fn apply_order(&mut self, next: ViewOrder) {
+            if self.order == next {
+                return;
+            }
+            let needs_tags = next.key == SortKey::Tag || next.grouping.key == GroupKey::Tag;
+            let regrouped = self.order.grouping != next.grouping;
+            {
+                let rust = &mut *self;
+                rust.order = next;
+                assign_groups(&mut rust.rows, next.grouping);
+            }
+            if regrouped {
+                // The section headers print their own size; the labels just
+                // changed, so the counts have to follow before the view paints.
+                self.publish_counts();
+            }
+            if needs_tags && !self.tags_complete {
+                self.start_full_tag_load();
+            }
+            if self.rows.len() < 2 || rows_are_sorted(&self.rows, &next) {
+                if regrouped {
+                    self.emit_group_role();
+                }
+                return;
+            }
+            if self.rows.len() < WORKER_SORT_MIN_ROWS {
+                self.resort_rows();
+            } else {
+                self.start_worker_sort();
+            }
+        }
+
+        #[qslot]
+        fn set_directory_size(&mut self, path: String, bytes: f64) {
+            if path.is_empty() || !bytes.is_finite() || bytes < 0.0 {
+                return;
+            }
+            let bytes = bytes.round() as u64;
+            if self
+                .folder_sizes
+                .get(&path)
+                .is_some_and(|stored| *stored == bytes)
+            {
+                return;
+            }
+            self.folder_sizes.insert(path.clone(), bytes);
+
+            let Some(index) = self
+                .rows
+                .iter()
+                .position(|row| row.full_path(&self.base) == path)
+            else {
+                return;
+            };
+                let parent = QModelIndex::default();
+                let cell = self.index(index as i32, 0, &parent);
+                self.data_changed(&cell, &cell);
+
+        }
+
+        #[qslot]
+        fn request_tags(&mut self, first: i32, last: i32) {
+            let Ok(first) = usize::try_from(first) else {
+                return;
+            };
+            let last = usize::try_from(last)
+                .unwrap_or(usize::MAX)
+                .min(self.rows.len().saturating_sub(1));
+            if first > last || first >= self.rows.len() {
+                return;
+            }
+            let mut paths: Vec<String> = Vec::with_capacity(last - first + 1);
+            for row in &self.rows[first..=last] {
+                let path = row.full_path(&self.base);
+                if !self.tags_cache.contains_key(&path) && !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+            if !paths.is_empty() {
+                self.start_tag_load(paths, false);
+            }
+        }
+
+        #[qslot]
+        fn refresh_tags(&mut self, paths: Vec<String>) {
+            if paths.is_empty() {
+                return;
+            }
+            {
+                let rust = &mut *self;
+                // An edit invalidates any read that started before it, even one
+                // for a different path: the definitions may have changed with it.
+                rust.tag_generation = rust.tag_generation.wrapping_add(1);
+                for path in &paths {
+                    rust.tags_cache.remove(path);
+                }
+            }
+            // A tag edit can change a sort or grouping that reads the tags, so a
+            // refresh also re-runs the order once the new ids are in.
+            self.start_tag_load(paths, false);
+        }
+
+        /// Reads `paths`' tags on a blocking thread. Results carry the load's
+        /// generation and the tag epoch; a load that started before an edit (or
+        /// before a navigation) is dropped instead of repainting stale ids.
+        fn start_tag_load(&mut self, paths: Vec<String>, full: bool) {
+            let generation = self.generation;
+            let epoch = self.tag_generation;
+            let thread = self.get_thread_handle();
+            crate::runtime::spawn(async move {
+                let read = tokio::task::spawn_blocking(move || dae_core::fs::tags::tags_for(&paths));
+                if let Ok(entries) = read.await {
+                    let _ = thread.invoke_mut(move |model| {
+                        model.adopt_tags(generation, epoch, full, entries)
+                    });
+                }
+            });
+        }
+
+        fn start_full_tag_load(&mut self) {
+            if self.rows.is_empty() || self.tags_complete {
+                return;
+            }
+            let paths = tag_load_paths(&self.rows, &self.base);
+            self.start_tag_load(paths, true);
+        }
+
+        fn adopt_tags(
+            &mut self,
+            generation: u64,
+            epoch: u64,
+            full: bool,
+            entries: Vec<dae_core::fs::tags::EntryTags>,
+        ) {
+            if self.generation != generation || self.tag_generation != epoch {
+                return;
+            }
+            let base = self.base.to_string();
+            let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
+            let mut by_path: HashMap<String, Vec<String>> = HashMap::new();
+            for entry in entries {
+                self.tags_cache
+                    .insert(entry.path.clone(), entry.tag_ids.clone());
+                match entry.path.strip_prefix(base.as_str()) {
+                    Some(name) if !name.contains(['/', '\\']) => {
+                        by_name.insert(name.to_owned(), entry.tag_ids);
+                    }
+                    _ => {
+                        by_path.insert(entry.path, entry.tag_ids);
+                    }
+                }
+            }
+            let definitions = self.tag_definitions.clone();
+            {
+                let Self {
+                    rows, tags_cache, ..
+                } = self;
+                for row in rows.iter_mut() {
+                    let ids = match by_name.get(row.name.as_str()) {
+                        Some(ids) => Some(ids),
+                        None => {
+                            let path = row.full_path(&base);
+                            by_path.get(&path).or_else(|| tags_cache.get(&path))
+                        }
+                    };
+                    if let Some(ids) = ids
+                        && row.tag_ids != *ids
+                    {
+                        set_row_tags(row, ids, &definitions);
+                    }
+                }
+            }
+            if full {
+                self.tags_complete = true;
+            }
+            self.emit_tag_roles();
+            if self.order.key == SortKey::Tag || self.order.grouping.key == GroupKey::Tag {
+                let grouping = self.order.grouping;
                 {
-                    set_row_tags(row, ids, &definitions);
+                    let rust = &mut *self;
+                    assign_groups(&mut rust.rows, grouping);
                 }
+                self.resort_if_needed();
             }
         }
-        if full {
-            self.as_mut().rust_mut().tags_complete = true;
+
+        /// Repaints the tag and section roles for every row in one signal. The
+        /// view only re-reads its visible delegates, so the range costs nothing
+        /// per row in QML.
+        fn emit_tag_roles(&mut self) {
+            let count = self.rows.len();
+            if count == 0 {
+                return;
+            }
+                let parent = QModelIndex::default();
+                let top = self.index(0, 0, &parent);
+                let bottom = self.index(count as i32 - 1, 0, &parent);
+                self.data_changed(&top, &bottom);
+
         }
-        self.as_mut().emit_tag_roles();
-        if self.order.key == SortKey::Tag || self.order.grouping.key == GroupKey::Tag {
-            let grouping = self.order.grouping;
+
+        /// Repaints the section role for every row. A grouping change that keeps
+        /// the row order emits no reset, so without this signal the headers keep
+        /// the labels `assign_groups` just overwrote.
+        fn emit_group_role(&mut self) {
+            let count = self.rows.len();
+            if count == 0 {
+                return;
+            }
+                let parent = QModelIndex::default();
+                let top = self.index(0, 0, &parent);
+                let bottom = self.index(count as i32 - 1, 0, &parent);
+                self.data_changed(&top, &bottom);
+
+        }
+
+        fn resort_if_needed(&mut self) {
+            if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
+                return;
+            }
+            if self.rows.len() < WORKER_SORT_MIN_ROWS {
+                self.resort_rows();
+            } else {
+                self.start_worker_sort();
+            }
+        }
+
+        #[qslot]
+        fn refresh_tag_definitions(&mut self) {
+            let definitions = dae_core::fs::tags::definitions();
             {
-                let mut rust = self.as_mut().rust_mut();
-                assign_groups(&mut rust.rows, grouping);
-            }
-            self.as_mut().resort_if_needed();
-        }
-    }
-
-    /// Repaints the tag and section roles for every row in one signal. The
-    /// view only re-reads its visible delegates, so the range costs nothing
-    /// per row in QML.
-    fn emit_tag_roles(mut self: Pin<&mut Self>) {
-        let count = self.rows.len();
-        if count == 0 {
-            return;
-        }
-        unsafe {
-            let parent = QModelIndex::default();
-            let top = self.as_mut().model_index(0, 0, &parent);
-            let bottom = self.as_mut().model_index(count as i32 - 1, 0, &parent);
-            let mut roles = QList::<i32>::default();
-            roles.append(ROLE_TAGS);
-            roles.append(ROLE_TAG_IDS);
-            roles.append(ROLE_TAG_COLORS);
-            roles.append(ROLE_GROUP);
-            self.as_mut().data_changed(&top, &bottom, &roles);
-        }
-    }
-
-    /// Repaints the section role for every row. A grouping change that keeps
-    /// the row order emits no reset, so without this signal the headers keep
-    /// the labels `assign_groups` just overwrote.
-    fn emit_group_role(mut self: Pin<&mut Self>) {
-        let count = self.rows.len();
-        if count == 0 {
-            return;
-        }
-        unsafe {
-            let parent = QModelIndex::default();
-            let top = self.as_mut().model_index(0, 0, &parent);
-            let bottom = self.as_mut().model_index(count as i32 - 1, 0, &parent);
-            let mut roles = QList::<i32>::default();
-            roles.append(ROLE_GROUP);
-            self.as_mut().data_changed(&top, &bottom, &roles);
-        }
-    }
-
-    fn resort_if_needed(mut self: Pin<&mut Self>) {
-        if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
-            return;
-        }
-        if self.rows.len() < WORKER_SORT_MIN_ROWS {
-            self.as_mut().resort_rows();
-        } else {
-            self.as_mut().start_worker_sort();
-        }
-    }
-
-    fn refresh_tag_definitions(mut self: Pin<&mut Self>) {
-        let definitions = dae_core::fs::tags::definitions();
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.tag_definitions = definitions;
-            // A renamed tag changes the sort key and the section labels.
-            let order = rust.order;
-            let base = rust.base.clone();
-            let definitions = rust.tag_definitions.clone();
-            let mut cache = rust.tags_cache.clone();
-            for row in rust.rows.iter_mut() {
-                if let Some(ids) = cache.remove(&row.full_path(&base)) {
-                    set_row_tags(row, &ids, &definitions);
+                let rust = &mut *self;
+                rust.tag_definitions = definitions;
+                // A renamed tag changes the sort key and the section labels.
+                let order = rust.order;
+                let base = rust.base.clone();
+                let definitions = rust.tag_definitions.clone();
+                let mut cache = rust.tags_cache.clone();
+                for row in rust.rows.iter_mut() {
+                    if let Some(ids) = cache.remove(&row.full_path(&base)) {
+                        set_row_tags(row, &ids, &definitions);
+                    }
                 }
+                assign_groups(&mut rust.rows, order.grouping);
             }
-            assign_groups(&mut rust.rows, order.grouping);
+            self.emit_tag_roles();
+            self.resort_if_needed();
         }
-        self.as_mut().emit_tag_roles();
-        self.as_mut().resort_if_needed();
-    }
 
-    fn set_filters(
-        mut self: Pin<&mut Self>,
-        show_hidden: bool,
-        kind: &QString,
-        modified: &QString,
-        size: &QString,
-        name: &QString,
-    ) {
-        let folded = name.to_string();
-        let folded = folded.trim().to_ascii_lowercase();
-        let next = RowFilter {
-            show_hidden,
-            kind: KindFilter::parse(&kind.to_string()),
-            modified: ModifiedFilter::parse(&modified.to_string()),
-            size: SizeFilter::parse(&size.to_string()),
-            name: (!folded.is_empty()).then_some(folded),
-        };
-        if self.filter == next {
-            return;
+        #[qslot]
+        fn set_filters(
+            &mut self,
+            show_hidden: bool,
+            kind: String,
+            modified: String,
+            size: String,
+            name: String,
+        ) {
+            let folded = name;
+            let folded = folded.trim().to_ascii_lowercase();
+            let next = RowFilter {
+                show_hidden,
+                kind: KindFilter::parse(&kind),
+                modified: ModifiedFilter::parse(&modified),
+                size: SizeFilter::parse(&size),
+                name: (!folded.is_empty()).then_some(folded),
+            };
+            if self.filter == next {
+                return;
+            }
+            self.filter = next;
+            if !self.path.is_empty() {
+                self.reload();
+            }
         }
-        self.as_mut().rust_mut().filter = next;
-        if !self.path.as_slice().is_empty() {
-            self.as_mut().reload();
-        }
-    }
 
-    /// Re-sorts the rows already in the model. The viewport is told to
-    /// remember its position first: a reset drops both the rows and the
-    /// position, and `FileList` restores the latter once the rows are back.
-    fn resort_rows(mut self: Pin<&mut Self>) {
-        let order = self.order;
-        // A sync re-sort supersedes any worker sort still in flight: its
-        // permutation no longer describes the rows this call is about to sort.
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.sorting = false;
-            rust.sort_request = rust.sort_request.wrapping_add(1);
-        }
-        let mut rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
-        self.as_mut().about_to_reload();
-        // The two halves of the stall a QML trace cannot see: the comparator
-        // and `begin/endResetModel` (plus the QML `aboutToReload` handler that
-        // saves the scroll position). `DAE_LOG=debug` prints it next to the
-        // watcher lines.
-        let sort_started = std::time::Instant::now();
-        sort_rows(&mut rows, &order);
-        let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
-        let total = rows.len() as i32;
-        let reset_started = std::time::Instant::now();
-        unsafe {
-            self.as_mut().begin_reset_model();
+        /// Re-sorts the rows already in the model. The viewport is told to
+        /// remember its position first: a reset drops both the rows and the
+        /// position, and `FileList` restores the latter once the rows are back.
+        fn resort_rows(&mut self) {
+            let order = self.order;
+            // A sync re-sort supersedes any worker sort still in flight: its
+            // permutation no longer describes the rows this call is about to sort.
             {
-                let DirectoryListModelRust {
+                let rust = &mut *self;
+                rust.sorting = false;
+                rust.sort_request = rust.sort_request.wrapping_add(1);
+            }
+            let mut rows = std::mem::take(&mut self.rows);
+            self.about_to_reload();
+            // The two halves of the stall a QML trace cannot see: the comparator
+            // and `begin/endResetModel` (plus the QML `aboutToReload` handler that
+            // saves the scroll position). `DAE_LOG=debug` prints it next to the
+            // watcher lines.
+            let sort_started = std::time::Instant::now();
+            sort_rows(&mut rows, &order);
+            let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
+            let total = rows.len() as i32;
+            let reset_started = std::time::Instant::now();
+            self.begin_reset_model();
+            {
+                let Self {
                     rows: stored,
                     selection,
                     ..
-                } = &mut *self.as_mut().rust_mut();
+                } = self;
                 *stored = rows;
                 // The flags travelled with their rows; the indices that point
                 // at them did not.
                 selection.invalidate();
             }
-            self.as_mut().end_reset_model();
+            self.end_reset_model();
+            let reset_ms = reset_started.elapsed().as_secs_f64() * 1e3;
+            log::debug!(
+                target: "dae::listing",
+                "re-sort: {} rows, sort {:.1} ms, reset {:.1} ms",
+                total,
+                sort_ms,
+                reset_ms
+            );
+            self.set_loaded(total);
         }
-        let reset_ms = reset_started.elapsed().as_secs_f64() * 1e3;
-        log::debug!(
-            target: "dae::listing",
-            "re-sort: {} rows, sort {:.1} ms, reset {:.1} ms",
-            total,
-            sort_ms,
-            reset_ms
-        );
-        self.as_mut().set_loaded(total);
-    }
 
-    /// Applies the visibility filter to a batch that is about to be appended.
-    /// A refresh stage is left unfiltered: it is filtered once, at the swap,
-    /// so a filter that changed during the read is honoured too.
-    fn keep_visible(&self, rows: Vec<StoredRow>) -> Vec<StoredRow> {
-        if self.filter == RowFilter::default() {
-            return rows;
-        }
-        let filter = &self.filter;
-        let cutoff = filter.modified_cutoff();
-        rows.into_iter()
-            .filter(|row| filter.keeps(row, cutoff))
-            .collect()
-    }
-
-    /// Counts the two things the adaptive rule asks about, plus what the
-    /// heading prints. One pass at completion, never per batch.
-    fn publish_counts(mut self: Pin<&mut Self>) {
-        let summary = summarize(&self.rows);
-        if self.images != summary.images {
-            self.as_mut().set_images(summary.images);
-        }
-        if self.files != summary.files {
-            self.as_mut().set_files(summary.files);
-        }
-        if self.folders != summary.folders {
-            self.as_mut().set_folders(summary.folders);
-        }
-        let families = QString::from(families_json(&summary.families).as_str());
-        if self.family_counts != families {
-            self.as_mut().set_family_counts(families);
-        }
-        let groups = QString::from(groups_json(&summary.groups).as_str());
-        if self.group_counts != groups {
-            self.as_mut().set_group_counts(groups);
-        }
-        let newest = QString::from(crate::format::timestamp(summary.newest).as_str());
-        if self.newest_modified != newest {
-            self.as_mut().set_newest_modified(newest);
-        }
-    }
-
-    fn index_of_path(&self, path: &QString) -> i32 {
-        let path = path.to_string();
-        row_for_path(&self.rows, &self.base, &path)
-            .map(|index| index as i32)
-            .unwrap_or(-1)
-    }
-
-    fn path_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.full_path(&self.base).as_str()))
-            .unwrap_or_default()
-    }
-
-    fn group_label_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.group_label.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn selection_breakdown(&self) -> QString {
-        let mut folders = 0;
-        let mut families: BTreeMap<&'static str, i32> = BTreeMap::new();
-        for row in &self.rows {
-            if !row.selected {
-                continue;
+        /// Applies the visibility filter to a batch that is about to be appended.
+        /// A refresh stage is left unfiltered: it is filtered once, at the swap,
+        /// so a filter that changed during the read is honoured too.
+        fn keep_visible(&self, rows: Vec<StoredRow>) -> Vec<StoredRow> {
+            if self.filter == RowFilter::default() {
+                return rows;
             }
-            match row.kind {
-                EntryKind::Directory => folders += 1,
-                EntryKind::File => {
-                    *families.entry(category_of(row.kind, &row.name)).or_insert(0) += 1;
+            let filter = &self.filter;
+            let cutoff = filter.modified_cutoff();
+            rows.into_iter()
+                .filter(|row| filter.keeps(row, cutoff))
+                .collect()
+        }
+
+        /// Counts the two things the adaptive rule asks about, plus what the
+        /// heading prints. One pass at completion, never per batch.
+        fn publish_counts(&mut self) {
+            let summary = summarize(&self.rows);
+            if self.images != summary.images {
+                self.set_images(summary.images);
+            }
+            if self.files != summary.files {
+                self.set_files(summary.files);
+            }
+            if self.folders != summary.folders {
+                self.set_folders(summary.folders);
+            }
+            let families = families_json(&summary.families);
+            if self.family_counts != families {
+                self.set_family_counts(families);
+            }
+            let groups = groups_json(&summary.groups);
+            if self.group_counts != groups {
+                self.set_group_counts(groups);
+            }
+            let newest = crate::format::timestamp(summary.newest);
+            if self.newest_modified != newest {
+                self.set_newest_modified(newest);
+            }
+        }
+
+        #[qslot]
+        fn index_of_path(&self, path: String) -> i32 {
+            row_for_path(&self.rows, &self.base, &path)
+                .map(|index| index as i32)
+                .unwrap_or(-1)
+        }
+
+        #[qslot]
+        fn path_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.full_path(&self.base))
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn group_label_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.group_label.to_owned())
+                .unwrap_or_default()
+        }
+
+        #[qslot]
+        fn selection_breakdown(&self) -> String {
+            let mut folders = 0;
+            let mut families: BTreeMap<&'static str, i32> = BTreeMap::new();
+            for row in &self.rows {
+                if !row.selected {
+                    continue;
                 }
-                _ => {}
+                match row.kind {
+                    EntryKind::Directory => folders += 1,
+                    EntryKind::File => {
+                        *families.entry(category_of(row.kind, &row.name)).or_insert(0) += 1;
+                    }
+                    _ => {}
+                }
             }
-        }
-        QString::from(
             format!(
                 "{{\"folders\":{folders},\"families\":{}}}",
                 families_json(&families)
             )
-            .as_str(),
-        )
-    }
-
-    /// Republishes the selected count and repaints the spans whose flags moved.
-    /// One `dataChanged` per contiguous run, carrying the selected role plus the
-    /// two neighbour flags the delegate merges block corners from. A run is
-    /// widened by one row on each side so a row next to the change redraws its
-    /// own merge state.
-    fn publish_selection(mut self: Pin<&mut Self>, runs: Vec<Run>) {
-        self.as_mut().publish_selection_count();
-        let len = self.rows.len();
-        if runs.is_empty() || len == 0 {
-            return;
         }
-        unsafe {
+
+        /// Republishes the selected count and repaints the spans whose flags moved.
+        /// One `dataChanged` per contiguous run, carrying the selected role plus the
+        /// two neighbour flags the delegate merges block corners from. A run is
+        /// widened by one row on each side so a row next to the change redraws its
+        /// own merge state.
+        fn publish_selection(&mut self, runs: Vec<Run>) {
+            self.publish_selection_count();
+            let len = self.rows.len();
+            if runs.is_empty() || len == 0 {
+                return;
+            }
             let parent = QModelIndex::default();
-            let mut roles = QList::<i32>::default();
-            roles.append(ROLE_SELECTED);
-            roles.append(ROLE_SELECTED_PREV);
-            roles.append(ROLE_SELECTED_NEXT);
             for (first, last) in runs {
                 let first = first.saturating_sub(1);
                 let last = (last + 1).min(len - 1);
-                let top = self.as_mut().model_index(first as i32, 0, &parent);
-                let bottom = self.as_mut().model_index(last as i32, 0, &parent);
-                self.as_mut().data_changed(&top, &bottom, &roles);
+                let top = self.index(first as i32, 0, &parent);
+                let bottom = self.index(last as i32, 0, &parent);
+                self.data_changed(&top, &bottom);
             }
         }
-    }
 
-    fn publish_selection_count(mut self: Pin<&mut Self>) {
-        let count = self.selection.count();
-        // No selection is the common case while a directory streams in, so it
-        // must not walk the rows just to publish an empty string.
-        let size = if count > 0 {
-            selected_size_text(&self.rows)
-        } else {
-            QString::default()
-        };
-        if self.selected_count != count {
-            self.as_mut().set_selected_count(count);
+        fn publish_selection_count(&mut self) {
+            let count = self.selection.count();
+            // No selection is the common case while a directory streams in, so it
+            // must not walk the rows just to publish an empty string.
+            let size = if count > 0 {
+                selected_size_text(&self.rows)
+            } else {
+                String::new()
+            };
+            if self.selected_count != count {
+                self.set_selected_count(count);
+            }
+            if self.selected_size_text != size {
+                self.set_selected_size_text(size);
+            }
         }
-        if self.selected_size_text != size {
-            self.as_mut().set_selected_size_text(size);
+
+        #[qslot]
+        fn select_only(&mut self, row: i32) {
+            // A negative row addresses nothing, and `usize::MAX` is past the last
+            // row either way: both clear, which is what a click on a row that is
+            // no longer there has to mean.
+            let row = usize::try_from(row).unwrap_or(usize::MAX);
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.select_only(rows, row)
+            };
+            self.publish_selection(runs);
         }
-    }
 
-    fn select_only(mut self: Pin<&mut Self>, row: i32) {
-        // A negative row addresses nothing, and `usize::MAX` is past the last
-        // row either way: both clear, which is what a click on a row that is
-        // no longer there has to mean.
-        let row = usize::try_from(row).unwrap_or(usize::MAX);
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.select_only(rows, row)
-        };
-        self.as_mut().publish_selection(runs);
-    }
+        #[qslot]
+        fn toggle_at(&mut self, row: i32) {
+            let Ok(row) = usize::try_from(row) else {
+                return;
+            };
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.toggle(rows, row)
+            };
+            self.publish_selection(runs);
+        }
 
-    fn toggle_at(mut self: Pin<&mut Self>, row: i32) {
-        let Ok(row) = usize::try_from(row) else {
-            return;
-        };
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.toggle(rows, row)
-        };
-        self.as_mut().publish_selection(runs);
-    }
+        #[qslot]
+        fn select_range(&mut self, first: i32, last: i32) {
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.select_range(rows, first, last)
+            };
+            self.publish_selection(runs);
+        }
 
-    fn select_range(mut self: Pin<&mut Self>, first: i32, last: i32) {
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.select_range(rows, first, last)
-        };
-        self.as_mut().publish_selection(runs);
-    }
+        #[qslot]
+        fn select_all(&mut self) {
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.select_all(rows)
+            };
+            self.publish_selection(runs);
+        }
 
-    fn select_all_rows(mut self: Pin<&mut Self>) {
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.select_all(rows)
-        };
-        self.as_mut().publish_selection(runs);
-    }
+        #[qslot]
+        fn clear_selection(&mut self) {
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.clear(rows)
+            };
+            self.publish_selection(runs);
+        }
 
-    fn clear_selection(mut self: Pin<&mut Self>) {
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.clear(rows)
-        };
-        self.as_mut().publish_selection(runs);
-    }
+        #[qslot]
+        fn invert_selection(&mut self) -> i32 {
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.invert(rows)
+            };
+            self.publish_selection(runs);
+            self.selection.count()
+        }
 
-    fn invert_selection(mut self: Pin<&mut Self>) -> i32 {
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.invert(rows)
-        };
-        self.as_mut().publish_selection(runs);
-        self.selection.count()
-    }
+        #[qslot]
+        fn select_family(&mut self, family: String) -> i32 {
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                let next = rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, row)| category_of(row.kind, &row.name) == family.as_str())
+                    .map(|(index, _)| index)
+                    .collect();
+                selection.select_indices(rows, next)
+            };
+            self.publish_selection(runs);
+            self.selection.count()
+        }
 
-    fn select_family(mut self: Pin<&mut Self>, family: &QString) -> i32 {
-        let family = family.to_string();
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            let next = rows
+        #[qslot]
+        fn set_selected_paths(&mut self, paths: Vec<String>) {
+            let base = self.base.to_string();
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.restore(rows, &paths, &base)
+            };
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn selected_paths(&self) -> Vec<String> {
+            let mut paths = Vec::new();
+            for row in self.rows.iter().filter(|row| row.selected) {
+                paths.push(row.full_path(&self.base));
+            }
+            paths
+        }
+
+        #[qslot]
+        fn begin_marquee(&mut self, keep: bool) {
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.begin_marquee(rows, keep)
+            };
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn marquee_cells(
+            &mut self,
+            first_row: i32,
+            first_column: i32,
+            last_row: i32,
+            last_column: i32,
+            columns: i32,
+        ) {
+            let band = match (usize::try_from(first_row), usize::try_from(last_row)) {
+                (Ok(first_row), Ok(last_row))
+                    if last_row >= first_row
+                        && columns > 0
+                        && first_column >= 0
+                        && last_column >= first_column =>
+                {
+                    Some(Band {
+                        first_row,
+                        last_row,
+                        first_column: first_column as usize,
+                        last_column: last_column as usize,
+                        columns: columns as usize,
+                    })
+                }
+                _ => None,
+            };
+            let runs = {
+                let Self {
+                    rows, selection, ..
+                } = self;
+                selection.marquee_cells(rows, band)
+            };
+            self.publish_selection(runs);
+        }
+
+        #[qslot]
+        fn end_marquee(&mut self) {
+            self.selection.end_marquee();
+        }
+
+        #[qslot]
+        fn index_of_name_prefix(&self, needle: String, start: i32) -> i32 {
+            let start = usize::try_from(start).unwrap_or(0);
+            find_name_prefix(&self.rows, start, &needle)
+                .map(|index| index as i32)
+                .unwrap_or(-1)
+        }
+
+        #[qslot]
+        fn is_directory_at(&self, row: i32) -> bool {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.kind == EntryKind::Directory)
+                .unwrap_or(false)
+        }
+
+        /// The visible names of `ids`, in definition order. Unknown ids are
+        /// dropped: a definition the user deleted must not keep painting.
+        fn tag_names(&self, ids: &[String]) -> String {
+            self.tag_definitions
                 .iter()
-                .enumerate()
-                .filter(|(_, row)| category_of(row.kind, &row.name) == family.as_str())
-                .map(|(index, _)| index)
-                .collect();
-            selection.select_indices(rows, next)
-        };
-        self.as_mut().publish_selection(runs);
-        self.selection.count()
-    }
-
-    fn set_selected_paths(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let base = self.base.to_string();
-        let paths: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.restore(rows, &paths, &base)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn selected_paths(&self) -> QStringList {
-        let mut paths = QStringList::default();
-        for row in self.rows.iter().filter(|row| row.selected) {
-            paths.append(QString::from(row.full_path(&self.base).as_str()));
+                .filter(|definition| ids.contains(&definition.id))
+                .map(|definition| definition.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         }
-        paths
-    }
 
-    fn begin_marquee(mut self: Pin<&mut Self>, keep: bool) {
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.begin_marquee(rows, keep)
-        };
-        self.as_mut().publish_selection(runs);
-    }
+        fn tag_colors(&self, ids: &[String]) -> String {
+            self.tag_definitions
+                .iter()
+                .filter(|definition| ids.contains(&definition.id))
+                .map(|definition| definition.color.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        }
 
-    fn marquee_cells(
-        mut self: Pin<&mut Self>,
-        first_row: i32,
-        first_column: i32,
-        last_row: i32,
-        last_column: i32,
-        columns: i32,
-    ) {
-        let band = match (usize::try_from(first_row), usize::try_from(last_row)) {
-            (Ok(first_row), Ok(last_row))
-                if last_row >= first_row
-                    && columns > 0
-                    && first_column >= 0
-                    && last_column >= first_column =>
-            {
-                Some(Band {
-                    first_row,
-                    last_row,
-                    first_column: first_column as usize,
-                    last_column: last_column as usize,
-                    columns: columns as usize,
-                })
+        #[qslot]
+        fn dispose(&mut self) {
+            watch::unwatch_directory(self.watcher_id.clone());
+            self.closed = true;
+            self.reload_pending = false;
+            self.refresh = None;
+            if let Some(stream_id) = self.stream_id.take() {
+                listing::cancel_directory_listing(stream_id);
             }
-            _ => None,
-        };
-        let runs = {
-            let DirectoryListModelRust {
-                rows, selection, ..
-            } = &mut *self.as_mut().rust_mut();
-            selection.marquee_cells(rows, band)
-        };
-        self.as_mut().publish_selection(runs);
-    }
-
-    fn end_marquee(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().selection.end_marquee();
-    }
-
-    fn index_of_name_prefix(&self, needle: &QString, start: i32) -> i32 {
-        let needle = needle.to_string();
-        let start = usize::try_from(start).unwrap_or(0);
-        find_name_prefix(&self.rows, start, &needle)
-            .map(|index| index as i32)
-            .unwrap_or(-1)
-    }
-
-    fn is_directory_at(&self, row: i32) -> bool {
-        self.rows
-            .get(row as usize)
-            .map(|entry| entry.kind == EntryKind::Directory)
-            .unwrap_or(false)
-    }
-
-    /// The visible names of `ids`, in definition order. Unknown ids are
-    /// dropped: a definition the user deleted must not keep painting.
-    fn tag_names(&self, ids: &[String]) -> String {
-        self.tag_definitions
-            .iter()
-            .filter(|definition| ids.contains(&definition.id))
-            .map(|definition| definition.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    fn tag_colors(&self, ids: &[String]) -> String {
-        self.tag_definitions
-            .iter()
-            .filter(|definition| ids.contains(&definition.id))
-            .map(|definition| definition.color.as_str())
-            .collect::<Vec<_>>()
-            .join(",")
-    }
-
-    fn dispose(mut self: Pin<&mut Self>) {
-        watch::unwatch_directory(self.watcher_id.clone());
-        self.as_mut().rust_mut().closed = true;
-        self.as_mut().rust_mut().reload_pending = false;
-        self.as_mut().rust_mut().refresh = None;
-        if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
-            listing::cancel_directory_listing(stream_id);
-        }
-        // A batch already queued on the Qt thread carries the old generation
-        // and is dropped instead of appending to a model its window let go.
-        let generation = self.generation.wrapping_add(1);
-        let git_generation = self.git_generation.wrapping_add(1);
-        unsafe {
-            self.as_mut().begin_reset_model();
+            // A batch already queued on the Qt thread carries the old generation
+            // and is dropped instead of appending to a model its window let go.
+            let generation = self.generation.wrapping_add(1);
+            let git_generation = self.git_generation.wrapping_add(1);
+            self.begin_reset_model();
             {
-                let mut rust = self.as_mut().rust_mut();
+                let rust = &mut *self;
                 rust.generation = generation;
                 rust.git_generation = git_generation;
                 rust.rows.clear();
@@ -3579,142 +3278,139 @@ impl qobject::DirectoryListModel {
                 rust.git_entries_folded.clear();
                 rust.git_directory_untracked = false;
             }
-            self.as_mut().end_reset_model();
-        }
-        self.as_mut().set_remote(false);
-        self.as_mut().set_loaded(0);
-        self.as_mut().publish_selection_count();
-        self.as_mut().set_status(QString::from("Closed"));
-        self.as_mut().set_finished(true);
-        self.as_mut().set_images(0);
-        self.as_mut().set_files(0);
-        self.as_mut().set_folders(0);
-        self.as_mut().set_family_counts(QString::from("[]"));
-        self.as_mut().set_group_counts(QString::from("[]"));
-        self.as_mut().set_newest_modified(QString::from(""));
-        self.as_mut().set_git_busy(false);
-        self.as_mut().clear_git_state();
-    }
-
-    /// Publishes the ancestors of the shown directory to the breadcrumb bar.
-    ///
-    /// Skipped when nothing changed: a refresh hands back the ancestors of the
-    /// directory already on screen, and rewriting both lists would rebind every
-    /// crumb in the bar for no reason.
-    fn adopt_breadcrumbs(mut self: Pin<&mut Self>, breadcrumbs: Vec<Breadcrumb>) {
-        let count = breadcrumbs.len();
-        let unchanged = self.breadcrumb_names.len() == count as isize
-            && self
-                .breadcrumb_names
-                .iter()
-                .zip(breadcrumbs.iter())
-                .all(|(name, crumb)| name.to_string() == crumb.name)
-            && self
-                .breadcrumb_paths
-                .iter()
-                .zip(breadcrumbs.iter())
-                .all(|(path, crumb)| path.to_string() == crumb.path);
-        if unchanged {
-            return;
+            self.end_reset_model();
+            self.set_remote(false);
+            self.set_loaded(0);
+            self.publish_selection_count();
+            self.set_status("Closed".to_owned());
+            self.set_finished(true);
+            self.set_images(0);
+            self.set_files(0);
+            self.set_folders(0);
+            self.set_family_counts("[]".to_owned());
+            self.set_group_counts("[]".to_owned());
+            self.set_newest_modified("".to_owned());
+            self.set_git_busy(false);
+            self.clear_git_state();
         }
 
-        let mut names = QStringList::default();
-        let mut paths = QStringList::default();
-        for crumb in &breadcrumbs {
-            names.append(QString::from(crumb.name.as_str()));
-            paths.append(QString::from(crumb.path.as_str()));
-        }
-
-        self.as_mut().set_breadcrumb_names(names);
-        self.as_mut().set_breadcrumb_paths(paths);
-    }
-
-    fn append_head(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        base: String,
-        path: String,
-        breadcrumbs: Vec<Breadcrumb>,
-        rows: Vec<StoredRow>,
-        done: bool,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-
-        // Set before the rows: the bar names the directory the rows belong to,
-        // and it is what the user sees first while a large listing streams.
-        self.as_mut().adopt_breadcrumbs(breadcrumbs);
-
-        if self.refresh.is_some() {
-            if let Some(stage) = self.as_mut().rust_mut().refresh.as_mut() {
-                stage.base = base;
-                stage.path = path;
-                stage.rows.extend(rows);
+        /// Publishes the ancestors of the shown directory to the breadcrumb bar.
+        ///
+        /// Skipped when nothing changed: a refresh hands back the ancestors of the
+        /// directory already on screen, and rewriting both lists would rebind every
+        /// crumb in the bar for no reason.
+        fn adopt_breadcrumbs(&mut self, breadcrumbs: Vec<Breadcrumb>) {
+            let count = breadcrumbs.len();
+            let unchanged = self.breadcrumb_names.len() == count
+                && self
+                    .breadcrumb_names
+                    .iter()
+                    .zip(breadcrumbs.iter())
+                    .all(|(name, crumb)| name.to_string() == crumb.name)
+                && self
+                    .breadcrumb_paths
+                    .iter()
+                    .zip(breadcrumbs.iter())
+                    .all(|(path, crumb)| path.to_string() == crumb.path);
+            if unchanged {
+                return;
             }
-            if done {
-                self.as_mut().finish_refresh(generation);
+
+            let mut names = Vec::new();
+            let mut paths = Vec::new();
+            for crumb in &breadcrumbs {
+                names.push(crumb.name.to_owned());
+                paths.push(crumb.path.to_owned());
             }
-            return;
+
+            self.set_breadcrumb_names(names);
+            self.set_breadcrumb_paths(paths);
         }
 
-        self.as_mut().set_path(QString::from(path.as_str()));
-        self.as_mut().rust_mut().base = base;
-        self.as_mut().append_rows(generation, rows, done);
-    }
+        pub(super) fn append_head(
+            &mut self,
+            generation: u64,
+            base: String,
+            path: String,
+            breadcrumbs: Vec<Breadcrumb>,
+            rows: Vec<StoredRow>,
+            done: bool,
+        ) {
+            if self.generation != generation {
+                return;
+            }
 
-    /// Applies the current grouping and any tags already read to a batch that
-    /// is about to be inserted. Batch-local so an active section header is
-    /// right before the completion sort, not only after it.
-    fn decorate_rows(&self, rows: &mut [StoredRow]) {
-        let grouping = self.order.grouping;
-        if grouping.active() {
-            assign_groups(rows, grouping);
+            // Set before the rows: the bar names the directory the rows belong to,
+            // and it is what the user sees first while a large listing streams.
+            self.adopt_breadcrumbs(breadcrumbs);
+
+            if self.refresh.is_some() {
+                if let Some(stage) = self.refresh.as_mut() {
+                    stage.base = base;
+                    stage.path = path;
+                    stage.rows.extend(rows);
+                }
+                if done {
+                    self.finish_refresh(generation);
+                }
+                return;
+            }
+
+            self.set_path(path.to_owned());
+            self.base = base;
+            self.append_rows(generation, rows, done);
         }
-        if !self.tags_cache.is_empty() {
-            decorate_tags(
-                rows,
-                &self.tags_cache,
-                &self.tag_definitions,
-                &self.base.to_string(),
-            );
+
+        /// Applies the current grouping and any tags already read to a batch that
+        /// is about to be inserted. Batch-local so an active section header is
+        /// right before the completion sort, not only after it.
+        fn decorate_rows(&self, rows: &mut [StoredRow]) {
+            let grouping = self.order.grouping;
             if grouping.active() {
                 assign_groups(rows, grouping);
             }
-        }
-    }
-
-    fn append_rows(mut self: Pin<&mut Self>, generation: u64, rows: Vec<StoredRow>, done: bool) {
-        if self.generation != generation {
-            return;
-        }
-
-        if self.refresh.is_some() {
-            if let Some(stage) = self.as_mut().rust_mut().refresh.as_mut() {
-                stage.rows.extend(rows);
+            if !self.tags_cache.is_empty() {
+                decorate_tags(
+                    rows,
+                    &self.tags_cache,
+                    &self.tag_definitions,
+                    &self.base.to_string(),
+                );
+                if grouping.active() {
+                    assign_groups(rows, grouping);
+                }
             }
-            if done {
-                self.as_mut().finish_refresh(generation);
-            }
-            return;
         }
 
-        let mut rows = self.as_mut().keep_visible(rows);
-        self.as_mut().decorate_rows(&mut rows);
-        let added = rows.len() as i32;
-        let first = self.loaded;
-        if added > 0 {
-            let last = first + added - 1;
-            unsafe {
-                self.as_mut()
-                    .begin_insert_rows(&QModelIndex::default(), first, last);
+        pub(super) fn append_rows(&mut self, generation: u64, rows: Vec<StoredRow>, done: bool) {
+            if self.generation != generation {
+                return;
+            }
+
+            if self.refresh.is_some() {
+                if let Some(stage) = self.refresh.as_mut() {
+                    stage.rows.extend(rows);
+                }
+                if done {
+                    self.finish_refresh(generation);
+                }
+                return;
+            }
+
+            let mut rows = self.keep_visible(rows);
+            self.decorate_rows(&mut rows);
+            let added = rows.len() as i32;
+            let first = self.loaded;
+            if added > 0 {
+                let last = first + added - 1;
+                self.begin_insert_rows(&QModelIndex::default(), first, last);
                 {
-                    let DirectoryListModelRust {
+                    let Self {
                         rows: stored,
                         base,
                         selection,
                         ..
-                    } = &mut *self.as_mut().rust_mut();
+                    } = self;
                     // A history entry restored before its listing was read has
                     // been waiting for exactly these rows; the head batch is
                     // what tells the selection which base their paths are
@@ -3729,636 +3425,629 @@ impl qobject::DirectoryListModel {
                 if first == 0 {
                     crate::window::startup_mark_once("qml-first-model");
                 }
-                self.as_mut().end_insert_rows();
+                self.end_insert_rows();
+                self.set_loaded(first + added);
+                self.publish_selection_count();
             }
-            self.as_mut().set_loaded(first + added);
-            self.as_mut().publish_selection_count();
-        }
 
-        if done {
-            // Streamed chunks arrive in enumeration order, so each one is
-            // sorted on its own but the sequence as a whole is not. Sorting
-            // once here is what makes the finished listing obey the chosen
-            // order without paying a reset per batch. `aboutToReload` inside
-            // `resortRows` lets the view keep its scroll position.
-            self.as_mut().sort_at_completion();
-            // The stream is over: a restored path that never matched a row is
-            // a file that was renamed or deleted since the entry was captured.
-            self.as_mut().rust_mut().selection.settle();
-            let pending = self.reload_pending;
-            self.as_mut().rust_mut().stream_id = None;
-            if pending {
-                self.as_mut().rust_mut().reload_pending = false;
-            }
-            let total = self.rows.len() as i32;
-            self.as_mut().publish_counts();
-            // Status before `finished`: QML reads the status in
-            // `onFinishedChanged`, which is emitted synchronously.
-            self.as_mut().set_status(QString::from(format!(
-                "{total} item{}",
-                if total == 1 { "" } else { "s" }
-            )));
-            self.as_mut().set_finished(true);
-            // A change arrived during this read, so the rows just shown may
-            // already be stale. Re-read now that the stream is over instead of
-            // cancelling it mid-flight.
-            if pending {
-                self.as_mut().reload();
+            if done {
+                // Streamed chunks arrive in enumeration order, so each one is
+                // sorted on its own but the sequence as a whole is not. Sorting
+                // once here is what makes the finished listing obey the chosen
+                // order without paying a reset per batch. `aboutToReload` inside
+                // `resortRows` lets the view keep its scroll position.
+                self.sort_at_completion();
+                // The stream is over: a restored path that never matched a row is
+                // a file that was renamed or deleted since the entry was captured.
+                self.selection.settle();
+                let pending = self.reload_pending;
+                self.stream_id = None;
+                if pending {
+                    self.reload_pending = false;
+                }
+                let total = self.rows.len() as i32;
+                self.publish_counts();
+                // Status before `finished`: QML reads the status in
+                // `onFinishedChanged`, which is emitted synchronously.
+                self.set_status(format!(
+                    "{total} item{}",
+                    if total == 1 { "" } else { "s" }
+                ));
+                self.set_finished(true);
+                // A change arrived during this read, so the rows just shown may
+                // already be stale. Re-read now that the stream is over instead of
+                // cancelling it mid-flight.
+                if pending {
+                    self.reload();
+                }
             }
         }
-    }
 
-    fn sort_at_completion(mut self: Pin<&mut Self>) {
-        if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
-            return;
+        fn sort_at_completion(&mut self) {
+            if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
+                return;
+            }
+            // A worker and a queued reply cost more than the sort for a directory
+            // that fits in a few batches; only the large listings are offloaded.
+            if self.rows.len() < WORKER_SORT_MIN_ROWS {
+                self.resort_rows();
+            } else {
+                self.start_worker_sort();
+            }
         }
-        // A worker and a queued reply cost more than the sort for a directory
-        // that fits in a few batches; only the large listings are offloaded.
-        if self.rows.len() < WORKER_SORT_MIN_ROWS {
-            self.as_mut().resort_rows();
-        } else {
-            self.as_mut().start_worker_sort();
-        }
-    }
 
-    /// Snapshots the comparator's inputs and sorts an index permutation on a
-    /// worker. The rows stay in the model and keep painting in their old order
-    /// until `apply_worker_sort` lands on the Qt thread; a load, order change,
-    /// row-count change or newer sort in between drops the result.
-    fn start_worker_sort(mut self: Pin<&mut Self>) {
-        let ticket = SortTicket {
-            generation: self.generation,
-            rows: self.rows.len(),
-            order: self.order,
-            request: self.sort_request.wrapping_add(1),
-        };
-        let snapshot_started = std::time::Instant::now();
-        let entries = sort_snapshot(&self.rows);
-        log::debug!(
-            target: "dae::listing",
-            "sort: {} rows, snapshot {:.1} ms",
-            ticket.rows,
-            snapshot_started.elapsed().as_secs_f64() * 1e3
-        );
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.sort_request = ticket.request;
-            rust.sorting = true;
-        }
-        let thread = self.as_mut().qt_thread();
-        std::thread::spawn(move || {
-            let sort_started = std::time::Instant::now();
-            let perm = sort_permutation(&entries, &ticket.order);
-            let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
-            let _ = thread
-                .queue(move |mut model| model.as_mut().apply_worker_sort(ticket, perm, sort_ms));
-        });
-    }
-
-    /// Applies a worker's permutation with the same one-reset shape as the
-    /// synchronous path, plus `sortApplied` so the view can restore the scroll
-    /// position the reset drops.
-    fn apply_worker_sort(
-        mut self: Pin<&mut Self>,
-        ticket: SortTicket,
-        perm: Vec<u32>,
-        sort_ms: f64,
-    ) {
-        // Only the newest request may clear the flag: a superseded sort has
-        // nothing to say about the rows the newer one is ordering.
-        if self.sort_request == ticket.request {
-            self.as_mut().rust_mut().sorting = false;
-        }
-        if !worker_sort_is_current(
-            self.closed,
-            self.generation,
-            self.rows.len(),
-            self.order,
-            self.sort_request,
-            ticket,
-            &perm,
-        ) {
-            return;
-        }
-        let expected = ticket.rows;
-        let permute_started = std::time::Instant::now();
-        let rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
-        // `is_permutation` above is the same check `apply_permutation` makes;
-        // reaching its failure branch would lose every row.
-        let rows = apply_permutation(rows, &perm).expect("validated permutation");
-        let permute_ms = permute_started.elapsed().as_secs_f64() * 1e3;
-        self.as_mut().about_to_reload();
-        let reset_started = std::time::Instant::now();
-        unsafe {
-            self.as_mut().begin_reset_model();
+        /// Snapshots the comparator's inputs and sorts an index permutation on a
+        /// worker. The rows stay in the model and keep painting in their old order
+        /// until `apply_worker_sort` lands on the Qt thread; a load, order change,
+        /// row-count change or newer sort in between drops the result.
+        fn start_worker_sort(&mut self) {
+            let ticket = SortTicket {
+                generation: self.generation,
+                rows: self.rows.len(),
+                order: self.order,
+                request: self.sort_request.wrapping_add(1),
+            };
+            let snapshot_started = std::time::Instant::now();
+            let entries = sort_snapshot(&self.rows);
+            log::debug!(
+                target: "dae::listing",
+                "sort: {} rows, snapshot {:.1} ms",
+                ticket.rows,
+                snapshot_started.elapsed().as_secs_f64() * 1e3
+            );
             {
-                let DirectoryListModelRust {
+                let rust = &mut *self;
+                rust.sort_request = ticket.request;
+                rust.sorting = true;
+            }
+            let thread = self.get_thread_handle();
+            std::thread::spawn(move || {
+                let sort_started = std::time::Instant::now();
+                let perm = sort_permutation(&entries, &ticket.order);
+                let sort_ms = sort_started.elapsed().as_secs_f64() * 1e3;
+                let _ = thread
+                    .invoke_mut(move |model| model.apply_worker_sort(ticket, perm, sort_ms));
+            });
+        }
+
+        /// Applies a worker's permutation with the same one-reset shape as the
+        /// synchronous path, plus `sortApplied` so the view can restore the scroll
+        /// position the reset drops.
+        fn apply_worker_sort(
+            &mut self,
+            ticket: SortTicket,
+            perm: Vec<u32>,
+            sort_ms: f64,
+        ) {
+            // Only the newest request may clear the flag: a superseded sort has
+            // nothing to say about the rows the newer one is ordering.
+            if self.sort_request == ticket.request {
+                self.sorting = false;
+            }
+            if !worker_sort_is_current(
+                self.closed,
+                self.generation,
+                self.rows.len(),
+                self.order,
+                self.sort_request,
+                ticket,
+                &perm,
+            ) {
+                return;
+            }
+            let expected = ticket.rows;
+            let permute_started = std::time::Instant::now();
+            let rows = std::mem::take(&mut self.rows);
+            // `is_permutation` above is the same check `apply_permutation` makes;
+            // reaching its failure branch would lose every row.
+            let rows = apply_permutation(rows, &perm).expect("validated permutation");
+            let permute_ms = permute_started.elapsed().as_secs_f64() * 1e3;
+            self.about_to_reload();
+            let reset_started = std::time::Instant::now();
+            self.begin_reset_model();
+            {
+                let Self {
                     rows: stored,
                     selection,
                     ..
-                } = &mut *self.as_mut().rust_mut();
+                } = self;
                 *stored = rows;
                 selection.invalidate();
             }
-            self.as_mut().end_reset_model();
+            self.end_reset_model();
+            let reset_ms = reset_started.elapsed().as_secs_f64() * 1e3;
+            log::debug!(
+                target: "dae::listing",
+                "re-sort: {} rows, sort {:.1} ms, permute {:.1} ms, reset {:.1} ms",
+                expected,
+                sort_ms,
+                permute_ms,
+                reset_ms
+            );
+            self.sort_applied();
         }
-        let reset_ms = reset_started.elapsed().as_secs_f64() * 1e3;
-        log::debug!(
-            target: "dae::listing",
-            "re-sort: {} rows, sort {:.1} ms, permute {:.1} ms, reset {:.1} ms",
-            expected,
-            sort_ms,
-            permute_ms,
-            reset_ms
-        );
-        self.as_mut().sort_applied();
-    }
 
-    /// Applies a completed refresh. The new rows are already in hand, so the
-    /// model can edit itself in place: the diff keeps every unchanged row and
-    /// only inserts, removes or replaces the ones that differ. A full reset is
-    /// reserved for a refresh that also changes the base or path, where the
-    /// rows would address different files.
-    fn finish_refresh(mut self: Pin<&mut Self>, generation: u64) {
-        if self.generation != generation {
-            self.as_mut().rust_mut().refresh = None;
-            return;
-        }
-        // The staged rows replace what a worker may still be permuting; its
-        // indices describe the old rows even when the count happens to match.
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.sorting = false;
-            rust.sort_request = rust.sort_request.wrapping_add(1);
-            rust.refresh_sort = None;
-        }
-        let Some(stage) = self.as_mut().rust_mut().refresh.take() else {
-            return;
-        };
-        let RefreshStage { rows, base, path } = stage;
-        // The stage holds the raw listing: filter and order it the same way a
-        // first read would, so a refresh neither resurrects a hidden row nor
-        // changes the order under the user.
-        let mut fresh = self.as_mut().keep_visible(rows);
-        // Same split as the completion path: a large re-read orders on a
-        // worker while the old rows keep painting, and the diff below runs
-        // once the order lands instead of blocking the Qt thread for it.
-        if fresh.len() >= WORKER_SORT_MIN_ROWS && !rows_are_sorted(&fresh, &self.order) {
-            self.as_mut().start_refresh_sort(fresh, base, path);
-            return;
-        }
-        sort_rows(&mut fresh, &self.order);
-        self.as_mut().apply_refresh(generation, fresh, base, path);
-    }
-
-    /// Stages a filtered refresh for a worker sort, the refresh counterpart
-    /// of `start_worker_sort`. The staged rows are not on screen yet, so the
-    /// permutation is applied to them before the diff against the visible
-    /// rows runs.
-    fn start_refresh_sort(
-        mut self: Pin<&mut Self>,
-        fresh: Vec<StoredRow>,
-        base: String,
-        path: String,
-    ) {
-        let ticket = SortTicket {
-            generation: self.generation,
-            rows: fresh.len(),
-            order: self.order,
-            request: self.sort_request.wrapping_add(1),
-        };
-        let snapshot_started = std::time::Instant::now();
-        let entries = sort_snapshot(&fresh);
-        log::debug!(
-            target: "dae::listing",
-            "refresh sort: {} rows, snapshot {:.1} ms",
-            ticket.rows,
-            snapshot_started.elapsed().as_secs_f64() * 1e3
-        );
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.sort_request = ticket.request;
-            rust.sorting = true;
-            rust.refresh_sort = Some(RefreshSort {
-                stage: RefreshStage { rows: fresh, base, path },
-                ticket,
-            });
-        }
-        let thread = self.as_mut().qt_thread();
-        std::thread::spawn(move || {
-            let perm = sort_permutation(&entries, &ticket.order);
-            let _ = thread.queue(move |mut model| model.as_mut().apply_refresh_sort(ticket, perm));
-        });
-    }
-
-    /// Lands a worker-ordered refresh. A reply whose ticket no longer owns the
-    /// stage is ignored; one that was superseded by an interactive re-sort
-    /// re-launches under the current order, because the refresh must still
-    /// replace the visible rows.
-    fn apply_refresh_sort(mut self: Pin<&mut Self>, ticket: SortTicket, perm: Vec<u32>) {
-        let owns_stage = self
-            .refresh_sort
-            .as_ref()
-            .is_some_and(|sort| sort.ticket.request == ticket.request);
-        if !owns_stage {
-            return;
-        }
-        if self.sort_request == ticket.request {
-            self.as_mut().rust_mut().sorting = false;
-        }
-        if self.closed || self.generation != ticket.generation {
-            self.as_mut().rust_mut().refresh_sort = None;
-            return;
-        }
-        if self.sort_request != ticket.request || self.order != ticket.order {
-            let Some(sort) = self.as_mut().rust_mut().refresh_sort.take() else {
+        /// Applies a completed refresh. The new rows are already in hand, so the
+        /// model can edit itself in place: the diff keeps every unchanged row and
+        /// only inserts, removes or replaces the ones that differ. A full reset is
+        /// reserved for a refresh that also changes the base or path, where the
+        /// rows would address different files.
+        fn finish_refresh(&mut self, generation: u64) {
+            if self.generation != generation {
+                self.refresh = None;
+                return;
+            }
+            // The staged rows replace what a worker may still be permuting; its
+            // indices describe the old rows even when the count happens to match.
+            {
+                let rust = &mut *self;
+                rust.sorting = false;
+                rust.sort_request = rust.sort_request.wrapping_add(1);
+                rust.refresh_sort = None;
+            }
+            let Some(stage) = self.refresh.take() else {
                 return;
             };
-            self.as_mut()
-                .start_refresh_sort(sort.stage.rows, sort.stage.base, sort.stage.path);
-            return;
-        }
-        let Some(sort) = self.as_mut().rust_mut().refresh_sort.take() else {
-            return;
-        };
-        let rows = apply_permutation(sort.stage.rows, &perm).expect("validated permutation");
-        log::debug!(
-            target: "dae::listing",
-            "refresh sort: {} rows landed",
-            rows.len()
-        );
-        self.as_mut()
-            .apply_refresh(ticket.generation, rows, sort.stage.base, sort.stage.path);
-    }
-
-    /// The second half of a refresh: the ordered replacement is diffed against
-    /// the rows on screen so unchanged rows keep their delegates; a full reset
-    /// is reserved for a refresh that also changes the base or path, where the
-    /// rows would address different files.
-    fn apply_refresh(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        fresh: Vec<StoredRow>,
-        base: String,
-        path: String,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-        // The rows below are rebuilt, so the selection is captured by key: a
-        // row that only moved keeps its flag, and one that really went away
-        // leaves the count with it.
-        let keep: std::collections::HashSet<String> = if self.selection.count() > 0 {
-            self.selection
-                .selected_keys(&self.rows)
-                .into_iter()
-                .collect()
-        } else {
-            std::collections::HashSet::new()
-        };
-
-        let pending = self.reload_pending;
-        let total = fresh.len() as i32;
-        let path_changed = self.path.to_string() != path;
-        let base_changed = self.base != base;
-
-        self.as_mut().rust_mut().stream_id = None;
-        self.as_mut().rust_mut().reload_pending = false;
-
-        if path_changed || base_changed {
-            if path_changed {
-                self.as_mut().set_path(QString::from(path.as_str()));
+            let RefreshStage { rows, base, path } = stage;
+            // The stage holds the raw listing: filter and order it the same way a
+            // first read would, so a refresh neither resurrects a hidden row nor
+            // changes the order under the user.
+            let mut fresh = self.keep_visible(rows);
+            // Same split as the completion path: a large re-read orders on a
+            // worker while the old rows keep painting, and the diff below runs
+            // once the order lands instead of blocking the Qt thread for it.
+            if fresh.len() >= WORKER_SORT_MIN_ROWS && !rows_are_sorted(&fresh, &self.order) {
+                self.start_refresh_sort(fresh, base, path);
+                return;
             }
-            self.as_mut().about_to_reload();
-            unsafe {
-                self.as_mut().begin_reset_model();
+            sort_rows(&mut fresh, &self.order);
+            self.apply_refresh(generation, fresh, base, path);
+        }
+
+        /// Stages a filtered refresh for a worker sort, the refresh counterpart
+        /// of `start_worker_sort`. The staged rows are not on screen yet, so the
+        /// permutation is applied to them before the diff against the visible
+        /// rows runs.
+        fn start_refresh_sort(
+            &mut self,
+            fresh: Vec<StoredRow>,
+            base: String,
+            path: String,
+        ) {
+            let ticket = SortTicket {
+                generation: self.generation,
+                rows: fresh.len(),
+                order: self.order,
+                request: self.sort_request.wrapping_add(1),
+            };
+            let snapshot_started = std::time::Instant::now();
+            let entries = sort_snapshot(&fresh);
+            log::debug!(
+                target: "dae::listing",
+                "refresh sort: {} rows, snapshot {:.1} ms",
+                ticket.rows,
+                snapshot_started.elapsed().as_secs_f64() * 1e3
+            );
+            {
+                let rust = &mut *self;
+                rust.sort_request = ticket.request;
+                rust.sorting = true;
+                rust.refresh_sort = Some(RefreshSort {
+                    stage: RefreshStage { rows: fresh, base, path },
+                    ticket,
+                });
+            }
+            let thread = self.get_thread_handle();
+            std::thread::spawn(move || {
+                let perm = sort_permutation(&entries, &ticket.order);
+                let _ = thread.invoke_mut(move |model| model.apply_refresh_sort(ticket, perm));
+            });
+        }
+
+        /// Lands a worker-ordered refresh. A reply whose ticket no longer owns the
+        /// stage is ignored; one that was superseded by an interactive re-sort
+        /// re-launches under the current order, because the refresh must still
+        /// replace the visible rows.
+        fn apply_refresh_sort(&mut self, ticket: SortTicket, perm: Vec<u32>) {
+            let owns_stage = self
+                .refresh_sort
+                .as_ref()
+                .is_some_and(|sort| sort.ticket.request == ticket.request);
+            if !owns_stage {
+                return;
+            }
+            if self.sort_request == ticket.request {
+                self.sorting = false;
+            }
+            if self.closed || self.generation != ticket.generation {
+                self.refresh_sort = None;
+                return;
+            }
+            if self.sort_request != ticket.request || self.order != ticket.order {
+                let Some(sort) = self.refresh_sort.take() else {
+                    return;
+                };
+                self.start_refresh_sort(sort.stage.rows, sort.stage.base, sort.stage.path);
+                return;
+            }
+            let Some(sort) = self.refresh_sort.take() else {
+                return;
+            };
+            let rows = apply_permutation(sort.stage.rows, &perm).expect("validated permutation");
+            log::debug!(
+                target: "dae::listing",
+                "refresh sort: {} rows landed",
+                rows.len()
+            );
+            self.apply_refresh(ticket.generation, rows, sort.stage.base, sort.stage.path);
+        }
+
+        /// The second half of a refresh: the ordered replacement is diffed against
+        /// the rows on screen so unchanged rows keep their delegates; a full reset
+        /// is reserved for a refresh that also changes the base or path, where the
+        /// rows would address different files.
+        fn apply_refresh(
+            &mut self,
+            generation: u64,
+            fresh: Vec<StoredRow>,
+            base: String,
+            path: String,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+            // The rows below are rebuilt, so the selection is captured by key: a
+            // row that only moved keeps its flag, and one that really went away
+            // leaves the count with it.
+            let keep: std::collections::HashSet<String> = if self.selection.count() > 0 {
+                self.selection
+                    .selected_keys(&self.rows)
+                    .into_iter()
+                    .collect()
+            } else {
+                std::collections::HashSet::new()
+            };
+
+            let pending = self.reload_pending;
+            let total = fresh.len() as i32;
+            let path_changed = self.path.to_string() != path;
+            let base_changed = self.base != base;
+
+            self.stream_id = None;
+            self.reload_pending = false;
+
+            if path_changed || base_changed {
+                if path_changed {
+                    self.set_path(path.to_owned());
+                }
+                self.about_to_reload();
+                self.begin_reset_model();
                 {
-                    let DirectoryListModelRust {
+                    let Self {
                         rows: stored,
                         base: stored_base,
                         selection,
                         ..
-                    } = &mut *self.as_mut().rust_mut();
+                    } = self;
                     *stored = fresh;
                     *stored_base = base;
                     *selection = Selection::default();
                     selection.flag(stored, &keep);
                 }
-                self.as_mut().end_reset_model();
+                self.end_reset_model();
+                self.set_loaded(total);
+                self.publish_selection_count();
+            } else {
+                self.apply_refreshed_rows(fresh, &keep);
             }
-            self.as_mut().set_loaded(total);
-            self.as_mut().publish_selection_count();
-        } else {
-            self.as_mut().apply_refreshed_rows(fresh, &keep);
+
+            self.publish_counts();
+            self.set_status(format!(
+                "{total} item{}",
+                if total == 1 { "" } else { "s" }
+            ));
+            self.set_finished(true);
+            // A change arrived during this read; re-read now that the stream is
+            // over instead of having shown a mix of the two listings.
+            if pending {
+                self.reload();
+            }
         }
 
-        self.as_mut().publish_counts();
-        self.as_mut().set_status(QString::from(format!(
-            "{total} item{}",
-            if total == 1 { "" } else { "s" }
-        )));
-        self.as_mut().set_finished(true);
-        // A change arrived during this read; re-read now that the stream is
-        // over instead of having shown a mix of the two listings.
-        if pending {
-            self.as_mut().reload();
-        }
-    }
+        /// Turns `fresh` into the smallest set of row operations that reaches it
+        /// from the rows on screen. Unchanged rows keep their delegates, so a
+        /// create/delete does not rebuild the whole view. `keep` holds the selected
+        /// rows' keys: the ones that were re-inserted get their flags back, and the
+        /// ones that are gone leave the count with them.
+        fn apply_refreshed_rows(
+            &mut self,
+            mut fresh: Vec<StoredRow>,
+            keep: &std::collections::HashSet<String>,
+        ) {
+            let (prefix, removed, added) = row_edit(&self.rows, &fresh);
+            let mut middle: Vec<StoredRow> = fresh.drain(prefix..prefix + added).collect();
 
-    /// Turns `fresh` into the smallest set of row operations that reaches it
-    /// from the rows on screen. Unchanged rows keep their delegates, so a
-    /// create/delete does not rebuild the whole view. `keep` holds the selected
-    /// rows' keys: the ones that were re-inserted get their flags back, and the
-    /// ones that are gone leave the count with them.
-    fn apply_refreshed_rows(
-        mut self: Pin<&mut Self>,
-        mut fresh: Vec<StoredRow>,
-        keep: &std::collections::HashSet<String>,
-    ) {
-        let (prefix, removed, added) = row_edit(&self.rows, &fresh);
-        let mut middle: Vec<StoredRow> = fresh.drain(prefix..prefix + added).collect();
-
-        unsafe {
             if removed > 0 {
-                self.as_mut().begin_remove_rows(
+                self.begin_remove_rows(
                     &QModelIndex::default(),
                     prefix as i32,
                     (prefix + removed - 1) as i32,
                 );
                 {
-                    let DirectoryListModelRust {
+                    let Self {
                         rows, selection, ..
-                    } = &mut *self.as_mut().rust_mut();
+                    } = self;
                     selection.rows_removed(&rows[prefix..prefix + removed]);
                     rows.drain(prefix..prefix + removed);
                 }
-                self.as_mut().end_remove_rows();
+                self.end_remove_rows();
             }
             if added > 0 {
-                self.as_mut().begin_insert_rows(
+                self.begin_insert_rows(
                     &QModelIndex::default(),
                     prefix as i32,
                     (prefix + added - 1) as i32,
                 );
                 {
-                    let DirectoryListModelRust {
+                    let Self {
                         rows, selection, ..
-                    } = &mut *self.as_mut().rust_mut();
+                    } = self;
                     selection.flag(&mut middle, keep);
                     rows.splice(prefix..prefix, middle);
                 }
-                self.as_mut().end_insert_rows();
+                self.end_insert_rows();
+            }
+
+            let total = self.rows.len() as i32;
+            self.set_loaded(total);
+            self.publish_selection_count();
+        }
+
+        /// A watcher reported a change in `change`. The path is re-checked because an
+        /// arm that lost a navigation can still have an event in flight.
+        pub(super) fn reload_after_change(&mut self, change: Change) {
+            if self.closed {
+                return;
+            }
+            if self.stream_id.is_some() {
+                // The displayed path may still be the requested spelling while the
+                // head is in flight; the reload waits for it to adopt the
+                // canonical one instead of being dropped by the comparison below.
+                self.reload_pending = true;
+                return;
+            }
+            if self.path.to_string() != change.path {
+                return;
+            }
+            match change.names {
+                Some(names) if self.can_patch(&names) => {
+                    log::debug!(
+                        target: "dae::listing",
+                        "watcher: patching {} child(ren) of {}",
+                        names.len(),
+                        change.path
+                    );
+                    self.patch_rows(names);
+                }
+                _ => {
+                    log::debug!(target: "dae::listing", "watcher: re-reading {}", change.path);
+                    self.reload();
+                }
             }
         }
 
-        let total = self.rows.len() as i32;
-        self.as_mut().set_loaded(total);
-        self.as_mut().publish_selection_count();
-    }
+        /// Whether a burst can be applied to the rows on screen instead of re-reading
+        /// the directory. See [`plan_patch`] for what a patch is allowed to do.
+        fn can_patch(&self, names: &[String]) -> bool {
+            !self.remote
+                && self.finished
+                && !self.sorting
+                && !self.load_failed
+                && self.refresh.is_none()
+                && !names.is_empty()
+                && names.len() <= PATCH_LIMIT
+                // Only the plain name order is stable under a metadata change: any
+                // other key or an active grouping would have to move the patched
+                // row (and re-sort the listing).
+                && self.order.key == SortKey::Name
+                && !self.order.grouping.active()
+                // A non-default filter dropped rows at insert time, so a row that
+                // now passes it cannot be recovered without a re-read.
+                && self.filter == RowFilter::default()
+        }
 
-    /// A watcher reported a change in `change`. The path is re-checked because an
-    /// arm that lost a navigation can still have an event in flight.
-    fn reload_after_change(mut self: Pin<&mut Self>, change: Change) {
-        if self.closed {
-            return;
+        /// Reads the changed children off the GUI thread; `apply_patch` lands on the
+        /// Qt thread carrying the generation the read started under.
+        fn patch_rows(&mut self, names: Vec<String>) {
+            let directory = self.path.to_string();
+            let generation = self.generation;
+            let thread = self.get_thread_handle();
+            crate::runtime::spawn(async move {
+                let requested = names.clone();
+                let result = dae_core::fs::service::read_directory_changes(directory, requested).await;
+                let _ = thread
+                    .invoke_mut(move |model| model.apply_patch(generation, names, result));
+            });
         }
-        if self.stream_id.is_some() {
-            // The displayed path may still be the requested spelling while the
-            // head is in flight; the reload waits for it to adopt the
-            // canonical one instead of being dropped by the comparison below.
-            self.as_mut().rust_mut().reload_pending = true;
-            return;
-        }
-        if self.path.to_string() != change.path {
-            return;
-        }
-        match change.names {
-            Some(names) if self.can_patch(&names) => {
+
+        fn apply_patch(
+            &mut self,
+            generation: u64,
+            names: Vec<String>,
+            result: Result<Vec<Option<DirectoryEntry>>, dae_core::fs::error::FileSystemError>,
+        ) {
+            if self.closed || self.generation != generation {
+                return;
+            }
+            // A read started while the patch was being resolved (the user
+            // navigated, or the directory was refreshed). It delivers the rows
+            // itself, and re-reading now would cancel it and start the same walk
+            // again; ask for one more read after it instead.
+            if self.stream_id.is_some() {
+                self.reload_pending = true;
+                return;
+            }
+            // The state the patch was resolved against moved on: the last read
+            // failed, or the order or the filter no longer matches the rows.
+            if self.refresh.is_some()
+                || !self.finished
+                || self.load_failed
+                || self.order.key != SortKey::Name
+                || self.filter != RowFilter::default()
+            {
                 log::debug!(
                     target: "dae::listing",
-                    "watcher: patching {} child(ren) of {}",
-                    names.len(),
-                    change.path
+                    "watcher: state moved on, re-reading {}",
+                    self.path
                 );
-                self.as_mut().patch_rows(names);
+                self.reload();
+                return;
             }
-            _ => {
-                log::debug!(target: "dae::listing", "watcher: re-reading {}", change.path);
-                self.as_mut().reload();
+            let Ok(entries) = result else {
+                // A stat that failed (the directory went away, a permission change)
+                // is answered better by a read, which also reports the failure.
+                log::debug!(
+                    target: "dae::listing",
+                    "watcher: patch read failed, re-reading {}",
+                    self.path
+                );
+                self.reload();
+                return;
+            };
+            let Some(patch) = plan_patch(&self.rows, &self.base, &names, &entries) else {
+                // A child changed kind, so its place in the folder grouping is no
+                // longer the one the rows have. Let the reader sort that out.
+                log::debug!(
+                    target: "dae::listing",
+                    "watcher: a child changed kind or spelling, re-reading {}",
+                    self.path
+                );
+                self.reload();
+                return;
+            };
+            if patch.is_empty() {
+                return;
             }
+            self.apply_row_patch(patch);
         }
-    }
 
-    /// Whether a burst can be applied to the rows on screen instead of re-reading
-    /// the directory. See [`plan_patch`] for what a patch is allowed to do.
-    fn can_patch(&self, names: &[String]) -> bool {
-        !self.remote
-            && self.finished
-            && !self.sorting
-            && !self.load_failed
-            && self.refresh.is_none()
-            && !names.is_empty()
-            && names.len() <= PATCH_LIMIT
-            // Only the plain name order is stable under a metadata change: any
-            // other key or an active grouping would have to move the patched
-            // row (and re-sort the listing).
-            && self.order.key == SortKey::Name
-            && !self.order.grouping.active()
-            // A non-default filter dropped rows at insert time, so a row that
-            // now passes it cannot be recovered without a re-read.
-            && self.filter == RowFilter::default()
-    }
+        /// Applies a resolved patch with the smallest signals it can: one remove or
+        /// insert per changed row, and one `dataChanged` span per run of
+        /// replacements. No reset, so the scroll position and the delegates survive.
+        fn apply_row_patch(&mut self, patch: RowPatch) {
+            let RowPatch {
+                mut removals,
+                replacements,
+                insertions,
+            } = patch;
+            let (removed, replaced, inserted) = (removals.len(), replacements.len(), insertions.len());
+            removals.sort_unstable();
 
-    /// Reads the changed children off the GUI thread; `apply_patch` lands on the
-    /// Qt thread carrying the generation the read started under.
-    fn patch_rows(mut self: Pin<&mut Self>, names: Vec<String>) {
-        let directory = self.path.to_string();
-        let generation = self.generation;
-        let thread = self.as_mut().qt_thread();
-        crate::runtime::spawn(async move {
-            let requested = names.clone();
-            let result = dae_core::fs::service::read_directory_changes(directory, requested).await;
-            let _ = thread
-                .queue(move |mut model| model.as_mut().apply_patch(generation, names, result));
-        });
-    }
-
-    fn apply_patch(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        names: Vec<String>,
-        result: Result<Vec<Option<DirectoryEntry>>, dae_core::fs::error::FileSystemError>,
-    ) {
-        if self.closed || self.generation != generation {
-            return;
-        }
-        // A read started while the patch was being resolved (the user
-        // navigated, or the directory was refreshed). It delivers the rows
-        // itself, and re-reading now would cancel it and start the same walk
-        // again; ask for one more read after it instead.
-        if self.stream_id.is_some() {
-            self.as_mut().rust_mut().reload_pending = true;
-            return;
-        }
-        // The state the patch was resolved against moved on: the last read
-        // failed, or the order or the filter no longer matches the rows.
-        if self.refresh.is_some()
-            || !self.finished
-            || self.load_failed
-            || self.order.key != SortKey::Name
-            || self.filter != RowFilter::default()
-        {
-            log::debug!(
-                target: "dae::listing",
-                "watcher: state moved on, re-reading {}",
-                self.path
-            );
-            self.as_mut().reload();
-            return;
-        }
-        let Ok(entries) = result else {
-            // A stat that failed (the directory went away, a permission change)
-            // is answered better by a read, which also reports the failure.
-            log::debug!(
-                target: "dae::listing",
-                "watcher: patch read failed, re-reading {}",
-                self.path
-            );
-            self.as_mut().reload();
-            return;
-        };
-        let Some(patch) = plan_patch(&self.rows, &self.base, &names, &entries) else {
-            // A child changed kind, so its place in the folder grouping is no
-            // longer the one the rows have. Let the reader sort that out.
-            log::debug!(
-                target: "dae::listing",
-                "watcher: a child changed kind or spelling, re-reading {}",
-                self.path
-            );
-            self.as_mut().reload();
-            return;
-        };
-        if patch.is_empty() {
-            return;
-        }
-        self.as_mut().apply_row_patch(patch);
-    }
-
-    /// Applies a resolved patch with the smallest signals it can: one remove or
-    /// insert per changed row, and one `dataChanged` span per run of
-    /// replacements. No reset, so the scroll position and the delegates survive.
-    fn apply_row_patch(mut self: Pin<&mut Self>, patch: RowPatch) {
-        let RowPatch {
-            mut removals,
-            replacements,
-            insertions,
-        } = patch;
-        let (removed, replaced, inserted) = (removals.len(), replacements.len(), insertions.len());
-        removals.sort_unstable();
-
-        for &index in removals.iter().rev() {
-            unsafe {
-                self.as_mut().begin_remove_rows(
+            for &index in removals.iter().rev() {
+                self.begin_remove_rows(
                     &QModelIndex::default(),
                     index as i32,
                     index as i32,
                 );
                 {
-                    let DirectoryListModelRust {
+                    let Self {
                         rows, selection, ..
-                    } = &mut *self.as_mut().rust_mut();
+                    } = self;
                     selection.rows_removed(&rows[index..index + 1]);
                     rows.remove(index);
                 }
-                self.as_mut().end_remove_rows();
+                self.end_remove_rows();
             }
+
+            let mut changed: Vec<(usize, StoredRow)> = replacements
+                .into_iter()
+                .map(|(index, row)| (index_after_removals(index, &removals), row))
+                .collect();
+            changed.sort_unstable_by_key(|(index, _)| *index);
+
+            let mut runs: Vec<(i32, i32)> = Vec::new();
+            for (index, _) in &changed {
+                match runs.last_mut() {
+                    Some((_, last)) if *last as usize + 1 == *index => *last = *index as i32,
+                    _ => runs.push((*index as i32, *index as i32)),
+                }
+            }
+            for (index, mut row) in changed {
+                // The same file with new metadata: the selection is view state and
+                // survives the replacement, and so do the tags already read.
+                row.selected = self.rows[index].selected;
+                row.tag_ids = self.rows[index].tag_ids.clone();
+                row.tag_sort = self.rows[index].tag_sort.clone();
+                row.group_label = self.rows[index].group_label.clone();
+                row.group_rank = self.rows[index].group_rank;
+                self.rows[index] = row;
+            }
+            let parent = QModelIndex::default();
+            for (first, last) in runs {
+                let top = self.index(first, 0, &parent);
+                let bottom = self.index(last, 0, &parent);
+                self.data_changed(&top, &bottom);
+            }
+
+            let order = self.order;
+            let mut insertions = insertions;
+            insertions.sort_by(|left, right| compare_rows(left, right, &order));
+            for row in insertions {
+                let at = self.rows.partition_point(|existing| {
+                    compare_rows(existing, &row, &order) != Ordering::Greater
+                });
+                self.begin_insert_rows(&QModelIndex::default(), at as i32, at as i32);
+                self.rows.insert(at, row);
+                self.end_insert_rows();
+            }
+
+            let total = self.rows.len() as i32;
+            self.set_loaded(total);
+            // Every insert above moved the rows after it, and a removal dropped
+            // one outright: the cached indices no longer address the selected rows.
+            self.selection.invalidate();
+            self.set_status(format!(
+                "{total} item{}",
+                if total == 1 { "" } else { "s" }
+            ));
+            log::debug!(
+                target: "dae::listing",
+                "watcher: {} rows now ({} removed, {} replaced, {} inserted)",
+                total,
+                removed,
+                replaced,
+                inserted
+            );
+            // The patched rows can change what the Git column says for them (a saved
+            // file turns modified, a new one untracked), so re-read the status. This
+            // is the same read a reload triggers, without the branch enumeration.
+            self.begin_git_load(false);
         }
 
-        let mut changed: Vec<(usize, StoredRow)> = replacements
-            .into_iter()
-            .map(|(index, row)| (index_after_removals(index, &removals), row))
-            .collect();
-        changed.sort_unstable_by_key(|(index, _)| *index);
-
-        let mut runs: Vec<(i32, i32)> = Vec::new();
-        for (index, _) in &changed {
-            match runs.last_mut() {
-                Some((_, last)) if *last as usize + 1 == *index => *last = *index as i32,
-                _ => runs.push((*index as i32, *index as i32)),
+        pub(super) fn mark_failed(&mut self, generation: u64, message: String) {
+            if self.generation != generation {
+                return;
             }
+            self.stream_id = None;
+            self.reload_pending = false;
+            self.load_failed = true;
+            // A failed refresh keeps the rows already on screen; a failed
+            // navigation had already cleared them.
+            self.refresh = None;
+            self.set_status(message);
+            self.set_finished(true);
         }
-        for (index, mut row) in changed {
-            let rust = &mut *self.as_mut().rust_mut();
-            // The same file with new metadata: the selection is view state and
-            // survives the replacement, and so do the tags already read.
-            row.selected = rust.rows[index].selected;
-            row.tag_ids = rust.rows[index].tag_ids.clone();
-            row.tag_sort = rust.rows[index].tag_sort.clone();
-            row.group_label = rust.rows[index].group_label.clone();
-            row.group_rank = rust.rows[index].group_rank;
-            rust.rows[index] = row;
-        }
-        let parent = QModelIndex::default();
-        for (first, last) in runs {
-            unsafe {
-                let top = self.as_mut().model_index(first, 0, &parent);
-                let bottom = self.as_mut().model_index(last, 0, &parent);
-                self.as_mut()
-                    .data_changed(&top, &bottom, &QList::<i32>::default());
-            }
-        }
-
-        let order = self.order;
-        let mut insertions = insertions;
-        insertions.sort_by(|left, right| compare_rows(left, right, &order));
-        for row in insertions {
-            let at = self.rows.partition_point(|existing| {
-                compare_rows(existing, &row, &order) != Ordering::Greater
-            });
-            unsafe {
-                self.as_mut()
-                    .begin_insert_rows(&QModelIndex::default(), at as i32, at as i32);
-                self.as_mut().rust_mut().rows.insert(at, row);
-                self.as_mut().end_insert_rows();
-            }
-        }
-
-        let total = self.rows.len() as i32;
-        self.as_mut().set_loaded(total);
-        // Every insert above moved the rows after it, and a removal dropped
-        // one outright: the cached indices no longer address the selected rows.
-        self.as_mut().rust_mut().selection.invalidate();
-        self.as_mut().set_status(QString::from(format!(
-            "{total} item{}",
-            if total == 1 { "" } else { "s" }
-        )));
-        log::debug!(
-            target: "dae::listing",
-            "watcher: {} rows now ({} removed, {} replaced, {} inserted)",
-            total,
-            removed,
-            replaced,
-            inserted
-        );
-        // The patched rows can change what the Git column says for them (a saved
-        // file turns modified, a new one untracked), so re-read the status. This
-        // is the same read a reload triggers, without the branch enumeration.
-        self.as_mut().begin_git_load(false);
     }
+}
 
-    fn mark_failed(mut self: Pin<&mut Self>, generation: u64, message: String) {
-        if self.generation != generation {
-            return;
-        }
-        self.as_mut().rust_mut().stream_id = None;
-        self.as_mut().rust_mut().reload_pending = false;
-        self.as_mut().rust_mut().load_failed = true;
-        // A failed refresh keeps the rows already on screen; a failed
-        // navigation had already cleared them.
-        self.as_mut().rust_mut().refresh = None;
-        self.as_mut().set_status(QString::from(message));
-        self.as_mut().set_finished(true);
-    }
+pub use rows::DirectoryListModel;
+
+impl QmlElement for DirectoryListModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "DirectoryListModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 /// One coalesced watcher burst for the directory a model displays.
@@ -4432,16 +4121,16 @@ const WORKER_SORT_MIN_ROWS: usize = 2_048;
 /// delivered once the burst has been quiet for [`CHANGE_DEBOUNCE`], so a
 /// directory being written into is not reset once per file.
 struct ListingHost {
-    thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
+    thread: Arc<QThreadHandle<DirectoryListModel>>,
     /// Created on the first event, so a load whose watcher was already armed
     /// (the steady-state refresh) costs nothing.
     changes: Mutex<Option<mpsc::Sender<Change>>>,
 }
 
 impl ListingHost {
-    fn new(thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>) -> Self {
+    fn new(thread: QThreadHandle<DirectoryListModel>) -> Self {
         Self {
-            thread,
+            thread: Arc::new(thread),
             changes: Mutex::new(None),
         }
     }
@@ -4456,7 +4145,7 @@ impl Host for ListingHost {
         let mut changes = self.changes.lock().expect("listing host lock poisoned");
         let sender = changes.get_or_insert_with(|| {
             let (sender, receiver) = mpsc::channel();
-            let thread = self.thread.clone();
+            let thread = Arc::clone(&self.thread);
             std::thread::spawn(move || forward_changes(receiver, thread));
             sender
         });
@@ -4471,7 +4160,7 @@ const CHANGE_DEBOUNCE: Duration = Duration::from_millis(150);
 
 fn forward_changes(
     changes: mpsc::Receiver<Change>,
-    thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
+    thread: Arc<QThreadHandle<DirectoryListModel>>,
 ) {
     let mut pending = match changes.recv() {
         Ok(change) => change,
@@ -4483,7 +4172,7 @@ fn forward_changes(
             Ok(change) => pending.merge(change),
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 let change = pending;
-                let _ = thread.queue(move |mut model| model.as_mut().reload_after_change(change));
+                thread.invoke_mut(move |model| model.reload_after_change(change));
                 pending = match changes.recv() {
                     Ok(change) => change,
                     Err(_) => return,
@@ -4502,7 +4191,7 @@ fn forward_changes(
 /// and the normal path both queue under the same lock, which keeps delivery
 /// order equal to the reader's order.
 struct QtBatchTarget {
-    thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
+    thread: QThreadHandle<DirectoryListModel>,
     generation: u64,
     state: Mutex<TargetState>,
 }
@@ -4514,7 +4203,7 @@ struct TargetState {
 }
 
 impl QtBatchTarget {
-    fn new(thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>, generation: u64) -> Self {
+    fn new(thread: QThreadHandle<DirectoryListModel>, generation: u64) -> Self {
         Self {
             thread,
             generation,
@@ -4525,8 +4214,8 @@ impl QtBatchTarget {
     fn queue_rows(&self, rows: Vec<StoredRow>, done: bool) -> bool {
         let generation = self.generation;
         self.thread
-            .queue(move |mut model| model.as_mut().append_rows(generation, rows, done))
-            .is_ok()
+            .invoke_mut(move |model| model.append_rows(generation, rows, done));
+        true
     }
 
     fn queue_batch(&self, batch: Batch) -> bool {
@@ -4550,10 +4239,8 @@ impl QtBatchTarget {
     ) {
         let mut state = self.state.lock().expect("listing target poisoned");
         let generation = self.generation;
-        let _ = self.thread.queue(move |mut model| {
-            model
-                .as_mut()
-                .append_head(generation, base, path, breadcrumbs, rows, done)
+        self.thread.invoke_mut(move |model| {
+            model.append_head(generation, base, path, breadcrumbs, rows, done)
         });
         state.head_ready = true;
         for batch in state.pending.drain(..) {
@@ -4563,9 +4250,8 @@ impl QtBatchTarget {
 
     fn fail(&self, message: String) {
         let generation = self.generation;
-        let _ = self
-            .thread
-            .queue(move |mut model| model.as_mut().mark_failed(generation, message));
+        self.thread
+            .invoke_mut(move |model| model.mark_failed(generation, message));
     }
 }
 
@@ -5036,12 +4722,9 @@ mod tests {
         for row in &mut rows {
             row.selected = true;
         }
-        assert_eq!(
-            selected_size_text(&rows),
-            QString::from(crate::format::size(350).as_str())
-        );
+        assert_eq!(selected_size_text(&rows), crate::format::size(350));
         rows.iter_mut().for_each(|row| row.selected = false);
-        assert_eq!(selected_size_text(&rows), QString::default());
+        assert_eq!(selected_size_text(&rows), "");
     }
 
     #[test]

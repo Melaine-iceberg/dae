@@ -14,13 +14,16 @@
 // that generated the units, which is what `DAE_QML_AOT` marks.
 #include <QtCore/qglobal.h>
 
+// Declared to pull the compiled Qt resource tables and (when DAE_QML_AOT is
+// defined) the generated QML AOT cache loader out of the static archive.
+int QT_MANGLE_NAMESPACE(qInitResources_dae_resources)();
 #ifdef DAE_QML_AOT
-// Declared only to create the reference; the generated loader defines it.
 int QT_MANGLE_NAMESPACE(qInitResources_dae_qmlcache)();
 #endif
 
 extern "C" void dae_qml_cache_init()
 {
+    QT_MANGLE_NAMESPACE(qInitResources_dae_resources)();
 #ifdef DAE_QML_AOT
     QT_MANGLE_NAMESPACE(qInitResources_dae_qmlcache)();
 #endif

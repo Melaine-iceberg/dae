@@ -11,12 +11,12 @@
 //! macOS/Linux, because the native `SHOpenWithDialog` owns the association UI
 //! on Windows.
 
-use core::pin::Pin;
-
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::error::FileSystemError;
 use dae_core::fs::open_with::{self, OpenWithApp, OpenWithChoices};
+use qtbridge::qtbridge_type_lib::{
+    QByteArray, QHash_i32_QByteArray, QModelIndex, QString, QVariant,
+};
+use qtbridge::{QAbstractItemModel, QAbstractItemModelBase, QmlElement, QmlObject, qobject};
 
 use crate::errors::friendly_error;
 use crate::runtime;
@@ -28,102 +28,6 @@ const ROLE_ICON_NAME: i32 = 0x0403;
 const ROLE_IS_DEFAULT: i32 = 0x0404;
 
 const OTHER_APP_THRESHOLD: usize = 8;
-
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-    }
-
-    unsafe extern "RustQt" {
-        /// The flattened picker model, reachable from QML as `OpenWithModel`.
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(QString, path)]
-        #[qproperty(bool, loading)]
-        #[qproperty(bool, loaded)]
-        #[qproperty(QString, error)]
-        #[qproperty(QString, suggested_app_id, cxx_name = "suggestedAppId")]
-        #[qproperty(bool, needs_filter, cxx_name = "needsFilter")]
-        #[qproperty(bool, has_other, cxx_name = "hasOther")]
-        #[qproperty(i32, total_count, cxx_name = "totalCount")]
-        #[qproperty(bool, empty)]
-        /// The painted row count, headers included, for callers that read the
-        /// model row by row instead of through a view (the context submenu).
-        #[qproperty(i32, count)]
-        type OpenWithModel = super::OpenWithModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        /// Asks the desktop what can open `path`. Resets the filter and any
-        /// previous answer, and ignores a reply overtaken by a newer `load`.
-        #[qinvokable]
-        fn load(self: Pin<&mut OpenWithModel>, path: &QString);
-
-        /// Filters the loaded rows by display name. Headers are rebuilt, so an
-        /// empty section does not leave its title behind.
-        #[qinvokable]
-        #[cxx_name = "setFilter"]
-        fn set_filter(self: Pin<&mut OpenWithModel>, text: &QString);
-
-        /// Re-runs the query for the current path after a failure.
-        #[qinvokable]
-        fn retry(self: Pin<&mut OpenWithModel>);
-
-        /// The application id of `row`, or an empty string for a section
-        /// header. QML keeps selection as an id so a reset or filter cannot
-        /// silently point at a different application.
-        #[qinvokable]
-        #[cxx_name = "appIdAt"]
-        fn app_id_at(&self, row: i32) -> QString;
-
-        /// The display name of `row`, for callers that read the model row by
-        /// row instead of through a view (the context submenu).
-        #[qinvokable]
-        #[cxx_name = "labelAt"]
-        fn label_at(&self, row: i32) -> QString;
-
-        /// The `image://` URL of `row`'s icon, or empty when the entry names
-        /// none. Windows keys icons on the handler's executable; the other
-        /// shells on a launcher's icon name.
-        #[qinvokable]
-        #[cxx_name = "iconAt"]
-        fn icon_at(&self, row: i32) -> QString;
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut OpenWithModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut OpenWithModel>);
-    }
-
-    impl cxx_qt::Threading for OpenWithModel {}
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RowKind {
@@ -147,222 +51,328 @@ struct PreparedRows {
     total_count: i32,
 }
 
-pub struct OpenWithModelRust {
-    rows: Vec<OpenWithRow>,
-    choices: OpenWithChoices,
-    filter: String,
-    path: QString,
-    loading: bool,
-    loaded: bool,
-    error: QString,
-    suggested_app_id: QString,
-    needs_filter: bool,
-    has_other: bool,
-    total_count: i32,
-    empty: bool,
-    count: i32,
-    generation: u64,
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
 }
 
-impl Default for OpenWithModelRust {
-    fn default() -> Self {
-        Self {
-            rows: Vec::new(),
-            choices: OpenWithChoices::default(),
-            filter: String::new(),
-            path: QString::default(),
-            loading: false,
-            loaded: false,
-            error: QString::default(),
-            suggested_app_id: QString::default(),
-            needs_filter: false,
-            has_other: false,
-            total_count: 0,
-            empty: true,
-            count: 0,
-            generation: 0,
-        }
-    }
-}
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod rows {
+    use super::*;
 
-impl qobject::OpenWithModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
-        }
-    }
-
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
-        }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match role {
-            ROLE_KIND => QVariant::from(&QString::from(match row.kind {
-                RowKind::Header => "header",
-                RowKind::App => "app",
-            })),
-            ROLE_LABEL => QVariant::from(&QString::from(row.label.as_str())),
-            ROLE_APP_ID => QVariant::from(&QString::from(row.app_id.as_str())),
-            ROLE_ICON_NAME => QVariant::from(&QString::from(row.icon_name.as_str())),
-            ROLE_IS_DEFAULT => QVariant::from(&row.is_default),
-            _ => QVariant::default(),
-        }
-    }
-
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        roles.insert(ROLE_KIND, QByteArray::from("kind"));
-        roles.insert(ROLE_LABEL, QByteArray::from("label"));
-        roles.insert(ROLE_APP_ID, QByteArray::from("appId"));
-        roles.insert(ROLE_ICON_NAME, QByteArray::from("iconName"));
-        roles.insert(ROLE_IS_DEFAULT, QByteArray::from("isDefault"));
-        roles
-    }
-
-    fn load(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        if path.trim().is_empty() {
-            self.as_mut().apply_error("No item to open".to_owned());
-            return;
-        }
-
-        let generation = self.generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut().rust_mut().filter.clear();
-        self.as_mut().rust_mut().choices = OpenWithChoices::default();
-        self.as_mut().set_path(QString::from(path.as_str()));
-        self.as_mut().set_loading(true);
-        self.as_mut().set_loaded(false);
-        self.as_mut().set_error(QString::default());
-        self.as_mut().set_suggested_app_id(QString::default());
-        self.as_mut().set_needs_filter(false);
-        self.as_mut().set_has_other(false);
-        self.as_mut().set_total_count(0);
-        self.as_mut().set_empty(false);
-        self.as_mut().replace_rows(Vec::new());
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = open_with::list_open_with_apps(path).await;
-            let _ = thread.queue(move |mut model| {
-                model.as_mut().apply_result(generation, result);
-            });
-        });
-    }
-
-    fn retry(mut self: Pin<&mut Self>) {
-        let path = self.path.clone();
-        if path.is_empty() {
-            return;
-        }
-        self.as_mut().load(&path);
-    }
-
-    fn app_id_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .filter(|row| row.kind == RowKind::App)
-            .map(|row| QString::from(row.app_id.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn label_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|row| QString::from(row.label.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn icon_at(&self, row: i32) -> QString {
-        let Some(row) = self.rows.get(row as usize) else {
-            return QString::default();
-        };
-        if row.kind != RowKind::App || row.icon_name.is_empty() {
-            return QString::default();
-        }
-        let source = if cfg!(target_os = "windows") {
-            crate::icons::source_for(&row.icon_name, false, "")
-        } else {
-            crate::icons::named_source(&row.icon_name)
-        };
-        QString::from(source.as_str())
-    }
-
-    fn set_filter(mut self: Pin<&mut Self>, text: &QString) {
-        let filter = text.to_string();
-        if self.filter == filter {
-            return;
-        }
-        self.as_mut().rust_mut().filter = filter.clone();
-        let prepared = prepare_rows(&self.choices, &filter);
-        self.as_mut().apply_prepared(prepared);
-    }
-
-    fn apply_result(
-        mut self: Pin<&mut Self>,
+    /// The flattened picker model, reachable from QML as `OpenWithModel`.
+    pub struct OpenWithModel {
+        rows: Vec<OpenWithRow>,
+        choices: OpenWithChoices,
+        filter: String,
+        path: String,
+        loading: bool,
+        loaded: bool,
+        error: String,
+        suggested_app_id: String,
+        needs_filter: bool,
+        has_other: bool,
+        total_count: i32,
+        empty: bool,
+        /// The painted row count, headers included, for callers that read the
+        /// model row by row instead of through a view (the context submenu).
+        count: i32,
         generation: u64,
-        result: Result<OpenWithChoices, FileSystemError>,
-    ) {
-        if self.generation != generation {
-            return;
+    }
+
+    impl Default for OpenWithModel {
+        fn default() -> Self {
+            Self {
+                rows: Vec::new(),
+                choices: OpenWithChoices::default(),
+                filter: String::new(),
+                path: String::new(),
+                loading: false,
+                loaded: false,
+                error: String::new(),
+                suggested_app_id: String::new(),
+                needs_filter: false,
+                has_other: false,
+                total_count: 0,
+                empty: true,
+                count: 0,
+                generation: 0,
+            }
+        }
+    }
+
+    impl QAbstractItemModel for OpenWithModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
+            }
+            self.create_index(row, column, 0)
         }
 
-        match result {
-            Ok(choices) => {
-                self.as_mut().set_error(QString::default());
-                let prepared = prepare_rows(&choices, &self.filter);
-                self.as_mut().rust_mut().choices = choices;
-                self.as_mut().apply_prepared(prepared);
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
             }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut().apply_error(message);
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match role {
+                ROLE_KIND => QVariant::from(&QString::from(match row.kind {
+                    RowKind::Header => "header",
+                    RowKind::App => "app",
+                })),
+                ROLE_LABEL => QVariant::from(&QString::from(row.label.as_str())),
+                ROLE_APP_ID => QVariant::from(&QString::from(row.app_id.as_str())),
+                ROLE_ICON_NAME => QVariant::from(&QString::from(row.icon_name.as_str())),
+                ROLE_IS_DEFAULT => QVariant::from(&row.is_default),
+                _ => QVariant::default(),
+            }
+        }
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            let mut roles = QHash_i32_QByteArray::default();
+            roles.insert(ROLE_KIND, QByteArray::from("kind"));
+            roles.insert(ROLE_LABEL, QByteArray::from("label"));
+            roles.insert(ROLE_APP_ID, QByteArray::from("appId"));
+            roles.insert(ROLE_ICON_NAME, QByteArray::from("iconName"));
+            roles.insert(ROLE_IS_DEFAULT, QByteArray::from("isDefault"));
+            roles
+        }
+
+        fn set_data(&mut self, _index: &QModelIndex, _value: &QVariant, _role: i32) -> bool {
+            false
+        }
+    }
+
+    impl OpenWithModel {
+        qproperty!("path", Member = path, Notify = path_changed);
+        qproperty!("loading", Member = loading, Notify = loading_changed);
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("error", Member = error, Notify = error_changed);
+        qproperty!("suggestedAppId", Member = suggested_app_id, Notify = suggested_app_id_changed);
+        qproperty!("needsFilter", Member = needs_filter, Notify = needs_filter_changed);
+        qproperty!("hasOther", Member = has_other, Notify = has_other_changed);
+        qproperty!("totalCount", Member = total_count, Notify = total_count_changed);
+        qproperty!("empty", Member = empty, Notify = empty_changed);
+        qproperty!("count", Member = count, Notify = count_changed);
+
+        #[qsignal]
+        fn path_changed(&mut self);
+        #[qsignal]
+        fn loading_changed(&mut self);
+        #[qsignal]
+        fn loaded_changed(&mut self);
+        #[qsignal]
+        fn error_changed(&mut self);
+        #[qsignal]
+        fn suggested_app_id_changed(&mut self);
+        #[qsignal]
+        fn needs_filter_changed(&mut self);
+        #[qsignal]
+        fn has_other_changed(&mut self);
+        #[qsignal]
+        fn total_count_changed(&mut self);
+        #[qsignal]
+        fn empty_changed(&mut self);
+        #[qsignal]
+        fn count_changed(&mut self);
+
+        notifying_setters! {
+            set_path(String) => path, path_changed;
+            set_loading(bool) => loading, loading_changed;
+            set_loaded(bool) => loaded, loaded_changed;
+            set_error(String) => error, error_changed;
+            set_suggested_app_id(String) => suggested_app_id, suggested_app_id_changed;
+            set_needs_filter(bool) => needs_filter, needs_filter_changed;
+            set_has_other(bool) => has_other, has_other_changed;
+            set_total_count(i32) => total_count, total_count_changed;
+            set_empty(bool) => empty, empty_changed;
+            set_count(i32) => count, count_changed;
+        }
+
+        /// Asks the desktop what can open `path`. Resets the filter and any
+        /// previous answer, and ignores a reply overtaken by a newer `load`.
+        #[qslot]
+        fn load(&mut self, path: String) {
+            if path.trim().is_empty() {
+                self.apply_error("No item to open".to_owned());
                 return;
             }
+
+            let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+            self.filter.clear();
+            self.choices = OpenWithChoices::default();
+            self.set_path(path.clone());
+            self.set_loading(true);
+            self.set_loaded(false);
+            self.set_error(String::new());
+            self.set_suggested_app_id(String::new());
+            self.set_needs_filter(false);
+            self.set_has_other(false);
+            self.set_total_count(0);
+            self.set_empty(false);
+            self.replace_rows(Vec::new());
+
+            let handle = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = open_with::list_open_with_apps(path).await;
+                handle.invoke_mut(move |model| {
+                    model.apply_result(generation, result);
+                });
+            });
         }
-        // Published last: `loadedChanged` handlers read the rows synchronously,
-        // so the answer has to be in the model before the flag flips.
-        self.as_mut().set_loading(false);
-        self.as_mut().set_loaded(true);
-    }
 
-    fn apply_error(mut self: Pin<&mut Self>, message: String) {
-        self.as_mut().rust_mut().choices = OpenWithChoices::default();
-        self.as_mut().set_error(QString::from(message.as_str()));
-        self.as_mut().set_suggested_app_id(QString::default());
-        self.as_mut().set_needs_filter(false);
-        self.as_mut().set_has_other(false);
-        self.as_mut().set_total_count(0);
-        self.as_mut().set_empty(true);
-        self.as_mut().replace_rows(Vec::new());
-        self.as_mut().set_loading(false);
-        self.as_mut().set_loaded(true);
-    }
-
-    fn apply_prepared(mut self: Pin<&mut Self>, prepared: PreparedRows) {
-        self.as_mut()
-            .set_suggested_app_id(QString::from(prepared.suggested_app_id.as_str()));
-        self.as_mut().set_needs_filter(prepared.needs_filter);
-        self.as_mut().set_has_other(prepared.has_other);
-        self.as_mut().set_total_count(prepared.total_count);
-        self.as_mut().set_empty(prepared.rows.is_empty());
-        self.as_mut().replace_rows(prepared.rows);
-    }
-
-    fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<OpenWithRow>) {
-        let count = rows.len().min(i32::MAX as usize) as i32;
-        unsafe {
-            self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows = rows;
-            self.as_mut().end_reset_model();
+        /// Re-runs the query for the current path after a failure.
+        #[qslot]
+        fn retry(&mut self) {
+            let path = self.path.clone();
+            if path.is_empty() {
+                return;
+            }
+            self.load(path);
         }
-        self.as_mut().set_count(count);
+
+        /// The application id of `row`, or an empty string for a section
+        /// header. QML keeps selection as an id so a reset or filter cannot
+        /// silently point at a different application.
+        #[qslot]
+        fn app_id_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .filter(|row| row.kind == RowKind::App)
+                .map(|row| row.app_id.clone())
+                .unwrap_or_default()
+        }
+
+        /// The display name of `row`, for callers that read the model row by
+        /// row instead of through a view (the context submenu).
+        #[qslot]
+        fn label_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|row| row.label.clone())
+                .unwrap_or_default()
+        }
+
+        /// The `image://` URL of `row`'s icon, or empty when the entry names
+        /// none. Windows keys icons on the handler's executable; the other
+        /// shells on a launcher's icon name.
+        #[qslot]
+        fn icon_at(&self, row: i32) -> String {
+            let Some(row) = self.rows.get(row as usize) else {
+                return String::new();
+            };
+            if row.kind != RowKind::App || row.icon_name.is_empty() {
+                return String::new();
+            }
+            if cfg!(target_os = "windows") {
+                crate::icons::source_for(&row.icon_name, false, "")
+            } else {
+                crate::icons::named_source(&row.icon_name)
+            }
+        }
+
+        /// Filters the loaded rows by display name. Headers are rebuilt, so an
+        /// empty section does not leave its title behind.
+        #[qslot]
+        fn set_filter(&mut self, filter: String) {
+            if self.filter == filter {
+                return;
+            }
+            self.filter = filter.clone();
+            let prepared = prepare_rows(&self.choices, &filter);
+            self.apply_prepared(prepared);
+        }
+
+        fn apply_result(
+            &mut self,
+            generation: u64,
+            result: Result<OpenWithChoices, FileSystemError>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+
+            match result {
+                Ok(choices) => {
+                    self.set_error(String::new());
+                    let prepared = prepare_rows(&choices, &self.filter);
+                    self.choices = choices;
+                    self.apply_prepared(prepared);
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.apply_error(message);
+                    return;
+                }
+            }
+            // Published last: `loadedChanged` handlers read the rows synchronously,
+            // so the answer has to be in the model before the flag flips.
+            self.set_loading(false);
+            self.set_loaded(true);
+        }
+
+        fn apply_error(&mut self, message: String) {
+            self.choices = OpenWithChoices::default();
+            self.set_error(message);
+            self.set_suggested_app_id(String::new());
+            self.set_needs_filter(false);
+            self.set_has_other(false);
+            self.set_total_count(0);
+            self.set_empty(true);
+            self.replace_rows(Vec::new());
+            self.set_loading(false);
+            self.set_loaded(true);
+        }
+
+        fn apply_prepared(&mut self, prepared: PreparedRows) {
+            self.set_suggested_app_id(prepared.suggested_app_id);
+            self.set_needs_filter(prepared.needs_filter);
+            self.set_has_other(prepared.has_other);
+            self.set_total_count(prepared.total_count);
+            self.set_empty(prepared.rows.is_empty());
+            self.replace_rows(prepared.rows);
+        }
+
+        fn replace_rows(&mut self, rows: Vec<OpenWithRow>) {
+            let count = rows.len().min(i32::MAX as usize) as i32;
+            self.begin_reset_model();
+            self.rows = rows;
+            self.end_reset_model();
+            self.set_count(count);
+        }
     }
+}
+
+pub use rows::OpenWithModel;
+
+impl QmlElement for OpenWithModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "OpenWithModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 fn prepare_rows(choices: &OpenWithChoices, filter: &str) -> PreparedRows {

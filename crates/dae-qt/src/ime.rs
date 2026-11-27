@@ -21,17 +21,14 @@
 //! the token named a live window on every platform, so a caller that ignores
 //! the result still gets the same wiring.
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
         include!("ime.h");
         #[namespace = "dae_qt"]
         #[rust_name = "install_focus_cancel_guard"]
-        fn dae_qt_install_focus_cancel_guard(token: &QString) -> bool;
+        fn dae_qt_install_focus_cancel_guard_rs(token: &str) -> bool;
     }
 }
 
-pub use qobject::install_focus_cancel_guard;
+pub use ffi::install_focus_cancel_guard;

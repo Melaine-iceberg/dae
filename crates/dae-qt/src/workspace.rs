@@ -11,15 +11,13 @@
 //! `operationFailed`, which is what lets the QML side keep painting during a
 //! large copy instead of blocking on an `invoke`.
 
-use core::pin::Pin;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QColor, QString, QStringList, QUrl};
+use qtbridge::{QmlElement, QmlObject, QThreadHandle, qobject};
 use dae_core::error::FileSystemError;
 use dae_core::fs::actions;
 use dae_core::fs::archive::{self, ArchiveFormat};
@@ -54,30 +52,30 @@ use crate::errors::{default_manager_detail, friendly_error};
 use crate::platform;
 use crate::runtime;
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-
-        include!("cxx-qt-lib/qcolor.h");
-        type QColor = cxx_qt_lib::QColor;
-
         include!("drag.h");
         #[namespace = "dae_qt"]
         #[rust_name = "start_file_drag"]
-        fn dae_qt_start_file_drag(paths: &QStringList, actions: i32,
-                                  signal: &QColor, count: i32,
-                                  verdict: &QString, ink: &QColor,
-                                  canvas: &QColor) -> bool;
+        fn dae_qt_start_file_drag_rs(
+            paths: &[String],
+            actions: i32,
+            signal: &str,
+            count: i32,
+            verdict: &str,
+            ink: &str,
+            canvas: &str,
+        ) -> bool;
+
+        #[namespace = "dae_qt"]
+        #[rust_name = "local_drop_paths"]
+        fn dae_qt_local_drop_paths(urls: &[String]) -> Vec<String>;
 
         include!("clipboard.h");
         #[namespace = "dae_qt"]
         #[rust_name = "set_clipboard_text"]
-        fn dae_qt_set_clipboard_text(text: &QString);
+        fn dae_qt_set_clipboard_text_rs(text: &str);
 
         include!("platform_watch.h");
         #[namespace = "dae_qt"]
@@ -90,850 +88,6 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_theme_changed(dark: bool);
     }
-
-    unsafe extern "RustQt" {
-        /// Process-wide file commands, reachable from QML as `Workspace`.
-        ///
-        /// `status` is a finished sentence for the toast; `lastError` is the
-        /// same for a failure. `busy` and the progress properties are the
-        /// lowest common denominator for long operations: the shell has one
-        /// toast and one progress row, not one per transfer.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        /// `rar`/`iso` when an external tool (7z, unrar, bsdtar) is installed;
-        /// the extract row is gated on it. As JSON, e.g. `["rar","iso"]`.
-        #[qproperty(QString, external_archive_formats, cxx_name = "externalArchiveFormats")]
-        /// What the drive menu may offer on this platform, as JSON
-        /// (`{eject, unmount, mount, format, cleanup, encryption,
-        /// previousVersions}`). The menu hides the rows the platform cannot
-        /// honour instead of showing ones that fail.
-        #[qproperty(QString, drive_capabilities, cxx_name = "driveCapabilities")]
-        /// The external actions that apply right now: platform, program on
-        /// PATH, and — when the shell asks with a selection — the action's
-        /// file/directory/multiple rule. Entries are `{id, name}`.
-        #[qproperty(QString, custom_actions_json, cxx_name = "customActionsJson")]
-        /// The status center's rows as JSON, newest first.
-        #[qproperty(QString, operations_json, cxx_name = "operationsJson")]
-        /// Failures the panel has not shown since they happened. The title bar
-        /// badge reads it; opening the panel clears it.
-        #[qproperty(i32, failure_count, cxx_name = "failureCount")]
-        #[qproperty(QString, status)]
-        #[qproperty(QString, last_error, cxx_name = "lastError")]
-        #[qproperty(bool, busy)]
-        #[qproperty(bool, can_undo, cxx_name = "canUndo")]
-        #[qproperty(bool, can_redo, cxx_name = "canRedo")]
-        #[qproperty(QString, progress_label, cxx_name = "progressLabel")]
-        #[qproperty(i32, progress_done, cxx_name = "progressDone")]
-        #[qproperty(i32, progress_total, cxx_name = "progressTotal")]
-        /// What `progressDone` counts, as the core's code for the operation:
-        /// `delete` and `properties` raise it by entries, `compress` and
-        /// `extract` by bytes, and a move by either — bytes when it copies
-        /// across volumes, entries when it only re-links. The strip prints a
-        /// count where the unit is certain and a percentage everywhere else,
-        /// so it has to know which it is looking at. Empty until an operation
-        /// reports.
-        #[qproperty(QString, progress_kind, cxx_name = "progressKind")]
-        /// The conflict the dialog is showing, one at a time — the Tauri shell's
-        /// dialog walked its list the same way, with one "apply to all" escape
-        /// hatch, so QML never needs the whole list at once. `conflictIndex` is
-        /// 1-based and 0 when no conflict is pending, which is also what keeps
-        /// the dialog hidden.
-        #[qproperty(i32, conflict_index, cxx_name = "conflictIndex")]
-        #[qproperty(i32, conflict_total, cxx_name = "conflictTotal")]
-        #[qproperty(QString, conflict_name, cxx_name = "conflictName")]
-        /// True when the transfer behind the conflict is a move, so the dialog
-        /// can say "move" where it would otherwise say "copy".
-        #[qproperty(bool, conflict_cut, cxx_name = "conflictCut")]
-        /// `folder`, `file`, `link` or `other` — the glyph set's names, so the
-        /// dialog paints the same icon the listing does.
-        #[qproperty(QString, conflict_source_category, cxx_name = "conflictSourceCategory")]
-        /// The two caption lines of a side card (`kind · size` and `修改于 …`),
-        /// formatted here because the model side already owns that vocabulary.
-        #[qproperty(QString, conflict_source_detail, cxx_name = "conflictSourceDetail")]
-        #[qproperty(QString, conflict_target_category, cxx_name = "conflictTargetCategory")]
-        #[qproperty(QString, conflict_target_detail, cxx_name = "conflictTargetDetail")]
-        /// The job the dialog is asking about, `0` when no dialog is up.
-        /// Several jobs can be asking at once — the prompts queue, the front
-        /// one is on screen — so answers and dismissals carry this id instead
-        /// of assuming the one pending job.
-        #[qproperty(i64, conflict_job_id, cxx_name = "conflictJobId")]
-        /// How many further jobs are waiting for their own conflict answer
-        /// behind the one on screen. The dialog prints it so a second
-        /// prompt arriving is not a surprise.
-        #[qproperty(i32, conflict_waiting, cxx_name = "conflictWaiting")]
-        /// Transfers waiting for a free slot, one finished display line each
-        /// (`Copy 3 items → dae`). Accepted jobs — checking, answering
-        /// conflicts or running — are not in this list; they live in
-        /// `transfersJson`.
-        #[qproperty(QStringList, queued_transfers, cxx_name = "queuedTransfers")]
-        /// Where each queued job is going, in the same order as
-        /// `queuedTransfers`. The panel prints it under the name: the row's
-        /// title says what is moving, this says where to.
-        #[qproperty(QStringList, queued_transfer_paths, cxx_name = "queuedTransferPaths")]
-        /// The accepted transfers as a JSON array, one object per row:
-        /// `{jobId, operationId, name, target, running, paused, done, total,
-        /// percent, speed, current}`. Several run at once, so the panel reads
-        /// this list rather than a single progress row; `jobId` addresses a
-        /// row's pause/cancel, `operationId` is empty until the job runs.
-        /// A JSON string because cxx-qt cannot export a `QVariantList`
-        /// property (the same seam `operationsJson` uses).
-        #[qproperty(QString, transfers_json, cxx_name = "transfersJson")]
-        /// The process-wide transfer limit in KiB per second; `0` is
-        /// unlimited. Persisted under `[transfer] speedLimitKib`.
-        #[qproperty(i32, transfer_speed_limit, cxx_name = "transferSpeedLimit")]
-        /// The running transfers' combined throughput, already formatted
-        /// (`"12.4 MB/s"`). Empty when nothing is moving.
-        #[qproperty(QString, transfer_speed, cxx_name = "transferSpeed")]
-        #[qproperty(QString, clipboard_mode, cxx_name = "clipboardMode")]
-        #[qproperty(QStringList, clipboard_paths, cxx_name = "clipboardPaths")]
-        #[qproperty(QString, accent)]
-        /// The OS light/dark preference, kept current by the native watcher.
-        /// Every window binds its `dark` property to this instead of reading
-        /// the preference once at startup.
-        #[qproperty(bool, system_dark, cxx_name = "systemDark")]
-        #[qproperty(QString, home_directory, cxx_name = "homeDirectory")]
-        #[qproperty(i32, terminal_font_size, cxx_name = "terminalFontSize")]
-        #[qproperty(f64, terminal_line_height, cxx_name = "terminalLineHeight")]
-        #[qproperty(QString, terminal_font_family, cxx_name = "terminalFontFamily")]
-        /// The editable key bindings as a JSON object (`{"app.openSettings":
-        /// "Mod+,", …}`). QML parses it once per change and turns each value
-        /// into a `Shortcut.sequence`; an empty value means "unbound".
-        #[qproperty(QString, shortcuts_json, cxx_name = "shortcutsJson")]
-        /// The directory the log page opens. Shared with the Tauri shell's
-        /// `appLogDir` convention so a user has one place to look.
-        #[qproperty(QString, log_directory, cxx_name = "logDirectory")]
-        /// Whether the platform's filename index answered on this machine.
-        /// "所有位置" is a full walk without it, which the search bar says
-        /// out loud rather than letting the wait look like a hang.
-        #[qproperty(bool, search_index_available, cxx_name = "searchIndexAvailable")]
-        /// True where the in-app picker is the only way to choose an
-        /// application (macOS and Linux). Windows keeps the native
-        /// `SHOpenWithDialog`, which the `openWith` command invokes.
-        #[qproperty(bool, open_with_picker_supported, cxx_name = "openWithPickerSupported")]
-        /// Live default-file-manager state for the settings panel. The panel
-        /// reads fresh OS state on open and after every set/unset; `detail`
-        /// names the manual step a platform still requires.
-        #[qproperty(bool, default_manager_supported, cxx_name = "defaultManagerSupported")]
-        #[qproperty(bool, default_manager_is_default, cxx_name = "defaultManagerIsDefault")]
-        #[qproperty(
-            bool,
-            default_manager_is_registered,
-            cxx_name = "defaultManagerIsRegistered"
-        )]
-        #[qproperty(QString, default_manager_detail, cxx_name = "defaultManagerDetail")]
-        #[qproperty(QString, default_manager_error, cxx_name = "defaultManagerError")]
-        #[qproperty(bool, default_manager_busy, cxx_name = "defaultManagerBusy")]
-        type Workspace = super::WorkspaceRust;
-
-        #[qinvokable]
-        #[cxx_name = "createFolder"]
-        fn create_folder(self: Pin<&mut Workspace>, directory: &QString, name: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "createFile"]
-        fn create_file(self: Pin<&mut Workspace>, directory: &QString, name: &QString);
-
-        /// Instantiates the file or folder at `template` as `directory/name`.
-        /// Only direct children of the templates folder are accepted; the core
-        /// re-checks that rather than trusting the menu row.
-        #[qinvokable]
-        #[cxx_name = "createFromTemplate"]
-        fn create_from_template(
-            self: Pin<&mut Workspace>,
-            directory: &QString,
-            template_path: &QString,
-            name: &QString,
-        );
-
-        /// The templates menu's rows as JSON (`[{path,name,isDir}]`).
-        #[qinvokable]
-        #[cxx_name = "templatesJson"]
-        fn templates_json(&self) -> QString;
-
-        /// Opens the templates folder in the OS, creating it if needed.
-        #[qinvokable]
-        #[cxx_name = "openTemplatesDirectory"]
-        fn open_templates_directory(self: Pin<&mut Workspace>);
-
-        /// Persists the folder the templates menu reads. `lastError` carries a
-        /// failure; a successful call clears it.
-        #[qinvokable]
-        #[cxx_name = "setTemplatesDirectory"]
-        fn set_templates_directory(self: Pin<&mut Workspace>, path: &QString);
-
-        /// Asks which processes hold any of `paths` (directories are walked).
-        /// The answer arrives on `fileHoldersFound`, tagged with the request so
-        /// a dialog can ignore a stale result.
-        #[qinvokable]
-        #[cxx_name = "fileHolders"]
-        fn file_holders(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        /// Ends one process a holder row named. The outcome arrives on
-        /// `processEnded`; dae refuses to end itself and pid 0.
-        #[qinvokable]
-        #[cxx_name = "endProcess"]
-        fn end_process(self: Pin<&mut Workspace>, pid: i32);
-
-        #[qinvokable]
-        #[cxx_name = "renameEntry"]
-        fn rename_entry(self: Pin<&mut Workspace>, path: &QString, new_name: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "trashEntries"]
-        fn trash_entries(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        #[qinvokable]
-        #[cxx_name = "deleteEntries"]
-        fn delete_entries(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        #[qinvokable]
-        #[cxx_name = "duplicateEntries"]
-        fn duplicate_entries(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        /// Compresses `sources` into a new archive inside `destination_dir`.
-        /// `format` is `"zip"`, `"tar"`, `"tar.gz"` or `"7z"`; an empty
-        /// `password` means no encryption.
-        #[qinvokable]
-        #[cxx_name = "compressEntries"]
-        fn compress_entries(
-            self: Pin<&mut Workspace>,
-            sources: &QStringList,
-            destination_dir: &QString,
-            format: &QString,
-            password: &QString,
-        );
-
-        /// Extracts a local archive next to itself when `destination_dir` is
-        /// empty. A protected archive answers with `archivePasswordRequired`.
-        #[qinvokable]
-        #[cxx_name = "extractArchive"]
-        fn extract_archive(
-            self: Pin<&mut Workspace>,
-            archive_path: &QString,
-            destination_dir: &QString,
-            password: &QString,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "ejectDrive"]
-        fn eject_drive(self: Pin<&mut Workspace>, path: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "unmountDrive"]
-        fn unmount_drive(self: Pin<&mut Workspace>, path: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "mountDrive"]
-        fn mount_drive(self: Pin<&mut Workspace>, path: &QString);
-
-        /// Opens the platform's format dialog for `path`. Never formats here.
-        #[qinvokable]
-        #[cxx_name = "formatDrive"]
-        fn format_drive(self: Pin<&mut Workspace>, path: &QString);
-
-        /// Opens the platform's storage cleanup settings.
-        #[qinvokable]
-        #[cxx_name = "openStorageCleanup"]
-        fn open_storage_cleanup(self: Pin<&mut Workspace>);
-
-        /// A read-only encryption sentence, or the tool's failure. Empty
-        /// `path` asks about the system volume.
-        #[qinvokable]
-        #[cxx_name = "driveEncryptionStatus"]
-        fn drive_encryption_status(self: Pin<&mut Workspace>, path: &QString) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "openPreviousVersions"]
-        fn open_previous_versions(self: Pin<&mut Workspace>, path: &QString);
-
-        /// The actions that belong on the menu for this selection, as JSON.
-        #[qinvokable]
-        #[cxx_name = "customActionsFor"]
-        fn custom_actions_for(
-            self: Pin<&mut Workspace>,
-            paths: &QStringList,
-            directory: &QString,
-        ) -> QString;
-
-        /// Every stored action with its command and arguments, for the
-        /// settings page. Unlike `customActionsFor` this list is not filtered:
-        /// an action whose program is missing still has to be editable.
-        #[qinvokable]
-        #[cxx_name = "customActionDefinitions"]
-        fn custom_action_definitions(&self) -> QString;
-
-        /// Runs one `[[actions]]` entry without a shell. The failure path is
-        /// the same `operationFailed` every other command uses, so the toast
-        /// and the status center need no second channel.
-        #[qinvokable]
-        #[cxx_name = "runCustomAction"]
-        fn run_custom_action(
-            self: Pin<&mut Workspace>,
-            id: &QString,
-            paths: &QStringList,
-            directory: &QString,
-        );
-
-        /// Whether this platform has a system share sheet. The context menu
-        /// hides the entry when false instead of opening a sheet that cannot
-        /// appear.
-        #[qinvokable]
-        #[cxx_name = "shareSupported"]
-        fn share_supported(self: Pin<&mut Workspace>) -> bool;
-
-        /// Opens the system share sheet for `paths` on the window `handle`.
-        /// False means the sheet could not be shown; the caller reports it.
-        #[qinvokable]
-        #[cxx_name = "sharePaths"]
-        fn share_paths(
-            self: Pin<&mut Workspace>,
-            paths: &QStringList,
-            handle: f64,
-        ) -> bool;
-
-        /// Creates or updates an action. `id` empty creates one; `args` is one
-        /// argument per line, which keeps a path with spaces a single argument.
-        #[qinvokable]
-        #[cxx_name = "saveCustomAction"]
-        fn save_custom_action(
-            self: Pin<&mut Workspace>,
-            id: &QString,
-            name: &QString,
-            command: &QString,
-            args: &QString,
-            selection: &QString,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "removeCustomAction"]
-        fn remove_custom_action(self: Pin<&mut Workspace>, id: &QString);
-
-        /// Drops every user action and restores the built-in "open in IDE"
-        /// entry (offered only while `code` is on PATH).
-        #[qinvokable]
-        #[cxx_name = "resetCustomActions"]
-        fn reset_custom_actions(self: Pin<&mut Workspace>);
-
-        /// Marks every failure as seen. Opening the panel calls this; the rows
-        /// themselves stay until `clearOperationHistory`.
-        #[qinvokable]
-        #[cxx_name = "markOperationsRead"]
-        fn mark_operations_read(self: Pin<&mut Workspace>);
-
-        /// Drops every recorded operation, including the persisted half.
-        #[qinvokable]
-        #[cxx_name = "clearOperationHistory"]
-        fn clear_operation_history(self: Pin<&mut Workspace>);
-
-        /// Re-runs a failed transfer or extraction from the arguments it was
-        /// recorded with. Other kinds cannot be retried: a delete that removed
-        /// a file has nothing left to retry against.
-        #[qinvokable]
-        #[cxx_name = "retryOperation"]
-        fn retry_operation(self: Pin<&mut Workspace>, id: &QString);
-
-        /// Compares two local files by SHA-256, one read each, and answers
-        /// with `compareFinished`. The dialog's checksum tab compares against a
-        /// typed value instead; this covers "is this copy the same file".
-        #[qinvokable]
-        #[cxx_name = "compareHashes"]
-        fn compare_hashes(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        /// Sums the folders in `paths` and answers with `folderSizesMeasured`.
-        /// Enumeration never walks a directory, so this is the only path that
-        /// turns a folder's em dash into a number. A second call cancels the
-        /// first. `cancelMeasureFolders` stops the running pass.
-        #[qinvokable]
-        #[cxx_name = "measureFolders"]
-        fn measure_folders(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        #[qinvokable]
-        #[cxx_name = "cancelMeasureFolders"]
-        fn cancel_measure_folders(self: Pin<&mut Workspace>);
-
-        /// Copies or moves `paths` into `destination`. `cut` selects move.
-        #[qinvokable]
-        #[cxx_name = "transferEntries"]
-        fn transfer_entries(
-            self: Pin<&mut Workspace>,
-            paths: &QStringList,
-            destination: &QString,
-            cut: bool,
-        );
-
-        /// Answers the conflict the dialog is showing for `jobId` (the
-        /// `conflictJobId` on screen). `action` is `"replace"`, `"skip"` or
-        /// `"keepBoth"`; `applyToAll` answers every conflict left in that
-        /// batch the same way. Other jobs' prompts are untouched.
-        #[qinvokable]
-        #[cxx_name = "resolveConflict"]
-        fn resolve_conflict(
-            self: Pin<&mut Workspace>,
-            job_id: i64,
-            action: &QString,
-            apply_to_all: bool,
-        );
-
-        /// Dismisses the question for `jobId` — the dialog's scrim, its Esc,
-        /// or the row's ✕ — and transfers nothing of that job: not the
-        /// item, not the rest of the batch. A prompt waiting behind moves
-        /// onto the screen.
-        #[qinvokable]
-        #[cxx_name = "cancelConflict"]
-        fn cancel_conflict(self: Pin<&mut Workspace>, job_id: i64);
-
-        /// Drops the transfer waiting at `index` of `queuedTransfers`.
-        #[qinvokable]
-        #[cxx_name = "cancelQueuedTransfer"]
-        fn cancel_queued_transfer(self: Pin<&mut Workspace>, index: i32);
-
-        /// Holds the transfer named by `jobId` (a `transfersJson` row) at its
-        /// next checkpoint. The bytes already written stay; nothing is undone.
-        #[qinvokable]
-        #[cxx_name = "pauseTransfer"]
-        fn pause_transfer(self: Pin<&mut Workspace>, job_id: i64);
-
-        /// Lets a paused transfer continue from where it stopped.
-        #[qinvokable]
-        #[cxx_name = "resumeTransfer"]
-        fn resume_transfer(self: Pin<&mut Workspace>, job_id: i64);
-
-        /// Stops the transfer named by `jobId`. The file it was writing is
-        /// removed and the entries already copied stay; the status center then
-        /// offers to continue, which skips exactly those entries.
-        #[qinvokable]
-        #[cxx_name = "cancelTransfer"]
-        fn cancel_transfer(self: Pin<&mut Workspace>, job_id: i64);
-
-        /// Sets the process-wide limit in KiB per second (`0` clears it) and
-        /// persists it. Running transfers adopt it on their next chunk.
-        ///
-        /// A method rather than a property write: writing `transferSpeedLimit`
-        /// from QML would only change the number the menu shows, while this
-        /// reaches the core. The property exists for the menu to read.
-        #[qinvokable]
-        #[cxx_name = "applyTransferSpeedLimit"]
-        fn apply_transfer_speed_limit(self: Pin<&mut Workspace>, kib_per_second: i32);
-
-        /// Re-runs a failed copy or move as a separate elevated process, for
-        /// the paths the user's own token cannot write. The window itself stays
-        /// unprivileged.
-        #[qinvokable]
-        #[cxx_name = "elevateOperation"]
-        fn elevate_operation(self: Pin<&mut Workspace>, id: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "cancelQueuedTransfers"]
-        fn cancel_queued_transfers(self: Pin<&mut Workspace>);
-
-        /// Starts a native drag carrying `paths` out of the window. `mode` is
-        /// `"copy"`, `"move"`, `"link"` or `"any"`; `"any"` lets the drop
-        /// target choose. `signal` draws the dashed frame around the preview;
-        /// `count` and `verdict` are the badge and the predicted action line
-        /// the ghost carries (§10.3), and `ink`/`canvas` are the two colours
-        /// those two marks are painted with. Blocks until the user drops or
-        /// cancels.
-        #[qinvokable]
-        #[cxx_name = "startDragOut"]
-        fn start_drag_out(self: Pin<&mut Workspace>, paths: &QStringList,
-                          mode: &QString, signal: &QColor, count: i32,
-                          verdict: &QString, ink: &QColor, canvas: &QColor);
-
-        /// Creates a shortcut in `destination` for every path in `paths`.
-        /// This is the Alt-drop side of an Explorer drag.
-        #[qinvokable]
-        #[cxx_name = "createShortcuts"]
-        fn create_shortcuts(self: Pin<&mut Workspace>, paths: &QStringList, destination: &QString);
-
-        /// Turns the file URLs an OS drop delivered into local paths. Anything
-        /// that is not a `file:` URL (a browser URL, a remote scheme) is
-        /// dropped: only local paths can enter the transfer pipeline.
-        #[qinvokable]
-        #[cxx_name = "localDropPaths"]
-        fn local_drop_paths(self: Pin<&mut Workspace>, urls: &QStringList) -> QStringList;
-
-        /// Remembers `paths` as the in-app clipboard and, for the local
-        /// subset, places them on the system clipboard so Explorer can paste
-        /// them. `mode` is `"copy"` or `"cut"`; an empty list clears the
-        /// in-app half.
-        #[qinvokable]
-        #[cxx_name = "setClipboard"]
-        fn set_clipboard(self: Pin<&mut Workspace>, mode: &QString, paths: &QStringList);
-
-        #[qinvokable]
-        #[cxx_name = "clearClipboard"]
-        fn clear_clipboard(self: Pin<&mut Workspace>);
-
-        /// Replaces the system clipboard's text. The context menu's "复制路径"
-        /// and the checksum rows' copy buttons use it; the file-list clipboard
-        /// above is a separate format. Returns false when the platform has no
-        /// clipboard to write to, so the caller can say so.
-        #[qinvokable]
-        #[cxx_name = "copyText"]
-        fn copy_text(self: Pin<&mut Workspace>, text: &QString) -> bool;
-
-        /// Renames a whole batch in one operation. The dialog computes the new
-        /// names and sends them paired with their paths, so the swap/staging
-        /// rules stay in `dae_core::fs::service` where the undo record is.
-        #[qinvokable]
-        #[cxx_name = "renameEntriesBatch"]
-        fn rename_entries_batch(
-            self: Pin<&mut Workspace>,
-            paths: &QStringList,
-            names: &QStringList,
-        );
-
-        /// Runs one of the installed apps' context-menu commands against
-        /// `paths`. The rows themselves come from `ShellCommandModel`.
-        #[qinvokable]
-        #[cxx_name = "invokeShellCommand"]
-        fn invoke_shell_command(self: Pin<&mut Workspace>, id: &QString, paths: &QStringList);
-
-        /// Primes the platform's discovery so the first right-click does not
-        /// pay for it. Called once per process by the first window.
-        #[qinvokable]
-        #[cxx_name = "warmShellCommands"]
-        fn warm_shell_commands(self: Pin<&mut Workspace>);
-
-        /// Opens the platform's own properties sheet for `path`, if it has
-        /// one. Returns false when it does not (every non-Windows platform)
-        /// or when the path is remote, so QML can fall back to the in-app
-        /// dialog.
-        #[qinvokable]
-        #[cxx_name = "showNativeProperties"]
-        fn show_native_properties(self: Pin<&mut Self>, path: &QString) -> bool;
-
-        #[qinvokable]
-        #[cxx_name = "pasteInto"]
-        fn paste_into(self: Pin<&mut Workspace>, destination: &QString);
-
-        /// Creates shortcuts in `destination` for the clipboard's files,
-        /// whatever effect the source asked for.
-        #[qinvokable]
-        #[cxx_name = "pasteShortcutInto"]
-        fn paste_shortcut_into(self: Pin<&mut Workspace>, destination: &QString);
-
-        /// Re-reads the system clipboard so the paste affordances follow
-        /// files another app copied. Called when a window becomes active.
-        #[qinvokable]
-        #[cxx_name = "refreshClipboard"]
-        fn refresh_clipboard(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        fn undo(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        fn redo(self: Pin<&mut Workspace>);
-
-        /// Starts the native accent, theme and volume watchers. Called once by
-        /// the first window; later calls are ignored.
-        #[qinvokable]
-        #[cxx_name = "startSystemWatch"]
-        fn start_system_watch(self: Pin<&mut Workspace>);
-
-        /// Restores the trash entries with `ids` to their original locations.
-        #[qinvokable]
-        #[cxx_name = "restoreTrashEntries"]
-        fn restore_trash_entries(self: Pin<&mut Workspace>, ids: &QStringList);
-
-        /// Permanently deletes the trash entries with `ids`.
-        #[qinvokable]
-        #[cxx_name = "deleteTrashEntries"]
-        fn delete_trash_entries(self: Pin<&mut Workspace>, ids: &QStringList);
-
-        /// Permanently deletes everything in the trash.
-        #[qinvokable]
-        #[cxx_name = "emptyTrash"]
-        fn empty_trash(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        #[cxx_name = "openPath"]
-        fn open_path(self: Pin<&mut Workspace>, path: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "openWith"]
-        fn open_with(self: Pin<&mut Workspace>, path: &QString);
-
-        /// Opens `path` with one application chosen in the in-app picker and,
-        /// when `set_default` is true, registers it as the new handler.
-        #[qinvokable]
-        #[cxx_name = "openWithApp"]
-        fn open_with_app(
-            self: Pin<&mut Workspace>,
-            path: &QString,
-            app_id: &QString,
-            set_default: bool,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "openTerminal"]
-        fn open_terminal(self: Pin<&mut Workspace>, path: &QString);
-
-        #[qinvokable]
-        fn reveal(self: Pin<&mut Workspace>, path: &QString);
-
-        /// The byte total of the selected files, formatted. Folders are left
-        /// out: their total is a recursive walk, and the details pane says
-        /// "files" rather than lying about a directory. Remote paths are
-        /// skipped for the same reason `reveal` is local-only.
-        #[qinvokable]
-        #[cxx_name = "selectionSizeText"]
-        fn selection_size_text(&self, paths: &QStringList) -> QString;
-
-        /// The visible subdirectories of `directory`, sorted by name, for the
-        /// breadcrumb's sibling menu and the address field's completion.
-        /// Local only: one round trip per remote segment would turn a menu
-        /// into a network stall, so a remote path answers empty.
-        #[qinvokable]
-        #[cxx_name = "subdirectories"]
-        fn subdirectories(&self, directory: &QString) -> QStringList;
-
-        /// The recently visited directories, newest first, deduplicated.
-        /// The address field's completion turns to these when the typed
-        /// text has no separator yet: a bare name is far more likely to be
-        /// the start of a place the user has been than of a drive root.
-        #[qinvokable]
-        #[cxx_name = "recentDirectories"]
-        fn recent_directories(&self) -> QStringList;
-
-        /// Expands the typed-address shorthands: a leading `~` to the user's
-        /// home, `%VAR%` (Windows style) and `$VAR`/`${VAR}` (POSIX style)
-        /// to environment values. Anything that does not resolve stays as
-        /// typed — the navigation then reports the path in its own words.
-        #[qinvokable]
-        #[cxx_name = "expandTypedPath"]
-        fn expand_typed_path(&self, text: &QString) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "recordRecent"]
-        fn record_recent(
-            self: Pin<&mut Workspace>,
-            path: &QString,
-            is_directory: bool,
-            opened: bool,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "addFavorite"]
-        fn add_favorite(self: Pin<&mut Workspace>, path: &QString);
-
-        /// Pins every local folder in `paths` that is not already pinned. The
-        /// favorites drop target sends whatever the drag carried, which may
-        /// include files; those are ignored rather than saved as broken rows.
-        #[qinvokable]
-        #[cxx_name = "addFavoritePaths"]
-        fn add_favorite_paths(self: Pin<&mut Workspace>, paths: &QStringList);
-
-        #[qinvokable]
-        #[cxx_name = "removeFavorite"]
-        fn remove_favorite(self: Pin<&mut Workspace>, path: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "isFavorite"]
-        fn is_favorite(&self, path: &QString) -> bool;
-
-        #[qinvokable]
-        #[cxx_name = "toggleFavorite"]
-        fn toggle_favorite(self: Pin<&mut Workspace>, path: &QString);
-
-        /// Removes a system place (`home`, `desktop`, …) from the sidebar.
-        #[qinvokable]
-        #[cxx_name = "hidePlace"]
-        fn hide_place(self: Pin<&mut Workspace>, kind: &QString);
-
-        /// Brings every hidden system place back.
-        #[qinvokable]
-        #[cxx_name = "showAllPlaces"]
-        fn show_all_places(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        #[cxx_name = "saveTerminalSettings"]
-        fn save_terminal_settings(
-            self: Pin<&mut Workspace>,
-            font_size: i32,
-            line_height: f64,
-            family: &QString,
-        );
-
-        /// Persists one binding for an id from `default_shortcuts()`. An empty
-        /// string unbinds the action, which is how a user disables a key that
-        /// collides with a shell or IME shortcut.
-        #[qinvokable]
-        #[cxx_name = "setShortcut"]
-        fn set_shortcut(self: Pin<&mut Workspace>, id: &QString, binding: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "resetShortcut"]
-        fn reset_shortcut(self: Pin<&mut Workspace>, id: &QString);
-
-        /// Restores every binding without touching the terminal or file-manager
-        /// preferences that live in the same document.
-        #[qinvokable]
-        #[cxx_name = "resetShortcuts"]
-        fn reset_shortcuts(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        #[cxx_name = "openLogDirectory"]
-        fn open_log_directory(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        #[cxx_name = "refreshDefaultManager"]
-        fn refresh_default_manager(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        #[cxx_name = "setDefaultFileManager"]
-        fn set_default_file_manager(self: Pin<&mut Workspace>);
-
-        #[qinvokable]
-        #[cxx_name = "unsetDefaultFileManager"]
-        fn unset_default_file_manager(self: Pin<&mut Workspace>);
-
-        /// The operation succeeded; `focus` is the path to select, empty when
-        /// the operation created nothing addressable.
-        #[qsignal]
-        #[cxx_name = "operationFinished"]
-        fn operation_finished(self: Pin<&mut Workspace>, kind: &QString, focus: &QString);
-
-        /// The operation failed; `message` is already user-facing.
-        #[qsignal]
-        #[cxx_name = "operationFailed"]
-        fn operation_failed(self: Pin<&mut Workspace>, kind: &QString, message: &QString);
-
-        /// Two files were compared; `equal` is the SHA-256 verdict.
-        #[qsignal]
-        #[cxx_name = "compareFinished"]
-        fn compare_finished(self: Pin<&mut Workspace>, equal: bool);
-
-        /// Measured folder totals as a JSON array of `{"path": …, "size": …}`.
-        /// One event per pass, not per folder: the model applies them in a
-        /// batch and repaints each cell once.
-        #[qsignal]
-        #[cxx_name = "folderSizesMeasured"]
-        fn folder_sizes_measured(self: Pin<&mut Workspace>, sizes: &QString);
-
-        /// The Locksmith query for `request` finished. `report` is JSON
-        /// (`{holders,scanned,truncated}`); `error` is a user-facing sentence
-        /// when the query could not run, empty otherwise.
-        #[qsignal]
-        #[cxx_name = "fileHoldersFound"]
-        fn file_holders_found(
-            self: Pin<&mut Workspace>,
-            request: &QString,
-            report: &QString,
-            error: &QString,
-        );
-
-        /// `endProcess` finished. `ok` is the platform verdict; on failure
-        /// `message` is the OS error.
-        #[qsignal]
-        #[cxx_name = "processEnded"]
-        fn process_ended(self: Pin<&mut Workspace>, pid: i32, ok: bool, message: &QString);
-
-        /// An extraction needs a password. `target` is the archive path and
-        /// `message` is a ready-to-display explanation (also a wrong-password
-        /// retry). The caller answers by calling `extractArchive` again.
-        #[qsignal]
-        #[cxx_name = "archivePasswordRequired"]
-        fn archive_password_required(
-            self: Pin<&mut Workspace>,
-            target: &QString,
-            message: &QString,
-        );
-
-        #[qsignal]
-        #[cxx_name = "favoritesChanged"]
-        fn favorites_changed(self: Pin<&mut Workspace>);
-
-        /// A system place was hidden or restored; the rows are re-resolved by
-        /// `SidebarModel.refresh()` and the overview's list.
-        #[qsignal]
-        #[cxx_name = "placesChanged"]
-        fn places_changed(self: Pin<&mut Workspace>);
-
-        /// A drive or mount arrived or left. The sidebar answers by calling
-        /// `SidebarModel.refresh()`, which already re-reads the disk list off
-        /// the Qt thread.
-        #[qsignal]
-        #[cxx_name = "volumesChanged"]
-        fn volumes_changed(self: Pin<&mut Workspace>);
-
-        /// Verifies a server connection with the credentials typed into the
-        /// dialog, without saving them. `port` is text so an empty field means
-        /// the protocol default; the outcome arrives on `connectionTestFinished`.
-        #[qinvokable]
-        #[cxx_name = "testConnection"]
-        fn test_connection(
-            self: Pin<&mut Workspace>,
-            protocol: &QString,
-            host: &QString,
-            port: &QString,
-            username: &QString,
-            password: &QString,
-        );
-
-        /// Persists a server connection and its password policy. The outcome
-        /// arrives on `connectionSaveFinished`, carrying the connection id.
-        #[qinvokable]
-        #[cxx_name = "saveConnection"]
-        fn save_connection(
-            self: Pin<&mut Workspace>,
-            protocol: &QString,
-            host: &QString,
-            port: &QString,
-            username: &QString,
-            password: &QString,
-            remember_password: bool,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "deleteConnection"]
-        fn delete_connection(self: Pin<&mut Workspace>, id: &QString);
-
-        /// Runs the provider's loopback OAuth flow. The browser round trip can
-        /// take minutes, so the result arrives on `cloudAuthorizeFinished`.
-        #[qinvokable]
-        #[cxx_name = "authorizeCloudAccount"]
-        fn authorize_cloud_account(
-            self: Pin<&mut Workspace>,
-            provider: &QString,
-            client_id: &QString,
-            client_secret: &QString,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "deleteCloudAccount"]
-        fn delete_cloud_account(self: Pin<&mut Workspace>, id: &QString);
-
-        /// A saved connection was tested; `message` is a finished sentence.
-        #[qsignal]
-        #[cxx_name = "connectionTestFinished"]
-        fn connection_test_finished(self: Pin<&mut Workspace>, ok: bool, message: &QString);
-
-        /// A connection was saved. `id` is the explorer path on success.
-        #[qsignal]
-        #[cxx_name = "connectionSaveFinished"]
-        fn connection_save_finished(
-            self: Pin<&mut Workspace>,
-            ok: bool,
-            id: &QString,
-            message: &QString,
-        );
-
-        /// The OAuth round trip finished. `message` is the account id
-        /// (`cloud://…`) on success, a user-facing sentence otherwise.
-        #[qsignal]
-        #[cxx_name = "cloudAuthorizeFinished"]
-        fn cloud_authorize_finished(self: Pin<&mut Workspace>, ok: bool, message: &QString);
-
-        /// A connection or cloud account was added or removed. The sidebar
-        /// answers by refreshing its model.
-        #[qsignal]
-        #[cxx_name = "connectionsChanged"]
-        fn connections_changed(self: Pin<&mut Workspace>);
-    }
-
-    impl cxx_qt::Threading for Workspace {}
 }
 
 /// The C++ side of `QStyleHints::colorSchemeChanged`.
@@ -941,198 +95,3472 @@ fn dae_qt_theme_changed(dark: bool) {
     crate::system_watch::theme_changed(dark);
 }
 
-pub struct WorkspaceRust {
-    status: QString,
-    last_error: QString,
-    busy: bool,
-    can_undo: bool,
-    can_redo: bool,
-    progress_label: QString,
-    progress_done: i32,
-    progress_total: i32,
-    progress_kind: QString,
-    conflict_index: i32,
-    conflict_total: i32,
-    conflict_name: QString,
-    conflict_cut: bool,
-    conflict_source_category: QString,
-    conflict_source_detail: QString,
-    conflict_target_category: QString,
-    conflict_target_detail: QString,
-    conflict_job_id: i64,
-    conflict_waiting: i32,
-    /// Each asking job's frozen conflict prompt, in the order their prompts
-    /// arrived. The head is the question on screen; the rest wait untouched
-    /// until their turn, so several jobs can ask at once without their
-    /// collisions interleaving on one dialog.
-    pending_conflicts: Vec<PendingPrompt>,
-    queued_transfers: QStringList,
-    queued_transfer_paths: QStringList,
-    transfers_json: QString,
-    transfer_speed_limit: i32,
-    transfer_speed: QString,
-    /// One row per accepted transfer — checking, answering conflicts or
-    /// running. The scheduler addresses them by job id; an elevated retry
-    /// owns a row too, under a local id the scheduler never mints.
-    transfer_rows: Vec<TransferRow>,
-    /// Ids for rows the shell creates itself (elevated retries). Starts far
-    /// above the scheduler's counter so the two never collide.
-    next_local_job: u64,
-    /// Copies and moves are queued and answered by the core's job scheduler;
-    /// this shell only submits requests and renders its events. Created on
-    /// first use, when a Qt thread exists to route the events back through.
-    transfer_scheduler: Option<Arc<JobScheduler>>,
-    /// Cancellation flag of the running "calculate size" pass, if any.
-    size_scan: Option<Arc<AtomicBool>>,
-    /// Status-center history, oldest first.
-    operations: Vec<OperationRecord>,
-    drive_capabilities: QString,
-    external_archive_formats: QString,
-    custom_actions_json: QString,
-    operations_json: QString,
-    failure_count: i32,
-    /// When each running operation began, with the label it showed. A stack
-    /// rather than a map: operations legitimately overlap (a background size
-    /// scan during a copy), and the newest start is the one finishing next.
-    operation_starts: Vec<(u64, String)>,
-    /// The retry payload for the operation about to start. `extractArchive`
-    /// and a transfer set it immediately after `beginOperation`; finishing the
-    /// operation consumes it.
-    retry_hint: Option<String>,
-    clipboard_mode: QString,
-    clipboard_paths: QStringList,
-    /// The exact paths this shell last put on the system clipboard. A paste
-    /// compares against it to tell its own list from files another app copied.
-    system_clipboard_paths: Vec<String>,
-    /// The system's clipboard counter when the mirror was last written or
-    /// refreshed; a different counter means another app changed it since.
-    system_clipboard_sequence: u32,
-    /// Bumped whenever the clipboard changes, so a refresh that was already
-    /// in flight cannot overwrite a newer copy.
-    clipboard_generation: u64,
-    accent: QString,
-    system_dark: bool,
-    home_directory: QString,
-    terminal_font_size: i32,
-    terminal_line_height: f64,
-    terminal_font_family: QString,
-    shortcuts_json: QString,
-    log_directory: QString,
-    search_index_available: bool,
-    open_with_picker_supported: bool,
-    default_manager_supported: bool,
-    default_manager_is_default: bool,
-    default_manager_is_registered: bool,
-    default_manager_detail: QString,
-    default_manager_error: QString,
-    default_manager_busy: bool,
-    active_operations: i32,
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(#[allow(dead_code)]
+        fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
 }
 
-impl Default for WorkspaceRust {
-    fn default() -> Self {
-        // The connection and cloud registries are file/keychain backed; the
-        // sidebar and the connect dialogs read them through this same store.
-        crate::init_stores();
-        let settings = dae_core::settings::load_settings().unwrap_or_default();
-        let home = service::get_home_directory().unwrap_or_default();
-        let operations = load_operations();
-        let operations_text = operations_json(&operations);
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+mod workspace_impl {
+    use super::*;
 
-        // The limit is process-wide and lives in the core, so a transfer that
-        // starts before the settings panel is ever opened still obeys it.
-        let transfer_speed_limit = settings.transfer.speed_limit_kib.min(MAX_SPEED_LIMIT_KIB) as i32;
-        service::set_transfer_speed_limit(
-            (transfer_speed_limit > 0).then_some(transfer_speed_limit as u64 * 1024),
-        );
+    pub struct Workspace {
+        status: String,
+        last_error: String,
+        busy: bool,
+        can_undo: bool,
+        can_redo: bool,
+        progress_label: String,
+        progress_done: i32,
+        progress_total: i32,
+        progress_kind: String,
+        conflict_index: i32,
+        conflict_total: i32,
+        conflict_name: String,
+        conflict_cut: bool,
+        conflict_source_category: String,
+        conflict_source_detail: String,
+        conflict_target_category: String,
+        conflict_target_detail: String,
+        conflict_job_id: i64,
+        conflict_waiting: i32,
+        /// Each asking job's frozen conflict prompt, in the order their prompts
+        /// arrived. The head is the question on screen; the rest wait untouched
+        /// until their turn, so several jobs can ask at once without their
+        /// collisions interleaving on one dialog.
+        pending_conflicts: Vec<PendingPrompt>,
+        queued_transfers: Vec<String>,
+        queued_transfer_paths: Vec<String>,
+        transfers_json: String,
+        transfer_speed_limit: i32,
+        transfer_speed: String,
+        /// One row per accepted transfer — checking, answering conflicts or
+        /// running. The scheduler addresses them by job id; an elevated retry
+        /// owns a row too, under a local id the scheduler never mints.
+        transfer_rows: Vec<TransferRow>,
+        /// Ids for rows the shell creates itself (elevated retries). Starts far
+        /// above the scheduler's counter so the two never collide.
+        next_local_job: u64,
+        /// Copies and moves are queued and answered by the core's job scheduler;
+        /// this shell only submits requests and renders its events. Created on
+        /// first use, when a Qt thread exists to route the events back through.
+        transfer_scheduler: Option<Arc<JobScheduler>>,
+        /// Cancellation flag of the running "calculate size" pass, if any.
+        size_scan: Option<Arc<AtomicBool>>,
+        /// Status-center history, oldest first.
+        operations: Vec<OperationRecord>,
+        drive_capabilities: String,
+        external_archive_formats: String,
+        custom_actions_json: String,
+        operations_json: String,
+        failure_count: i32,
+        /// When each running operation began, with the label it showed. A stack
+        /// rather than a map: operations legitimately overlap (a background size
+        /// scan during a copy), and the newest start is the one finishing next.
+        operation_starts: Vec<(u64, String)>,
+        /// The retry payload for the operation about to start. `extractArchive`
+        /// and a transfer set it immediately after `beginOperation`; finishing the
+        /// operation consumes it.
+        retry_hint: Option<String>,
+        clipboard_mode: String,
+        clipboard_paths: Vec<String>,
+        /// The exact paths this shell last put on the system clipboard. A paste
+        /// compares against it to tell its own list from files another app copied.
+        system_clipboard_paths: Vec<String>,
+        /// The system's clipboard counter when the mirror was last written or
+        /// refreshed; a different counter means another app changed it since.
+        system_clipboard_sequence: u32,
+        /// Bumped whenever the clipboard changes, so a refresh that was already
+        /// in flight cannot overwrite a newer copy.
+        clipboard_generation: u64,
+        accent: String,
+        system_dark: bool,
+        home_directory: String,
+        terminal_font_size: i32,
+        terminal_line_height: f64,
+        terminal_font_family: String,
+        shortcuts_json: String,
+        log_directory: String,
+        search_index_available: bool,
+        open_with_picker_supported: bool,
+        default_manager_supported: bool,
+        default_manager_is_default: bool,
+        default_manager_is_registered: bool,
+        default_manager_detail: String,
+        default_manager_error: String,
+        default_manager_busy: bool,
+        active_operations: i32,
+    }
 
-        Self {
-            status: QString::default(),
-            last_error: QString::default(),
-            busy: false,
-            can_undo: false,
-            can_redo: false,
-            progress_label: QString::default(),
-            progress_done: 0,
-            progress_total: 0,
-            progress_kind: QString::default(),
-            conflict_index: 0,
-            conflict_total: 0,
-            conflict_name: QString::default(),
-            conflict_cut: false,
-            conflict_source_category: QString::default(),
-            conflict_source_detail: QString::default(),
-            conflict_target_category: QString::default(),
-            conflict_target_detail: QString::default(),
-            conflict_job_id: 0,
-            conflict_waiting: 0,
-            pending_conflicts: Vec::new(),
-            queued_transfers: QStringList::default(),
-            queued_transfer_paths: QStringList::default(),
-            transfers_json: QString::from("[]"),
-            transfer_speed_limit,
-            transfer_speed: QString::default(),
-            transfer_rows: Vec::new(),
-            next_local_job: 1_000_000_000,
-            transfer_scheduler: None,
-            custom_actions_json: QString::from(custom_actions_json().as_str()),
-            drive_capabilities: QString::from(drive_capabilities_json().as_str()),
-            external_archive_formats: QString::from(external_archive_formats_json().as_str()),
-            operations_json: QString::from(operations_text.as_str()),
-            failure_count: 0,
-            size_scan: None,
-            operations,
-            operation_starts: Vec::new(),
-            retry_hint: None,
-            clipboard_mode: QString::default(),
-            clipboard_paths: QStringList::default(),
-            system_clipboard_paths: Vec::new(),
-            system_clipboard_sequence: 0,
-            clipboard_generation: 0,
-            accent: QString::from(platform::accent_hex().as_str()),
-            system_dark: crate::config::system_dark(),
-            home_directory: QString::from(home.as_str()),
-            terminal_font_size: settings.terminal.font_size as i32,
-            terminal_line_height: settings.terminal.line_height as f64,
-            terminal_font_family: QString::from(
-                settings.terminal.font_family.as_deref().unwrap_or(""),
-            ),
-            shortcuts_json: QString::from(shortcuts_json(&settings.shortcuts).as_str()),
-            log_directory: QString::from(
-                crate::logging::app_log_directory()
+    impl Default for Workspace {
+        fn default() -> Self {
+            // The connection and cloud registries are file/keychain backed; the
+            // sidebar and the connect dialogs read them through this same store.
+            crate::init_stores();
+            let settings = dae_core::settings::load_settings().unwrap_or_default();
+            let home = service::get_home_directory().unwrap_or_default();
+            let operations = load_operations();
+            let operations_text = operations_json(&operations);
+
+            // The limit is process-wide and lives in the core, so a transfer that
+            // starts before the settings panel is ever opened still obeys it.
+            let transfer_speed_limit = settings.transfer.speed_limit_kib.min(MAX_SPEED_LIMIT_KIB) as i32;
+            service::set_transfer_speed_limit(
+                (transfer_speed_limit > 0).then_some(transfer_speed_limit as u64 * 1024),
+            );
+
+            Self {
+                status: String::new(),
+                last_error: String::new(),
+                busy: false,
+                can_undo: false,
+                can_redo: false,
+                progress_label: String::new(),
+                progress_done: 0,
+                progress_total: 0,
+                progress_kind: String::new(),
+                conflict_index: 0,
+                conflict_total: 0,
+                conflict_name: String::new(),
+                conflict_cut: false,
+                conflict_source_category: String::new(),
+                conflict_source_detail: String::new(),
+                conflict_target_category: String::new(),
+                conflict_target_detail: String::new(),
+                conflict_job_id: 0,
+                conflict_waiting: 0,
+                pending_conflicts: Vec::new(),
+                queued_transfers: Vec::new(),
+                queued_transfer_paths: Vec::new(),
+                transfers_json: "[]".to_owned(),
+                transfer_speed_limit,
+                transfer_speed: String::new(),
+                transfer_rows: Vec::new(),
+                next_local_job: 1_000_000_000,
+                transfer_scheduler: None,
+                custom_actions_json: custom_actions_json(),
+                drive_capabilities: drive_capabilities_json(),
+                external_archive_formats: external_archive_formats_json(),
+                operations_json: operations_text,
+                failure_count: 0,
+                size_scan: None,
+                operations,
+                operation_starts: Vec::new(),
+                retry_hint: None,
+                clipboard_mode: String::new(),
+                clipboard_paths: Vec::new(),
+                system_clipboard_paths: Vec::new(),
+                system_clipboard_sequence: 0,
+                clipboard_generation: 0,
+                accent: platform::accent_hex(),
+                system_dark: crate::config::system_dark(),
+                home_directory: home,
+                terminal_font_size: settings.terminal.font_size as i32,
+                terminal_line_height: settings.terminal.line_height as f64,
+                terminal_font_family: settings.terminal.font_family.clone().unwrap_or_default(),
+                shortcuts_json: shortcuts_json(&settings.shortcuts),
+                log_directory: crate::logging::app_log_directory()
                     .to_string_lossy()
-                    .as_ref(),
-            ),
-            search_index_available: dae_core::fs::search_index::backend().is_some(),
-            open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
-            default_manager_supported: cfg!(any(target_os = "macos", target_os = "linux", windows)),
-            default_manager_is_default: false,
-            default_manager_is_registered: false,
-            default_manager_detail: QString::default(),
-            default_manager_error: QString::default(),
-            default_manager_busy: false,
-            active_operations: 0,
+                    .into_owned(),
+                search_index_available: dae_core::fs::search_index::backend().is_some(),
+                open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
+                default_manager_supported: cfg!(any(target_os = "macos", target_os = "linux", windows)),
+                default_manager_is_default: false,
+                default_manager_is_registered: false,
+                default_manager_detail: String::new(),
+                default_manager_error: String::new(),
+                default_manager_busy: false,
+                active_operations: 0,
+            }
+        }
+    }
+
+
+    impl Workspace {
+        qproperty!("externalArchiveFormats", Member = external_archive_formats, Notify = external_archive_formats_changed);
+        qproperty!("driveCapabilities", Member = drive_capabilities, Notify = drive_capabilities_changed);
+        qproperty!("customActionsJson", Member = custom_actions_json, Notify = custom_actions_json_changed);
+        qproperty!("operationsJson", Member = operations_json, Notify = operations_json_changed);
+        qproperty!("failureCount", Member = failure_count, Notify = failure_count_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
+        qproperty!("lastError", Member = last_error, Notify = last_error_changed);
+        qproperty!("busy", Member = busy, Notify = busy_changed);
+        qproperty!("canUndo", Member = can_undo, Notify = can_undo_changed);
+        qproperty!("canRedo", Member = can_redo, Notify = can_redo_changed);
+        qproperty!("progressLabel", Member = progress_label, Notify = progress_label_changed);
+        qproperty!("progressDone", Member = progress_done, Notify = progress_done_changed);
+        qproperty!("progressTotal", Member = progress_total, Notify = progress_total_changed);
+        qproperty!("progressKind", Member = progress_kind, Notify = progress_kind_changed);
+        qproperty!("conflictIndex", Member = conflict_index, Notify = conflict_index_changed);
+        qproperty!("conflictTotal", Member = conflict_total, Notify = conflict_total_changed);
+        qproperty!("conflictName", Member = conflict_name, Notify = conflict_name_changed);
+        qproperty!("conflictCut", Member = conflict_cut, Notify = conflict_cut_changed);
+        qproperty!("conflictSourceCategory", Member = conflict_source_category, Notify = conflict_source_category_changed);
+        qproperty!("conflictSourceDetail", Member = conflict_source_detail, Notify = conflict_source_detail_changed);
+        qproperty!("conflictTargetCategory", Member = conflict_target_category, Notify = conflict_target_category_changed);
+        qproperty!("conflictTargetDetail", Member = conflict_target_detail, Notify = conflict_target_detail_changed);
+        qproperty!("conflictJobId", Member = conflict_job_id, Notify = conflict_job_id_changed);
+        qproperty!("conflictWaiting", Member = conflict_waiting, Notify = conflict_waiting_changed);
+        qproperty!("queuedTransfers", Member = queued_transfers, Notify = queued_transfers_changed);
+        qproperty!("queuedTransferPaths", Member = queued_transfer_paths, Notify = queued_transfer_paths_changed);
+        qproperty!("transfersJson", Member = transfers_json, Notify = transfers_json_changed);
+        qproperty!("transferSpeedLimit", Member = transfer_speed_limit, Notify = transfer_speed_limit_changed);
+        qproperty!("transferSpeed", Member = transfer_speed, Notify = transfer_speed_changed);
+        qproperty!("clipboardMode", Member = clipboard_mode, Notify = clipboard_mode_changed);
+        qproperty!("clipboardPaths", Member = clipboard_paths, Notify = clipboard_paths_changed);
+        qproperty!("accent", Member = accent, Notify = accent_changed);
+        qproperty!("systemDark", Member = system_dark, Notify = system_dark_changed);
+        qproperty!("homeDirectory", Member = home_directory, Notify = home_directory_changed);
+        qproperty!("terminalFontSize", Member = terminal_font_size, Notify = terminal_font_size_changed);
+        qproperty!("terminalLineHeight", Member = terminal_line_height, Notify = terminal_line_height_changed);
+        qproperty!("terminalFontFamily", Member = terminal_font_family, Notify = terminal_font_family_changed);
+        qproperty!("shortcutsJson", Member = shortcuts_json, Notify = shortcuts_json_changed);
+        qproperty!("logDirectory", Member = log_directory, Notify = log_directory_changed);
+        qproperty!("searchIndexAvailable", Member = search_index_available, Notify = search_index_available_changed);
+        qproperty!("openWithPickerSupported", Member = open_with_picker_supported, Notify = open_with_picker_supported_changed);
+        qproperty!("defaultManagerSupported", Member = default_manager_supported, Notify = default_manager_supported_changed);
+        qproperty!("defaultManagerIsDefault", Member = default_manager_is_default, Notify = default_manager_is_default_changed);
+        qproperty!("defaultManagerIsRegistered", Member = default_manager_is_registered, Notify = default_manager_is_registered_changed);
+        qproperty!("defaultManagerDetail", Member = default_manager_detail, Notify = default_manager_detail_changed);
+        qproperty!("defaultManagerError", Member = default_manager_error, Notify = default_manager_error_changed);
+        qproperty!("defaultManagerBusy", Member = default_manager_busy, Notify = default_manager_busy_changed);
+
+        #[qsignal]
+        fn external_archive_formats_changed(&mut self);
+        #[qsignal]
+        fn drive_capabilities_changed(&mut self);
+        #[qsignal]
+        fn custom_actions_json_changed(&mut self);
+        #[qsignal]
+        fn operations_json_changed(&mut self);
+        #[qsignal]
+        fn failure_count_changed(&mut self);
+        #[qsignal]
+        fn status_changed(&mut self);
+        #[qsignal]
+        fn last_error_changed(&mut self);
+        #[qsignal]
+        fn busy_changed(&mut self);
+        #[qsignal]
+        fn can_undo_changed(&mut self);
+        #[qsignal]
+        fn can_redo_changed(&mut self);
+        #[qsignal]
+        fn progress_label_changed(&mut self);
+        #[qsignal]
+        fn progress_done_changed(&mut self);
+        #[qsignal]
+        fn progress_total_changed(&mut self);
+        #[qsignal]
+        fn progress_kind_changed(&mut self);
+        #[qsignal]
+        fn conflict_index_changed(&mut self);
+        #[qsignal]
+        fn conflict_total_changed(&mut self);
+        #[qsignal]
+        fn conflict_name_changed(&mut self);
+        #[qsignal]
+        fn conflict_cut_changed(&mut self);
+        #[qsignal]
+        fn conflict_source_category_changed(&mut self);
+        #[qsignal]
+        fn conflict_source_detail_changed(&mut self);
+        #[qsignal]
+        fn conflict_target_category_changed(&mut self);
+        #[qsignal]
+        fn conflict_target_detail_changed(&mut self);
+        #[qsignal]
+        fn conflict_job_id_changed(&mut self);
+        #[qsignal]
+        fn conflict_waiting_changed(&mut self);
+        #[qsignal]
+        fn queued_transfers_changed(&mut self);
+        #[qsignal]
+        fn queued_transfer_paths_changed(&mut self);
+        #[qsignal]
+        fn transfers_json_changed(&mut self);
+        #[qsignal]
+        fn transfer_speed_limit_changed(&mut self);
+        #[qsignal]
+        fn transfer_speed_changed(&mut self);
+        #[qsignal]
+        fn clipboard_mode_changed(&mut self);
+        #[qsignal]
+        fn clipboard_paths_changed(&mut self);
+        #[qsignal]
+        fn accent_changed(&mut self);
+        #[qsignal]
+        fn system_dark_changed(&mut self);
+        #[qsignal]
+        fn home_directory_changed(&mut self);
+        #[qsignal]
+        fn terminal_font_size_changed(&mut self);
+        #[qsignal]
+        fn terminal_line_height_changed(&mut self);
+        #[qsignal]
+        fn terminal_font_family_changed(&mut self);
+        #[qsignal]
+        fn shortcuts_json_changed(&mut self);
+        #[qsignal]
+        fn log_directory_changed(&mut self);
+        #[qsignal]
+        fn search_index_available_changed(&mut self);
+        #[qsignal]
+        fn open_with_picker_supported_changed(&mut self);
+        #[qsignal]
+        fn default_manager_supported_changed(&mut self);
+        #[qsignal]
+        fn default_manager_is_default_changed(&mut self);
+        #[qsignal]
+        fn default_manager_is_registered_changed(&mut self);
+        #[qsignal]
+        fn default_manager_detail_changed(&mut self);
+        #[qsignal]
+        fn default_manager_error_changed(&mut self);
+        #[qsignal]
+        fn default_manager_busy_changed(&mut self);
+
+        notifying_setters! {
+            set_external_archive_formats(String) => external_archive_formats, external_archive_formats_changed;
+            set_drive_capabilities(String) => drive_capabilities, drive_capabilities_changed;
+            set_custom_actions_json(String) => custom_actions_json, custom_actions_json_changed;
+            set_operations_json(String) => operations_json, operations_json_changed;
+            set_failure_count(i32) => failure_count, failure_count_changed;
+            set_status(String) => status, status_changed;
+            set_last_error(String) => last_error, last_error_changed;
+            set_busy(bool) => busy, busy_changed;
+            set_can_undo(bool) => can_undo, can_undo_changed;
+            set_can_redo(bool) => can_redo, can_redo_changed;
+            set_progress_label(String) => progress_label, progress_label_changed;
+            set_progress_done(i32) => progress_done, progress_done_changed;
+            set_progress_total(i32) => progress_total, progress_total_changed;
+            set_progress_kind(String) => progress_kind, progress_kind_changed;
+            set_conflict_index(i32) => conflict_index, conflict_index_changed;
+            set_conflict_total(i32) => conflict_total, conflict_total_changed;
+            set_conflict_name(String) => conflict_name, conflict_name_changed;
+            set_conflict_cut(bool) => conflict_cut, conflict_cut_changed;
+            set_conflict_source_category(String) => conflict_source_category, conflict_source_category_changed;
+            set_conflict_source_detail(String) => conflict_source_detail, conflict_source_detail_changed;
+            set_conflict_target_category(String) => conflict_target_category, conflict_target_category_changed;
+            set_conflict_target_detail(String) => conflict_target_detail, conflict_target_detail_changed;
+            set_conflict_job_id(i64) => conflict_job_id, conflict_job_id_changed;
+            set_conflict_waiting(i32) => conflict_waiting, conflict_waiting_changed;
+            set_queued_transfers(Vec<String>) => queued_transfers, queued_transfers_changed;
+            set_queued_transfer_paths(Vec<String>) => queued_transfer_paths, queued_transfer_paths_changed;
+            set_transfers_json(String) => transfers_json, transfers_json_changed;
+            set_transfer_speed_limit(i32) => transfer_speed_limit, transfer_speed_limit_changed;
+            set_transfer_speed(String) => transfer_speed, transfer_speed_changed;
+            set_clipboard_mode(String) => clipboard_mode, clipboard_mode_changed;
+            set_clipboard_paths(Vec<String>) => clipboard_paths, clipboard_paths_changed;
+            set_accent(String) => accent, accent_changed;
+            set_system_dark(bool) => system_dark, system_dark_changed;
+            set_home_directory(String) => home_directory, home_directory_changed;
+            set_terminal_font_size(i32) => terminal_font_size, terminal_font_size_changed;
+            set_terminal_line_height(f64) => terminal_line_height, terminal_line_height_changed;
+            set_terminal_font_family(String) => terminal_font_family, terminal_font_family_changed;
+            set_shortcuts_json(String) => shortcuts_json, shortcuts_json_changed;
+            set_log_directory(String) => log_directory, log_directory_changed;
+            set_search_index_available(bool) => search_index_available, search_index_available_changed;
+            set_open_with_picker_supported(bool) => open_with_picker_supported, open_with_picker_supported_changed;
+            set_default_manager_supported(bool) => default_manager_supported, default_manager_supported_changed;
+            set_default_manager_is_default(bool) => default_manager_is_default, default_manager_is_default_changed;
+            set_default_manager_is_registered(bool) => default_manager_is_registered, default_manager_is_registered_changed;
+            set_default_manager_detail(String) => default_manager_detail, default_manager_detail_changed;
+            set_default_manager_error(String) => default_manager_error, default_manager_error_changed;
+            set_default_manager_busy(bool) => default_manager_busy, default_manager_busy_changed;
+        }
+
+        #[qsignal]
+        fn operation_finished(&mut self, kind: String, focus: String);
+        #[qsignal]
+        fn operation_failed(&mut self, kind: String, message: String);
+        #[qsignal]
+        fn compare_finished(&mut self, equal: bool);
+        #[qsignal]
+        fn folder_sizes_measured(&mut self, sizes: String);
+        #[qsignal]
+        fn file_holders_found(&mut self,
+
+            request: String,
+
+            report: String,
+
+            error: String,);
+        #[qsignal]
+        fn process_ended(&mut self, pid: i32, ok: bool, message: String);
+        #[qsignal]
+        fn archive_password_required(&mut self,
+
+            target: String,
+
+            message: String,);
+        #[qsignal]
+        fn favorites_changed(&mut self);
+        #[qsignal]
+        fn places_changed(&mut self);
+        #[qsignal]
+        fn volumes_changed(&mut self);
+        #[qsignal]
+        fn connection_test_finished(&mut self, ok: bool, message: String);
+        #[qsignal]
+        fn connection_save_finished(&mut self,
+
+            ok: bool,
+
+            id: String,
+
+            message: String,);
+        #[qsignal]
+        fn cloud_authorize_finished(&mut self, ok: bool, message: String);
+        #[qsignal]
+        fn connections_changed(&mut self);
+
+
+        fn begin_operation(&mut self, label: &str) {
+            self.operation_starts
+                .push((now_millis(), label.to_owned()));
+            self.retry_hint = None;
+            let active = self.active_operations + 1;
+            self.active_operations = active;
+            self.set_busy(true);
+            self.set_progress_done(0);
+            self.set_progress_total(0);
+            // Unknown until the operation reports: a rename sends no progress at
+            // all, and a stale code from the previous command would make the strip
+            // read the new one's numbers in the wrong unit.
+            self.set_progress_kind(String::new());
+            self.set_progress_label(label.to_owned());
+            self.set_last_error(String::new());
+        }
+
+        pub(super) fn finish_operation(&mut self, kind: &str, focus: &str, error: Option<String>) {
+            self.finish_operation_state(kind, focus, error, false);
+        }
+
+        /// A transfer the user stopped: no error toast, no failure badge, and a
+        /// status-center row whose action is "continue" rather than "retry".
+        pub(super) fn finish_cancelled_operation(&mut self, kind: &str) {
+            self.finish_operation_state(kind, "", None, true);
+        }
+
+        fn finish_operation_state(
+            &mut self,
+            kind: &str,
+            focus: &str,
+            error: Option<String>,
+            cancelled: bool,
+        ) {
+            self.settle_operation();
+            self.record_operation_state(kind, error.as_deref(), cancelled);
+
+            let kind_value = kind.to_owned();
+            let focus_value = focus.to_owned();
+
+            if cancelled {
+                // Neither a success nor an error: the status bar says what
+                // happened, and the status center's row offers to continue.
+                let status = "Transfer cancelled";
+                self.set_status(status.to_owned());
+                self.operation_finished(kind_value, focus_value);
+                return;
+            }
+
+            match error {
+                Some(message) => {
+                    self.set_last_error(message.to_owned());
+                    let message_value = message.to_owned();
+                    self.operation_failed(kind_value, message_value);
+                }
+                None => {
+                    let status = success_message(kind);
+                    self.set_status(status.to_owned());
+                    self.operation_finished(kind_value, focus_value);
+                }
+            }
+        }
+
+        /// Turns a drive tool's outcome into the same toast and status-center row
+        /// every other command uses.
+        fn run_drive_action(
+            &mut self,
+            kind: &str,
+            result: Result<(), FileSystemError>,
+            success: &str,
+        ) {
+            match result {
+                Ok(()) => {
+                    self.begin_operation(success);
+                    self.set_status(success.to_owned());
+                    self.finish_operation(kind, "", None);
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    self.finish_operation(kind, "", Some(message));
+                }
+            }
+        }
+
+        /// One line for the status center. Runs before the toast, so a failed
+        /// operation is already in the history when its message appears.
+        fn record_operation(&mut self, kind: &str, error: Option<&str>) {
+            self.record_operation_state(kind, error, false);
+        }
+
+        fn record_operation_state(
+            &mut self,
+            kind: &str,
+            error: Option<&str>,
+            cancelled: bool,
+        ) {
+            let (started, label) = self.operation_starts
+                .pop()
+                .unwrap_or_else(|| (now_millis(), String::new()));
+            let retry = self.retry_hint
+                .take()
+                .unwrap_or_default();
+            self.record_operation_row(kind, error, cancelled, started, label, retry);
+        }
+
+        /// Writes one status-center row from explicit provenance. Transfers call
+        /// this with their own row's start, label and retry payload: several run
+        /// at once, so the shared `operation_starts` stack — newest start finishes
+        /// next — cannot be theirs.
+        fn record_operation_row(
+            &mut self,
+            kind: &str,
+            error: Option<&str>,
+            cancelled: bool,
+            started: u64,
+            label: String,
+            retry: String,
+        ) {
+            let retryable = !retry.is_empty() && matches!(kind, "copy" | "move" | "extract");
+
+            // A cancelled *copy* is continued, not repeated: the retry payload
+            // gains `resume`, which makes the job scheduler skip the conflict
+            // check and merge into what already landed. A cancelled move cannot be
+            // continued — the entries it finished are no longer at the source — so
+            // it keeps the ordinary retry.
+            let retry = if cancelled && kind == "copy" && retryable {
+                match serde_json::from_str::<serde_json::Value>(&retry) {
+                    Ok(mut payload) => {
+                        payload["resume"] = serde_json::json!(true);
+                        payload.to_string()
+                    }
+                    Err(_) => retry,
+                }
+            } else {
+                retry
+            };
+
+            // Cancellation outranks the error slot: `finish_cancelled_operation`
+            // passes no error, and a control that failed while being cancelled is
+            // still a cancellation to the status center, not a failure to retry.
+            let status = if cancelled {
+                "cancelled"
+            } else if error.is_some() {
+                "failed"
+            } else {
+                "ok"
+            };
+
+            let record = OperationRecord {
+                id: operation_id(),
+                kind: kind.to_owned(),
+                label: if label.is_empty() {
+                    success_message(kind).to_owned()
+                } else {
+                    label
+                },
+                started,
+                finished: now_millis(),
+                status: status.to_owned(),
+                detail: if cancelled {
+                    "Cancelled".to_owned()
+                } else {
+                    error.unwrap_or_else(|| success_message(kind)).to_owned()
+                },
+                retryable,
+                retry: if retryable { retry } else { String::new() },
+                // Elevation is a *retry* on a path the user's token cannot write,
+                // so it is only offered where a copy or a move actually failed and
+                // the platform can raise a separate process.
+                elevatable: status == "failed"
+                    && matches!(kind, "copy" | "move")
+                    && cfg!(any(windows, target_os = "linux", target_os = "macos")),
+            };
+
+            let failed = record.status == "failed";
+            {
+                let rust = &mut *self;
+                rust.operations.push(record);
+                let excess = rust
+                    .operations
+                    .len()
+                    .saturating_sub(OPERATION_HISTORY_LIMIT);
+                if excess > 0 {
+                    rust.operations.drain(0..excess);
+                }
+                persist_operations(&rust.operations);
+            }
+            let json = operations_json(&self.operations);
+            self.set_operations_json(json.to_owned());
+            if failed {
+                let count = self.failure_count + 1;
+                self.set_failure_count(count);
+            }
+        }
+
+        #[qslot]
+
+        fn eject_drive(&mut self, path: String) {
+            self.run_drive_action("drive", drives::eject(&path.to_string()), "Ejected");
+        }
+
+        #[qslot]
+
+        fn unmount_drive(&mut self, path: String) {
+            self.run_drive_action("drive", drives::unmount(&path.to_string()), "Unmounted");
+        }
+
+        #[qslot]
+
+        fn mount_drive(&mut self, path: String) {
+            self.run_drive_action("drive", drives::mount(&path.to_string()), "Mounted");
+        }
+
+        #[qslot]
+
+        fn format_drive(&mut self, path: String) {
+            self.run_drive_action(
+                "drive",
+                drives::open_format_tool(&path.to_string()),
+                "Format dialog opened",
+            );
+        }
+
+        #[qslot]
+
+        fn open_storage_cleanup(&mut self) {
+            self.run_drive_action(
+                "drive",
+                drives::open_cleanup_tool(),
+                "Storage settings opened",
+            );
+        }
+
+        #[qslot]
+
+        fn drive_encryption_status(&mut self, path: String) -> String {
+            match drives::encryption_status(&path.to_string()) {
+                Ok(text) => text.to_owned(),
+                Err(error) => error.to_string(),
+            }
+        }
+
+        #[qslot]
+
+        fn open_previous_versions(&mut self, path: String) {
+            self.run_drive_action(
+                "drive",
+                drives::open_previous_versions(&path.to_string()),
+                "Previous versions opened",
+            );
+        }
+
+        #[qslot]
+
+        fn custom_action_definitions(&self) -> String {
+            let actions = dae_core::settings::load_settings()
+                .map(|settings| settings.actions)
+                .unwrap_or_default();
+            let entries: Vec<serde_json::Value> = actions
+                .into_iter()
+                .map(|action| {
+                    serde_json::json!({
+                        "id": action.id,
+                        "name": action.name,
+                        "command": action.command,
+                        "args": action.args.join("\n"),
+                        "selection": action.selection,
+                        "extensions": action.extensions.join(","),
+                        "platforms": action.platforms.join(","),
+                    })
+                })
+                .collect();
+            let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+            json.to_owned()
+        }
+
+        #[qslot]
+
+        fn custom_actions_for(
+            &mut self,
+            paths: Vec<String>,
+            directory: String,
+        ) -> String {
+            let selection = paths;
+            let directory = directory.to_string();
+            let entries: Vec<serde_json::Value> = actions::available_actions()
+                .into_iter()
+                .filter(|action| actions::selection_allows(action, &selection, &directory))
+                .map(|action| serde_json::json!({"id": action.id, "name": action.name}))
+                .collect();
+            let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+            json.to_owned()
+        }
+
+        #[qslot]
+
+        fn run_custom_action(
+            &mut self,
+            id: String,
+            paths: Vec<String>,
+            directory: String,
+        ) {
+            let id = id.to_string();
+            let selection = paths;
+            let directory = directory.to_string();
+            let Some(action) = actions::action_by_id(&id) else {
+                self.finish_operation("action", "", Some("Unknown action".to_owned()));
+                return;
+            };
+            if !actions::selection_allows(&action, &selection, &directory) {
+                self.finish_operation(
+                    "action",
+                    "",
+                    Some("This action does not apply to the selection".to_owned()),
+                );
+                return;
+            }
+            match actions::run(&action, &selection, &directory) {
+                Ok(program) => {
+                    self.begin_operation("Running action…");
+                    self.set_status(format!("Ran {program}"));
+                    self.finish_operation("action", "", None);
+                }
+                Err(error) => {
+                    self.finish_operation("action", "", Some(error.to_string()));
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn share_supported(&mut self) -> bool {
+            crate::share::supported()
+        }
+
+        #[qslot]
+
+        fn share_paths(&self, paths: Vec<String>, handle: f64) -> bool {
+            crate::share::share_paths(&paths, handle)
+        }
+
+        #[qslot]
+
+        fn save_custom_action(
+            &mut self,
+            id: String,
+            name: String,
+            command: String,
+            args: String,
+            selection: String,
+        ) {
+            let Ok(mut settings) = dae_core::settings::load_settings() else {
+                return;
+            };
+            let id = id.to_string();
+            let action = dae_core::settings::CustomAction {
+                id: id.clone(),
+                name: name.to_string(),
+                command: command.to_string(),
+                args: action_args(&args.to_string()),
+                platforms: Vec::new(),
+                selection: selection.to_string(),
+                extensions: Vec::new(),
+            };
+
+            if id.trim().is_empty() {
+                let mut candidate = settings.actions.len() + 1;
+                loop {
+                    let generated = format!("custom-{candidate}");
+                    if !settings.actions.iter().any(|entry| entry.id == generated) {
+                        settings.actions.push(dae_core::settings::CustomAction {
+                            id: generated,
+                            ..action
+                        });
+                        break;
+                    }
+                    candidate += 1;
+                }
+            } else if let Some(existing) = settings.actions.iter_mut().find(|entry| entry.id == id) {
+                *existing = action;
+            } else {
+                settings.actions.push(action);
+            }
+
+            if dae_core::settings::save_settings(settings).is_ok() {
+                let json = custom_actions_json();
+                self.set_custom_actions_json(json.to_owned());
+            }
+        }
+
+        #[qslot]
+
+        fn remove_custom_action(&mut self, id: String) {
+            let id = id.to_string();
+            let Ok(mut settings) = dae_core::settings::load_settings() else {
+                return;
+            };
+            settings.actions.retain(|action| action.id != id);
+            if dae_core::settings::save_settings(settings).is_ok() {
+                let json = custom_actions_json();
+                self.set_custom_actions_json(json.to_owned());
+            }
+        }
+
+        #[qslot]
+
+        fn reset_custom_actions(&mut self) {
+            let Ok(mut settings) = dae_core::settings::load_settings() else {
+                return;
+            };
+            settings.actions = dae_core::settings::default_actions();
+            if dae_core::settings::save_settings(settings).is_ok() {
+                let json = custom_actions_json();
+                self.set_custom_actions_json(json.to_owned());
+            }
+        }
+
+        #[qslot]
+
+        fn mark_operations_read(&mut self) {
+            if self.failure_count != 0 {
+                self.set_failure_count(0);
+            }
+        }
+
+        #[qslot]
+
+        fn clear_operation_history(&mut self) {
+            self.operations.clear();
+            persist_operations(&[]);
+            self.set_operations_json("[]".to_owned());
+            self.set_failure_count(0);
+        }
+
+        #[qslot]
+
+        fn retry_operation(&mut self, id: String) {
+            let id = id.to_string();
+            let Some(record) = self
+                .operations
+                .iter()
+                .find(|record| record.id == id)
+                .cloned()
+            else {
+                return;
+            };
+            if !record.retryable {
+                return;
+            }
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(&record.retry) else {
+                return;
+            };
+            match payload["kind"].as_str() {
+                Some("extract") => {
+                    let archive = payload["archive"].as_str().unwrap_or_default();
+                    let destination = payload["destination"].as_str().unwrap_or_default();
+                    self.extract_archive(
+                        String::from(archive),
+                        String::from(destination),
+                        String::default(),
+                    );
+                }
+                Some("transfer") => {
+                    let mut paths = Vec::new();
+                    if let Some(items) = payload["paths"].as_array() {
+                        for item in items {
+                            if let Some(path) = item.as_str() {
+                                paths.push(path.to_owned());
+                            }
+                        }
+                    }
+                    let destination = payload["destination"].as_str().unwrap_or_default();
+                    let cut = payload["cut"].as_bool().unwrap_or(false);
+                    let resume = payload["resume"].as_bool().unwrap_or(false);
+
+                    if paths.len() > 0 && resume {
+                        self.enqueue_resumed_transfer(
+                            paths,
+                            destination.to_owned(),
+                            cut,
+                        );
+                    } else if paths.len() > 0 {
+                        self.transfer_entries(paths, String::from(destination), cut);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        /// Clears the progress row without reporting an outcome. A protected
+        /// archive uses this before asking for a password: nothing failed yet, and
+        /// an `operationFinished` would wrongly say the extraction completed.
+        fn settle_operation(&mut self) {
+            let active = (self.active_operations - 1).max(0);
+            self.active_operations = active;
+            self.set_busy(active > 0);
+            self.set_progress_done(0);
+            self.set_progress_total(0);
+            self.set_progress_kind(String::new());
+            self.set_progress_label(String::new());
+        }
+
+        fn request_archive_password(&mut self, target: &str, message: &str) {
+            let target = target.to_owned();
+            let message = message.to_owned();
+            self.set_last_error(message.clone());
+            self.archive_password_required(target, message);
+        }
+
+        pub(super) fn apply_event(&mut self, event: Event) {
+            match event {
+                Event::FileOperationProgress {
+                    operation_id,
+                    operation,
+                    phase,
+                    completed,
+                    total,
+                    current_path,
+                } => {
+                    // A transfer's ticks belong to its row; everything else (a
+                    // rename, a trash run, a size walk) keeps the shared progress
+                    // row in the status strip.
+                    let is_transfer = self
+                        .transfer_rows
+                        .iter()
+                        .any(|row| row.operation_id.as_deref() == Some(operation_id.as_str()));
+                    if is_transfer {
+                        let rust = &mut *self;
+                        let row = rust
+                            .transfer_rows
+                            .iter_mut()
+                            .find(|row| row.operation_id.as_deref() == Some(operation_id.as_str()))
+                            .expect("row just found");
+                        row.done = completed;
+                        if let Some(total) = total {
+                            row.total = total;
+                        }
+                        row.current = current_path
+                            .as_deref()
+                            .map(display_name_from_path)
+                            .unwrap_or_default();
+                        // Only a copy or a move counts bytes: a delete reports
+                        // entries, and calling that a rate would be a lie.
+                        if matches!(
+                            operation,
+                            dae_core::progress::FileOperationKind::Copy
+                                | dae_core::progress::FileOperationKind::Move
+                        ) {
+                            row.sample_speed(completed);
+                        }
+                        self.publish_transfers();
+                        return;
+                    }
+
+                    let label = current_path
+                        .as_deref()
+                        .map(display_name_from_path)
+                        .unwrap_or_else(|| operation_label(operation).to_owned());
+                    self.set_progress_label(label.to_owned());
+                    self.set_progress_kind(operation.code().to_owned());
+                    self.set_progress_done(completed.min(i32::MAX as u64) as i32);
+                    let total = total.unwrap_or(0).min(i32::MAX as u64) as i32;
+                    self.set_progress_total(total);
+
+                    if matches!(phase, dae_core::progress::FileOperationPhase::Preparing) {
+                        self.set_busy(true);
+                    }
+                }
+                Event::TransferJob(event) => self.apply_job_event(event),
+                Event::UndoRedoChanged { can_undo, can_redo } => {
+                    self.set_can_undo(can_undo);
+                    self.set_can_redo(can_redo);
+                }
+                Event::DirectoryChanged { .. }
+                | Event::DirectoryEntries { .. }
+                | Event::SystemThemeChanged(_)
+                | Event::SystemAccentChanged(_)
+                | Event::DirectorySizeProgress { .. }
+                | Event::FileHashProgress { .. } => {}
+            }
+        }
+
+        #[qslot]
+
+        fn create_folder(&mut self, directory: String, name: String) {
+            self.create_entry(directory, name, NewEntryKind::Directory, "create");
+        }
+
+        #[qslot]
+
+        fn create_file(&mut self, directory: String, name: String) {
+            self.create_entry(directory, name, NewEntryKind::File, "create");
+        }
+
+        #[qslot]
+
+        fn create_from_template(
+            &mut self,
+            directory: String,
+            template_path: String,
+            name: String,
+        ) {
+            let directory = directory.to_string();
+            let template_path = template_path.to_string();
+            let name = name.to_string();
+            if name.trim().is_empty() {
+                self.finish_operation("create", "", Some("Name cannot be empty".to_owned()));
+                return;
+            }
+            if !vfs::is_local_path(&directory) || !vfs::is_local_path(&template_path) {
+                self.finish_operation(
+                    "create",
+                    "",
+                    Some("Templates can only be used in local folders".to_owned()),
+                );
+                return;
+            }
+
+            self.begin_operation("Creating…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "create", async move {
+                match service::create_from_template(directory, template_path, name, host).await {
+                    Ok(created) => Outcome::ok(created),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn templates_json(&self) -> String {
+            match templates::list() {
+                Ok(entries) => {
+                    let text = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+                    text.to_owned()
+                }
+                Err(_) => "[]".to_owned(),
+            }
+        }
+
+        #[qslot]
+
+        fn open_templates_directory(&mut self) {
+            let directory = match templates::ensure_directory() {
+                Ok(directory) => directory,
+                Err(error) => {
+                    self.finish_operation("open", "", Some(error.to_string()));
+                    return;
+                }
+            };
+            let path = directory.to_string_lossy().into_owned();
+            if let Err(message) = platform::open_path(&path) {
+                self.finish_operation("open", "", Some(message));
+                return;
+            }
+        }
+
+        #[qslot]
+
+        fn set_templates_directory(&mut self, path: String) {
+            let directory = path.to_string().trim().to_owned();
+            if directory.is_empty() || !Path::new(&directory).is_dir() {
+                self.set_last_error("The templates folder does not exist".to_owned());
+                return;
+            }
+
+            let Ok(mut settings) = dae_core::settings::load_settings() else {
+                self.set_last_error("Could not read settings".to_owned());
+                return;
+            };
+            settings.templates.directory = Some(directory);
+            match dae_core::settings::save_settings(settings) {
+                Ok(_) => self.set_last_error(String::new()),
+                Err(error) => self.set_last_error(error.to_string()),
+            }
+        }
+
+        #[qslot]
+
+        fn file_holders(&mut self, paths: Vec<String>) {
+            let requested: Vec<String> = paths
+                .into_iter()
+                .filter(|path| !path.trim().is_empty())
+                .collect();
+            let request =
+                serde_json::to_string(&requested).unwrap_or_else(|_| "[]".to_owned());
+            let local: Vec<String> = requested
+                .iter()
+                .filter(|path| vfs::is_local_path(path))
+                .cloned()
+                .collect();
+
+            if local.is_empty() {
+                let report = r#"{"holders":[],"scanned":0,"truncated":false}"#.to_owned();
+                let request_value = request.to_owned();
+                let error = "Locksmith only checks local paths".to_owned();
+                self.file_holders_found(request_value, report, error);
+                return;
+            }
+
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let outcome =
+                    tokio::task::spawn_blocking(move || occupancy::holders_deep(&local)).await;
+
+                thread.invoke_mut(move |workspace| match outcome {
+                    Ok(report) => {
+                        let report =
+                            serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_owned());
+                        let request_value = request.to_owned();
+                        let report_value = report.to_owned();
+                        workspace.file_holders_found(
+                            request_value,
+                            report_value,
+                            String::default(),
+                        );
+                    }
+                    Err(error) => {
+                        let request_value = request.to_owned();
+                        let report_value =
+                            r#"{"holders":[],"scanned":0,"truncated":false}"#.to_owned();
+                        let message = error.to_string();
+                        workspace.file_holders_found(
+                            request_value,
+                            report_value,
+                            message,
+                        );
+                    }
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn end_process(&mut self, pid: i32) {
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let outcome = tokio::task::spawn_blocking(move || {
+                    if pid <= 0 {
+                        return Err(FileSystemError::InvalidInput(
+                            "No process was selected".to_owned(),
+                        ));
+                    }
+                    occupancy::end_process(pid as u32)
+                })
+                .await;
+
+                thread.invoke_mut(move |workspace| match outcome {
+                    Ok(Ok(())) => workspace
+                        .process_ended(pid, true, String::default()),
+                    Ok(Err(error)) => {
+                        let message = error.to_string();
+                        workspace.process_ended(
+                            pid,
+                            false,
+                            String::from(message.as_str()),
+                        );
+                    }
+                    Err(error) => {
+                        let message = error.to_string();
+                        workspace.process_ended(
+                            pid,
+                            false,
+                            String::from(message.as_str()),
+                        );
+                    }
+                });
+            });
+        }
+
+        fn create_entry(
+            &mut self,
+            directory: String,
+            name: String,
+            entry_kind: NewEntryKind,
+            operation_kind: &'static str,
+        ) {
+            let directory = directory.to_string();
+            let name = name.to_string();
+            if name.trim().is_empty() {
+                self.finish_operation(
+                    operation_kind,
+                    "",
+                    Some("Name cannot be empty".to_owned()),
+                );
+                return;
+            }
+
+            self.begin_operation("Creating…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, operation_kind, async move {
+                match service::create_entry(directory, name, entry_kind, host).await {
+                    Ok(created) => Outcome::ok(created),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn rename_entry(&mut self, path: String, new_name: String) {
+            let path = path.to_string();
+            let new_name = new_name.to_string();
+            if new_name.trim().is_empty() {
+                self.finish_operation("rename", "", Some("Name cannot be empty".to_owned()));
+                return;
+            }
+
+            self.begin_operation("Renaming…");
+            let focus = dae_core::fs::undo::renamed_path(&path, &new_name).unwrap_or_default();
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "rename", async move {
+                match service::rename_entry(path, new_name, host).await {
+                    Ok(()) => Outcome::ok(focus),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn compare_hashes(&mut self, paths: Vec<String>) {
+            let paths = paths;
+            if paths.len() != 2 {
+                return;
+            }
+            if !paths.iter().all(|path| vfs::is_local_path(path)) {
+                self.finish_operation(
+                    "compare",
+                    "",
+                    Some("Hashes can only be compared for local files".to_owned()),
+                );
+                return;
+            }
+
+            self.begin_operation("Comparing hashes…");
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    let first = hashing::digests(Path::new(&paths[0]))?;
+                    let second = hashing::digests(Path::new(&paths[1]))?;
+                    Ok::<bool, FileSystemError>(first.sha256 == second.sha256)
+                })
+                .await;
+
+                thread.invoke_mut(move |workspace| match result {
+                    Ok(Ok(equal)) => {
+                        workspace.settle_operation();
+                        workspace.record_operation("compare", None);
+                        workspace.compare_finished(equal);
+                    }
+                    Ok(Err(error)) => {
+                        workspace
+                            .finish_operation("compare", "", Some(error.to_string()))
+                    }
+                    Err(error) => {
+                        workspace
+                            .finish_operation("compare", "", Some(error.to_string()))
+                    }
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn measure_folders(&mut self, paths: Vec<String>) {
+            let directories: Vec<String> = paths
+                .into_iter()
+                .filter(|path| vfs::is_local_path(path) && Path::new(path).is_dir())
+                .collect();
+            if directories.is_empty() {
+                return;
+            }
+
+            // A second pass replaces the first: the user asked again, and two
+            // walks of the same tree would report the same numbers twice.
+            let cancel = Arc::new(AtomicBool::new(false));
+            if let Some(previous) = self.size_scan.replace(cancel.clone()) {
+                previous.store(true, Ordering::Relaxed);
+            }
+
+            self.begin_operation("Calculating sizes…");
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let measured = tokio::task::spawn_blocking(move || {
+                    let mut measured: Vec<(String, u64)> = Vec::with_capacity(directories.len());
+                    for path in directories {
+                        if cancel.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let bytes = directory_size::measure_directory(Path::new(&path), &cancel);
+                        measured.push((path, bytes));
+                    }
+                    measured
+                })
+                .await
+                .unwrap_or_default();
+
+                let mut payload = String::from("[");
+                for (index, (path, bytes)) in measured.iter().enumerate() {
+                    if index > 0 {
+                        payload.push(',');
+                    }
+                    let escaped = serde_json::to_string(path).unwrap_or_else(|_| "\"\"".to_owned());
+                    payload.push_str(&format!("{{\"path\":{escaped},\"size\":{bytes}}}"));
+                }
+                payload.push(']');
+
+                thread.invoke_mut(move |workspace| {
+                    workspace.finish_size_scan(payload);
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn cancel_measure_folders(&mut self) {
+            let cancelled = self.size_scan.take();
+            if let Some(cancel) = cancelled {
+                cancel.store(true, Ordering::Relaxed);
+                self.settle_operation();
+                self.set_status("Size calculation cancelled".to_owned());
+            }
+        }
+
+        fn finish_size_scan(&mut self, payload: String) {
+            self.size_scan = None;
+            let sizes = payload.to_owned();
+            self.folder_sizes_measured(sizes);
+            self.settle_operation();
+            self.set_status("Sizes calculated".to_owned());
+        }
+
+        #[qslot]
+
+        fn trash_entries(&mut self, paths: Vec<String>) {
+            let paths = paths;
+            if paths.is_empty() {
+                return;
+            }
+            self.begin_operation("Moving to Trash…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "trash", async move {
+                match service::trash_entries(paths, operation_id(), host).await {
+                    Ok(()) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn delete_entries(&mut self, paths: Vec<String>) {
+            let paths = paths;
+            if paths.is_empty() {
+                return;
+            }
+            self.begin_operation("Deleting…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "delete", async move {
+                match service::delete_entries(paths, operation_id(), host).await {
+                    Ok(()) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn duplicate_entries(&mut self, paths: Vec<String>) {
+            let paths = paths;
+            if paths.is_empty() {
+                return;
+            }
+            self.begin_operation("Duplicating…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "duplicate", async move {
+                match service::duplicate_entries(paths, operation_id(), host).await {
+                    Ok(created) => Outcome::ok(created.into_iter().next().unwrap_or_default()),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn compress_entries(
+            &mut self,
+            sources: Vec<String>,
+            destination_dir: String,
+            format: String,
+            password: String,
+        ) {
+            let sources = sources;
+            if sources.is_empty() {
+                self.finish_operation(
+                    "compress",
+                    "",
+                    Some("Select items to compress".to_owned()),
+                );
+                return;
+            }
+
+            let destination_dir = destination_dir.to_string();
+            if destination_dir.is_empty() {
+                self.finish_operation(
+                    "compress",
+                    "",
+                    Some("Cannot determine archive destination".to_owned()),
+                );
+                return;
+            }
+
+            let Some(format) = archive_format(&format.to_string()) else {
+                self.finish_operation(
+                    "compress",
+                    "",
+                    Some("Unsupported archive format".to_owned()),
+                );
+                return;
+            };
+
+            let password = optional_string(&password);
+            self.begin_operation("Compressing…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "compress", async move {
+                match archive::compress_entries(
+                    sources,
+                    destination_dir,
+                    format,
+                    password,
+                    operation_id(),
+                    host,
+                )
+                .await
+                {
+                    Ok(archive_path) => Outcome::ok(archive_path),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn extract_archive(
+            &mut self,
+            archive_path: String,
+            destination_dir: String,
+            password: String,
+        ) {
+            let archive_path = archive_path.to_string();
+            if archive_path.is_empty() {
+                return;
+            }
+
+            let destination_dir = optional_string(&destination_dir);
+            let password = optional_string(&password);
+            let password_supplied = password.is_some();
+            self.begin_operation("Extracting…");
+            let retry = serde_json::json!({
+                "kind": "extract",
+                "archive": archive_path,
+                "destination": destination_dir.clone().unwrap_or_default(),
+            });
+            self.retry_hint = Some(retry.to_string());
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            let signal_target = archive_path.clone();
+            runtime::spawn(async move {
+                let result = archive::extract_archive(
+                    archive_path,
+                    destination_dir,
+                    password,
+                    operation_id(),
+                    host,
+                )
+                .await;
+
+                thread.invoke_mut(move |workspace| match result {
+                    Ok(destination) => {
+                        workspace
+                            .finish_operation("extract", &destination, None)
+                    }
+                    Err(FileSystemError::WrongPassword(_)) => {
+                        let message = if password_supplied {
+                            "Incorrect password. Try again."
+                        } else {
+                            "This archive is encrypted. Enter a password."
+                        };
+                        workspace.settle_operation();
+                        workspace
+                            .request_archive_password(&signal_target, message);
+                    }
+                    Err(error) => workspace.finish_operation(
+                        "extract",
+                        "",
+                        Some(friendly_error(&error.to_string())),
+                    ),
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn transfer_entries(
+            &mut self,
+            paths: Vec<String>,
+            destination: String,
+            cut: bool,
+        ) {
+            let sources = paths;
+            let destination = destination.to_string();
+            if sources.is_empty() || destination.is_empty() {
+                return;
+            }
+            // A cut is one-shot, but only for the list that was actually cut: a
+            // move dragged in from Explorer must not discard an in-app cut
+            // clipboard that happens to be unrelated.
+            let clears_clipboard = cut
+                && self.clipboard_mode.to_string() == "cut"
+                && self.clipboard_paths == sources;
+            let request = TransferRequest {
+                sources,
+                destination,
+                cut,
+                resume: false,
+                spends_clipboard: clears_clipboard,
+            };
+            self.scheduler().submit(request);
+            self.publish_queue();
+        }
+
+        /// The core's job scheduler, created on first use: it needs a Qt thread
+        /// to route its events back through, which only exists once QML calls in.
+        fn scheduler(&mut self) -> Arc<JobScheduler> {
+            if let Some(scheduler) = &self.transfer_scheduler {
+                return Arc::clone(scheduler);
+            }
+            let scheduler = JobScheduler::new(
+                runtime::runtime().handle().clone(),
+                host_for(self.get_thread_handle()),
+            );
+            self.transfer_scheduler = Some(Arc::clone(&scheduler));
+            scheduler
+        }
+
+        /// Queues the "continue" of a cancelled copy: the same sources into the
+        /// same destination, merged rather than checked for collisions.
+        fn enqueue_resumed_transfer(
+            &mut self,
+            sources: Vec<String>,
+            destination: String,
+            cut: bool,
+        ) {
+            if sources.is_empty() || destination.is_empty() {
+                return;
+            }
+
+            let request = TransferRequest {
+                sources,
+                destination,
+                cut,
+                resume: true,
+                spends_clipboard: false,
+            };
+            self.scheduler().submit(request);
+            self.publish_queue();
+        }
+
+        fn publish_queue(&mut self) {
+            let queued = self
+                .transfer_scheduler
+                .as_ref()
+                .map(|scheduler| scheduler.queued())
+                .unwrap_or_default();
+            let labels: Vec<String> = queued.iter().map(transfer_label).collect();
+            let paths: Vec<String> = queued.iter().map(|job| job.destination.clone()).collect();
+            self.set_queued_transfers(labels.to_vec());
+            self.set_queued_transfer_paths(paths.to_vec());
+        }
+
+        /// The queue panel's ✕. Only a waiting job can be dropped: a running one
+        /// is cancelled through its operation id, which keeps the half-copied
+        /// tree and the "continue" offer honest.
+        #[qslot]
+        fn cancel_queued_transfer(&mut self, index: i32) {
+            if index >= 0
+                && let Some(scheduler) = &self.transfer_scheduler
+            {
+                scheduler.drop_queued(index as usize);
+            }
+            self.publish_queue();
+        }
+
+        #[qslot]
+
+        fn cancel_queued_transfers(&mut self) {
+            if let Some(scheduler) = &self.transfer_scheduler {
+                scheduler.clear_queued();
+            }
+            self.publish_queue();
+        }
+
+        /// Publishes the rows as the JSON list the panel reads, plus the combined
+        /// throughput the chip prints. Called whenever a row appears, moves or
+        /// goes away.
+        fn publish_transfers(&mut self) {
+            let mut list = Vec::new();
+            let mut combined_bps = 0.0;
+            for row in &self.transfer_rows {
+                if row.running {
+                    combined_bps += row.speed_bps;
+                }
+                let percent = (row.done.min(row.total) * 100)
+                    .checked_div(row.total)
+                    .unwrap_or(0) as i32;
+                let eta = if row.running {
+                    transfer_eta(row.done, row.total, row.speed_bps)
+                        .map(format_eta)
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                list.push(serde_json::json!({
+                    "jobId": row.job_id,
+                    "operationId": row.operation_id.clone().unwrap_or_default(),
+                    "name": transfer_label(&row.request),
+                    "target": row.request.destination,
+                    "running": row.running,
+                    "paused": row.paused,
+                    "done": row.done,
+                    "total": row.total,
+                    "percent": percent,
+                    "speed": row.speed,
+                    "eta": eta,
+                    "current": row.current,
+                }));
+            }
+            let json = serde_json::Value::Array(list).to_string();
+            let speed = if combined_bps > 0.0 {
+                format_speed(combined_bps)
+            } else {
+                String::new()
+            };
+            self.set_transfers_json(json.to_owned());
+            self.set_transfer_speed(speed.to_owned());
+        }
+
+        /// One running transfer reported back: write its status-center row from
+        /// the row's own provenance, free the busy count and drop the row. The
+        /// global progress row belongs to the non-transfer operations, so it is
+        /// left alone here.
+        fn finish_transfer_row(
+            &mut self,
+            job_id: u64,
+            error: Option<String>,
+            cancelled: bool,
+        ) {
+            let Some(position) = self
+                .transfer_rows
+                .iter()
+                .position(|row| row.job_id == job_id)
+            else {
+                return;
+            };
+            let row = self.transfer_rows.remove(position);
+            let kind = if row.request.cut { "move" } else { "copy" };
+
+            let active = (self.active_operations - 1).max(0);
+            self.active_operations = active;
+            self.set_busy(active > 0);
+
+            self.record_operation_row(
+                kind,
+                error.as_deref(),
+                cancelled,
+                row.started_at,
+                row.label.clone(),
+                row.retry.clone(),
+            );
+
+            let kind_value = kind.to_owned();
+            if cancelled {
+                self.set_status("Transfer cancelled".to_owned());
+                self.operation_finished(kind_value, String::default());
+            } else if let Some(message) = error {
+                self.set_last_error(message.to_owned());
+                let message_value = message.to_owned();
+                self.operation_failed(kind_value, message_value);
+            } else {
+                self.set_status(success_message(kind).to_owned());
+                self.operation_finished(kind_value, String::default());
+            }
+            self.publish_transfers();
+        }
+
+        #[qslot]
+
+        fn pause_transfer(&mut self, job_id: i64) {
+            let changed = {
+                let rust = &mut *self;
+                let Some(row) = rust
+                    .transfer_rows
+                    .iter_mut()
+                    .find(|row| row.job_id == job_id as u64)
+                else {
+                    return;
+                };
+                let Some(operation) = row.operation_id.clone() else {
+                    return;
+                };
+                // `false` means the transfer returned between the click and here;
+                // its row is about to disappear with the Finished event anyway.
+                if service::pause_transfer(&operation) {
+                    row.paused = true;
+                    row.speed = String::new();
+                    row.speed_bps = 0.0;
+                    row.speed_sample = None;
+                    true
+                } else {
+                    false
+                }
+            };
+            if changed {
+                self.publish_transfers();
+            }
+        }
+
+        #[qslot]
+
+        fn resume_transfer(&mut self, job_id: i64) {
+            let changed = {
+                let rust = &mut *self;
+                let Some(row) = rust
+                    .transfer_rows
+                    .iter_mut()
+                    .find(|row| row.job_id == job_id as u64)
+                else {
+                    return;
+                };
+                let Some(operation) = row.operation_id.clone() else {
+                    return;
+                };
+                if service::resume_transfer(&operation) {
+                    row.paused = false;
+                    true
+                } else {
+                    false
+                }
+            };
+            if changed {
+                self.publish_transfers();
+            }
+        }
+
+        #[qslot]
+
+        fn cancel_transfer(&mut self, job_id: i64) {
+            let rust = &mut *self;
+            let Some(row) = rust
+                .transfer_rows
+                .iter()
+                .find(|row| row.job_id == job_id as u64)
+            else {
+                return;
+            };
+            let Some(operation) = row.operation_id.clone() else {
+                return;
+            };
+            // The engine notices at its next checkpoint and returns `Cancelled`,
+            // whose Finished event reports it as neither success nor failure.
+            service::cancel_transfer(&operation);
+        }
+
+        #[qslot]
+
+        fn apply_transfer_speed_limit(&mut self, kib_per_second: i32) {
+            let kib = (kib_per_second.max(0) as u64).min(MAX_SPEED_LIMIT_KIB);
+
+            // Applied first: the limit is in force for this session even when the
+            // settings file cannot be written.
+            service::set_transfer_speed_limit((kib > 0).then_some(kib * 1024));
+            self.set_transfer_speed_limit(kib as i32);
+
+            if let Ok(mut settings) = dae_core::settings::load_settings()
+                && settings.transfer.speed_limit_kib != kib
+            {
+                settings.transfer.speed_limit_kib = kib;
+                if let Err(error) = dae_core::settings::save_settings(settings) {
+                    log::warn!(
+                        target: "dae::workspace",
+                        "could not persist the transfer limit: {error}"
+                    );
+                }
+            }
+        }
+
+        /// Retries a failed copy or move in an elevated copy of this binary.
+        ///
+        /// The record's own retry payload is the job: the same sources, the same
+        /// destination, and `Replace` because the failed attempt may have left part
+        /// of the tree at the target.
+        #[qslot]
+        fn elevate_operation(&mut self, id: String) {
+            let id = id.to_string();
+            let Some(record) = self.operations.iter().find(|record| record.id == id) else {
+                return;
+            };
+
+            if !record.elevatable {
+                return;
+            }
+
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(&record.retry) else {
+                return;
+            };
+            if payload["kind"].as_str() != Some("transfer") {
+                return;
+            }
+
+            let paths: Vec<String> = payload["paths"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let destination = payload["destination"].as_str().unwrap_or_default().to_owned();
+            let cut = payload["cut"].as_bool().unwrap_or(false);
+            let retry = record.retry.clone();
+
+            if paths.is_empty() || destination.is_empty() {
+                return;
+            }
+
+            let request = TransferRequest {
+                sources: paths.clone(),
+                destination: destination.clone(),
+                cut,
+                resume: false,
+                spends_clipboard: false,
+            };
+            let job = dae_core::fs::elevated::ElevatedJob {
+                kind: if cut { "move" } else { "copy" }.to_owned(),
+                sources: paths
+                    .into_iter()
+                    .map(|path| TransferItem {
+                        path,
+                        on_conflict: ConflictAction::Replace,
+                    })
+                    .collect(),
+                destination: Some(destination),
+                rate_limit: service::transfer_speed_limit(),
+            };
+
+            // The elevated child reports progress and answers pause/cancel under
+            // this id, exactly like an in-process transfer, so the same row and
+            // its buttons work. `run_elevated` registers the control under it.
+            let operation = operation_id();
+            let job_id = {
+                let rust = &mut *self;
+                rust.next_local_job += 1;
+                rust.next_local_job
+            };
+            {
+                let rust = &mut *self;
+                let mut row = TransferRow::new(job_id, request);
+                row.running = true;
+                row.operation_id = Some(operation.clone());
+                row.label = if cut {
+                    "Moving as administrator…"
+                } else {
+                    "Copying as administrator…"
+                }
+                .to_owned();
+                // The same payload can be retried again if this attempt fails.
+                row.retry = retry;
+                rust.transfer_rows.push(row);
+                rust.active_operations += 1;
+            }
+            self.set_busy(true);
+            self.publish_transfers();
+
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            // Not `dispatch`: an elevated transfer owns its row directly (it never
+            // went through the scheduler), so its completion settles the row too.
+            runtime::spawn(async move {
+                let outcome = match service::run_elevated(job, host, operation).await {
+                    Ok(()) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                };
+                thread.invoke_mut(move |workspace| {
+                    workspace
+                        .finish_transfer_row(job_id, outcome.error, outcome.cancelled);
+                });
+            });
+        }
+
+        /// Renders one lifecycle event from the core's job scheduler. The rules
+        /// (queue order, conflict answers, resume) live in `fs::jobs`; everything
+        /// here is presentation plus the shell-owned clipboard and retry payload.
+        /// Every event names its job, so several transfers can be on screen at
+        /// once without their rows crossing.
+        fn apply_job_event(&mut self, event: JobEvent) {
+            match event {
+                JobEvent::Accepted { job_id, request } => {
+                    self.transfer_rows
+                        .push(TransferRow::new(job_id, request));
+                    self.publish_transfers();
+                    self.publish_queue();
+                }
+                JobEvent::ConflictPrompt {
+                    job_id,
+                    conflict,
+                    index,
+                    total,
+                    cut,
+                } => {
+                    // Render the payload once, on arrival; the prompt is frozen
+                    // until the dialog reaches this job's turn.
+                    let prompt = PendingPrompt {
+                        job_id,
+                        index,
+                        total,
+                        cut,
+                        name: conflict.name.clone(),
+                        source_category: glyph_category(conflict.source_kind).to_owned(),
+                        source_detail: conflict_detail(
+                            conflict.source_kind,
+                            &conflict.name,
+                            conflict.source_size,
+                            conflict.source_modified_at,
+                        ),
+                        target_category: glyph_category(conflict.target_kind).to_owned(),
+                        target_detail: conflict_detail(
+                            conflict.target_kind,
+                            &conflict.name,
+                            conflict.target_size,
+                            conflict.target_modified_at,
+                        ),
+                    };
+                    {
+                        let rust = &mut *self;
+                        match rust
+                            .pending_conflicts
+                            .iter()
+                            .position(|prompt| prompt.job_id == job_id)
+                        {
+                            // The job on screen advanced to its next collision.
+                            Some(at) => rust.pending_conflicts[at] = prompt,
+                            // A new job's prompt waits behind the one on screen.
+                            None => rust.pending_conflicts.push(prompt),
+                        }
+                    }
+                    self.show_conflict_head();
+                }
+                JobEvent::Started {
+                    job_id,
+                    operation_id,
+                    request,
+                } => {
+                    self.forget_pending_conflict(job_id);
+                    // A copy clipboard stays available so the same selection can
+                    // be pasted into several directories; a cut is spent here,
+                    // once, as the move it was waiting for finally starts.
+                    if request.spends_clipboard {
+                        self.clear_clipboard();
+                    }
+                    let retry = serde_json::json!({
+                        "kind": "transfer",
+                        "paths": &request.sources,
+                        "destination": &request.destination,
+                        "cut": request.cut,
+                        "resume": request.resume,
+                    })
+                    .to_string();
+                    {
+                        let rust = &mut *self;
+                        if !rust.transfer_rows.iter().any(|row| row.job_id == job_id) {
+                            rust.transfer_rows
+                                .push(TransferRow::new(job_id, request.clone()));
+                        }
+                        let row = rust
+                            .transfer_rows
+                            .iter_mut()
+                            .find(|row| row.job_id == job_id)
+                            .expect("row just ensured");
+                        row.running = true;
+                        // One id for the whole transfer: the core registers a
+                        // control under it so pause, cancel and the limit all
+                        // reach the running operation.
+                        row.operation_id = Some(operation_id);
+                        row.started_at = now_millis();
+                        row.label = if request.cut { "Moving…" } else { "Copying…" }.to_owned();
+                        row.retry = retry;
+                    }
+                    let active = self.active_operations + 1;
+                    self.active_operations = active;
+                    self.set_busy(true);
+                    self.publish_transfers();
+                }
+                JobEvent::Finished {
+                    job_id,
+                    error,
+                    cancelled,
+                    ..
+                } => {
+                    self.finish_transfer_row(
+                        job_id,
+                        error.map(|error| friendly_error(&error)),
+                        cancelled,
+                    );
+                    self.publish_queue();
+                }
+                JobEvent::CheckFailed { job_id, cut, error } => {
+                    // Nothing was copied and no busy count was taken: drop the
+                    // row and report the failure the way a copy would have, but
+                    // without `settle_operation` — decrementing there would clear
+                    // the progress row of whatever else is running.
+                    {
+                        let rust = &mut *self;
+                        if let Some(position) = rust
+                            .transfer_rows
+                            .iter()
+                            .position(|row| row.job_id == job_id)
+                        {
+                            rust.transfer_rows.remove(position);
+                        }
+                    }
+                    let message = friendly_error(&error);
+                    self.forget_pending_conflict(job_id);
+                    self.set_last_error(message.to_owned());
+                    let kind_value = if cut { "move" } else { "copy" }.to_owned();
+                    let message_value = message.to_owned();
+                    self.operation_failed(kind_value, message_value);
+                    self.publish_transfers();
+                    self.publish_queue();
+                }
+            }
+        }
+
+        fn clear_conflict(&mut self) {
+            self.set_conflict_job_id(0);
+            self.set_conflict_waiting(0);
+            self.set_conflict_index(0);
+            self.set_conflict_total(0);
+            self.set_conflict_name(String::new());
+            self.set_conflict_cut(false);
+            self.set_conflict_source_category(String::new());
+            self.set_conflict_source_detail(String::new());
+            self.set_conflict_target_category(String::new());
+            self.set_conflict_target_detail(String::new());
+        }
+
+        /// Drops the prompt `job_id` is waiting on and repaints the dialog from
+        /// the front of the list — the next job's question when one waits, an
+        /// empty dialog when none does.
+        fn forget_pending_conflict(&mut self, job_id: u64) {
+            self.pending_conflicts
+                .retain(|prompt| prompt.job_id != job_id);
+            self.show_conflict_head();
+        }
+
+        /// Paints the dialog from the front of the pending list. A prompt that
+        /// waited behind another job is already rendered; this only copies it
+        /// onto the properties.
+        fn show_conflict_head(&mut self) {
+            let (head, waiting) = {
+                let rust = &mut *self;
+                let waiting = rust.pending_conflicts.len().saturating_sub(1) as i32;
+                (rust.pending_conflicts.first().cloned(), waiting)
+            };
+            let Some(head) = head else {
+                self.clear_conflict();
+                return;
+            };
+            self.set_conflict_waiting(waiting);
+            self.set_conflict_job_id(head.job_id as i64);
+            self.set_conflict_index(head.index as i32 + 1);
+            self.set_conflict_total(head.total as i32);
+            self.set_conflict_name(head.name.to_owned());
+            self.set_conflict_cut(head.cut);
+            self.set_conflict_source_category(head.source_category.to_owned());
+            self.set_conflict_source_detail(head.source_detail.to_owned());
+            self.set_conflict_target_category(head.target_category.to_owned());
+            self.set_conflict_target_detail(head.target_detail.to_owned());
+        }
+
+        /// Records the answer for the job's conflict on screen; the core moves
+        /// to its next one or runs the batch. Its reply — the next prompt or
+        /// `Started` — repaints the dialog, so nothing is removed here.
+        #[qslot]
+        fn resolve_conflict(
+            &mut self,
+            job_id: i64,
+            action: String,
+            apply_to_all: bool,
+        ) {
+            let Some(action) = conflict_action(&action.to_string()) else {
+                return;
+            };
+            if job_id <= 0 {
+                return;
+            }
+            self.scheduler()
+                .answer(job_id as u64, action, apply_to_all);
+        }
+
+        /// Closes the question for that job and transfers nothing: the
+        /// destination stays untouched, the job's row goes with it, and the
+        /// queue advances. A prompt waiting behind moves onto the screen;
+        /// running transfers are untouched — their cancel goes through the
+        /// operation's control.
+        #[qslot]
+        fn cancel_conflict(&mut self, job_id: i64) {
+            if job_id <= 0 {
+                return;
+            }
+            let job_id = job_id as u64;
+            {
+                let rust = &mut *self;
+                // A job still in its pre-run phase — checking or asking — can
+                // be dismissed; a running row is not this command's to touch.
+                rust.transfer_rows
+                    .retain(|row| row.running || row.job_id != job_id);
+                rust.pending_conflicts
+                    .retain(|prompt| prompt.job_id != job_id);
+            }
+            self.scheduler().dismiss(job_id);
+            self.show_conflict_head();
+            self.publish_transfers();
+            self.publish_queue();
+        }
+
+        #[qslot]
+
+        fn start_drag_out(&self, paths: Vec<String>, mode: String,
+                          signal: String, count: i32, verdict: String,
+                          ink: String, canvas: String) {
+            if paths.is_empty() {
+                return;
+            }
+
+            // Qt::CopyAction | Qt::MoveAction | Qt::LinkAction are 1, 2 and 4.
+            let actions = match mode.to_string().as_str() {
+                "copy" => 1,
+                "move" => 2,
+                "link" => 4,
+                _ => 1 | 2 | 4,
+            };
+            if !ffi::start_file_drag(
+                &paths,
+                actions,
+                &signal,
+                count.max(1),
+                &verdict,
+                &ink,
+                &canvas,
+            ) {
+                log::warn!(target: "dae::workspace", "could not start the file drag");
+            }
+        }
+
+        #[qslot]
+
+        fn create_shortcuts(&mut self, paths: Vec<String>, destination: String) {
+            self.create_shortcuts_paths(paths, destination.to_string());
+        }
+
+        fn create_shortcuts_paths(&mut self, paths: Vec<String>, destination: String) {
+            if destination.is_empty() {
+                return;
+            }
+            if !vfs::is_local_path(&destination) {
+                self.finish_operation(
+                    "shortcut",
+                    "",
+                    Some("Shortcuts can only be created in local folders".to_owned()),
+                );
+                return;
+            }
+
+            // Links are a local-only operation; a link to a remote path would
+            // not resolve outside dae.
+            let sources: Vec<String> = paths
+                .into_iter()
+                .filter(|path| vfs::is_local_path(path))
+                .collect();
+            if sources.is_empty() {
+                self.finish_operation(
+                    "shortcut",
+                    "",
+                    Some("Shortcuts can only be created for local files".to_owned()),
+                );
+                return;
+            }
+
+            self.begin_operation("Creating shortcut…");
+            let thread = self.get_thread_handle();
+            dispatch(thread, "shortcut", async move {
+                match service::create_shortcuts(sources, destination).await {
+                    Ok(created) => Outcome::ok(created.into_iter().next().unwrap_or_default()),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn local_drop_paths(&self, urls: Vec<String>) -> Vec<String> {
+            ffi::local_drop_paths(&urls)
+        }
+
+        #[qslot]
+
+        fn copy_text(&self, text: String) -> bool {
+            if text.is_empty() {
+                return false;
+            }
+            // Deliberately quiet: "复制路径" and the checksum rows word their own
+            // confirmation, and a toast from here would say the wrong one.
+            ffi::set_clipboard_text(&text);
+            true
+        }
+
+        #[qslot]
+
+        fn rename_entries_batch(&mut self, paths: Vec<String>, names: Vec<String>) {
+            let paths = paths;
+            let names = names;
+            if paths.is_empty() || paths.len() != names.len() {
+                return;
+            }
+            let requests = paths
+                .into_iter()
+                .zip(names)
+                .map(|(path, new_name)| dae_core::types::RenameRequest { path, new_name })
+                .collect::<Vec<_>>();
+
+            self.begin_operation("Renaming…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "rename", async move {
+                match service::rename_entries_batch(requests, operation_id(), host).await {
+                    Ok(renamed) => Outcome::ok(renamed.into_iter().next().unwrap_or_default()),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn show_native_properties(&mut self, path: String) -> bool {
+            let path = path.to_string();
+            // A network path has no shell object to show, and opening the OS sheet
+            // on a `smb://` string would only produce a shell error dialog.
+            if path.is_empty() || !vfs::is_local_path(&path) {
+                return false;
+            }
+            platform::show_properties(&path)
+        }
+
+        #[qslot]
+
+        fn warm_shell_commands(&mut self) {
+            runtime::spawn(async {
+                if let Err(error) = dae_core::fs::shell_commands::warm_shell_commands().await {
+                    log::warn!(target: "dae::workspace", "shell-command warm-up failed: {error}");
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn invoke_shell_command(&mut self, id: String, paths: Vec<String>) {
+            let id = id.to_string();
+            let paths = paths;
+            if id.is_empty() {
+                return;
+            }
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            // Not a tracked operation: the launched app owns the result from here.
+            // Only a failure to start comes back to dae, and it goes through the
+            // same error toast every other command uses.
+            runtime::spawn(async move {
+                let result = dae_core::fs::shell_commands::invoke_shell_command(host, id, paths).await;
+                if let Err(error) = result {
+                    thread.invoke_mut(move |workspace| {
+                        let message = friendly_error(&error.to_string());
+                        let kind = "shellCommand".to_owned();
+                        let message_value = message.to_owned();
+                        workspace
+                            .set_last_error(message.to_owned());
+                        workspace.operation_failed(kind, message_value);
+                    });
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn set_clipboard(&mut self, mode: String, paths: Vec<String>) {
+            let mode = mode.to_string();
+            if paths.is_empty() {
+                self.clear_clipboard();
+                return;
+            }
+            let paths = paths;
+            self.set_clipboard_state(&mode, &paths);
+            self.system_clipboard_sequence = system_clipboard_sequence();
+
+            // Only local paths mean anything to Explorer; remote entries stay in
+            // the in-app mirror and are pasted by this shell alone.
+            let local: Vec<String> = paths
+                .into_iter()
+                .filter(|path| vfs::is_local_path(path))
+                .collect();
+            self.system_clipboard_paths = local.clone();
+            if local.is_empty() {
+                return;
+            }
+
+            let effect = if mode == "cut" {
+                ClipboardEffect::Move
+            } else {
+                ClipboardEffect::Copy
+            };
+            runtime::spawn(async move {
+                if let Err(error) = service::write_files_to_clipboard(local, effect).await {
+                    log::warn!(target: "dae::workspace", "could not place the selection on the system clipboard: {error}");
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn clear_clipboard(&mut self) {
+            self.clipboard_mode = String::new();
+            self.clipboard_paths = Vec::new();
+            self.clipboard_generation += 1;
+        }
+
+        /// Writes the mirror without touching the system clipboard.
+        fn set_clipboard_state(&mut self, mode: &str, paths: &[String]) {
+            self.set_clipboard_mode(mode.to_owned());
+            self.set_clipboard_paths(paths.to_vec());
+            self.clipboard_generation += 1;
+        }
+
+        #[qslot]
+
+        fn paste_into(&mut self, destination: String) {
+            let destination = destination.to_string();
+            let own = self.system_clipboard_paths.clone();
+            let sequence = self.system_clipboard_sequence;
+            let mirror = self.clipboard_paths.clone();
+            let mirror_mode = self.clipboard_mode.to_string();
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let (system, current) = system_clipboard_snapshot().await;
+                let contents =
+                    clipboard_contents(system, &own, &mirror, &mirror_mode, current == sequence);
+                let _ = thread
+                    .invoke_mut(move |workspace| workspace.apply_paste(contents, destination));
+            });
+        }
+
+        fn apply_paste(&mut self, contents: ClipboardContents, destination: String) {
+            match contents {
+                ClipboardContents::Empty => {
+                    self.finish_operation("copy", "", Some("Clipboard is empty".to_owned()))
+                }
+                ClipboardContents::Files {
+                    paths,
+                    effect: ClipboardEffect::Link,
+                } => self.create_shortcuts_paths(paths, destination),
+                ClipboardContents::Files { paths, effect } => {
+                    let list = paths.to_vec();
+                    self.transfer_entries(
+                        list,
+                        destination,
+                        effect == ClipboardEffect::Move,
+                    );
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn paste_shortcut_into(&mut self, destination: String) {
+            let destination = destination.to_string();
+            if destination.is_empty() {
+                return;
+            }
+            let own = self.system_clipboard_paths.clone();
+            let sequence = self.system_clipboard_sequence;
+            let mirror = self.clipboard_paths.clone();
+            let mirror_mode = self.clipboard_mode.to_string();
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let (system, current) = system_clipboard_snapshot().await;
+                let contents =
+                    clipboard_contents(system, &own, &mirror, &mirror_mode, current == sequence);
+                thread.invoke_mut(move |workspace| match contents {
+                    ClipboardContents::Empty => workspace.finish_operation(
+                        "shortcut",
+                        "",
+                        Some("Clipboard is empty".to_owned()),
+                    ),
+                    ClipboardContents::Files { paths, .. } => workspace
+                        .create_shortcuts_paths(paths, destination),
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn refresh_clipboard(&mut self) {
+            let generation = self.clipboard_generation;
+            let own = self.system_clipboard_paths.clone();
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let (system, sequence) = match service::read_files_from_clipboard().await {
+                    Ok(system) => (system, system_clipboard_sequence()),
+                    Err(_) => return,
+                };
+                thread.invoke_mut(move |workspace| {
+                    // An in-app copy that happened after the read wins.
+                    if workspace.clipboard_generation != generation {
+                        return;
+                    }
+                    workspace
+                        .apply_clipboard_refresh(system, sequence, &own);
+                });
+            });
+        }
+
+        fn apply_clipboard_refresh(
+            &mut self,
+            system: Option<SystemClipboardFiles>,
+            sequence: u32,
+            own: &[String],
+        ) {
+            match system {
+                Some(files) if !files.paths.is_empty() => {
+                    // Our own list may include remote paths the system clipboard
+                    // never saw, so only an outside list replaces the mirror.
+                    if files.paths != own {
+                        let mode = match files.effect {
+                            ClipboardEffect::Move => "cut",
+                            ClipboardEffect::Link => "link",
+                            ClipboardEffect::Copy => "copy",
+                        };
+                        self.set_clipboard_state(mode, &files.paths);
+                        self.system_clipboard_sequence = sequence;
+                    }
+                }
+                _ => {
+                    if !own.is_empty() {
+                        // The file list this shell placed was replaced by
+                        // something else (text, another app's data).
+                        self.clear_clipboard();
+                        self.system_clipboard_paths.clear();
+                        self.system_clipboard_sequence = sequence;
+                    }
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn undo(&mut self) {
+            self.begin_operation("Undoing…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "undo", async move {
+                match service::undo_operation(operation_id(), host).await {
+                    Ok(_) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn redo(&mut self) {
+            self.begin_operation("Redoing…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "redo", async move {
+                match service::redo_operation(operation_id(), host).await {
+                    Ok(_) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn start_system_watch(&mut self) {
+            crate::system_watch::start(self.get_thread_handle());
+        }
+
+        /// Applies an accent reading from the native watcher. `None` means the
+        /// platform published no colour, and the current default is kept.
+        pub(crate) fn apply_system_accent(&mut self, accent: Option<String>) {
+            let Some(accent) = accent else {
+                return;
+            };
+            if self.accent.to_string() == accent {
+                return;
+            }
+            self.set_accent(accent.to_owned());
+        }
+
+        /// Applies a light/dark reading from the native watcher. `None` means the
+        /// platform published no preference, and the current reading is kept.
+        pub(crate) fn apply_system_theme(&mut self, dark: Option<bool>) {
+            let Some(dark) = dark else {
+                return;
+            };
+            if self.system_dark == dark {
+                return;
+            }
+            self.set_system_dark(dark);
+        }
+
+        pub(crate) fn notify_volumes_changed(&mut self) {
+            self.volumes_changed();
+        }
+
+        #[qslot]
+
+        fn restore_trash_entries(&mut self, ids: Vec<String>) {
+            let ids = ids;
+            if ids.is_empty() {
+                return;
+            }
+            self.begin_operation("Restoring…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "restore_trash", async move {
+                match trash_view::restore_trash_entries(ids, operation_id(), host).await {
+                    Ok(_) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn delete_trash_entries(&mut self, ids: Vec<String>) {
+            let ids = ids;
+            if ids.is_empty() {
+                return;
+            }
+            self.begin_operation("Deleting permanently…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "purge_trash", async move {
+                match trash_view::delete_trash_entries(ids, operation_id(), host).await {
+                    Ok(_) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn empty_trash(&mut self) {
+            self.begin_operation("Emptying Trash…");
+            let host = host_for(self.get_thread_handle());
+            let thread = self.get_thread_handle();
+            dispatch(thread, "empty_trash", async move {
+                match trash_view::empty_trash(operation_id(), host).await {
+                    Ok(_) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn open_path(&mut self, path: String) {
+            let path = path.to_string();
+            if !vfs::is_local_path(&path) {
+                self.finish_operation(
+                    "open",
+                    "",
+                    Some(
+                        "Copy remote files to a local folder before opening them with a local app"
+                            .to_owned(),
+                    ),
+                );
+                return;
+            }
+            if let Err(message) = platform::open_path(&path) {
+                self.finish_operation("open", "", Some(message));
+                return;
+            }
+            self.record_recent(String::from(path.as_str()), false, true);
+        }
+
+        #[qslot]
+
+        fn open_with(&mut self, path: String) {
+            let path = path.to_string();
+            self.begin_operation("Opening…");
+            let thread = self.get_thread_handle();
+            dispatch(thread, "openWith", async move {
+                match service::open_with(path).await {
+                    Ok(()) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn open_with_app(
+            &mut self,
+            path: String,
+            app_id: String,
+            set_default: bool,
+        ) {
+            let path = path.to_string();
+            let app_id = app_id.to_string();
+            if path.trim().is_empty() || app_id.trim().is_empty() {
+                self.finish_operation(
+                    "openWith",
+                    "",
+                    Some("Select an application".to_owned()),
+                );
+                return;
+            }
+
+            self.begin_operation(if set_default {
+                "Setting as default…"
+            } else {
+                "Opening…"
+            });
+            let thread = self.get_thread_handle();
+            dispatch(thread, "openWith", async move {
+                match open_with::open_with_app(path, app_id, set_default).await {
+                    Ok(()) => Outcome::empty(),
+                    Err(error) => Outcome::failed(error),
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn open_terminal(&mut self, path: String) {
+            let path = path.to_string();
+            if !vfs::is_local_path(&path) {
+                self.finish_operation(
+                    "terminal",
+                    "",
+                    Some("Only local directories can be opened in Terminal".to_owned()),
+                );
+                return;
+            }
+            match service::open_terminal(path) {
+                Ok(()) => self.set_status("Opened in system terminal".to_owned()),
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.finish_operation("terminal", "", Some(message));
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn selection_size_text(&self, paths: Vec<String>) -> String {
+            let mut total: u64 = 0;
+            let mut counted = false;
+            for path in paths.iter().map(|path| path.to_string()) {
+                if !dae_core::fs::vfs::is_local_path(&path) {
+                    continue;
+                }
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if metadata.is_file() {
+                    total = total.saturating_add(metadata.len());
+                    counted = true;
+                }
+            }
+            if counted {
+                crate::format::size(total)
+            } else {
+                String::new()
+            }
+        }
+
+        #[qslot]
+
+        fn subdirectories(&self, directory: String) -> Vec<String> {
+            let directory = directory.to_string();
+            let mut names: Vec<String> = Vec::new();
+            if !directory.is_empty() && dae_core::fs::vfs::is_local_path(&directory) {
+                if let Ok(entries) = std::fs::read_dir(&directory) {
+                    for entry in entries.flatten() {
+                        // `file_type` avoids a second stat per entry on a network
+                        // drive, which is the whole cost of this call.
+                        let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+                        if !is_dir {
+                            continue;
+                        }
+                        if let Ok(name) = entry.file_name().into_string() {
+                            names.push(name);
+                        }
+                    }
+                }
+            }
+            // The menu and the completion list both read in name order, so the
+            // order is decided once on the way out.
+            names.sort_by(|left, right| {
+                left.to_lowercase()
+                    .cmp(&right.to_lowercase())
+                    .then(left.cmp(right))
+            });
+            let mut out = Vec::new();
+            for name in names {
+                out.push(name);
+            }
+            out
+        }
+
+        #[qslot]
+
+        fn recent_directories(&self) -> Vec<String> {
+            let mut seen = std::collections::HashSet::new();
+            let mut out = Vec::new();
+            for recent in dae_core::fs::recents::list_recents().unwrap_or_default() {
+                if recent.kind != dae_core::types::EntryKind::Directory {
+                    continue;
+                }
+                if seen.insert(recent.path.clone()) {
+                    out.push(recent.path);
+                }
+                if out.len() >= 32 {
+                    break;
+                }
+            }
+            out
+        }
+
+        #[qslot]
+
+        fn expand_typed_path(&self, text: String) -> String {
+            Self::expand_shorthand(&text)
+        }
+
+    /// Expands the typed-address shorthands. A leading `~` (alone or before a
+    /// separator) becomes the user's home; `%VAR%` and `$VAR`/`${VAR}` become
+    /// environment values. Anything that does not resolve stays as typed — the
+    /// navigation then reports the path in its own words, which is what
+    /// "keep what I typed" means.
+    pub(super) fn expand_shorthand(text: &str) -> String {
+        let expanded = if let Some(rest) = text.strip_prefix('~') {
+            if rest.is_empty() || rest.starts_with(['/', '\\']) {
+                std::env::var_os("USERPROFILE")
+                    .or_else(|| std::env::var_os("HOME"))
+                    .map(|home| {
+                        let home = home.to_string_lossy().into_owned();
+                        if rest.is_empty() { home } else { format!("{home}{rest}") }
+                    })
+                    .unwrap_or_else(|| text.to_owned())
+            } else {
+                text.to_owned()
+            }
+        } else {
+            text.to_owned()
+        };
+        Self::expand_percent(&Self::expand_dollar(&expanded))
+    }
+
+    /// `%VAR%` to the environment value, char-wise so multibyte text survives
+    /// untouched. An unresolvable pair is left exactly as typed.
+    fn expand_percent(text: &str) -> String {
+        let chars: Vec<char> = text.chars().collect();
+        let mut out = String::with_capacity(text.len());
+        let mut index = 0;
+        while index < chars.len() {
+            if chars[index] == '%' && index + 1 < chars.len()
+                && let Some(close) = chars[index + 1..].iter().position(|item| *item == '%')
+            {
+                let name: String = chars[index + 1..index + 1 + close].iter().collect();
+                if !name.is_empty()
+                    && name.chars().all(|item| item.is_ascii_alphanumeric() || item == '_')
+                    && let Some(value) = std::env::var_os(&name)
+                {
+                    out.push_str(&value.to_string_lossy());
+                    index += close + 2;
+                    continue;
+                }
+            }
+            out.push(chars[index]);
+            index += 1;
+        }
+        out
+    }
+
+    /// `$VAR` and `${VAR}` to the environment value. A `$` that names nothing
+    /// stays — POSIX paths legally carry one.
+    fn expand_dollar(text: &str) -> String {
+        let chars: Vec<char> = text.chars().collect();
+        let mut out = String::with_capacity(text.len());
+        let mut index = 0;
+        while index < chars.len() {
+            if chars[index] == '$' && index + 1 < chars.len() {
+                if chars[index + 1] == '{' {
+                    if let Some(close) = chars[index + 2..].iter().position(|item| *item == '}') {
+                        let name: String = chars[index + 2..index + 2 + close].iter().collect();
+                        if let Some(value) = std::env::var_os(&name) {
+                            out.push_str(&value.to_string_lossy());
+                            index += close + 3;
+                            continue;
+                        }
+                    }
+                } else {
+                    let mut end = index + 1;
+                    while end < chars.len()
+                        && (chars[end].is_ascii_alphanumeric() || chars[end] == '_')
+                    {
+                        end += 1;
+                    }
+                    if end > index + 1 {
+                        let name: String = chars[index + 1..end].iter().collect();
+                        if let Some(value) = std::env::var_os(&name) {
+                            out.push_str(&value.to_string_lossy());
+                            index = end;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(chars[index]);
+            index += 1;
+        }
+        out
+    }
+
+        #[qslot]
+
+        fn reveal(&mut self, path: String) {
+            let path = path.to_string();
+            if !vfs::is_local_path(&path) {
+                self.finish_operation(
+                    "reveal",
+                    "",
+                    Some("Remote items cannot be revealed in the system file manager".to_owned()),
+                );
+                return;
+            }
+            if let Err(message) = platform::reveal_path(&path) {
+                self.finish_operation("reveal", "", Some(message));
+            }
+        }
+
+        #[qslot]
+
+        fn record_recent(&mut self, path: String, is_directory: bool, opened: bool) {
+            let path = path.to_string();
+            if path.is_empty() {
+                return;
+            }
+            let kind = if is_directory {
+                dae_core::types::EntryKind::Directory
+            } else {
+                dae_core::types::EntryKind::File
+            };
+            let source = if opened {
+                RecentSource::Opened
+            } else {
+                RecentSource::Visited
+            };
+            runtime::spawn(async move {
+                let _ = dae_core::fs::recents::record_recent(path, kind, source).await;
+                // The taskbar's frequent group follows the folders the user browses,
+                // not the files they open. The request comes after the visit is on
+                // disk, or the rebuild would read a list without the folder that
+                // triggered it.
+                if is_directory {
+                    crate::jump_list::refresh();
+                }
+            });
+        }
+
+        #[qslot]
+
+        fn add_favorite(&mut self, path: String) {
+            let path = path.to_string();
+            if path.is_empty() {
+                return;
+            }
+            let mut favorites = sidebar::load_favorites().unwrap_or_default();
+            if favorites.iter().any(|favorite| favorite.path == path) {
+                return;
+            }
+            favorites.push(Favorite {
+                name: display_name_from_path(&path),
+                path: path.clone(),
+            });
+            match sidebar::save_favorites(favorites) {
+                Ok(()) => {
+                    self.set_status("Added to favorites".to_owned());
+                    self.favorites_changed();
+                    // A folder the user favorited belongs in the taskbar menu, even
+                    // if it was deleted from it earlier.
+                    crate::jump_list::reinclude(&path);
+                    crate::jump_list::refresh();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn add_favorite_paths(&mut self, paths: Vec<String>) {
+            let mut favorites = sidebar::load_favorites().unwrap_or_default();
+            let mut added: Vec<String> = Vec::new();
+            for path in paths.iter() {
+                let path = path.to_string();
+                if path.is_empty() || !std::path::Path::new(&path).is_dir() {
+                    continue;
+                }
+                if favorites.iter().any(|favorite| favorite.path == path) {
+                    continue;
+                }
+                favorites.push(Favorite {
+                    name: display_name_from_path(&path),
+                    path: path.clone(),
+                });
+                added.push(path);
+            }
+            if added.is_empty() {
+                return;
+            }
+            match sidebar::save_favorites(favorites) {
+                Ok(()) => {
+                    self.set_status("Added to favorites".to_owned());
+                    self.favorites_changed();
+                    for path in &added {
+                        crate::jump_list::reinclude(path);
+                    }
+                    crate::jump_list::refresh();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn hide_place(&mut self, kind: String) {
+            let Some(place) = parse_place_kind(&kind.to_string()) else {
+                return;
+            };
+            let mut hidden = sidebar::load_hidden_places().unwrap_or_default();
+            if hidden.contains(&place) {
+                return;
+            }
+            hidden.push(place);
+            match sidebar::save_hidden_places(hidden) {
+                Ok(()) => {
+                    self.set_status("Hidden from sidebar".to_owned());
+                    self.places_changed();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn show_all_places(&mut self) {
+            match sidebar::save_hidden_places(Vec::new()) {
+                Ok(()) => {
+                    self.set_status("Restored hidden places".to_owned());
+                    self.places_changed();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn remove_favorite(&mut self, path: String) {
+            let path = path.to_string();
+            let favorites: Vec<Favorite> = sidebar::load_favorites()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|favorite| favorite.path != path)
+                .collect();
+            match sidebar::save_favorites(favorites) {
+                Ok(()) => {
+                    self.set_status("Removed from favorites".to_owned());
+                    self.favorites_changed();
+                    crate::jump_list::refresh();
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn is_favorite(&self, path: String) -> bool {
+            let target = path.to_string();
+            if target.is_empty() {
+                return false;
+            }
+            sidebar::load_favorites()
+                .unwrap_or_default()
+                .iter()
+                .any(|favorite| favorite.path.eq_ignore_ascii_case(&target) || favorite.path == target)
+        }
+
+        #[qslot]
+
+        fn toggle_favorite(&mut self, path: String) {
+            if self.is_favorite(path.clone()) {
+                self.remove_favorite(path);
+            } else {
+                self.add_favorite(path);
+            }
+        }
+
+        #[qslot]
+
+        fn test_connection(
+            &mut self,
+            protocol: String,
+            host: String,
+            port: String,
+            username: String,
+            password: String,
+        ) {
+            let input = match connection_input(&protocol, &host, &port, &username, &password, false) {
+                Ok(input) => input,
+                Err(message) => {
+                    self.connection_test_finished(false, String::from(message.as_str()));
+                    return;
+                }
+            };
+
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = smb::test_connection(input).await;
+                thread.invoke_mut(move |workspace| match result {
+                    Ok(()) => workspace
+                        .connection_test_finished(true, String::from("Connection test succeeded")),
+                    Err(error) => {
+                        let message = friendly_error(&error.to_string());
+                        workspace
+                            .set_last_error(message.to_owned());
+                        workspace
+                            .connection_test_finished(false, String::from(message.as_str()));
+                    }
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn save_connection(
+            &mut self,
+            protocol: String,
+            host: String,
+            port: String,
+            username: String,
+            password: String,
+            remember_password: bool,
+        ) {
+            let input =
+                match connection_input(&protocol, &host, &port, &username, &password, remember_password) {
+                    Ok(input) => input,
+                    Err(message) => {
+                        self.connection_save_finished(
+                            false,
+                            String::default(),
+                            String::from(message.as_str()),
+                        );
+                        return;
+                    }
+                };
+
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = tokio::task::spawn_blocking(move || connections::save_connection(input))
+                    .await
+                    .map_err(|error| FileSystemError::Internal(error.to_string()))
+                    .and_then(|result| result);
+                thread.invoke_mut(move |workspace| match result {
+                    Ok(connection) => {
+                        workspace.connections_changed();
+                        workspace.connection_save_finished(
+                            true,
+                            String::from(connection.id.as_str()),
+                            String::default(),
+                        );
+                    }
+                    Err(error) => {
+                        let message = friendly_error(&error.to_string());
+                        workspace
+                            .set_last_error(message.to_owned());
+                        workspace.connection_save_finished(
+                            false,
+                            String::default(),
+                            String::from(message.as_str()),
+                        );
+                    }
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn delete_connection(&mut self, id: String) {
+            let id = id.to_string();
+            if id.trim().is_empty() {
+                return;
+            }
+            match connections::delete_connection(id) {
+                Ok(()) => {
+                    self.set_status("Connection removed".to_owned());
+                    self.connections_changed();
+                    let kind = "connection_delete".to_owned();
+                    self.operation_finished(kind, String::default());
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                    let kind = "connection_delete".to_owned();
+                    self.operation_failed(kind, message);
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn authorize_cloud_account(
+            &mut self,
+            provider: String,
+            client_id: String,
+            client_secret: String,
+        ) {
+            let provider = match CloudProviderKind::parse(provider.to_string().trim()) {
+                Ok(provider) => provider,
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.cloud_authorize_finished(false, String::from(message.as_str()));
+                    return;
+                }
+            };
+            let client_id = client_id.to_string().trim().to_owned();
+            if client_id.is_empty() {
+                self.cloud_authorize_finished(false, String::from("Enter a Client ID"));
+                return;
+            }
+
+            let input = AuthorizeCloudAccountInput {
+                provider,
+                client_id,
+                client_secret: optional_string(&client_secret),
+            };
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = cloud_oauth::authorize_cloud_account(input).await;
+                thread.invoke_mut(move |workspace| match result {
+                    Ok(account) => {
+                        workspace.connections_changed();
+                        workspace
+                            .cloud_authorize_finished(true, String::from(account.id.as_str()));
+                    }
+                    Err(error) => {
+                        let message = friendly_error(&error.to_string());
+                        workspace
+                            .set_last_error(message.to_owned());
+                        workspace
+                            .cloud_authorize_finished(false, String::from(message.as_str()));
+                    }
+                });
+            });
+        }
+
+        #[qslot]
+
+        fn delete_cloud_account(&mut self, id: String) {
+            let id = id.to_string();
+            if id.trim().is_empty() {
+                return;
+            }
+            match cloud_accounts::delete_cloud_account(id) {
+                Ok(()) => {
+                    self.set_status("Cloud account removed".to_owned());
+                    self.connections_changed();
+                    let kind = "cloud_delete".to_owned();
+                    self.operation_finished(kind, String::default());
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                    let kind = "cloud_delete".to_owned();
+                    self.operation_failed(kind, message);
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn save_terminal_settings(
+            &mut self,
+            font_size: i32,
+            line_height: f64,
+            family: String,
+        ) {
+            let mut settings = dae_core::settings::load_settings().unwrap_or_default();
+            settings.terminal.font_size = font_size.clamp(8, 24) as u8;
+            settings.terminal.line_height = (line_height as f32).clamp(0.8, 3.0);
+            let family = family.to_string();
+            settings.terminal.font_family = (!family.trim().is_empty()).then_some(family);
+
+            match dae_core::settings::save_settings(settings) {
+                Ok(saved) => {
+                    self.set_terminal_font_size(saved.terminal.font_size as i32);
+                    self.set_terminal_line_height(saved.terminal.line_height as f64);
+                    self.set_terminal_font_family(
+                        saved.terminal.font_family.unwrap_or_default(),
+                    );
+                    self.set_status("Terminal settings saved".to_owned());
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn refresh_default_manager(&mut self) {
+            self.start_default_manager(None);
+        }
+
+        #[qslot]
+
+        fn set_shortcut(&mut self, id: String, binding: String) {
+            let id = id.to_string();
+            if !dae_core::settings::default_shortcuts().contains_key(&id) {
+                self.set_last_error("Unknown shortcut action".to_owned());
+                return;
+            }
+            let binding = binding.to_string().trim().to_owned();
+            if binding.len() > 64 || binding.chars().any(char::is_control) {
+                self.set_last_error("Invalid shortcut format".to_owned());
+                return;
+            }
+            self.apply_shortcut_change(move |shortcuts| {
+                shortcuts.insert(id, binding);
+            });
+        }
+
+        #[qslot]
+
+        fn reset_shortcut(&mut self, id: String) {
+            let id = id.to_string();
+            let Some(binding) = dae_core::settings::default_shortcuts().get(&id).cloned() else {
+                self.set_last_error("Unknown shortcut action".to_owned());
+                return;
+            };
+            self.apply_shortcut_change(move |shortcuts| {
+                shortcuts.insert(id, binding);
+            });
+        }
+
+        #[qslot]
+
+        fn reset_shortcuts(&mut self) {
+            self.apply_shortcut_change(|shortcuts| {
+                *shortcuts = dae_core::settings::default_shortcuts();
+            });
+        }
+
+        /// Saves only the shortcut map. Loading first preserves the terminal
+        /// typography and the cached file-manager flag that share the document.
+        fn apply_shortcut_change(
+            &mut self,
+            change: impl FnOnce(&mut HashMap<String, String>),
+        ) {
+            let mut settings = dae_core::settings::load_settings().unwrap_or_default();
+            change(&mut settings.shortcuts);
+            match dae_core::settings::save_settings(settings) {
+                Ok(saved) => {
+                    self.set_shortcuts_json(shortcuts_json(&saved.shortcuts));
+                    self.set_status("Shortcuts saved".to_owned());
+                    self.set_last_error(String::new());
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    self.set_last_error(message.to_owned());
+                }
+            }
+        }
+
+        #[qslot]
+
+        fn open_log_directory(&mut self) {
+            let directory = crate::logging::app_log_directory();
+            if let Err(error) = std::fs::create_dir_all(&directory) {
+                self.set_last_error(
+                    format!("Could not create log directory: {error}"),
+                );
+                return;
+            }
+            match platform::open_path(&directory.to_string_lossy()) {
+                Ok(()) => self.set_status("Opened log directory".to_owned()),
+                Err(message) => self.set_last_error(message.to_owned()),
+            }
+        }
+
+        #[qslot]
+
+        fn set_default_file_manager(&mut self) {
+            self.start_default_manager(Some(true));
+        }
+
+        #[qslot]
+
+        fn unset_default_file_manager(&mut self) {
+            self.start_default_manager(Some(false));
+        }
+
+        /// `None` re-reads the OS state; `Some(true/false)` registers or removes
+        /// dae first. The blocking platform calls run off the Qt thread, and the
+        /// busy flag drops overlapping requests the same way the Git operations do.
+        fn start_default_manager(&mut self, change: Option<bool>) {
+            if self.default_manager_busy {
+                return;
+            }
+            self.set_default_manager_busy(true);
+            self.set_default_manager_error(String::new());
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = tokio::task::spawn_blocking(move || match change {
+                    Some(true) => default_manager::set(),
+                    Some(false) => default_manager::unset(),
+                    None => default_manager::status(),
+                })
+                .await
+                .map_err(|error| {
+                    FileSystemError::Internal(format!("default_manager.status_failed: {error}"))
+                })
+                .and_then(|result| result);
+                thread.invoke_mut(move |workspace| {
+                    workspace.adopt_default_manager(change, result)
+                });
+            });
+        }
+
+        fn adopt_default_manager(
+            &mut self,
+            change: Option<bool>,
+            result: Result<DefaultManagerStatus, FileSystemError>,
+        ) {
+            self.set_default_manager_busy(false);
+            match result {
+                Ok(status) => {
+                    self.set_default_manager_supported(status.supported);
+                    self.set_default_manager_is_default(status.is_default);
+                    self.set_default_manager_is_registered(status.is_registered);
+                    let detail = status
+                        .detail
+                        .as_deref()
+                        .map(default_manager_detail)
+                        .unwrap_or("");
+                    self.set_default_manager_detail(detail.to_owned());
+                    self.set_default_manager_error(String::new());
+                    if change.is_some() {
+                        let _ = dae_core::settings::set_default_file_manager_cache(status.is_default);
+                    }
+                }
+                Err(error) => {
+                    self.set_default_manager_detail(String::new());
+                    let message = friendly_error(&error.to_string());
+                    self.set_default_manager_error(message.to_owned());
+                }
+            }
         }
     }
 }
 
+pub use workspace_impl::Workspace;
+
+impl QmlElement for Workspace {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "Workspace";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
+}
+
 /// Turns core events into queued Qt updates.
 struct QtHost {
-    thread: cxx_qt::CxxQtThread<qobject::Workspace>,
+    thread: QThreadHandle<Workspace>,
 }
 
 impl Host for QtHost {
     fn emit(&self, event: Event) {
-        let _ = self
-            .thread
-            .queue(move |mut workspace| workspace.as_mut().apply_event(event));
+        self.thread.invoke_mut(move |workspace| workspace.apply_event(event));
     }
 }
 
-fn host_for(thread: &cxx_qt::CxxQtThread<qobject::Workspace>) -> Arc<dyn Host> {
-    Arc::new(QtHost {
-        thread: thread.clone(),
-    })
+fn host_for(thread: QThreadHandle<Workspace>) -> Arc<dyn Host> {
+    Arc::new(QtHost { thread })
 }
 
 /// The outcome an async command reports back on the Qt thread.
@@ -1259,17 +3687,17 @@ impl Outcome {
 }
 
 /// Runs one core future and reports on the Qt thread.
-fn dispatch<F>(thread: cxx_qt::CxxQtThread<qobject::Workspace>, kind: &'static str, future: F)
+fn dispatch<F>(thread: QThreadHandle<Workspace>, kind: &'static str, future: F)
 where
     F: std::future::Future<Output = Outcome> + Send + 'static,
 {
     runtime::spawn(async move {
         let outcome = future.await;
-        let _ = thread.queue(move |mut workspace| {
+        thread.invoke_mut(move |workspace| {
             if outcome.cancelled {
-                workspace.as_mut().finish_cancelled_operation(kind);
+                workspace.finish_cancelled_operation(kind);
             } else {
-                workspace.as_mut().finish_operation(
+                workspace.finish_operation(
                     kind,
                     outcome.focus.as_str(),
                     outcome.error,
@@ -1277,2972 +3705,6 @@ where
             }
         });
     });
-}
-
-impl qobject::Workspace {
-    fn begin_operation(mut self: Pin<&mut Self>, label: &str) {
-        self.as_mut()
-            .rust_mut()
-            .operation_starts
-            .push((now_millis(), label.to_owned()));
-        self.as_mut().rust_mut().retry_hint = None;
-        let active = self.active_operations + 1;
-        self.as_mut().rust_mut().active_operations = active;
-        self.as_mut().set_busy(true);
-        self.as_mut().set_progress_done(0);
-        self.as_mut().set_progress_total(0);
-        // Unknown until the operation reports: a rename sends no progress at
-        // all, and a stale code from the previous command would make the strip
-        // read the new one's numbers in the wrong unit.
-        self.as_mut().set_progress_kind(QString::default());
-        self.as_mut().set_progress_label(QString::from(label));
-        self.as_mut().set_last_error(QString::default());
-    }
-
-    fn finish_operation(mut self: Pin<&mut Self>, kind: &str, focus: &str, error: Option<String>) {
-        self.as_mut().finish_operation_state(kind, focus, error, false);
-    }
-
-    /// A transfer the user stopped: no error toast, no failure badge, and a
-    /// status-center row whose action is "continue" rather than "retry".
-    fn finish_cancelled_operation(mut self: Pin<&mut Self>, kind: &str) {
-        self.as_mut()
-            .finish_operation_state(kind, "", None, true);
-    }
-
-    fn finish_operation_state(
-        mut self: Pin<&mut Self>,
-        kind: &str,
-        focus: &str,
-        error: Option<String>,
-        cancelled: bool,
-    ) {
-        self.as_mut().settle_operation();
-        self.as_mut()
-            .record_operation_state(kind, error.as_deref(), cancelled);
-
-        let kind_value = QString::from(kind);
-        let focus_value = QString::from(focus);
-
-        if cancelled {
-            // Neither a success nor an error: the status bar says what
-            // happened, and the status center's row offers to continue.
-            let status = "Transfer cancelled";
-            self.as_mut().set_status(QString::from(status));
-            self.as_mut().operation_finished(&kind_value, &focus_value);
-            return;
-        }
-
-        match error {
-            Some(message) => {
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-                let message_value = QString::from(message.as_str());
-                self.as_mut().operation_failed(&kind_value, &message_value);
-            }
-            None => {
-                let status = success_message(kind);
-                self.as_mut().set_status(QString::from(status));
-                self.as_mut().operation_finished(&kind_value, &focus_value);
-            }
-        }
-    }
-
-    /// Turns a drive tool's outcome into the same toast and status-center row
-    /// every other command uses.
-    fn run_drive_action(
-        mut self: Pin<&mut Self>,
-        kind: &str,
-        result: Result<(), FileSystemError>,
-        success: &str,
-    ) {
-        match result {
-            Ok(()) => {
-                self.as_mut().begin_operation(success);
-                self.as_mut().set_status(QString::from(success));
-                self.as_mut().finish_operation(kind, "", None);
-            }
-            Err(error) => {
-                let message = error.to_string();
-                self.as_mut().finish_operation(kind, "", Some(message));
-            }
-        }
-    }
-
-    /// One line for the status center. Runs before the toast, so a failed
-    /// operation is already in the history when its message appears.
-    fn record_operation(mut self: Pin<&mut Self>, kind: &str, error: Option<&str>) {
-        self.as_mut().record_operation_state(kind, error, false);
-    }
-
-    fn record_operation_state(
-        mut self: Pin<&mut Self>,
-        kind: &str,
-        error: Option<&str>,
-        cancelled: bool,
-    ) {
-        let (started, label) = self
-            .as_mut()
-            .rust_mut()
-            .operation_starts
-            .pop()
-            .unwrap_or_else(|| (now_millis(), String::new()));
-        let retry = self
-            .as_mut()
-            .rust_mut()
-            .retry_hint
-            .take()
-            .unwrap_or_default();
-        self.as_mut()
-            .record_operation_row(kind, error, cancelled, started, label, retry);
-    }
-
-    /// Writes one status-center row from explicit provenance. Transfers call
-    /// this with their own row's start, label and retry payload: several run
-    /// at once, so the shared `operation_starts` stack — newest start finishes
-    /// next — cannot be theirs.
-    fn record_operation_row(
-        mut self: Pin<&mut Self>,
-        kind: &str,
-        error: Option<&str>,
-        cancelled: bool,
-        started: u64,
-        label: String,
-        retry: String,
-    ) {
-        let retryable = !retry.is_empty() && matches!(kind, "copy" | "move" | "extract");
-
-        // A cancelled *copy* is continued, not repeated: the retry payload
-        // gains `resume`, which makes the job scheduler skip the conflict
-        // check and merge into what already landed. A cancelled move cannot be
-        // continued — the entries it finished are no longer at the source — so
-        // it keeps the ordinary retry.
-        let retry = if cancelled && kind == "copy" && retryable {
-            match serde_json::from_str::<serde_json::Value>(&retry) {
-                Ok(mut payload) => {
-                    payload["resume"] = serde_json::json!(true);
-                    payload.to_string()
-                }
-                Err(_) => retry,
-            }
-        } else {
-            retry
-        };
-
-        // Cancellation outranks the error slot: `finish_cancelled_operation`
-        // passes no error, and a control that failed while being cancelled is
-        // still a cancellation to the status center, not a failure to retry.
-        let status = if cancelled {
-            "cancelled"
-        } else if error.is_some() {
-            "failed"
-        } else {
-            "ok"
-        };
-
-        let record = OperationRecord {
-            id: operation_id(),
-            kind: kind.to_owned(),
-            label: if label.is_empty() {
-                success_message(kind).to_owned()
-            } else {
-                label
-            },
-            started,
-            finished: now_millis(),
-            status: status.to_owned(),
-            detail: if cancelled {
-                "Cancelled".to_owned()
-            } else {
-                error.unwrap_or_else(|| success_message(kind)).to_owned()
-            },
-            retryable,
-            retry: if retryable { retry } else { String::new() },
-            // Elevation is a *retry* on a path the user's token cannot write,
-            // so it is only offered where a copy or a move actually failed and
-            // the platform can raise a separate process.
-            elevatable: status == "failed"
-                && matches!(kind, "copy" | "move")
-                && cfg!(any(windows, target_os = "linux", target_os = "macos")),
-        };
-
-        let failed = record.status == "failed";
-        {
-            let mut rust = self.as_mut().rust_mut();
-            rust.operations.push(record);
-            let excess = rust
-                .operations
-                .len()
-                .saturating_sub(OPERATION_HISTORY_LIMIT);
-            if excess > 0 {
-                rust.operations.drain(0..excess);
-            }
-            persist_operations(&rust.operations);
-        }
-        let json = operations_json(&self.operations);
-        self.as_mut()
-            .set_operations_json(QString::from(json.as_str()));
-        if failed {
-            let count = self.failure_count + 1;
-            self.as_mut().set_failure_count(count);
-        }
-    }
-
-    fn eject_drive(mut self: Pin<&mut Self>, path: &QString) {
-        self.as_mut()
-            .run_drive_action("drive", drives::eject(&path.to_string()), "Ejected");
-    }
-
-    fn unmount_drive(mut self: Pin<&mut Self>, path: &QString) {
-        self.as_mut()
-            .run_drive_action("drive", drives::unmount(&path.to_string()), "Unmounted");
-    }
-
-    fn mount_drive(mut self: Pin<&mut Self>, path: &QString) {
-        self.as_mut()
-            .run_drive_action("drive", drives::mount(&path.to_string()), "Mounted");
-    }
-
-    fn format_drive(mut self: Pin<&mut Self>, path: &QString) {
-        self.as_mut().run_drive_action(
-            "drive",
-            drives::open_format_tool(&path.to_string()),
-            "Format dialog opened",
-        );
-    }
-
-    fn open_storage_cleanup(mut self: Pin<&mut Self>) {
-        self.as_mut().run_drive_action(
-            "drive",
-            drives::open_cleanup_tool(),
-            "Storage settings opened",
-        );
-    }
-
-    fn drive_encryption_status(self: Pin<&mut Self>, path: &QString) -> QString {
-        match drives::encryption_status(&path.to_string()) {
-            Ok(text) => QString::from(text.as_str()),
-            Err(error) => QString::from(error.to_string().as_str()),
-        }
-    }
-
-    fn open_previous_versions(mut self: Pin<&mut Self>, path: &QString) {
-        self.as_mut().run_drive_action(
-            "drive",
-            drives::open_previous_versions(&path.to_string()),
-            "Previous versions opened",
-        );
-    }
-
-    fn custom_action_definitions(&self) -> QString {
-        let actions = dae_core::settings::load_settings()
-            .map(|settings| settings.actions)
-            .unwrap_or_default();
-        let entries: Vec<serde_json::Value> = actions
-            .into_iter()
-            .map(|action| {
-                serde_json::json!({
-                    "id": action.id,
-                    "name": action.name,
-                    "command": action.command,
-                    "args": action.args.join("\n"),
-                    "selection": action.selection,
-                    "extensions": action.extensions.join(","),
-                    "platforms": action.platforms.join(","),
-                })
-            })
-            .collect();
-        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
-        QString::from(json.as_str())
-    }
-
-    fn custom_actions_for(
-        self: Pin<&mut Self>,
-        paths: &QStringList,
-        directory: &QString,
-    ) -> QString {
-        let selection = strings(paths);
-        let directory = directory.to_string();
-        let entries: Vec<serde_json::Value> = actions::available_actions()
-            .into_iter()
-            .filter(|action| actions::selection_allows(action, &selection, &directory))
-            .map(|action| serde_json::json!({"id": action.id, "name": action.name}))
-            .collect();
-        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
-        QString::from(json.as_str())
-    }
-
-    fn run_custom_action(
-        mut self: Pin<&mut Self>,
-        id: &QString,
-        paths: &QStringList,
-        directory: &QString,
-    ) {
-        let id = id.to_string();
-        let selection = strings(paths);
-        let directory = directory.to_string();
-        let Some(action) = actions::action_by_id(&id) else {
-            self.as_mut()
-                .finish_operation("action", "", Some("Unknown action".to_owned()));
-            return;
-        };
-        if !actions::selection_allows(&action, &selection, &directory) {
-            self.as_mut().finish_operation(
-                "action",
-                "",
-                Some("This action does not apply to the selection".to_owned()),
-            );
-            return;
-        }
-        match actions::run(&action, &selection, &directory) {
-            Ok(program) => {
-                self.as_mut().begin_operation("Running action…");
-                self.as_mut()
-                    .set_status(QString::from(format!("Ran {program}").as_str()));
-                self.as_mut().finish_operation("action", "", None);
-            }
-            Err(error) => {
-                self.as_mut()
-                    .finish_operation("action", "", Some(error.to_string()));
-            }
-        }
-    }
-
-    fn share_supported(self: Pin<&mut Self>) -> bool {
-        crate::share::supported()
-    }
-
-    fn share_paths(self: Pin<&mut Self>, paths: &QStringList, handle: f64) -> bool {
-        crate::share::share_paths(paths, handle)
-    }
-
-    fn save_custom_action(
-        mut self: Pin<&mut Self>,
-        id: &QString,
-        name: &QString,
-        command: &QString,
-        args: &QString,
-        selection: &QString,
-    ) {
-        let Ok(mut settings) = dae_core::settings::load_settings() else {
-            return;
-        };
-        let id = id.to_string();
-        let action = dae_core::settings::CustomAction {
-            id: id.clone(),
-            name: name.to_string(),
-            command: command.to_string(),
-            args: action_args(&args.to_string()),
-            platforms: Vec::new(),
-            selection: selection.to_string(),
-            extensions: Vec::new(),
-        };
-
-        if id.trim().is_empty() {
-            let mut candidate = settings.actions.len() + 1;
-            loop {
-                let generated = format!("custom-{candidate}");
-                if !settings.actions.iter().any(|entry| entry.id == generated) {
-                    settings.actions.push(dae_core::settings::CustomAction {
-                        id: generated,
-                        ..action
-                    });
-                    break;
-                }
-                candidate += 1;
-            }
-        } else if let Some(existing) = settings.actions.iter_mut().find(|entry| entry.id == id) {
-            *existing = action;
-        } else {
-            settings.actions.push(action);
-        }
-
-        if dae_core::settings::save_settings(settings).is_ok() {
-            let json = custom_actions_json();
-            self.as_mut()
-                .set_custom_actions_json(QString::from(json.as_str()));
-        }
-    }
-
-    fn remove_custom_action(mut self: Pin<&mut Self>, id: &QString) {
-        let id = id.to_string();
-        let Ok(mut settings) = dae_core::settings::load_settings() else {
-            return;
-        };
-        settings.actions.retain(|action| action.id != id);
-        if dae_core::settings::save_settings(settings).is_ok() {
-            let json = custom_actions_json();
-            self.as_mut()
-                .set_custom_actions_json(QString::from(json.as_str()));
-        }
-    }
-
-    fn reset_custom_actions(mut self: Pin<&mut Self>) {
-        let Ok(mut settings) = dae_core::settings::load_settings() else {
-            return;
-        };
-        settings.actions = dae_core::settings::default_actions();
-        if dae_core::settings::save_settings(settings).is_ok() {
-            let json = custom_actions_json();
-            self.as_mut()
-                .set_custom_actions_json(QString::from(json.as_str()));
-        }
-    }
-
-    fn mark_operations_read(mut self: Pin<&mut Self>) {
-        if self.failure_count != 0 {
-            self.as_mut().set_failure_count(0);
-        }
-    }
-
-    fn clear_operation_history(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().operations.clear();
-        persist_operations(&[]);
-        self.as_mut().set_operations_json(QString::from("[]"));
-        self.as_mut().set_failure_count(0);
-    }
-
-    fn retry_operation(mut self: Pin<&mut Self>, id: &QString) {
-        let id = id.to_string();
-        let Some(record) = self
-            .operations
-            .iter()
-            .find(|record| record.id == id)
-            .cloned()
-        else {
-            return;
-        };
-        if !record.retryable {
-            return;
-        }
-        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&record.retry) else {
-            return;
-        };
-        match payload["kind"].as_str() {
-            Some("extract") => {
-                let archive = payload["archive"].as_str().unwrap_or_default();
-                let destination = payload["destination"].as_str().unwrap_or_default();
-                self.as_mut().extract_archive(
-                    &QString::from(archive),
-                    &QString::from(destination),
-                    &QString::default(),
-                );
-            }
-            Some("transfer") => {
-                let mut paths = QStringList::default();
-                if let Some(items) = payload["paths"].as_array() {
-                    for item in items {
-                        if let Some(path) = item.as_str() {
-                            paths.append(QString::from(path));
-                        }
-                    }
-                }
-                let destination = payload["destination"].as_str().unwrap_or_default();
-                let cut = payload["cut"].as_bool().unwrap_or(false);
-                let resume = payload["resume"].as_bool().unwrap_or(false);
-
-                if paths.len() > 0 && resume {
-                    self.as_mut().enqueue_resumed_transfer(
-                        strings(&paths),
-                        destination.to_owned(),
-                        cut,
-                    );
-                } else if paths.len() > 0 {
-                    self.as_mut()
-                        .transfer_entries(&paths, &QString::from(destination), cut);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Clears the progress row without reporting an outcome. A protected
-    /// archive uses this before asking for a password: nothing failed yet, and
-    /// an `operationFinished` would wrongly say the extraction completed.
-    fn settle_operation(mut self: Pin<&mut Self>) {
-        let active = (self.active_operations - 1).max(0);
-        self.as_mut().rust_mut().active_operations = active;
-        self.as_mut().set_busy(active > 0);
-        self.as_mut().set_progress_done(0);
-        self.as_mut().set_progress_total(0);
-        self.as_mut().set_progress_kind(QString::default());
-        self.as_mut().set_progress_label(QString::default());
-    }
-
-    fn request_archive_password(mut self: Pin<&mut Self>, target: &str, message: &str) {
-        let target = QString::from(target);
-        let message = QString::from(message);
-        self.as_mut().set_last_error(message.clone());
-        self.as_mut().archive_password_required(&target, &message);
-    }
-
-    fn apply_event(mut self: Pin<&mut Self>, event: Event) {
-        match event {
-            Event::FileOperationProgress {
-                operation_id,
-                operation,
-                phase,
-                completed,
-                total,
-                current_path,
-            } => {
-                // A transfer's ticks belong to its row; everything else (a
-                // rename, a trash run, a size walk) keeps the shared progress
-                // row in the status strip.
-                let is_transfer = self
-                    .transfer_rows
-                    .iter()
-                    .any(|row| row.operation_id.as_deref() == Some(operation_id.as_str()));
-                if is_transfer {
-                    let mut rust = self.as_mut().rust_mut();
-                    let row = rust
-                        .transfer_rows
-                        .iter_mut()
-                        .find(|row| row.operation_id.as_deref() == Some(operation_id.as_str()))
-                        .expect("row just found");
-                    row.done = completed;
-                    if let Some(total) = total {
-                        row.total = total;
-                    }
-                    row.current = current_path
-                        .as_deref()
-                        .map(display_name_from_path)
-                        .unwrap_or_default();
-                    // Only a copy or a move counts bytes: a delete reports
-                    // entries, and calling that a rate would be a lie.
-                    if matches!(
-                        operation,
-                        dae_core::progress::FileOperationKind::Copy
-                            | dae_core::progress::FileOperationKind::Move
-                    ) {
-                        row.sample_speed(completed);
-                    }
-                    self.as_mut().publish_transfers();
-                    return;
-                }
-
-                let label = current_path
-                    .as_deref()
-                    .map(display_name_from_path)
-                    .unwrap_or_else(|| operation_label(operation).to_owned());
-                self.as_mut()
-                    .set_progress_label(QString::from(label.as_str()));
-                self.as_mut()
-                    .set_progress_kind(QString::from(operation.code()));
-                self.as_mut()
-                    .set_progress_done(completed.min(i32::MAX as u64) as i32);
-                let total = total.unwrap_or(0).min(i32::MAX as u64) as i32;
-                self.as_mut().set_progress_total(total);
-
-                if matches!(phase, dae_core::progress::FileOperationPhase::Preparing) {
-                    self.as_mut().set_busy(true);
-                }
-            }
-            Event::TransferJob(event) => self.as_mut().apply_job_event(event),
-            Event::UndoRedoChanged { can_undo, can_redo } => {
-                self.as_mut().set_can_undo(can_undo);
-                self.as_mut().set_can_redo(can_redo);
-            }
-            Event::DirectoryChanged { .. }
-            | Event::DirectoryEntries { .. }
-            | Event::SystemThemeChanged(_)
-            | Event::SystemAccentChanged(_)
-            | Event::DirectorySizeProgress { .. }
-            | Event::FileHashProgress { .. } => {}
-        }
-    }
-
-    fn create_folder(mut self: Pin<&mut Self>, directory: &QString, name: &QString) {
-        self.as_mut()
-            .create_entry(directory, name, NewEntryKind::Directory, "create");
-    }
-
-    fn create_file(mut self: Pin<&mut Self>, directory: &QString, name: &QString) {
-        self.as_mut()
-            .create_entry(directory, name, NewEntryKind::File, "create");
-    }
-
-    fn create_from_template(
-        mut self: Pin<&mut Self>,
-        directory: &QString,
-        template_path: &QString,
-        name: &QString,
-    ) {
-        let directory = directory.to_string();
-        let template_path = template_path.to_string();
-        let name = name.to_string();
-        if name.trim().is_empty() {
-            self.as_mut()
-                .finish_operation("create", "", Some("Name cannot be empty".to_owned()));
-            return;
-        }
-        if !vfs::is_local_path(&directory) || !vfs::is_local_path(&template_path) {
-            self.as_mut().finish_operation(
-                "create",
-                "",
-                Some("Templates can only be used in local folders".to_owned()),
-            );
-            return;
-        }
-
-        self.as_mut().begin_operation("Creating…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "create", async move {
-            match service::create_from_template(directory, template_path, name, host).await {
-                Ok(created) => Outcome::ok(created),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn templates_json(&self) -> QString {
-        match templates::list() {
-            Ok(entries) => {
-                let text = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
-                QString::from(text.as_str())
-            }
-            Err(_) => QString::from("[]"),
-        }
-    }
-
-    fn open_templates_directory(mut self: Pin<&mut Self>) {
-        let directory = match templates::ensure_directory() {
-            Ok(directory) => directory,
-            Err(error) => {
-                self.as_mut()
-                    .finish_operation("open", "", Some(error.to_string()));
-                return;
-            }
-        };
-        let path = directory.to_string_lossy().into_owned();
-        if let Err(message) = platform::open_path(&path) {
-            self.as_mut().finish_operation("open", "", Some(message));
-            return;
-        }
-    }
-
-    fn set_templates_directory(mut self: Pin<&mut Self>, path: &QString) {
-        let directory = path.to_string().trim().to_owned();
-        if directory.is_empty() || !Path::new(&directory).is_dir() {
-            self.as_mut()
-                .set_last_error(QString::from("The templates folder does not exist"));
-            return;
-        }
-
-        let Ok(mut settings) = dae_core::settings::load_settings() else {
-            self.as_mut()
-                .set_last_error(QString::from("Could not read settings"));
-            return;
-        };
-        settings.templates.directory = Some(directory);
-        match dae_core::settings::save_settings(settings) {
-            Ok(_) => self.as_mut().set_last_error(QString::default()),
-            Err(error) => self
-                .as_mut()
-                .set_last_error(QString::from(error.to_string().as_str())),
-        }
-    }
-
-    fn file_holders(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let requested: Vec<String> = strings(paths)
-            .into_iter()
-            .filter(|path| !path.trim().is_empty())
-            .collect();
-        let request =
-            serde_json::to_string(&requested).unwrap_or_else(|_| "[]".to_owned());
-        let local: Vec<String> = requested
-            .iter()
-            .filter(|path| vfs::is_local_path(path))
-            .cloned()
-            .collect();
-
-        if local.is_empty() {
-            let report = QString::from(r#"{"holders":[],"scanned":0,"truncated":false}"#);
-            let request_value = QString::from(request.as_str());
-            let error = QString::from("Locksmith only checks local paths");
-            self.as_mut()
-                .file_holders_found(&request_value, &report, &error);
-            return;
-        }
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let outcome =
-                tokio::task::spawn_blocking(move || occupancy::holders_deep(&local)).await;
-
-            let _ = thread.queue(move |mut workspace| match outcome {
-                Ok(report) => {
-                    let report =
-                        serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_owned());
-                    let request_value = QString::from(request.as_str());
-                    let report_value = QString::from(report.as_str());
-                    workspace.as_mut().file_holders_found(
-                        &request_value,
-                        &report_value,
-                        &QString::default(),
-                    );
-                }
-                Err(error) => {
-                    let request_value = QString::from(request.as_str());
-                    let report_value =
-                        QString::from(r#"{"holders":[],"scanned":0,"truncated":false}"#);
-                    let message = QString::from(error.to_string().as_str());
-                    workspace.as_mut().file_holders_found(
-                        &request_value,
-                        &report_value,
-                        &message,
-                    );
-                }
-            });
-        });
-    }
-
-    fn end_process(mut self: Pin<&mut Self>, pid: i32) {
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let outcome = tokio::task::spawn_blocking(move || {
-                if pid <= 0 {
-                    return Err(FileSystemError::InvalidInput(
-                        "No process was selected".to_owned(),
-                    ));
-                }
-                occupancy::end_process(pid as u32)
-            })
-            .await;
-
-            let _ = thread.queue(move |mut workspace| match outcome {
-                Ok(Ok(())) => workspace
-                    .as_mut()
-                    .process_ended(pid, true, &QString::default()),
-                Ok(Err(error)) => {
-                    let message = error.to_string();
-                    workspace.as_mut().process_ended(
-                        pid,
-                        false,
-                        &QString::from(message.as_str()),
-                    );
-                }
-                Err(error) => {
-                    let message = error.to_string();
-                    workspace.as_mut().process_ended(
-                        pid,
-                        false,
-                        &QString::from(message.as_str()),
-                    );
-                }
-            });
-        });
-    }
-
-    fn create_entry(
-        mut self: Pin<&mut Self>,
-        directory: &QString,
-        name: &QString,
-        entry_kind: NewEntryKind,
-        operation_kind: &'static str,
-    ) {
-        let directory = directory.to_string();
-        let name = name.to_string();
-        if name.trim().is_empty() {
-            self.as_mut().finish_operation(
-                operation_kind,
-                "",
-                Some("Name cannot be empty".to_owned()),
-            );
-            return;
-        }
-
-        self.as_mut().begin_operation("Creating…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, operation_kind, async move {
-            match service::create_entry(directory, name, entry_kind, host).await {
-                Ok(created) => Outcome::ok(created),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn rename_entry(mut self: Pin<&mut Self>, path: &QString, new_name: &QString) {
-        let path = path.to_string();
-        let new_name = new_name.to_string();
-        if new_name.trim().is_empty() {
-            self.as_mut()
-                .finish_operation("rename", "", Some("Name cannot be empty".to_owned()));
-            return;
-        }
-
-        self.as_mut().begin_operation("Renaming…");
-        let focus = dae_core::fs::undo::renamed_path(&path, &new_name).unwrap_or_default();
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "rename", async move {
-            match service::rename_entry(path, new_name, host).await {
-                Ok(()) => Outcome::ok(focus),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn compare_hashes(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let paths = strings(paths);
-        if paths.len() != 2 {
-            return;
-        }
-        if !paths.iter().all(|path| vfs::is_local_path(path)) {
-            self.as_mut().finish_operation(
-                "compare",
-                "",
-                Some("Hashes can only be compared for local files".to_owned()),
-            );
-            return;
-        }
-
-        self.as_mut().begin_operation("Comparing hashes…");
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                let first = hashing::digests(Path::new(&paths[0]))?;
-                let second = hashing::digests(Path::new(&paths[1]))?;
-                Ok::<bool, FileSystemError>(first.sha256 == second.sha256)
-            })
-            .await;
-
-            let _ = thread.queue(move |mut workspace| match result {
-                Ok(Ok(equal)) => {
-                    workspace.as_mut().settle_operation();
-                    workspace.as_mut().record_operation("compare", None);
-                    workspace.as_mut().compare_finished(equal);
-                }
-                Ok(Err(error)) => {
-                    workspace
-                        .as_mut()
-                        .finish_operation("compare", "", Some(error.to_string()))
-                }
-                Err(error) => {
-                    workspace
-                        .as_mut()
-                        .finish_operation("compare", "", Some(error.to_string()))
-                }
-            });
-        });
-    }
-
-    fn measure_folders(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let directories: Vec<String> = strings(paths)
-            .into_iter()
-            .filter(|path| vfs::is_local_path(path) && Path::new(path).is_dir())
-            .collect();
-        if directories.is_empty() {
-            return;
-        }
-
-        // A second pass replaces the first: the user asked again, and two
-        // walks of the same tree would report the same numbers twice.
-        let cancel = Arc::new(AtomicBool::new(false));
-        if let Some(previous) = self.as_mut().rust_mut().size_scan.replace(cancel.clone()) {
-            previous.store(true, Ordering::Relaxed);
-        }
-
-        self.as_mut().begin_operation("Calculating sizes…");
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let measured = tokio::task::spawn_blocking(move || {
-                let mut measured: Vec<(String, u64)> = Vec::with_capacity(directories.len());
-                for path in directories {
-                    if cancel.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let bytes = directory_size::measure_directory(Path::new(&path), &cancel);
-                    measured.push((path, bytes));
-                }
-                measured
-            })
-            .await
-            .unwrap_or_default();
-
-            let mut payload = String::from("[");
-            for (index, (path, bytes)) in measured.iter().enumerate() {
-                if index > 0 {
-                    payload.push(',');
-                }
-                let escaped = serde_json::to_string(path).unwrap_or_else(|_| "\"\"".to_owned());
-                payload.push_str(&format!("{{\"path\":{escaped},\"size\":{bytes}}}"));
-            }
-            payload.push(']');
-
-            let _ = thread.queue(move |mut workspace| {
-                workspace.as_mut().finish_size_scan(payload);
-            });
-        });
-    }
-
-    fn cancel_measure_folders(mut self: Pin<&mut Self>) {
-        let cancelled = self.as_mut().rust_mut().size_scan.take();
-        if let Some(cancel) = cancelled {
-            cancel.store(true, Ordering::Relaxed);
-            self.as_mut().settle_operation();
-            self.as_mut()
-                .set_status(QString::from("Size calculation cancelled"));
-        }
-    }
-
-    fn finish_size_scan(mut self: Pin<&mut Self>, payload: String) {
-        self.as_mut().rust_mut().size_scan = None;
-        let sizes = QString::from(payload.as_str());
-        self.as_mut().folder_sizes_measured(&sizes);
-        self.as_mut().settle_operation();
-        self.as_mut().set_status(QString::from("Sizes calculated"));
-    }
-
-    fn trash_entries(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let paths = strings(paths);
-        if paths.is_empty() {
-            return;
-        }
-        self.as_mut().begin_operation("Moving to Trash…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "trash", async move {
-            match service::trash_entries(paths, operation_id(), host).await {
-                Ok(()) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn delete_entries(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let paths = strings(paths);
-        if paths.is_empty() {
-            return;
-        }
-        self.as_mut().begin_operation("Deleting…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "delete", async move {
-            match service::delete_entries(paths, operation_id(), host).await {
-                Ok(()) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn duplicate_entries(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let paths = strings(paths);
-        if paths.is_empty() {
-            return;
-        }
-        self.as_mut().begin_operation("Duplicating…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "duplicate", async move {
-            match service::duplicate_entries(paths, operation_id(), host).await {
-                Ok(created) => Outcome::ok(created.into_iter().next().unwrap_or_default()),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn compress_entries(
-        mut self: Pin<&mut Self>,
-        sources: &QStringList,
-        destination_dir: &QString,
-        format: &QString,
-        password: &QString,
-    ) {
-        let sources = strings(sources);
-        if sources.is_empty() {
-            self.as_mut().finish_operation(
-                "compress",
-                "",
-                Some("Select items to compress".to_owned()),
-            );
-            return;
-        }
-
-        let destination_dir = destination_dir.to_string();
-        if destination_dir.is_empty() {
-            self.as_mut().finish_operation(
-                "compress",
-                "",
-                Some("Cannot determine archive destination".to_owned()),
-            );
-            return;
-        }
-
-        let Some(format) = archive_format(&format.to_string()) else {
-            self.as_mut().finish_operation(
-                "compress",
-                "",
-                Some("Unsupported archive format".to_owned()),
-            );
-            return;
-        };
-
-        let password = optional_string(password);
-        self.as_mut().begin_operation("Compressing…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "compress", async move {
-            match archive::compress_entries(
-                sources,
-                destination_dir,
-                format,
-                password,
-                operation_id(),
-                host,
-            )
-            .await
-            {
-                Ok(archive_path) => Outcome::ok(archive_path),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn extract_archive(
-        mut self: Pin<&mut Self>,
-        archive_path: &QString,
-        destination_dir: &QString,
-        password: &QString,
-    ) {
-        let archive_path = archive_path.to_string();
-        if archive_path.is_empty() {
-            return;
-        }
-
-        let destination_dir = optional_string(destination_dir);
-        let password = optional_string(password);
-        let password_supplied = password.is_some();
-        self.as_mut().begin_operation("Extracting…");
-        let retry = serde_json::json!({
-            "kind": "extract",
-            "archive": archive_path,
-            "destination": destination_dir.clone().unwrap_or_default(),
-        });
-        self.as_mut().rust_mut().retry_hint = Some(retry.to_string());
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        let signal_target = archive_path.clone();
-        runtime::spawn(async move {
-            let result = archive::extract_archive(
-                archive_path,
-                destination_dir,
-                password,
-                operation_id(),
-                host,
-            )
-            .await;
-
-            let _ = thread.queue(move |mut workspace| match result {
-                Ok(destination) => {
-                    workspace
-                        .as_mut()
-                        .finish_operation("extract", &destination, None)
-                }
-                Err(FileSystemError::WrongPassword(_)) => {
-                    let message = if password_supplied {
-                        "Incorrect password. Try again."
-                    } else {
-                        "This archive is encrypted. Enter a password."
-                    };
-                    workspace.as_mut().settle_operation();
-                    workspace
-                        .as_mut()
-                        .request_archive_password(&signal_target, message);
-                }
-                Err(error) => workspace.as_mut().finish_operation(
-                    "extract",
-                    "",
-                    Some(friendly_error(&error.to_string())),
-                ),
-            });
-        });
-    }
-
-    fn transfer_entries(
-        mut self: Pin<&mut Self>,
-        paths: &QStringList,
-        destination: &QString,
-        cut: bool,
-    ) {
-        let sources = strings(paths);
-        let destination = destination.to_string();
-        if sources.is_empty() || destination.is_empty() {
-            return;
-        }
-        // A cut is one-shot, but only for the list that was actually cut: a
-        // move dragged in from Explorer must not discard an in-app cut
-        // clipboard that happens to be unrelated.
-        let clears_clipboard = cut
-            && self.clipboard_mode.to_string() == "cut"
-            && strings(&self.clipboard_paths) == sources;
-        let request = TransferRequest {
-            sources,
-            destination,
-            cut,
-            resume: false,
-            spends_clipboard: clears_clipboard,
-        };
-        self.as_mut().scheduler().submit(request);
-        self.as_mut().publish_queue();
-    }
-
-    /// The core's job scheduler, created on first use: it needs a Qt thread
-    /// to route its events back through, which only exists once QML calls in.
-    fn scheduler(mut self: Pin<&mut Self>) -> Arc<JobScheduler> {
-        if let Some(scheduler) = &self.transfer_scheduler {
-            return Arc::clone(scheduler);
-        }
-        let thread = self.as_mut().qt_thread();
-        let scheduler = JobScheduler::new(
-            runtime::runtime().handle().clone(),
-            host_for(&thread),
-        );
-        self.as_mut().rust_mut().transfer_scheduler = Some(Arc::clone(&scheduler));
-        scheduler
-    }
-
-    /// Queues the "continue" of a cancelled copy: the same sources into the
-    /// same destination, merged rather than checked for collisions.
-    fn enqueue_resumed_transfer(
-        mut self: Pin<&mut Self>,
-        sources: Vec<String>,
-        destination: String,
-        cut: bool,
-    ) {
-        if sources.is_empty() || destination.is_empty() {
-            return;
-        }
-
-        let request = TransferRequest {
-            sources,
-            destination,
-            cut,
-            resume: true,
-            spends_clipboard: false,
-        };
-        self.as_mut().scheduler().submit(request);
-        self.as_mut().publish_queue();
-    }
-
-    fn publish_queue(mut self: Pin<&mut Self>) {
-        let queued = self
-            .transfer_scheduler
-            .as_ref()
-            .map(|scheduler| scheduler.queued())
-            .unwrap_or_default();
-        let labels: Vec<String> = queued.iter().map(transfer_label).collect();
-        let paths: Vec<String> = queued.iter().map(|job| job.destination.clone()).collect();
-        self.as_mut().set_queued_transfers(string_list(&labels));
-        self.as_mut().set_queued_transfer_paths(string_list(&paths));
-    }
-
-    /// The queue panel's ✕. Only a waiting job can be dropped: a running one
-    /// is cancelled through its operation id, which keeps the half-copied
-    /// tree and the "continue" offer honest.
-    fn cancel_queued_transfer(mut self: Pin<&mut Self>, index: i32) {
-        if index >= 0
-            && let Some(scheduler) = &self.transfer_scheduler
-        {
-            scheduler.drop_queued(index as usize);
-        }
-        self.as_mut().publish_queue();
-    }
-
-    fn cancel_queued_transfers(mut self: Pin<&mut Self>) {
-        if let Some(scheduler) = &self.transfer_scheduler {
-            scheduler.clear_queued();
-        }
-        self.as_mut().publish_queue();
-    }
-
-    /// Publishes the rows as the JSON list the panel reads, plus the combined
-    /// throughput the chip prints. Called whenever a row appears, moves or
-    /// goes away.
-    fn publish_transfers(mut self: Pin<&mut Self>) {
-        let mut list = Vec::new();
-        let mut combined_bps = 0.0;
-        for row in &self.transfer_rows {
-            if row.running {
-                combined_bps += row.speed_bps;
-            }
-            let percent = (row.done.min(row.total) * 100)
-                .checked_div(row.total)
-                .unwrap_or(0) as i32;
-            let eta = if row.running {
-                transfer_eta(row.done, row.total, row.speed_bps)
-                    .map(format_eta)
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            list.push(serde_json::json!({
-                "jobId": row.job_id,
-                "operationId": row.operation_id.clone().unwrap_or_default(),
-                "name": transfer_label(&row.request),
-                "target": row.request.destination,
-                "running": row.running,
-                "paused": row.paused,
-                "done": row.done,
-                "total": row.total,
-                "percent": percent,
-                "speed": row.speed,
-                "eta": eta,
-                "current": row.current,
-            }));
-        }
-        let json = serde_json::Value::Array(list).to_string();
-        let speed = if combined_bps > 0.0 {
-            format_speed(combined_bps)
-        } else {
-            String::new()
-        };
-        self.as_mut()
-            .set_transfers_json(QString::from(json.as_str()));
-        self.as_mut()
-            .set_transfer_speed(QString::from(speed.as_str()));
-    }
-
-    /// One running transfer reported back: write its status-center row from
-    /// the row's own provenance, free the busy count and drop the row. The
-    /// global progress row belongs to the non-transfer operations, so it is
-    /// left alone here.
-    fn finish_transfer_row(
-        mut self: Pin<&mut Self>,
-        job_id: u64,
-        error: Option<String>,
-        cancelled: bool,
-    ) {
-        let Some(position) = self
-            .transfer_rows
-            .iter()
-            .position(|row| row.job_id == job_id)
-        else {
-            return;
-        };
-        let row = self.as_mut().rust_mut().transfer_rows.remove(position);
-        let kind = if row.request.cut { "move" } else { "copy" };
-
-        let active = (self.active_operations - 1).max(0);
-        self.as_mut().rust_mut().active_operations = active;
-        self.as_mut().set_busy(active > 0);
-
-        self.as_mut().record_operation_row(
-            kind,
-            error.as_deref(),
-            cancelled,
-            row.started_at,
-            row.label.clone(),
-            row.retry.clone(),
-        );
-
-        let kind_value = QString::from(kind);
-        if cancelled {
-            self.as_mut()
-                .set_status(QString::from("Transfer cancelled"));
-            self.as_mut()
-                .operation_finished(&kind_value, &QString::default());
-        } else if let Some(message) = error {
-            self.as_mut()
-                .set_last_error(QString::from(message.as_str()));
-            let message_value = QString::from(message.as_str());
-            self.as_mut().operation_failed(&kind_value, &message_value);
-        } else {
-            self.as_mut()
-                .set_status(QString::from(success_message(kind)));
-            self.as_mut()
-                .operation_finished(&kind_value, &QString::default());
-        }
-        self.as_mut().publish_transfers();
-    }
-
-    fn pause_transfer(mut self: Pin<&mut Self>, job_id: i64) {
-        let changed = {
-            let mut rust = self.as_mut().rust_mut();
-            let Some(row) = rust
-                .transfer_rows
-                .iter_mut()
-                .find(|row| row.job_id == job_id as u64)
-            else {
-                return;
-            };
-            let Some(operation) = row.operation_id.clone() else {
-                return;
-            };
-            // `false` means the transfer returned between the click and here;
-            // its row is about to disappear with the Finished event anyway.
-            if service::pause_transfer(&operation) {
-                row.paused = true;
-                row.speed = String::new();
-                row.speed_bps = 0.0;
-                row.speed_sample = None;
-                true
-            } else {
-                false
-            }
-        };
-        if changed {
-            self.as_mut().publish_transfers();
-        }
-    }
-
-    fn resume_transfer(mut self: Pin<&mut Self>, job_id: i64) {
-        let changed = {
-            let mut rust = self.as_mut().rust_mut();
-            let Some(row) = rust
-                .transfer_rows
-                .iter_mut()
-                .find(|row| row.job_id == job_id as u64)
-            else {
-                return;
-            };
-            let Some(operation) = row.operation_id.clone() else {
-                return;
-            };
-            if service::resume_transfer(&operation) {
-                row.paused = false;
-                true
-            } else {
-                false
-            }
-        };
-        if changed {
-            self.as_mut().publish_transfers();
-        }
-    }
-
-    fn cancel_transfer(mut self: Pin<&mut Self>, job_id: i64) {
-        let rust = self.as_mut().rust_mut();
-        let Some(row) = rust
-            .transfer_rows
-            .iter()
-            .find(|row| row.job_id == job_id as u64)
-        else {
-            return;
-        };
-        let Some(operation) = row.operation_id.clone() else {
-            return;
-        };
-        // The engine notices at its next checkpoint and returns `Cancelled`,
-        // whose Finished event reports it as neither success nor failure.
-        service::cancel_transfer(&operation);
-    }
-
-    fn apply_transfer_speed_limit(mut self: Pin<&mut Self>, kib_per_second: i32) {
-        let kib = (kib_per_second.max(0) as u64).min(MAX_SPEED_LIMIT_KIB);
-
-        // Applied first: the limit is in force for this session even when the
-        // settings file cannot be written.
-        service::set_transfer_speed_limit((kib > 0).then_some(kib * 1024));
-        self.as_mut().set_transfer_speed_limit(kib as i32);
-
-        if let Ok(mut settings) = dae_core::settings::load_settings()
-            && settings.transfer.speed_limit_kib != kib
-        {
-            settings.transfer.speed_limit_kib = kib;
-            if let Err(error) = dae_core::settings::save_settings(settings) {
-                log::warn!(
-                    target: "dae::workspace",
-                    "could not persist the transfer limit: {error}"
-                );
-            }
-        }
-    }
-
-    /// Retries a failed copy or move in an elevated copy of this binary.
-    ///
-    /// The record's own retry payload is the job: the same sources, the same
-    /// destination, and `Replace` because the failed attempt may have left part
-    /// of the tree at the target.
-    fn elevate_operation(mut self: Pin<&mut Self>, id: &QString) {
-        let id = id.to_string();
-        let Some(record) = self.operations.iter().find(|record| record.id == id) else {
-            return;
-        };
-
-        if !record.elevatable {
-            return;
-        }
-
-        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&record.retry) else {
-            return;
-        };
-        if payload["kind"].as_str() != Some("transfer") {
-            return;
-        }
-
-        let paths: Vec<String> = payload["paths"]
-            .as_array()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let destination = payload["destination"].as_str().unwrap_or_default().to_owned();
-        let cut = payload["cut"].as_bool().unwrap_or(false);
-        let retry = record.retry.clone();
-
-        if paths.is_empty() || destination.is_empty() {
-            return;
-        }
-
-        let request = TransferRequest {
-            sources: paths.clone(),
-            destination: destination.clone(),
-            cut,
-            resume: false,
-            spends_clipboard: false,
-        };
-        let job = dae_core::fs::elevated::ElevatedJob {
-            kind: if cut { "move" } else { "copy" }.to_owned(),
-            sources: paths
-                .into_iter()
-                .map(|path| TransferItem {
-                    path,
-                    on_conflict: ConflictAction::Replace,
-                })
-                .collect(),
-            destination: Some(destination),
-            rate_limit: service::transfer_speed_limit(),
-        };
-
-        // The elevated child reports progress and answers pause/cancel under
-        // this id, exactly like an in-process transfer, so the same row and
-        // its buttons work. `run_elevated` registers the control under it.
-        let operation = operation_id();
-        let job_id = {
-            let mut rust = self.as_mut().rust_mut();
-            rust.next_local_job += 1;
-            rust.next_local_job
-        };
-        {
-            let mut rust = self.as_mut().rust_mut();
-            let mut row = TransferRow::new(job_id, request);
-            row.running = true;
-            row.operation_id = Some(operation.clone());
-            row.label = if cut {
-                "Moving as administrator…"
-            } else {
-                "Copying as administrator…"
-            }
-            .to_owned();
-            // The same payload can be retried again if this attempt fails.
-            row.retry = retry;
-            rust.transfer_rows.push(row);
-            rust.active_operations += 1;
-        }
-        self.as_mut().set_busy(true);
-        self.as_mut().publish_transfers();
-
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        // Not `dispatch`: an elevated transfer owns its row directly (it never
-        // went through the scheduler), so its completion settles the row too.
-        runtime::spawn(async move {
-            let outcome = match service::run_elevated(job, host, operation).await {
-                Ok(()) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            };
-            let _ = thread.queue(move |mut workspace| {
-                workspace
-                    .as_mut()
-                    .finish_transfer_row(job_id, outcome.error, outcome.cancelled);
-            });
-        });
-    }
-
-    /// Renders one lifecycle event from the core's job scheduler. The rules
-    /// (queue order, conflict answers, resume) live in `fs::jobs`; everything
-    /// here is presentation plus the shell-owned clipboard and retry payload.
-    /// Every event names its job, so several transfers can be on screen at
-    /// once without their rows crossing.
-    fn apply_job_event(mut self: Pin<&mut Self>, event: JobEvent) {
-        match event {
-            JobEvent::Accepted { job_id, request } => {
-                self.as_mut()
-                    .rust_mut()
-                    .transfer_rows
-                    .push(TransferRow::new(job_id, request));
-                self.as_mut().publish_transfers();
-                self.as_mut().publish_queue();
-            }
-            JobEvent::ConflictPrompt {
-                job_id,
-                conflict,
-                index,
-                total,
-                cut,
-            } => {
-                // Render the payload once, on arrival; the prompt is frozen
-                // until the dialog reaches this job's turn.
-                let prompt = PendingPrompt {
-                    job_id,
-                    index,
-                    total,
-                    cut,
-                    name: conflict.name.clone(),
-                    source_category: glyph_category(conflict.source_kind).to_owned(),
-                    source_detail: conflict_detail(
-                        conflict.source_kind,
-                        &conflict.name,
-                        conflict.source_size,
-                        conflict.source_modified_at,
-                    ),
-                    target_category: glyph_category(conflict.target_kind).to_owned(),
-                    target_detail: conflict_detail(
-                        conflict.target_kind,
-                        &conflict.name,
-                        conflict.target_size,
-                        conflict.target_modified_at,
-                    ),
-                };
-                {
-                    let mut rust = self.as_mut().rust_mut();
-                    match rust
-                        .pending_conflicts
-                        .iter()
-                        .position(|prompt| prompt.job_id == job_id)
-                    {
-                        // The job on screen advanced to its next collision.
-                        Some(at) => rust.pending_conflicts[at] = prompt,
-                        // A new job's prompt waits behind the one on screen.
-                        None => rust.pending_conflicts.push(prompt),
-                    }
-                }
-                self.as_mut().show_conflict_head();
-            }
-            JobEvent::Started {
-                job_id,
-                operation_id,
-                request,
-            } => {
-                self.as_mut().forget_pending_conflict(job_id);
-                // A copy clipboard stays available so the same selection can
-                // be pasted into several directories; a cut is spent here,
-                // once, as the move it was waiting for finally starts.
-                if request.spends_clipboard {
-                    self.as_mut().clear_clipboard();
-                }
-                let retry = serde_json::json!({
-                    "kind": "transfer",
-                    "paths": &request.sources,
-                    "destination": &request.destination,
-                    "cut": request.cut,
-                    "resume": request.resume,
-                })
-                .to_string();
-                {
-                    let mut rust = self.as_mut().rust_mut();
-                    if !rust.transfer_rows.iter().any(|row| row.job_id == job_id) {
-                        rust.transfer_rows
-                            .push(TransferRow::new(job_id, request.clone()));
-                    }
-                    let row = rust
-                        .transfer_rows
-                        .iter_mut()
-                        .find(|row| row.job_id == job_id)
-                        .expect("row just ensured");
-                    row.running = true;
-                    // One id for the whole transfer: the core registers a
-                    // control under it so pause, cancel and the limit all
-                    // reach the running operation.
-                    row.operation_id = Some(operation_id);
-                    row.started_at = now_millis();
-                    row.label = if request.cut { "Moving…" } else { "Copying…" }.to_owned();
-                    row.retry = retry;
-                }
-                let active = self.active_operations + 1;
-                self.as_mut().rust_mut().active_operations = active;
-                self.as_mut().set_busy(true);
-                self.as_mut().publish_transfers();
-            }
-            JobEvent::Finished {
-                job_id,
-                error,
-                cancelled,
-                ..
-            } => {
-                self.as_mut().finish_transfer_row(
-                    job_id,
-                    error.map(|error| friendly_error(&error)),
-                    cancelled,
-                );
-                self.as_mut().publish_queue();
-            }
-            JobEvent::CheckFailed { job_id, cut, error } => {
-                // Nothing was copied and no busy count was taken: drop the
-                // row and report the failure the way a copy would have, but
-                // without `settle_operation` — decrementing there would clear
-                // the progress row of whatever else is running.
-                {
-                    let mut rust = self.as_mut().rust_mut();
-                    if let Some(position) = rust
-                        .transfer_rows
-                        .iter()
-                        .position(|row| row.job_id == job_id)
-                    {
-                        rust.transfer_rows.remove(position);
-                    }
-                }
-                let message = friendly_error(&error);
-                self.as_mut().forget_pending_conflict(job_id);
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-                let kind_value = QString::from(if cut { "move" } else { "copy" });
-                let message_value = QString::from(message.as_str());
-                self.as_mut().operation_failed(&kind_value, &message_value);
-                self.as_mut().publish_transfers();
-                self.as_mut().publish_queue();
-            }
-        }
-    }
-
-    fn clear_conflict(mut self: Pin<&mut Self>) {
-        self.as_mut().set_conflict_job_id(0);
-        self.as_mut().set_conflict_waiting(0);
-        self.as_mut().set_conflict_index(0);
-        self.as_mut().set_conflict_total(0);
-        self.as_mut().set_conflict_name(QString::default());
-        self.as_mut().set_conflict_cut(false);
-        self.as_mut()
-            .set_conflict_source_category(QString::default());
-        self.as_mut().set_conflict_source_detail(QString::default());
-        self.as_mut()
-            .set_conflict_target_category(QString::default());
-        self.as_mut().set_conflict_target_detail(QString::default());
-    }
-
-    /// Drops the prompt `job_id` is waiting on and repaints the dialog from
-    /// the front of the list — the next job's question when one waits, an
-    /// empty dialog when none does.
-    fn forget_pending_conflict(mut self: Pin<&mut Self>, job_id: u64) {
-        self.as_mut()
-            .rust_mut()
-            .pending_conflicts
-            .retain(|prompt| prompt.job_id != job_id);
-        self.as_mut().show_conflict_head();
-    }
-
-    /// Paints the dialog from the front of the pending list. A prompt that
-    /// waited behind another job is already rendered; this only copies it
-    /// onto the properties.
-    fn show_conflict_head(mut self: Pin<&mut Self>) {
-        let (head, waiting) = {
-            let rust = self.as_mut().rust_mut();
-            let waiting = rust.pending_conflicts.len().saturating_sub(1) as i32;
-            (rust.pending_conflicts.first().cloned(), waiting)
-        };
-        let Some(head) = head else {
-            self.as_mut().clear_conflict();
-            return;
-        };
-        self.as_mut().set_conflict_waiting(waiting);
-        self.as_mut().set_conflict_job_id(head.job_id as i64);
-        self.as_mut().set_conflict_index(head.index as i32 + 1);
-        self.as_mut().set_conflict_total(head.total as i32);
-        self.as_mut()
-            .set_conflict_name(QString::from(head.name.as_str()));
-        self.as_mut().set_conflict_cut(head.cut);
-        self.as_mut()
-            .set_conflict_source_category(QString::from(head.source_category.as_str()));
-        self.as_mut()
-            .set_conflict_source_detail(QString::from(head.source_detail.as_str()));
-        self.as_mut()
-            .set_conflict_target_category(QString::from(head.target_category.as_str()));
-        self.as_mut()
-            .set_conflict_target_detail(QString::from(head.target_detail.as_str()));
-    }
-
-    /// Records the answer for the job's conflict on screen; the core moves
-    /// to its next one or runs the batch. Its reply — the next prompt or
-    /// `Started` — repaints the dialog, so nothing is removed here.
-    fn resolve_conflict(
-        mut self: Pin<&mut Self>,
-        job_id: i64,
-        action: &QString,
-        apply_to_all: bool,
-    ) {
-        let Some(action) = conflict_action(&action.to_string()) else {
-            return;
-        };
-        if job_id <= 0 {
-            return;
-        }
-        self.as_mut()
-            .scheduler()
-            .answer(job_id as u64, action, apply_to_all);
-    }
-
-    /// Closes the question for that job and transfers nothing: the
-    /// destination stays untouched, the job's row goes with it, and the
-    /// queue advances. A prompt waiting behind moves onto the screen;
-    /// running transfers are untouched — their cancel goes through the
-    /// operation's control.
-    fn cancel_conflict(mut self: Pin<&mut Self>, job_id: i64) {
-        if job_id <= 0 {
-            return;
-        }
-        let job_id = job_id as u64;
-        {
-            let mut rust = self.as_mut().rust_mut();
-            // A job still in its pre-run phase — checking or asking — can
-            // be dismissed; a running row is not this command's to touch.
-            rust.transfer_rows
-                .retain(|row| row.running || row.job_id != job_id);
-            rust.pending_conflicts
-                .retain(|prompt| prompt.job_id != job_id);
-        }
-        self.as_mut().scheduler().dismiss(job_id);
-        self.as_mut().show_conflict_head();
-        self.as_mut().publish_transfers();
-        self.as_mut().publish_queue();
-    }
-
-    fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString,
-                      signal: &QColor, count: i32, verdict: &QString,
-                      ink: &QColor, canvas: &QColor) {
-        if paths.is_empty() {
-            return;
-        }
-
-        // Qt::CopyAction | Qt::MoveAction | Qt::LinkAction are 1, 2 and 4.
-        let actions = match mode.to_string().as_str() {
-            "copy" => 1,
-            "move" => 2,
-            "link" => 4,
-            _ => 1 | 2 | 4,
-        };
-        if !qobject::start_file_drag(paths, actions, signal, count.max(1), verdict, ink, canvas) {
-            log::warn!(target: "dae::workspace", "could not start the file drag");
-        }
-    }
-
-    fn create_shortcuts(mut self: Pin<&mut Self>, paths: &QStringList, destination: &QString) {
-        self.as_mut()
-            .create_shortcuts_paths(strings(paths), destination.to_string());
-    }
-
-    fn create_shortcuts_paths(mut self: Pin<&mut Self>, paths: Vec<String>, destination: String) {
-        if destination.is_empty() {
-            return;
-        }
-        if !vfs::is_local_path(&destination) {
-            self.as_mut().finish_operation(
-                "shortcut",
-                "",
-                Some("Shortcuts can only be created in local folders".to_owned()),
-            );
-            return;
-        }
-
-        // Links are a local-only operation; a link to a remote path would
-        // not resolve outside dae.
-        let sources: Vec<String> = paths
-            .into_iter()
-            .filter(|path| vfs::is_local_path(path))
-            .collect();
-        if sources.is_empty() {
-            self.as_mut().finish_operation(
-                "shortcut",
-                "",
-                Some("Shortcuts can only be created for local files".to_owned()),
-            );
-            return;
-        }
-
-        self.as_mut().begin_operation("Creating shortcut…");
-        let thread = self.as_mut().qt_thread();
-        dispatch(thread, "shortcut", async move {
-            match service::create_shortcuts(sources, destination).await {
-                Ok(created) => Outcome::ok(created.into_iter().next().unwrap_or_default()),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn local_drop_paths(self: Pin<&mut Self>, urls: &QStringList) -> QStringList {
-        let mut paths = QStringList::default();
-        for raw in urls.iter() {
-            let url = QUrl::from_user_input(&raw, &QString::default());
-            if !url.is_local_file() {
-                continue;
-            }
-            let path = url.to_local_file_or_default();
-            if !path.as_slice().is_empty() {
-                paths.append(path);
-            }
-        }
-        paths
-    }
-
-    fn copy_text(self: Pin<&mut Self>, text: &QString) -> bool {
-        let text = text.to_string();
-        if text.is_empty() {
-            return false;
-        }
-        // Deliberately quiet: "复制路径" and the checksum rows word their own
-        // confirmation, and a toast from here would say the wrong one.
-        qobject::set_clipboard_text(&QString::from(text.as_str()));
-        true
-    }
-
-    fn rename_entries_batch(mut self: Pin<&mut Self>, paths: &QStringList, names: &QStringList) {
-        let paths = strings(paths);
-        let names = strings(names);
-        if paths.is_empty() || paths.len() != names.len() {
-            return;
-        }
-        let requests = paths
-            .into_iter()
-            .zip(names)
-            .map(|(path, new_name)| dae_core::types::RenameRequest { path, new_name })
-            .collect::<Vec<_>>();
-
-        self.as_mut().begin_operation("Renaming…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "rename", async move {
-            match service::rename_entries_batch(requests, operation_id(), host).await {
-                Ok(renamed) => Outcome::ok(renamed.into_iter().next().unwrap_or_default()),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn show_native_properties(self: Pin<&mut Self>, path: &QString) -> bool {
-        let path = path.to_string();
-        // A network path has no shell object to show, and opening the OS sheet
-        // on a `smb://` string would only produce a shell error dialog.
-        if path.is_empty() || !vfs::is_local_path(&path) {
-            return false;
-        }
-        platform::show_properties(&path)
-    }
-
-    fn warm_shell_commands(self: Pin<&mut Self>) {
-        runtime::spawn(async {
-            if let Err(error) = dae_core::fs::shell_commands::warm_shell_commands().await {
-                log::warn!(target: "dae::workspace", "shell-command warm-up failed: {error}");
-            }
-        });
-    }
-
-    fn invoke_shell_command(mut self: Pin<&mut Self>, id: &QString, paths: &QStringList) {
-        let id = id.to_string();
-        let paths = strings(paths);
-        if id.is_empty() {
-            return;
-        }
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        // Not a tracked operation: the launched app owns the result from here.
-        // Only a failure to start comes back to dae, and it goes through the
-        // same error toast every other command uses.
-        runtime::spawn(async move {
-            let result = dae_core::fs::shell_commands::invoke_shell_command(host, id, paths).await;
-            if let Err(error) = result {
-                let _ = thread.queue(move |mut workspace| {
-                    let message = friendly_error(&error.to_string());
-                    let kind = QString::from("shellCommand");
-                    let message_value = QString::from(message.as_str());
-                    workspace
-                        .as_mut()
-                        .set_last_error(QString::from(message.as_str()));
-                    workspace.as_mut().operation_failed(&kind, &message_value);
-                });
-            }
-        });
-    }
-
-    fn set_clipboard(mut self: Pin<&mut Self>, mode: &QString, paths: &QStringList) {
-        let mode = mode.to_string();
-        if paths.is_empty() {
-            self.as_mut().clear_clipboard();
-            return;
-        }
-        let paths = strings(paths);
-        self.as_mut().set_clipboard_state(&mode, &paths);
-        self.as_mut().rust_mut().system_clipboard_sequence = system_clipboard_sequence();
-
-        // Only local paths mean anything to Explorer; remote entries stay in
-        // the in-app mirror and are pasted by this shell alone.
-        let local: Vec<String> = paths
-            .into_iter()
-            .filter(|path| vfs::is_local_path(path))
-            .collect();
-        self.as_mut().rust_mut().system_clipboard_paths = local.clone();
-        if local.is_empty() {
-            return;
-        }
-
-        let effect = if mode == "cut" {
-            ClipboardEffect::Move
-        } else {
-            ClipboardEffect::Copy
-        };
-        runtime::spawn(async move {
-            if let Err(error) = service::write_files_to_clipboard(local, effect).await {
-                log::warn!(target: "dae::workspace", "could not place the selection on the system clipboard: {error}");
-            }
-        });
-    }
-
-    fn clear_clipboard(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().clipboard_mode = QString::default();
-        self.as_mut().rust_mut().clipboard_paths = QStringList::default();
-        self.as_mut().rust_mut().clipboard_generation += 1;
-    }
-
-    /// Writes the mirror without touching the system clipboard.
-    fn set_clipboard_state(mut self: Pin<&mut Self>, mode: &str, paths: &[String]) {
-        self.as_mut().rust_mut().clipboard_mode = QString::from(mode);
-        self.as_mut().rust_mut().clipboard_paths = string_list(paths);
-        self.as_mut().rust_mut().clipboard_generation += 1;
-    }
-
-    fn paste_into(mut self: Pin<&mut Self>, destination: &QString) {
-        let destination = destination.to_string();
-        let own = self.system_clipboard_paths.clone();
-        let sequence = self.system_clipboard_sequence;
-        let mirror = strings(&self.clipboard_paths);
-        let mirror_mode = self.clipboard_mode.to_string();
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let (system, current) = system_clipboard_snapshot().await;
-            let contents =
-                clipboard_contents(system, &own, &mirror, &mirror_mode, current == sequence);
-            let _ = thread
-                .queue(move |mut workspace| workspace.as_mut().apply_paste(contents, destination));
-        });
-    }
-
-    fn apply_paste(mut self: Pin<&mut Self>, contents: ClipboardContents, destination: String) {
-        match contents {
-            ClipboardContents::Empty => {
-                self.as_mut()
-                    .finish_operation("copy", "", Some("Clipboard is empty".to_owned()))
-            }
-            ClipboardContents::Files {
-                paths,
-                effect: ClipboardEffect::Link,
-            } => self.as_mut().create_shortcuts_paths(paths, destination),
-            ClipboardContents::Files { paths, effect } => {
-                let list = string_list(&paths);
-                self.as_mut().transfer_entries(
-                    &list,
-                    &QString::from(destination),
-                    effect == ClipboardEffect::Move,
-                );
-            }
-        }
-    }
-
-    fn paste_shortcut_into(mut self: Pin<&mut Self>, destination: &QString) {
-        let destination = destination.to_string();
-        if destination.is_empty() {
-            return;
-        }
-        let own = self.system_clipboard_paths.clone();
-        let sequence = self.system_clipboard_sequence;
-        let mirror = strings(&self.clipboard_paths);
-        let mirror_mode = self.clipboard_mode.to_string();
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let (system, current) = system_clipboard_snapshot().await;
-            let contents =
-                clipboard_contents(system, &own, &mirror, &mirror_mode, current == sequence);
-            let _ = thread.queue(move |mut workspace| match contents {
-                ClipboardContents::Empty => workspace.as_mut().finish_operation(
-                    "shortcut",
-                    "",
-                    Some("Clipboard is empty".to_owned()),
-                ),
-                ClipboardContents::Files { paths, .. } => workspace
-                    .as_mut()
-                    .create_shortcuts_paths(paths, destination),
-            });
-        });
-    }
-
-    fn refresh_clipboard(mut self: Pin<&mut Self>) {
-        let generation = self.clipboard_generation;
-        let own = self.system_clipboard_paths.clone();
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let (system, sequence) = match service::read_files_from_clipboard().await {
-                Ok(system) => (system, system_clipboard_sequence()),
-                Err(_) => return,
-            };
-            let _ = thread.queue(move |mut workspace| {
-                // An in-app copy that happened after the read wins.
-                if workspace.clipboard_generation != generation {
-                    return;
-                }
-                workspace
-                    .as_mut()
-                    .apply_clipboard_refresh(system, sequence, &own);
-            });
-        });
-    }
-
-    fn apply_clipboard_refresh(
-        mut self: Pin<&mut Self>,
-        system: Option<SystemClipboardFiles>,
-        sequence: u32,
-        own: &[String],
-    ) {
-        match system {
-            Some(files) if !files.paths.is_empty() => {
-                // Our own list may include remote paths the system clipboard
-                // never saw, so only an outside list replaces the mirror.
-                if files.paths != own {
-                    let mode = match files.effect {
-                        ClipboardEffect::Move => "cut",
-                        ClipboardEffect::Link => "link",
-                        ClipboardEffect::Copy => "copy",
-                    };
-                    self.as_mut().set_clipboard_state(mode, &files.paths);
-                    self.as_mut().rust_mut().system_clipboard_sequence = sequence;
-                }
-            }
-            _ => {
-                if !own.is_empty() {
-                    // The file list this shell placed was replaced by
-                    // something else (text, another app's data).
-                    self.as_mut().clear_clipboard();
-                    self.as_mut().rust_mut().system_clipboard_paths.clear();
-                    self.as_mut().rust_mut().system_clipboard_sequence = sequence;
-                }
-            }
-        }
-    }
-
-    fn undo(mut self: Pin<&mut Self>) {
-        self.as_mut().begin_operation("Undoing…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "undo", async move {
-            match service::undo_operation(operation_id(), host).await {
-                Ok(_) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn redo(mut self: Pin<&mut Self>) {
-        self.as_mut().begin_operation("Redoing…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "redo", async move {
-            match service::redo_operation(operation_id(), host).await {
-                Ok(_) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn start_system_watch(self: Pin<&mut Self>) {
-        crate::system_watch::start(self.qt_thread());
-    }
-
-    /// Applies an accent reading from the native watcher. `None` means the
-    /// platform published no colour, and the current default is kept.
-    pub(crate) fn apply_system_accent(mut self: Pin<&mut Self>, accent: Option<String>) {
-        let Some(accent) = accent else {
-            return;
-        };
-        if self.accent.to_string() == accent {
-            return;
-        }
-        self.as_mut().set_accent(QString::from(accent.as_str()));
-    }
-
-    /// Applies a light/dark reading from the native watcher. `None` means the
-    /// platform published no preference, and the current reading is kept.
-    pub(crate) fn apply_system_theme(mut self: Pin<&mut Self>, dark: Option<bool>) {
-        let Some(dark) = dark else {
-            return;
-        };
-        if self.system_dark == dark {
-            return;
-        }
-        self.as_mut().set_system_dark(dark);
-    }
-
-    pub(crate) fn notify_volumes_changed(mut self: Pin<&mut Self>) {
-        self.as_mut().volumes_changed();
-    }
-
-    fn restore_trash_entries(mut self: Pin<&mut Self>, ids: &QStringList) {
-        let ids = strings(ids);
-        if ids.is_empty() {
-            return;
-        }
-        self.as_mut().begin_operation("Restoring…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "restore_trash", async move {
-            match trash_view::restore_trash_entries(ids, operation_id(), host).await {
-                Ok(_) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn delete_trash_entries(mut self: Pin<&mut Self>, ids: &QStringList) {
-        let ids = strings(ids);
-        if ids.is_empty() {
-            return;
-        }
-        self.as_mut().begin_operation("Deleting permanently…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "purge_trash", async move {
-            match trash_view::delete_trash_entries(ids, operation_id(), host).await {
-                Ok(_) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn empty_trash(mut self: Pin<&mut Self>) {
-        self.as_mut().begin_operation("Emptying Trash…");
-        let thread = self.as_mut().qt_thread();
-        let host = host_for(&thread);
-        dispatch(thread, "empty_trash", async move {
-            match trash_view::empty_trash(operation_id(), host).await {
-                Ok(_) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn open_path(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        if !vfs::is_local_path(&path) {
-            self.as_mut().finish_operation(
-                "open",
-                "",
-                Some(
-                    "Copy remote files to a local folder before opening them with a local app"
-                        .to_owned(),
-                ),
-            );
-            return;
-        }
-        if let Err(message) = platform::open_path(&path) {
-            self.as_mut().finish_operation("open", "", Some(message));
-            return;
-        }
-        self.as_mut()
-            .record_recent(&QString::from(path.as_str()), false, true);
-    }
-
-    fn open_with(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        self.as_mut().begin_operation("Opening…");
-        let thread = self.as_mut().qt_thread();
-        dispatch(thread, "openWith", async move {
-            match service::open_with(path).await {
-                Ok(()) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn open_with_app(
-        mut self: Pin<&mut Self>,
-        path: &QString,
-        app_id: &QString,
-        set_default: bool,
-    ) {
-        let path = path.to_string();
-        let app_id = app_id.to_string();
-        if path.trim().is_empty() || app_id.trim().is_empty() {
-            self.as_mut().finish_operation(
-                "openWith",
-                "",
-                Some("Select an application".to_owned()),
-            );
-            return;
-        }
-
-        self.as_mut().begin_operation(if set_default {
-            "Setting as default…"
-        } else {
-            "Opening…"
-        });
-        let thread = self.as_mut().qt_thread();
-        dispatch(thread, "openWith", async move {
-            match open_with::open_with_app(path, app_id, set_default).await {
-                Ok(()) => Outcome::empty(),
-                Err(error) => Outcome::failed(error),
-            }
-        });
-    }
-
-    fn open_terminal(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        if !vfs::is_local_path(&path) {
-            self.as_mut().finish_operation(
-                "terminal",
-                "",
-                Some("Only local directories can be opened in Terminal".to_owned()),
-            );
-            return;
-        }
-        match service::open_terminal(path) {
-            Ok(()) => self
-                .as_mut()
-                .set_status(QString::from("Opened in system terminal")),
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .finish_operation("terminal", "", Some(message));
-            }
-        }
-    }
-
-    fn selection_size_text(&self, paths: &QStringList) -> QString {
-        let mut total: u64 = 0;
-        let mut counted = false;
-        for path in paths.iter().map(|path| path.to_string()) {
-            if !dae_core::fs::vfs::is_local_path(&path) {
-                continue;
-            }
-            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
-                continue;
-            };
-            if metadata.is_file() {
-                total = total.saturating_add(metadata.len());
-                counted = true;
-            }
-        }
-        if counted {
-            QString::from(crate::format::size(total).as_str())
-        } else {
-            QString::default()
-        }
-    }
-
-    fn subdirectories(&self, directory: &QString) -> QStringList {
-        let directory = directory.to_string();
-        let mut names: Vec<String> = Vec::new();
-        if !directory.is_empty() && dae_core::fs::vfs::is_local_path(&directory) {
-            if let Ok(entries) = std::fs::read_dir(&directory) {
-                for entry in entries.flatten() {
-                    // `file_type` avoids a second stat per entry on a network
-                    // drive, which is the whole cost of this call.
-                    let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
-                    if !is_dir {
-                        continue;
-                    }
-                    if let Ok(name) = entry.file_name().into_string() {
-                        names.push(name);
-                    }
-                }
-            }
-        }
-        // The menu and the completion list both read in name order, so the
-        // order is decided once on the way out.
-        names.sort_by(|left, right| {
-            left.to_lowercase()
-                .cmp(&right.to_lowercase())
-                .then(left.cmp(right))
-        });
-        let mut out = QStringList::default();
-        for name in names {
-            out.append(QString::from(name.as_str()));
-        }
-        out
-    }
-
-    fn recent_directories(&self) -> QStringList {
-        let mut seen = std::collections::HashSet::new();
-        let mut out = QStringList::default();
-        for recent in dae_core::fs::recents::list_recents().unwrap_or_default() {
-            if recent.kind != dae_core::types::EntryKind::Directory {
-                continue;
-            }
-            if seen.insert(recent.path.clone()) {
-                out.append(QString::from(recent.path.as_str()));
-            }
-            if out.len() >= 32 {
-                break;
-            }
-        }
-        out
-    }
-
-    fn expand_typed_path(&self, text: &QString) -> QString {
-        QString::from(Self::expand_shorthand(&text.to_string()).as_str())
-    }
-
-/// Expands the typed-address shorthands. A leading `~` (alone or before a
-/// separator) becomes the user's home; `%VAR%` and `$VAR`/`${VAR}` become
-/// environment values. Anything that does not resolve stays as typed — the
-/// navigation then reports the path in its own words, which is what
-/// "keep what I typed" means.
-fn expand_shorthand(text: &str) -> String {
-    let expanded = if let Some(rest) = text.strip_prefix('~') {
-        if rest.is_empty() || rest.starts_with(['/', '\\']) {
-            std::env::var_os("USERPROFILE")
-                .or_else(|| std::env::var_os("HOME"))
-                .map(|home| {
-                    let home = home.to_string_lossy().into_owned();
-                    if rest.is_empty() { home } else { format!("{home}{rest}") }
-                })
-                .unwrap_or_else(|| text.to_owned())
-        } else {
-            text.to_owned()
-        }
-    } else {
-        text.to_owned()
-    };
-    Self::expand_percent(&Self::expand_dollar(&expanded))
-}
-
-/// `%VAR%` to the environment value, char-wise so multibyte text survives
-/// untouched. An unresolvable pair is left exactly as typed.
-fn expand_percent(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut index = 0;
-    while index < chars.len() {
-        if chars[index] == '%' && index + 1 < chars.len()
-            && let Some(close) = chars[index + 1..].iter().position(|item| *item == '%')
-        {
-            let name: String = chars[index + 1..index + 1 + close].iter().collect();
-            if !name.is_empty()
-                && name.chars().all(|item| item.is_ascii_alphanumeric() || item == '_')
-                && let Some(value) = std::env::var_os(&name)
-            {
-                out.push_str(&value.to_string_lossy());
-                index += close + 2;
-                continue;
-            }
-        }
-        out.push(chars[index]);
-        index += 1;
-    }
-    out
-}
-
-/// `$VAR` and `${VAR}` to the environment value. A `$` that names nothing
-/// stays — POSIX paths legally carry one.
-fn expand_dollar(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut index = 0;
-    while index < chars.len() {
-        if chars[index] == '$' && index + 1 < chars.len() {
-            if chars[index + 1] == '{' {
-                if let Some(close) = chars[index + 2..].iter().position(|item| *item == '}') {
-                    let name: String = chars[index + 2..index + 2 + close].iter().collect();
-                    if let Some(value) = std::env::var_os(&name) {
-                        out.push_str(&value.to_string_lossy());
-                        index += close + 3;
-                        continue;
-                    }
-                }
-            } else {
-                let mut end = index + 1;
-                while end < chars.len()
-                    && (chars[end].is_ascii_alphanumeric() || chars[end] == '_')
-                {
-                    end += 1;
-                }
-                if end > index + 1 {
-                    let name: String = chars[index + 1..end].iter().collect();
-                    if let Some(value) = std::env::var_os(&name) {
-                        out.push_str(&value.to_string_lossy());
-                        index = end;
-                        continue;
-                    }
-                }
-            }
-        }
-        out.push(chars[index]);
-        index += 1;
-    }
-    out
-}
-
-    fn reveal(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        if !vfs::is_local_path(&path) {
-            self.as_mut().finish_operation(
-                "reveal",
-                "",
-                Some("Remote items cannot be revealed in the system file manager".to_owned()),
-            );
-            return;
-        }
-        if let Err(message) = platform::reveal_path(&path) {
-            self.as_mut().finish_operation("reveal", "", Some(message));
-        }
-    }
-
-    fn record_recent(self: Pin<&mut Self>, path: &QString, is_directory: bool, opened: bool) {
-        let path = path.to_string();
-        if path.is_empty() {
-            return;
-        }
-        let kind = if is_directory {
-            dae_core::types::EntryKind::Directory
-        } else {
-            dae_core::types::EntryKind::File
-        };
-        let source = if opened {
-            RecentSource::Opened
-        } else {
-            RecentSource::Visited
-        };
-        runtime::spawn(async move {
-            let _ = dae_core::fs::recents::record_recent(path, kind, source).await;
-            // The taskbar's frequent group follows the folders the user browses,
-            // not the files they open. The request comes after the visit is on
-            // disk, or the rebuild would read a list without the folder that
-            // triggered it.
-            if is_directory {
-                crate::jump_list::refresh();
-            }
-        });
-    }
-
-    fn add_favorite(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        if path.is_empty() {
-            return;
-        }
-        let mut favorites = sidebar::load_favorites().unwrap_or_default();
-        if favorites.iter().any(|favorite| favorite.path == path) {
-            return;
-        }
-        favorites.push(Favorite {
-            name: display_name_from_path(&path),
-            path: path.clone(),
-        });
-        match sidebar::save_favorites(favorites) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Added to favorites"));
-                self.as_mut().favorites_changed();
-                // A folder the user favorited belongs in the taskbar menu, even
-                // if it was deleted from it earlier.
-                crate::jump_list::reinclude(&path);
-                crate::jump_list::refresh();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn add_favorite_paths(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let mut favorites = sidebar::load_favorites().unwrap_or_default();
-        let mut added: Vec<String> = Vec::new();
-        for path in paths.iter() {
-            let path = path.to_string();
-            if path.is_empty() || !std::path::Path::new(&path).is_dir() {
-                continue;
-            }
-            if favorites.iter().any(|favorite| favorite.path == path) {
-                continue;
-            }
-            favorites.push(Favorite {
-                name: display_name_from_path(&path),
-                path: path.clone(),
-            });
-            added.push(path);
-        }
-        if added.is_empty() {
-            return;
-        }
-        match sidebar::save_favorites(favorites) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Added to favorites"));
-                self.as_mut().favorites_changed();
-                for path in &added {
-                    crate::jump_list::reinclude(path);
-                }
-                crate::jump_list::refresh();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn hide_place(mut self: Pin<&mut Self>, kind: &QString) {
-        let Some(place) = parse_place_kind(&kind.to_string()) else {
-            return;
-        };
-        let mut hidden = sidebar::load_hidden_places().unwrap_or_default();
-        if hidden.contains(&place) {
-            return;
-        }
-        hidden.push(place);
-        match sidebar::save_hidden_places(hidden) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Hidden from sidebar"));
-                self.as_mut().places_changed();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn show_all_places(mut self: Pin<&mut Self>) {
-        match sidebar::save_hidden_places(Vec::new()) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Restored hidden places"));
-                self.as_mut().places_changed();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn remove_favorite(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        let favorites: Vec<Favorite> = sidebar::load_favorites()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|favorite| favorite.path != path)
-            .collect();
-        match sidebar::save_favorites(favorites) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Removed from favorites"));
-                self.as_mut().favorites_changed();
-                crate::jump_list::refresh();
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn is_favorite(&self, path: &QString) -> bool {
-        let target = path.to_string();
-        if target.is_empty() {
-            return false;
-        }
-        sidebar::load_favorites()
-            .unwrap_or_default()
-            .iter()
-            .any(|favorite| favorite.path.eq_ignore_ascii_case(&target) || favorite.path == target)
-    }
-
-    fn toggle_favorite(self: Pin<&mut Self>, path: &QString) {
-        if self.is_favorite(path) {
-            self.remove_favorite(path);
-        } else {
-            self.add_favorite(path);
-        }
-    }
-
-    fn test_connection(
-        mut self: Pin<&mut Self>,
-        protocol: &QString,
-        host: &QString,
-        port: &QString,
-        username: &QString,
-        password: &QString,
-    ) {
-        let input = match connection_input(protocol, host, port, username, password, false) {
-            Ok(input) => input,
-            Err(message) => {
-                self.as_mut()
-                    .connection_test_finished(false, &QString::from(message.as_str()));
-                return;
-            }
-        };
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = smb::test_connection(input).await;
-            let _ = thread.queue(move |mut workspace| match result {
-                Ok(()) => workspace
-                    .as_mut()
-                    .connection_test_finished(true, &QString::from("Connection test succeeded")),
-                Err(error) => {
-                    let message = friendly_error(&error.to_string());
-                    workspace
-                        .as_mut()
-                        .set_last_error(QString::from(message.as_str()));
-                    workspace
-                        .as_mut()
-                        .connection_test_finished(false, &QString::from(message.as_str()));
-                }
-            });
-        });
-    }
-
-    fn save_connection(
-        mut self: Pin<&mut Self>,
-        protocol: &QString,
-        host: &QString,
-        port: &QString,
-        username: &QString,
-        password: &QString,
-        remember_password: bool,
-    ) {
-        let input =
-            match connection_input(protocol, host, port, username, password, remember_password) {
-                Ok(input) => input,
-                Err(message) => {
-                    self.as_mut().connection_save_finished(
-                        false,
-                        &QString::default(),
-                        &QString::from(message.as_str()),
-                    );
-                    return;
-                }
-            };
-
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || connections::save_connection(input))
-                .await
-                .map_err(|error| FileSystemError::Internal(error.to_string()))
-                .and_then(|result| result);
-            let _ = thread.queue(move |mut workspace| match result {
-                Ok(connection) => {
-                    workspace.as_mut().connections_changed();
-                    workspace.as_mut().connection_save_finished(
-                        true,
-                        &QString::from(connection.id.as_str()),
-                        &QString::default(),
-                    );
-                }
-                Err(error) => {
-                    let message = friendly_error(&error.to_string());
-                    workspace
-                        .as_mut()
-                        .set_last_error(QString::from(message.as_str()));
-                    workspace.as_mut().connection_save_finished(
-                        false,
-                        &QString::default(),
-                        &QString::from(message.as_str()),
-                    );
-                }
-            });
-        });
-    }
-
-    fn delete_connection(mut self: Pin<&mut Self>, id: &QString) {
-        let id = id.to_string();
-        if id.trim().is_empty() {
-            return;
-        }
-        match connections::delete_connection(id) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Connection removed"));
-                self.as_mut().connections_changed();
-                let kind = QString::from("connection_delete");
-                self.as_mut().operation_finished(&kind, &QString::default());
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-                let kind = QString::from("connection_delete");
-                self.as_mut()
-                    .operation_failed(&kind, &QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn authorize_cloud_account(
-        mut self: Pin<&mut Self>,
-        provider: &QString,
-        client_id: &QString,
-        client_secret: &QString,
-    ) {
-        let provider = match CloudProviderKind::parse(provider.to_string().trim()) {
-            Ok(provider) => provider,
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .cloud_authorize_finished(false, &QString::from(message.as_str()));
-                return;
-            }
-        };
-        let client_id = client_id.to_string().trim().to_owned();
-        if client_id.is_empty() {
-            self.as_mut()
-                .cloud_authorize_finished(false, &QString::from("Enter a Client ID"));
-            return;
-        }
-
-        let input = AuthorizeCloudAccountInput {
-            provider,
-            client_id,
-            client_secret: optional_string(client_secret),
-        };
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = cloud_oauth::authorize_cloud_account(input).await;
-            let _ = thread.queue(move |mut workspace| match result {
-                Ok(account) => {
-                    workspace.as_mut().connections_changed();
-                    workspace
-                        .as_mut()
-                        .cloud_authorize_finished(true, &QString::from(account.id.as_str()));
-                }
-                Err(error) => {
-                    let message = friendly_error(&error.to_string());
-                    workspace
-                        .as_mut()
-                        .set_last_error(QString::from(message.as_str()));
-                    workspace
-                        .as_mut()
-                        .cloud_authorize_finished(false, &QString::from(message.as_str()));
-                }
-            });
-        });
-    }
-
-    fn delete_cloud_account(mut self: Pin<&mut Self>, id: &QString) {
-        let id = id.to_string();
-        if id.trim().is_empty() {
-            return;
-        }
-        match cloud_accounts::delete_cloud_account(id) {
-            Ok(()) => {
-                self.as_mut()
-                    .set_status(QString::from("Cloud account removed"));
-                self.as_mut().connections_changed();
-                let kind = QString::from("cloud_delete");
-                self.as_mut().operation_finished(&kind, &QString::default());
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-                let kind = QString::from("cloud_delete");
-                self.as_mut()
-                    .operation_failed(&kind, &QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn save_terminal_settings(
-        mut self: Pin<&mut Self>,
-        font_size: i32,
-        line_height: f64,
-        family: &QString,
-    ) {
-        let mut settings = dae_core::settings::load_settings().unwrap_or_default();
-        settings.terminal.font_size = font_size.clamp(8, 24) as u8;
-        settings.terminal.line_height = (line_height as f32).clamp(0.8, 3.0);
-        let family = family.to_string();
-        settings.terminal.font_family = (!family.trim().is_empty()).then_some(family);
-
-        match dae_core::settings::save_settings(settings) {
-            Ok(saved) => {
-                self.as_mut()
-                    .set_terminal_font_size(saved.terminal.font_size as i32);
-                self.as_mut()
-                    .set_terminal_line_height(saved.terminal.line_height as f64);
-                self.as_mut().set_terminal_font_family(QString::from(
-                    saved.terminal.font_family.as_deref().unwrap_or(""),
-                ));
-                self.as_mut()
-                    .set_status(QString::from("Terminal settings saved"));
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn refresh_default_manager(mut self: Pin<&mut Self>) {
-        self.as_mut().start_default_manager(None);
-    }
-
-    fn set_shortcut(mut self: Pin<&mut Self>, id: &QString, binding: &QString) {
-        let id = id.to_string();
-        if !dae_core::settings::default_shortcuts().contains_key(&id) {
-            self.as_mut()
-                .set_last_error(QString::from("Unknown shortcut action"));
-            return;
-        }
-        let binding = binding.to_string().trim().to_owned();
-        if binding.len() > 64 || binding.chars().any(char::is_control) {
-            self.as_mut()
-                .set_last_error(QString::from("Invalid shortcut format"));
-            return;
-        }
-        self.as_mut().apply_shortcut_change(move |shortcuts| {
-            shortcuts.insert(id, binding);
-        });
-    }
-
-    fn reset_shortcut(mut self: Pin<&mut Self>, id: &QString) {
-        let id = id.to_string();
-        let Some(binding) = dae_core::settings::default_shortcuts().get(&id).cloned() else {
-            self.as_mut()
-                .set_last_error(QString::from("Unknown shortcut action"));
-            return;
-        };
-        self.as_mut().apply_shortcut_change(move |shortcuts| {
-            shortcuts.insert(id, binding);
-        });
-    }
-
-    fn reset_shortcuts(mut self: Pin<&mut Self>) {
-        self.as_mut().apply_shortcut_change(|shortcuts| {
-            *shortcuts = dae_core::settings::default_shortcuts();
-        });
-    }
-
-    /// Saves only the shortcut map. Loading first preserves the terminal
-    /// typography and the cached file-manager flag that share the document.
-    fn apply_shortcut_change(
-        mut self: Pin<&mut Self>,
-        change: impl FnOnce(&mut HashMap<String, String>),
-    ) {
-        let mut settings = dae_core::settings::load_settings().unwrap_or_default();
-        change(&mut settings.shortcuts);
-        match dae_core::settings::save_settings(settings) {
-            Ok(saved) => {
-                self.as_mut()
-                    .set_shortcuts_json(QString::from(shortcuts_json(&saved.shortcuts).as_str()));
-                self.as_mut().set_status(QString::from("Shortcuts saved"));
-                self.as_mut().set_last_error(QString::default());
-            }
-            Err(error) => {
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
-            }
-        }
-    }
-
-    fn open_log_directory(mut self: Pin<&mut Self>) {
-        let directory = crate::logging::app_log_directory();
-        if let Err(error) = std::fs::create_dir_all(&directory) {
-            self.as_mut().set_last_error(QString::from(
-                format!("Could not create log directory: {error}").as_str(),
-            ));
-            return;
-        }
-        match platform::open_path(&directory.to_string_lossy()) {
-            Ok(()) => self
-                .as_mut()
-                .set_status(QString::from("Opened log directory")),
-            Err(message) => self
-                .as_mut()
-                .set_last_error(QString::from(message.as_str())),
-        }
-    }
-
-    fn set_default_file_manager(mut self: Pin<&mut Self>) {
-        self.as_mut().start_default_manager(Some(true));
-    }
-
-    fn unset_default_file_manager(mut self: Pin<&mut Self>) {
-        self.as_mut().start_default_manager(Some(false));
-    }
-
-    /// `None` re-reads the OS state; `Some(true/false)` registers or removes
-    /// dae first. The blocking platform calls run off the Qt thread, and the
-    /// busy flag drops overlapping requests the same way the Git operations do.
-    fn start_default_manager(mut self: Pin<&mut Self>, change: Option<bool>) {
-        if self.default_manager_busy {
-            return;
-        }
-        self.as_mut().set_default_manager_busy(true);
-        self.as_mut().set_default_manager_error(QString::default());
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || match change {
-                Some(true) => default_manager::set(),
-                Some(false) => default_manager::unset(),
-                None => default_manager::status(),
-            })
-            .await
-            .map_err(|error| {
-                FileSystemError::Internal(format!("default_manager.status_failed: {error}"))
-            })
-            .and_then(|result| result);
-            let _ = thread.queue(move |mut workspace| {
-                workspace.as_mut().adopt_default_manager(change, result)
-            });
-        });
-    }
-
-    fn adopt_default_manager(
-        mut self: Pin<&mut Self>,
-        change: Option<bool>,
-        result: Result<DefaultManagerStatus, FileSystemError>,
-    ) {
-        self.as_mut().set_default_manager_busy(false);
-        match result {
-            Ok(status) => {
-                self.as_mut()
-                    .set_default_manager_supported(status.supported);
-                self.as_mut()
-                    .set_default_manager_is_default(status.is_default);
-                self.as_mut()
-                    .set_default_manager_is_registered(status.is_registered);
-                let detail = status
-                    .detail
-                    .as_deref()
-                    .map(default_manager_detail)
-                    .unwrap_or("");
-                self.as_mut()
-                    .set_default_manager_detail(QString::from(detail));
-                self.as_mut().set_default_manager_error(QString::default());
-                if change.is_some() {
-                    let _ = dae_core::settings::set_default_file_manager_cache(status.is_default);
-                }
-            }
-            Err(error) => {
-                self.as_mut().set_default_manager_detail(QString::default());
-                let message = friendly_error(&error.to_string());
-                self.as_mut()
-                    .set_default_manager_error(QString::from(message.as_str()));
-            }
-        }
-    }
-}
-
-fn strings(list: &QStringList) -> Vec<String> {
-    list.iter().map(ToString::to_string).collect()
-}
-
-fn string_list(paths: &[String]) -> QStringList {
-    let mut list = QStringList::default();
-    for path in paths {
-        list.append(QString::from(path.as_str()));
-    }
-    list
 }
 
 /// The system clipboard's files (`None` when it holds no file list) and the
@@ -4295,7 +3757,7 @@ fn clipboard_contents(
 }
 
 /// QML passes empty strings where the bridge means `None`.
-fn optional_string(value: &QString) -> Option<String> {
+fn optional_string(value: &str) -> Option<String> {
     let value = value.to_string();
     (!value.is_empty()).then_some(value)
 }
@@ -4304,11 +3766,11 @@ fn optional_string(value: &QString) -> Option<String> {
 /// Both Test and Connect go through here so the two paths cannot disagree
 /// about what a blank port or a padded host means.
 fn connection_input(
-    protocol: &QString,
-    host: &QString,
-    port: &QString,
-    username: &QString,
-    password: &QString,
+    protocol: &str,
+    host: &str,
+    port: &str,
+    username: &str,
+    password: &str,
     remember_password: bool,
 ) -> Result<SaveConnectionInput, String> {
     let protocol = protocol_from(&protocol.to_string())?;
@@ -4730,7 +4192,7 @@ mod tests {
 
     #[test]
     fn typed_paths_expand_home_and_environment_shorthands() {
-        use qobject::Workspace;
+        use crate::workspace::Workspace;
 
         // The name is unique to this test; nothing else reads it while
         // tests run in parallel.
@@ -4938,11 +4400,11 @@ mod tests {
     #[test]
     fn connection_fields_are_trimmed_and_blank_extras_dropped() {
         let input = connection_input(
-            &QString::from("SMB"),
-            &QString::from("  nas.local "),
-            &QString::from(""),
-            &QString::from(" alice "),
-            &QString::from(""),
+            "SMB",
+            "  nas.local ",
+            "",
+            " alice ",
+            "",
             true,
         )
         .expect("valid connection input");
@@ -4955,11 +4417,11 @@ mod tests {
         assert!(input.remember_password);
 
         let sftp = connection_input(
-            &QString::from("sftp"),
-            &QString::from("nas.local"),
-            &QString::from("2222"),
-            &QString::default(),
-            &QString::from("secret"),
+            "sftp",
+            "nas.local",
+            "2222",
+            "",
+            "secret",
             false,
         )
         .expect("valid sftp input");
@@ -4971,33 +4433,33 @@ mod tests {
     #[test]
     fn connection_validation_reports_the_offending_field() {
         let missing_host = connection_input(
-            &QString::from("smb"),
-            &QString::from("   "),
-            &QString::default(),
-            &QString::default(),
-            &QString::default(),
+            "smb",
+            "   ",
+            "",
+            "",
+            "",
             false,
         )
         .expect_err("host is required");
         assert_eq!(missing_host, "Enter a server address");
 
         let bad_port = connection_input(
-            &QString::from("smb"),
-            &QString::from("nas.local"),
-            &QString::from("70000"),
-            &QString::default(),
-            &QString::default(),
+            "smb",
+            "nas.local",
+            "70000",
+            "",
+            "",
             false,
         )
         .expect_err("port is out of range");
         assert_eq!(bad_port, "Port must be between 1 and 65535");
 
         let unknown = connection_input(
-            &QString::from("s3"),
-            &QString::from("bucket"),
-            &QString::default(),
-            &QString::default(),
-            &QString::default(),
+            "s3",
+            "bucket",
+            "",
+            "",
+            "",
             false,
         )
         .expect_err("unknown protocol");

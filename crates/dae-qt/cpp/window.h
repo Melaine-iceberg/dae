@@ -36,6 +36,8 @@
 
 #include <QtGlobal>
 
+#include "rust/cxx.h"
+
 #if defined(Q_OS_WIN)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -201,7 +203,10 @@ inline void dae_qt_watch_first_frame(std::size_t enginePtr)
 {
     if (enginePtr == 0)
         return;
-    auto* engine = reinterpret_cast<QQmlApplicationEngine*>(enginePtr);
+    auto* engine = qobject_cast<QQmlApplicationEngine*>(
+        reinterpret_cast<QQmlEngine*>(enginePtr));
+    if (!engine)
+        return;
 
     const auto attach = [](QObject* root) {
         auto* window = qobject_cast<QQuickWindow*>(root);
@@ -241,7 +246,8 @@ inline void dae_qt_watch_first_frame(std::size_t enginePtr)
 /// happens on the Rust side of the call.
 inline void dae_qt_load_after_shell(std::size_t enginePtr, const QString& url)
 {
-    auto* engine = reinterpret_cast<QQmlApplicationEngine*>(enginePtr);
+    auto* engine = qobject_cast<QQmlApplicationEngine*>(
+        reinterpret_cast<QQmlEngine*>(enginePtr));
     if (!engine)
         return;
     const QUrl source(url);
@@ -1544,6 +1550,64 @@ inline void dae_qt_install_message_handler()
         std::fprintf(stderr, "qt: %s\n", utf8.constData());
         std::fflush(stderr);
     });
+}
+
+inline bool dae_qt_attach_rs(rust::Str token)
+{
+    return dae_qt_attach(
+        QString::fromUtf8(token.data(), static_cast<qsizetype>(token.size())));
+}
+
+inline bool dae_qt_apply_backdrop_rs(rust::Str token, int material, bool dark)
+{
+    return dae_qt_apply_backdrop(
+        QString::fromUtf8(token.data(), static_cast<qsizetype>(token.size())),
+        material, dark);
+}
+
+inline bool dae_qt_set_caption_client_rs(
+    rust::Str token, double left, double right, double plus_left, double plus_right)
+{
+    return dae_qt_set_caption_client(
+        QString::fromUtf8(token.data(), static_cast<qsizetype>(token.size())),
+        left, right, plus_left, plus_right);
+}
+
+inline rust::String dae_qt_caption_icon_family_rs()
+{
+    const QByteArray utf8 = dae_qt_caption_icon_family().toUtf8();
+    return rust::String(utf8.constData(), static_cast<std::size_t>(utf8.size()));
+}
+
+inline void dae_qt_set_ui_font_rs(rust::Str family)
+{
+    dae_qt_set_ui_font(
+        QString::fromUtf8(family.data(), static_cast<qsizetype>(family.size())));
+}
+
+inline void dae_qt_startup_mark_rs(rust::Str stage)
+{
+    dae_qt_startup_mark(
+        QString::fromUtf8(stage.data(), static_cast<qsizetype>(stage.size())));
+}
+
+inline double dae_qt_native_handle_rs(rust::Str token)
+{
+    return dae_qt_native_handle(
+        QString::fromUtf8(token.data(), static_cast<qsizetype>(token.size())));
+}
+
+inline void dae_qt_load_after_shell_rs(std::size_t engine_ptr, rust::Str url)
+{
+    dae_qt_load_after_shell(
+        engine_ptr,
+        QString::fromUtf8(url.data(), static_cast<qsizetype>(url.size())));
+}
+
+inline bool dae_qt_focus_window_rs(rust::Str token)
+{
+    return dae_qt_focus_window(
+        QString::fromUtf8(token.data(), static_cast<qsizetype>(token.size())));
 }
 
 } // namespace dae_qt

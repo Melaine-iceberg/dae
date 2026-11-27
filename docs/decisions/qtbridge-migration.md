@@ -1,10 +1,11 @@
 # Qt Bridge 迁移执行手册
 
-> **状态：进行中。** 迁移已合并进 `main`（`feat/qtbridge` 快进），之后又补了 QML
-> 元数据生成与一处槽名回归。7 个 QObject 已迁移并通过构建、单元测试、CI 那组静态闸门
-> 和整机启动验证；三个“叶子单例”已全部完成，下一步是列表模型。其余约 17 个 QObject、
-> `main.rs` 和 `cxx-qt-build` 的移除尚未完成。本文是给下一次对话直接执行用的，不需要
-> 上一次对话的上下文。
+> **状态：已完成（2026-11-27）。** `crates/dae-qt` 全量 QObject 与列表模型、所有 C++ 桥（改用纯
+> `#[cxx::bridge]`）、`apps/dae/src/main.rs`（切换至 `qtbridge::QApp`），以及
+> `crates/dae-qt/build.rs` / `apps/dae/build.rs`（改用 `cxx_build` + `qmake` + `moc` + `rcc` + `cc::Build`）
+> 已全部迁离 `cxx-qt` / `cxx-qt-lib` / `cxx-qt-build` / `qt-build-utils`。
+> workspace 内已无任何 `#[cxx_qt::bridge]` 块或 `cxx-qt*` 直接依赖（仅 `qtbridge` 内部传递依赖
+> `qtbridge-type-lib`/`cxx-qt-lib`）。本文保留为迁移记录与踩坑参考。
 
 - 目标：`crates/dae-qt` 从 CXX-Qt 0.10 全量迁到 [Qt Bridge for Rust](https://doc.qt.io/qtbridge-rust/)（beta，API 已按 0.4.1 固定）。
 - 依赖版本：`qtbridge = "0.4.1"`，MSRV 1.88，Qt ≥ 6.10。本机 Qt 6.12.0：
@@ -473,7 +474,26 @@ C++ 画笔已经用 `QMetaObject::invokeMethod` 按 **`QByteArray`** 取帧和�
 - 测试/运行的可执行文件直接跑会 `0xC0000135`（缺 Qt DLL），必须经带 Windows PATH 的
   `cmd` 批处理启动（§3.4）。
 - `apps/dae/Cargo.toml` 里 `dae-qt` 作为 build-dependency 的 “unused dependency” warning
-  是既有现象（用于 build script 排序），不是迁移引入的。
+  是既有现象（用于 build script 排序），最终移除 `target/cxxqt` 依赖后已一并去掉。
+- **`&mut self` slot 跨纯 `#[cxx::bridge]` 触发 Qt 重入会 `BorrowError`。** `qtbridge`
+  只对自身 `call_cpp_impl!` 维护 `BorrowState` 重入栈；从 `&mut self` slot 直接调外部
+  C++ 函数（例如 `WindowController::attach` → `winId()` 同步触发 `resizeEvent`，或
+  `start_drag_out` 运行嵌套 `QDrag::exec()` 事件循环）时，`RefCell` 仍处于 `borrow_mut`，
+  QML 若同步读取该对象属性或后台投递 `QThreadHandle::invoke_mut` 就会 panic。解法：
+  `WindowController` 用 `Cell`/`RefCell` + `Read`/`Write` 把全部 slot 改为 `&self` 并通过
+  `QThreadHandle::invoke_mut` 异步发信号；`start_drag_out` 的 `QDrag::exec()` 在 C++ 侧用
+  `QTimer::singleShot(0)` 延后到 slot 返回之后执行。
+- **列表模型 `data()` 内调用 `index.parent()` 会重入 `parent()` 触发 `BorrowError`。**
+  `end_reset_model()` 持有 `borrow_mut` 调用 `data()` 时，`qtbridge` 会消耗一次 `BorrowState`
+  给当前 `data()` 调用；此时再调 `index.parent()` 会跨 FFI 回调 Rust `parent()` 重新借用
+  `RefCell` 而 panic。扁平模型统一改用 `!index.is_valid() || index.column() != 0 || index.row() < 0`，
+  同时省掉一次 FFI 往返。
+- **合成 `plugin.qmltypes` 与 `qmltc` 对齐要点。** 合成占位不能带 `isTypeOpaque: true`
+  （否则 `qmltc` 拒绝属性类型绑定）；多参数信号需输出多行 `Signal { name; Parameter ... }`；
+  带 `Notify` 的 `Property` 需同时给出 `read`/`write`/`notify`/`index`（支持 `Read =` 推导）。
+- **静态资源防链接器裁剪。** 去掉 `cxx-qt-build` 后，由 `apps/dae/build.rs` 生成单一
+  `.qrc` 并调 `rcc --name dae_resources` 编译；`cpp/qml_cache_init.cpp` 在 `dae_qml_cache_init()`
+  中显式引用 `qInitResources_dae_resources()`，无需 `+whole-archive` 即可保留全部 `.qml`/`.ts`/字体资源。
 
 ## 9. 完成定义
 

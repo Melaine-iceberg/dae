@@ -2330,3 +2330,30 @@ snapshot 页容量、resize 后提示符重绘、search 线程超时崩溃等修
 - 验证：`terminal_smoke` 4 项通过，这一条同时证明 import lib 可链接、运行时能从
   `target/debug/deps` 加载 DLL；本机没有 Qt 与 winapp，`dae.exe` 链接与 MSIX/zip
   打包未在本机验证，由 CI 与发布流水线覆盖。
+
+## 桥接从 CXX-Qt 0.10 全量迁至 Qt Bridge 0.4.1（2026-11-27）
+
+`crates/dae-qt` 与 `apps/dae` 已完成从 CXX-Qt 0.10 到官方 `qtbridge` 0.4.1 的全量迁移，
+`Cargo.toml` 中已移除 `cxx-qt` / `cxx-qt-lib` / `cxx-qt-build` / `qt-build-utils` 直接依赖：
+
+- **为什么要换：** 采用 Qt 官方维护的 Rust 桥（与 Qt 6.12 同步演进），去掉对第三方
+  `cxx-qt-build` 单体 C++/QML 插件生成管的绑定，把 C++ 编译、`moc`、`rcc` 与 Qt 模块链接
+  收口到简洁可控的 `cxx_build` + `qmake -query` + `cc::Build` 脚本里。
+- **换来了什么：**
+  - 纯 Rust 与 Qt 原生类型解耦：所有 QML 模型与控制器改用原生 `String`/`Vec<String>`/`Vec<u8>`
+    和 `qtbridge::QThreadHandle`，20 余个 C++ FFI seam 全部收口为纯 `#[cxx::bridge]`。
+  - `apps/dae/src/main.rs` 切换至 `qtbridge::QApp`，保留 `--elevated-job` 早退、
+    `DAE_STARTUP_PERF` 时间线、`shellFirst` 占位窗、`dae_qml_cache_init()`、单实例占用与
+    D3D11/字体预热顺序。
+  - `apps/dae/build.rs` 直接调 `rcc`（通过 `dae_qml_cache_init()` 保活资源）与
+    `qmlcachegen`/`qmltc`/`qmllint`，构建链路零警告通过。
+- **丢了什么与新增约束：**
+  - `qtbridge` 使用运行时动态 `MetaObject` 而不生成 `plugin.qmltypes`，静态工具链
+    （`qmltc`/`qmllint`/`qmlcachegen`）依赖 `apps/dae/build.rs` 从 Rust `impl QmlElement` /
+    `qproperty!` / `#[qslot]` / `#[qsignal]` 源码解析并合成 `plugin.qmltypes`。
+  - 无法由运行时动态元对象表达的 C++ `Q_OBJECT` 子类（`Activation`、`TerminalItem`、
+    `M3ProgressItem` 等）留在 `crates/dae-qt/cpp/`，由 `crates/dae-qt/build.rs` 显式调用
+    Qt `moc` 编译。
+  - `qtbridge` 以 `Rc<RefCell<T>>` 托管对象借用：跨纯 `#[cxx::bridge]` 调用若会同步重入
+    Qt/QML（如 `winId()`、嵌套 `QDrag::exec()`）不能持有 `&mut self` 借用，且扁平列表模型
+    在 `data()` 中不能调用 `index.parent()` 回调 Rust `parent()`。

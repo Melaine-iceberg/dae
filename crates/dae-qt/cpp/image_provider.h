@@ -23,6 +23,7 @@
 #include <QMutex>
 #include <QQuickImageProvider>
 #include <QString>
+#include <cstddef>
 
 class QQmlApplicationEngine;
 
@@ -112,6 +113,11 @@ void dae_qt_register_file_glyph_provider(QQmlApplicationEngine* engine);
 
 /// Takes ownership, as above.
 void dae_qt_register_glyph_provider(QQmlApplicationEngine* engine);
+
+void dae_qt_register_thumbnail_provider_ptr(std::size_t enginePtr);
+void dae_qt_register_file_icon_provider_ptr(std::size_t enginePtr);
+void dae_qt_register_file_glyph_provider_ptr(std::size_t enginePtr);
+void dae_qt_register_glyph_provider_ptr(std::size_t enginePtr);
 
 } // namespace dae_qt
 

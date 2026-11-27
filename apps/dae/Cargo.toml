@@ -11,13 +11,11 @@ name = "dae"
 path = "src/main.rs"
 
 [dependencies]
-cxx = "1"
-cxx-qt = "0.10"
-cxx-qt-lib = { version = "0.10", features = ["full"] }
 dae-qt = { path = "../../crates/dae-qt" }
 # Only for the one `log::error!` on engine-creation failure; the logger itself,
 # and every other message, belongs to `dae-qt::logging`.
 log = "0.4"
+qtbridge = "0.4.1"
 # Same swap, same numbers the retired Tauri shell used (its manifest is gone;
 # see `docs/decisions/engine-qt-quick.md` §9.13.3): the
 # Windows process heap charges ~36 ns per small allocation and listing a large
@@ -40,14 +38,6 @@ perf-train = []
 
 [build-dependencies]
 cc = "1"
-cxx-qt-build = "0.10"
-# Never imported by `build.rs`. Its purpose is ordering: `build.rs` reads the
-# `plugin.qmltypes` that `dae-qt`'s build script exports, and cargo only orders
-# build scripts along `[build-dependencies]` (see the `links` note in
-# `crates/dae-qt/Cargo.toml`). Without this entry the two scripts race on a
-# cold `target/`, which is how CI first saw it as "did dae-qt build?".
-dae-qt = { path = "../../crates/dae-qt" }
-qt-build-utils = "0.10"
 # Embeds `packaging/icons/icon.ico` into `dae.exe`; see the top of `main` in
 # `build.rs` for why the exe needs its own icon.
 winresource = "0.1"

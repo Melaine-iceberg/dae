@@ -18,8 +18,6 @@
 //! handler after `ShowShareUIForWindow` returns, and the handler object must
 //! outlive that call. A new share replaces the previous registration.
 
-use cxx_qt_lib::QStringList;
-
 /// Whether this build has a system share sheet.
 pub fn supported() -> bool {
     cfg!(windows)
@@ -29,7 +27,7 @@ pub fn supported() -> bool {
 /// when the platform cannot share, the window handle is unknown, or WinRT
 /// refused; the caller shows the same "sharing is unavailable" toast it uses
 /// when the entry is hidden.
-pub fn share_paths(paths: &QStringList, handle: f64) -> bool {
+pub fn share_paths(paths: &[String], handle: f64) -> bool {
     #[cfg(windows)]
     {
         return windows_share::share(paths, handle);
@@ -45,7 +43,6 @@ pub fn share_paths(paths: &QStringList, handle: f64) -> bool {
 mod windows_share {
     use std::cell::{Cell, RefCell};
 
-    use cxx_qt_lib::QStringList;
     use windows::ApplicationModel::DataTransfer::{
         DataPackage, DataRequest, DataRequestedEventArgs, DataTransferManager,
     };
@@ -72,12 +69,12 @@ mod windows_share {
         static ACTIVE: RefCell<Option<Registration>> = const { RefCell::new(None) };
     }
 
-    pub(super) fn share(paths: &QStringList, handle: f64) -> bool {
+    pub(super) fn share(paths: &[String], handle: f64) -> bool {
         if handle <= 0.0 || paths.is_empty() {
             return false;
         }
         let hwnd = HWND(handle as usize as *mut core::ffi::c_void);
-        let paths: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
+        let paths: Vec<String> = paths.to_vec();
 
         let items = match std::thread::spawn(move || resolve_items(&paths).map_err(|e| e.to_string())).join() {
             Ok(Ok(items)) => items,

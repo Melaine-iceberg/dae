@@ -11,15 +11,16 @@
 //! network locations too — and finally cloud accounts. The trash is not a row
 //! here; the sidebar parks it at the bottom itself.
 
-use core::pin::Pin;
 use std::path::Path;
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::fs::cloud::accounts::{StoredCloudAccount, list_cloud_accounts};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, StoredConnection};
 use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
+use qtbridge::qtbridge_type_lib::{
+    QByteArray, QHash_i32_QByteArray, QModelIndex, QString, QVariant,
+};
+use qtbridge::{QAbstractItemModel, QAbstractItemModelBase, QmlElement, QmlObject, qobject};
 
 use crate::format;
 use crate::runtime;
@@ -45,69 +46,6 @@ const ROLE_FILL: i32 = 0x0106;
 /// on it, so a fixed disk never gets an "Eject" row.
 const ROLE_REMOVABLE: i32 = 0x0107;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-    }
-
-    unsafe extern "RustQt" {
-        /// The navigation column's content, reachable from QML as
-        /// `SidebarModel`.
-        #[qobject]
-        #[qml_element]
-        #[base = QAbstractListModel]
-        #[qproperty(bool, loaded)]
-        #[qproperty(QString, status)]
-        type SidebarModel = super::SidebarModelRust;
-
-        #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(&self, parent: &QModelIndex) -> i32;
-
-        #[cxx_override]
-        fn data(&self, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(&self) -> QHash_i32_QByteArray;
-
-        /// Re-resolves every section. Disk probing happens off the Qt thread;
-        /// the file-backed sections are small enough to read here.
-        #[qinvokable]
-        fn refresh(self: Pin<&mut SidebarModel>);
-
-        /// The section `row` belongs to, so the column can skip the rows of a
-        /// folded group without creating their delegates (§7.3.2).
-        #[qinvokable]
-        #[cxx_name = "sectionAt"]
-        fn section_at(&self, row: i32) -> QString;
-
-        #[inherit]
-        #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut SidebarModel>);
-
-        #[inherit]
-        #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut SidebarModel>);
-    }
-
-    impl cxx_qt::Threading for SidebarModel {}
-}
-
 #[derive(Clone)]
 struct SidebarRow {
     section: String,
@@ -125,139 +63,189 @@ struct SidebarRow {
     removable: bool,
 }
 
-#[derive(Default)]
-pub struct SidebarModelRust {
-    rows: Vec<SidebarRow>,
-    loaded: bool,
-    status: QString,
+#[qobject(Base = QAbstractItemModel, NoQmlElement, ConvertToCamelCase)]
+mod rows {
+    use super::*;
+
+    #[derive(Default)]
+    pub struct SidebarModel {
+        rows: Vec<SidebarRow>,
+        loaded: bool,
+        status: String,
+    }
+
+    impl QAbstractItemModel for SidebarModel {
+        fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex {
+            if parent.is_valid() || column != 0 || row < 0 || row as usize >= self.rows.len() {
+                return QModelIndex::default();
+            }
+            self.create_index(row, column, 0)
+        }
+
+        fn parent(&self, _child: &QModelIndex) -> QModelIndex {
+            QModelIndex::default()
+        }
+
+        fn row_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() {
+                0
+            } else {
+                self.rows.len() as i32
+            }
+        }
+
+        fn column_count(&self, parent: &QModelIndex) -> i32 {
+            if parent.is_valid() { 0 } else { 1 }
+        }
+
+        fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+            if !index.is_valid() || index.column() != 0 || index.row() < 0 {
+                return QVariant::default();
+            }
+            let Some(row) = self.rows.get(index.row() as usize) else {
+                return QVariant::default();
+            };
+            match role {
+                ROLE_SECTION => QVariant::from(&QString::from(row.section.as_str())),
+                ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
+                ROLE_PATH => QVariant::from(&QString::from(row.path.as_str())),
+                ROLE_KIND => QVariant::from(&QString::from(row.kind.as_str())),
+                ROLE_DETAIL => QVariant::from(&QString::from(row.detail.as_str())),
+                ROLE_ICON => QVariant::from(&QString::from(row.icon.as_str())),
+                ROLE_IS_DIR => QVariant::from(&row.is_dir),
+                ROLE_FILE_SYSTEM => QVariant::from(&QString::from(row.file_system.as_str())),
+                ROLE_FILL => QVariant::from(&row.fill),
+                ROLE_REMOVABLE => QVariant::from(&row.removable),
+                _ => QVariant::default(),
+            }
+        }
+
+        fn role_names(&self) -> QHash_i32_QByteArray {
+            let mut roles = QHash_i32_QByteArray::default();
+            roles.insert(ROLE_SECTION, QByteArray::from("section"));
+            roles.insert(ROLE_NAME, QByteArray::from("name"));
+            roles.insert(ROLE_PATH, QByteArray::from("path"));
+            roles.insert(ROLE_KIND, QByteArray::from("kind"));
+            roles.insert(ROLE_DETAIL, QByteArray::from("detail"));
+            roles.insert(ROLE_ICON, QByteArray::from("icon"));
+            roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
+            roles.insert(ROLE_FILE_SYSTEM, QByteArray::from("fileSystem"));
+            roles.insert(ROLE_FILL, QByteArray::from("fill"));
+            roles.insert(ROLE_REMOVABLE, QByteArray::from("removable"));
+            roles
+        }
+
+        fn set_data(&mut self, _index: &QModelIndex, _value: &QVariant, _role: i32) -> bool {
+            false
+        }
+    }
+
+    impl SidebarModel {
+        qproperty!("loaded", Member = loaded, Notify = loaded_changed);
+        qproperty!("status", Member = status, Notify = status_changed);
+
+        #[qsignal]
+        fn loaded_changed(&mut self);
+
+        #[qsignal]
+        fn status_changed(&mut self);
+
+        /// The section `row` belongs to, so the column can skip the rows of a
+        /// folded group without creating their delegates (§7.3.2).
+        #[qslot]
+        fn section_at(&self, row: i32) -> String {
+            self.rows
+                .get(row as usize)
+                .map(|entry| entry.section.clone())
+                .unwrap_or_default()
+        }
+
+        /// Re-resolves every section. Disk probing happens off the Qt thread;
+        /// the file-backed sections are small enough to read here.
+        #[qslot]
+        fn refresh(&mut self) {
+            self.status = "Loading…".to_owned();
+            self.status_changed();
+            // A sidebar may be created before the command singleton; both stores
+            // are process-wide and loading them here is idempotent.
+            crate::init_stores();
+
+            // Every source here is a file read or a device probe, and this
+            // refresh sits on the window-creation path, so the row build runs on
+            // the blocking pool and only the landing is queued onto the Qt
+            // thread (`listing-shell-costs.md` §7).
+            let handle = self.get_thread_handle();
+            runtime::spawn(async move {
+                let Ok((mut rows, network, cloud)) =
+                    tokio::task::spawn_blocking(build_base_rows).await
+                else {
+                    return;
+                };
+                let volumes = sidebar::list_disks().await.unwrap_or_default();
+                // Empty everywhere but Windows, which also makes the rows
+                // disappear on the other platforms.
+                let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
+
+                for volume in volumes {
+                    let name = volume_name(&volume.name, &volume.mount_point);
+                    // The row answers "how much can I still write here" (§7.3.2);
+                    // the 2 dp bar beside it is the same fill the old used/total
+                    // pair was drawn from, but the text no longer competes with
+                    // the name for the line.
+                    let used_bytes = volume.total_bytes.saturating_sub(volume.available_bytes);
+                    rows.push(SidebarRow {
+                        section: SECTION_VOLUMES.to_owned(),
+                        name,
+                        path: volume.mount_point,
+                        kind: "volume".to_owned(),
+                        detail: format::size(volume.available_bytes),
+                        icon: "disk".to_owned(),
+                        is_dir: true,
+                        fill: if volume.total_bytes == 0 {
+                            0.0
+                        } else {
+                            (used_bytes as f64 / volume.total_bytes as f64).clamp(0.0, 1.0)
+                        },
+                        file_system: volume.file_system,
+                        removable: volume.is_removable,
+                    });
+                }
+                for distro in distros {
+                    rows.push(distro_row(distro));
+                }
+                // The add row keeps the group reachable while it is empty, and
+                // stays at the end once there is something to manage. The WSL
+                // rows are inserted ahead of this list, because a distro is also
+                // a network location.
+                rows.extend(network);
+                rows.extend(cloud);
+                handle.invoke_mut(move |model| {
+                    model.replace_rows(rows);
+                });
+            });
+        }
+
+        fn replace_rows(&mut self, rows: Vec<SidebarRow>) {
+            self.begin_reset_model();
+            self.rows = rows;
+            self.end_reset_model();
+            let count = self.rows.len();
+            self.status = format!("{count} item{}", if count == 1 { "" } else { "s" });
+            self.status_changed();
+            self.loaded = true;
+            self.loaded_changed();
+        }
+    }
 }
 
-impl qobject::SidebarModel {
-    fn row_count(&self, parent: &QModelIndex) -> i32 {
-        if parent.is_valid() {
-            0
-        } else {
-            self.rows.len() as i32
-        }
-    }
+pub use rows::SidebarModel;
 
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        if index.column() != 0 || index.parent().is_valid() {
-            return QVariant::default();
-        }
-        let Some(row) = self.rows.get(index.row() as usize) else {
-            return QVariant::default();
-        };
-        match role {
-            ROLE_SECTION => QVariant::from(&QString::from(row.section.as_str())),
-            ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
-            ROLE_PATH => QVariant::from(&QString::from(row.path.as_str())),
-            ROLE_KIND => QVariant::from(&QString::from(row.kind.as_str())),
-            ROLE_DETAIL => QVariant::from(&QString::from(row.detail.as_str())),
-            ROLE_ICON => QVariant::from(&QString::from(row.icon.as_str())),
-            ROLE_IS_DIR => QVariant::from(&row.is_dir),
-            ROLE_FILE_SYSTEM => QVariant::from(&QString::from(row.file_system.as_str())),
-            ROLE_FILL => QVariant::from(&row.fill),
-            ROLE_REMOVABLE => QVariant::from(&row.removable),
-            _ => QVariant::default(),
-        }
-    }
-
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        roles.insert(ROLE_SECTION, QByteArray::from("section"));
-        roles.insert(ROLE_NAME, QByteArray::from("name"));
-        roles.insert(ROLE_PATH, QByteArray::from("path"));
-        roles.insert(ROLE_KIND, QByteArray::from("kind"));
-        roles.insert(ROLE_DETAIL, QByteArray::from("detail"));
-        roles.insert(ROLE_ICON, QByteArray::from("icon"));
-        roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
-        roles.insert(ROLE_FILE_SYSTEM, QByteArray::from("fileSystem"));
-        roles.insert(ROLE_FILL, QByteArray::from("fill"));
-        roles.insert(ROLE_REMOVABLE, QByteArray::from("removable"));
-        roles
-    }
-
-    fn section_at(&self, row: i32) -> QString {
-        self.rows
-            .get(row as usize)
-            .map(|entry| QString::from(entry.section.as_str()))
-            .unwrap_or_default()
-    }
-
-    fn refresh(mut self: Pin<&mut Self>) {
-        self.as_mut().set_status(QString::from("Loading…"));
-        // A sidebar may be created before the command singleton; both stores
-        // are process-wide and loading them here is idempotent.
-        crate::init_stores();
-
-        // Every source here is a file read or a device probe, and this
-        // refresh sits on the window-creation path, so the row build runs on
-        // the blocking pool and only the landing is queued onto the Qt
-        // thread (`listing-shell-costs.md` §7).
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let Ok((mut rows, network, cloud)) =
-                tokio::task::spawn_blocking(build_base_rows).await
-            else {
-                return;
-            };
-            let volumes = sidebar::list_disks().await.unwrap_or_default();
-            // Empty everywhere but Windows, which also makes the rows
-            // disappear on the other platforms.
-            let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
-
-            for volume in volumes {
-                let name = volume_name(&volume.name, &volume.mount_point);
-                // The row answers "how much can I still write here" (§7.3.2);
-                // the 2 dp bar beside it is the same fill the old used/total
-                // pair was drawn from, but the text no longer competes with
-                // the name for the line.
-                let used_bytes = volume.total_bytes.saturating_sub(volume.available_bytes);
-                rows.push(SidebarRow {
-                    section: SECTION_VOLUMES.to_owned(),
-                    name,
-                    path: volume.mount_point,
-                    kind: "volume".to_owned(),
-                    detail: format::size(volume.available_bytes),
-                    icon: "disk".to_owned(),
-                    is_dir: true,
-                    fill: if volume.total_bytes == 0 {
-                        0.0
-                    } else {
-                        (used_bytes as f64 / volume.total_bytes as f64).clamp(0.0, 1.0)
-                    },
-                    file_system: volume.file_system,
-                    removable: volume.is_removable,
-                });
-            }
-            for distro in distros {
-                rows.push(distro_row(distro));
-            }
-            // The add row keeps the group reachable while it is empty, and
-            // stays at the end once there is something to manage. The WSL
-            // rows are inserted ahead of this list, because a distro is also
-            // a network location.
-            rows.extend(network);
-            rows.extend(cloud);
-            let _ = thread.queue(move |mut model| {
-                model.as_mut().replace_rows(rows);
-            });
-        });
-    }
-
-    fn replace_rows(mut self: Pin<&mut Self>, rows: Vec<SidebarRow>) {
-        unsafe {
-            self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows = rows;
-            self.as_mut().end_reset_model();
-        }
-        let count = self.rows.len();
-        self.as_mut().set_status(QString::from(
-            format!("{count} item{}", if count == 1 { "" } else { "s" }).as_str(),
-        ));
-        self.as_mut().set_loaded(true);
-    }
+impl QmlElement for SidebarModel {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "SidebarModel";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 /// The sidebar's file-backed sections: places, favorites, saved network

@@ -6,9 +6,15 @@
 
 #pragma once
 
+#include <QByteArray>
 #include <QColor>
+#include <QGuiApplication>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
+#include <QUrl>
+
+#include "rust/cxx.h"
 
 namespace dae_qt {
 
@@ -25,9 +31,9 @@ namespace dae_qt {
 /// platform's modal loop: the window keeps painting while it runs. Returns
 /// false when there is nothing to drag or no window to drag from.
 bool dae_qt_start_file_drag(const QStringList& paths, int actions,
-                            const QColor& signal, int count,
-                            const QString& verdict, const QColor& ink,
-                            const QColor& canvas);
+                            const QString& signal, int count,
+                            const QString& verdict, const QString& ink,
+                            const QString& canvas);
 
 /// The MIME type a dragged tab carries. QML's window-level `DropArea` matches
 /// on this exact string; `application/x-dae-tab` never leaves this process.
@@ -45,8 +51,8 @@ constexpr char kTabDragMimeType[] = "application/x-dae-tab";
 /// target took it (the desktop, another app, or Escape).
 int dae_qt_start_tab_drag(const QString& source_token, const QString& title,
                           int tab_index, int grab_x, int grab_y, int width,
-                          int height, const QColor& background,
-                          const QColor& border, const QColor& text);
+                          int height, const QString& background,
+                          const QString& border, const QString& text);
 
 /// Device-independent cursor position, the space QML `Window.x/y` uses.
 ///
@@ -55,5 +61,59 @@ int dae_qt_start_tab_drag(const QString& source_token, const QString& title,
 /// next to the drag means that path does not depend on a platform backend.
 int dae_qt_cursor_logical_x();
 int dae_qt_cursor_logical_y();
+
+inline bool dae_qt_start_file_drag_rs(
+    rust::Slice<const rust::String> paths, int actions, rust::Str signal,
+    int count, rust::Str verdict, rust::Str ink, rust::Str canvas)
+{
+    QStringList list;
+    list.reserve(static_cast<qsizetype>(paths.size()));
+    for (const auto& path : paths) {
+        list.append(QString::fromUtf8(path.data(), static_cast<qsizetype>(path.size())));
+    }
+    const QString qsignal = QString::fromUtf8(signal.data(), static_cast<qsizetype>(signal.size()));
+    const QString qverdict = QString::fromUtf8(verdict.data(), static_cast<qsizetype>(verdict.size()));
+    const QString qink = QString::fromUtf8(ink.data(), static_cast<qsizetype>(ink.size()));
+    const QString qcanvas = QString::fromUtf8(canvas.data(), static_cast<qsizetype>(canvas.size()));
+    // Run the blocking QDrag::exec() loop after the slot returns so QtBridge
+    // releases its borrow before any nested frame or QThreadHandle callback runs.
+    QTimer::singleShot(0, qApp, [list, actions, qsignal, count, qverdict, qink, qcanvas]() {
+        dae_qt_start_file_drag(list, actions, qsignal, count, qverdict, qink, qcanvas);
+    });
+    return true;
+}
+
+inline int dae_qt_start_tab_drag_rs(
+    rust::Str source_token, rust::Str title, int tab_index, int grab_x,
+    int grab_y, int width, int height, rust::Str background,
+    rust::Str border, rust::Str text)
+{
+    return dae_qt_start_tab_drag(
+        QString::fromUtf8(source_token.data(), static_cast<qsizetype>(source_token.size())),
+        QString::fromUtf8(title.data(), static_cast<qsizetype>(title.size())),
+        tab_index, grab_x, grab_y, width, height,
+        QString::fromUtf8(background.data(), static_cast<qsizetype>(background.size())),
+        QString::fromUtf8(border.data(), static_cast<qsizetype>(border.size())),
+        QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size())));
+}
+
+inline rust::Vec<rust::String> dae_qt_local_drop_paths(rust::Slice<const rust::String> urls)
+{
+    rust::Vec<rust::String> out;
+    out.reserve(urls.size());
+    for (const auto& raw : urls) {
+        const QString qraw = QString::fromUtf8(raw.data(), static_cast<qsizetype>(raw.size()));
+        const QUrl url = QUrl::fromUserInput(qraw);
+        if (!url.isLocalFile()) {
+            continue;
+        }
+        const QString local = url.toLocalFile();
+        if (!local.isEmpty()) {
+            const QByteArray utf8 = local.toUtf8();
+            out.push_back(rust::String(utf8.constData(), static_cast<std::size_t>(utf8.size())));
+        }
+    }
+    return out;
+}
 
 } // namespace dae_qt

@@ -34,8 +34,8 @@ const DEFAULT_PATH_JUMP: &str = "Mod+L";
 const DEFAULT_COMMAND_BAR: &str = "Mod+K";
 const SETTINGS_FILE_NAME: &str = "settings.toml";
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
         include!("window.h");
         #[namespace = "dae_qt"]
@@ -251,7 +251,7 @@ impl QmlElement for AppConfig {
 /// crate so `Workspace` starts on the same reading the native watcher will
 /// later keep current.
 pub fn system_dark() -> bool {
-    qobject::system_dark()
+    ffi::system_dark()
 }
 
 impl Default for AppConfig {

@@ -135,7 +135,7 @@ private:
     static constexpr quint8 FlagWide = 1 << 6;
     static constexpr quint8 FlagSpacer = 1 << 7;
 
-    bool decodeFrame(const QByteArray& frame);
+    bool decodeFrame(const QList<quint8>& frame);
     /// Pulls and decodes the session's `searchRects` payload so `paint`
     /// can highlight the matches on screen.
     void pullSearchRects();

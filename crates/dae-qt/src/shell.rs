@@ -15,31 +15,25 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use cxx_qt_lib::{QColor, QString};
+use qtbridge::{QmlElement, qobject};
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qcolor.h");
-        type QColor = cxx_qt_lib::QColor;
-
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
         include!("drag.h");
         #[namespace = "dae_qt"]
         #[rust_name = "start_tab_drag"]
-        fn dae_qt_start_tab_drag(
-            source_token: &QString,
-            title: &QString,
+        fn dae_qt_start_tab_drag_rs(
+            source_token: &str,
+            title: &str,
             tab_index: i32,
             grab_x: i32,
             grab_y: i32,
             width: i32,
             height: i32,
-            background: &QColor,
-            border: &QColor,
-            text: &QColor,
+            background: &str,
+            border: &str,
+            text: &str,
         ) -> i32;
 
         #[namespace = "dae_qt"]
@@ -53,109 +47,83 @@ pub mod qobject {
         include!("window.h");
         #[namespace = "dae_qt"]
         #[rust_name = "focus_window"]
-        fn dae_qt_focus_window(token: &QString) -> bool;
+        fn dae_qt_focus_window_rs(token: &str) -> bool;
+    }
+}
+
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+mod shell_impl {
+    use super::*;
+
+    #[derive(Default)]
+    pub struct Shell {
+        next_token: AtomicU64,
     }
 
-    unsafe extern "RustQt" {
-        /// Process-wide shell helpers, reachable from QML as `Shell`.
-        ///
-        /// QML cannot mint a token that is unique across windows, cannot run
-        /// the platform's drag loop, and cannot read the logical global cursor
-        /// when a drag ends outside the window. Keeping those here means the
-        /// tab strip's drag logic has one source of truth instead of one per
-        /// window.
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        type Shell = super::ShellRust;
+    impl Shell {
 
-        #[qinvokable]
-        #[cxx_name = "newToken"]
-        fn new_token(&self) -> QString;
+        #[qslot]
 
-        /// Logical screen coordinates, the space QML `Window.x/y` speaks.
-        #[qinvokable]
-        #[cxx_name = "cursorLogicalX"]
-        fn cursor_logical_x(&self) -> i32;
+        fn new_token(&self) -> String {
+            let serial = self.next_token.fetch_add(1, Ordering::Relaxed) + 1;
+            format!("dae-window-{serial}")
+        }
 
-        #[qinvokable]
-        #[cxx_name = "cursorLogicalY"]
-        fn cursor_logical_y(&self) -> i32;
+        #[qslot]
 
-        #[qinvokable]
-        #[cxx_name = "focusWindow"]
-        fn focus_window(&self, token: &QString) -> bool;
+        fn cursor_logical_x(&self) -> i32 {
+            ffi::cursor_logical_x()
+        }
 
-        /// Runs the platform drag loop for a tab, blocking until it ends. The
-        /// preview is the tab chip spotted at `grabX`/`grabY`, so it follows
-        /// the point the user grabbed, not the cursor-centred convention of a
-        /// plain drag image. Returns the resulting `Qt::DropAction` as an int;
-        /// `Qt::IgnoreAction` (0) means nothing took the drop.
-        #[qinvokable]
-        #[cxx_name = "startTabDrag"]
+        #[qslot]
+
+        fn cursor_logical_y(&self) -> i32 {
+            ffi::cursor_logical_y()
+        }
+
+        #[qslot]
+
+        fn focus_window(&self, token: String) -> bool {
+            ffi::focus_window(&token)
+        }
+
+        #[qslot]
+
         fn start_tab_drag(
             &self,
-            source_token: &QString,
-            title: &QString,
+            source_token: String,
+            title: String,
             tab_index: i32,
             grab_x: i32,
             grab_y: i32,
             width: i32,
             height: i32,
-            background: &QColor,
-            border: &QColor,
-            text: &QColor,
-        ) -> i32;
+            background: String,
+            border: String,
+            text: String,
+        ) -> i32 {
+            ffi::start_tab_drag(
+                &source_token,
+                &title,
+                tab_index,
+                grab_x,
+                grab_y,
+                width,
+                height,
+                &background,
+                &border,
+                &text,
+            )
+        }
     }
 }
 
-#[derive(Default)]
-pub struct ShellRust {
-    next_token: AtomicU64,
-}
+pub use shell_impl::Shell;
 
-impl qobject::Shell {
-    fn new_token(&self) -> QString {
-        let serial = self.next_token.fetch_add(1, Ordering::Relaxed) + 1;
-        QString::from(format!("dae-window-{serial}").as_str())
-    }
-
-    fn cursor_logical_x(&self) -> i32 {
-        qobject::cursor_logical_x()
-    }
-
-    fn cursor_logical_y(&self) -> i32 {
-        qobject::cursor_logical_y()
-    }
-
-    fn focus_window(&self, token: &QString) -> bool {
-        qobject::focus_window(token)
-    }
-
-    fn start_tab_drag(
-        &self,
-        source_token: &QString,
-        title: &QString,
-        tab_index: i32,
-        grab_x: i32,
-        grab_y: i32,
-        width: i32,
-        height: i32,
-        background: &QColor,
-        border: &QColor,
-        text: &QColor,
-    ) -> i32 {
-        qobject::start_tab_drag(
-            source_token,
-            title,
-            tab_index,
-            grab_x,
-            grab_y,
-            width,
-            height,
-            background,
-            border,
-            text,
-        )
-    }
+impl QmlElement for Shell {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "Shell";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = true;
 }

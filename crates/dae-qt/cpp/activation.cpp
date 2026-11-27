@@ -1,6 +1,6 @@
 #include "activation.h"
 
-#include "dae-qt/src/activation.cxxqt.h"
+#include "dae-qt/src/activation.rs.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -247,13 +247,32 @@ void Activation::enqueue(const QStringList& args, const QString& workingDirector
         command = rest.takeFirst();
     }
 
+    rust::Vec<rust::String> rustArgs;
+    rustArgs.reserve(static_cast<std::size_t>(rest.size()));
+    for (const QString& arg : rest) {
+        const QByteArray utf8 = arg.toUtf8();
+        rustArgs.push_back(rust::String(utf8.constData(), static_cast<std::size_t>(utf8.size())));
+    }
+    const QByteArray wdUtf8 = workingDirectory.toUtf8();
+    const rust::Str wdStr(wdUtf8.constData(), static_cast<std::size_t>(wdUtf8.size()));
+    const rust::Slice<const rust::String> argSlice(rustArgs.data(), rustArgs.size());
+
+    auto toQStringList = [](const rust::Vec<rust::String>& items) {
+        QStringList list;
+        list.reserve(static_cast<qsizetype>(items.size()));
+        for (const auto& item : items) {
+            list.append(QString::fromUtf8(item.data(), static_cast<qsizetype>(item.size())));
+        }
+        return list;
+    };
+
     if (command == QLatin1String("reveal")) {
-        addPendingReveals(dae_qt_activation_resolve_reveals(rest, workingDirectory));
+        addPendingReveals(toQStringList(dae_qt_activation_resolve_reveals(argSlice, wdStr)));
         emit activated();
         return;
     }
 
-    const QStringList paths = dae_qt_activation_resolve(rest, workingDirectory);
+    const QStringList paths = toQStringList(dae_qt_activation_resolve(argSlice, wdStr));
     addPending(paths);
     emit activated();
 }

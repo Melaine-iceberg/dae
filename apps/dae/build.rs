@@ -2,16 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cxx_qt_build::{CxxQtBuilder, QResource, QResources};
-
-// Declared in Cargo.toml only to order this build script after `dae-qt`'s
-// (its build script exports the `plugin.qmltypes` this one reads; cargo
-// orders build scripts along `[build-dependencies]`). The underscore
-// import keeps cargo's unused-dependency lint quiet without generating
-// code — see the matching note in `apps/dae/Cargo.toml`.
-use dae_qt as _;
-use qt_build_utils::QResourceFile;
-
 /// Where the QML tree lives inside the binary. Every file below is mounted
 /// under this prefix, and the ahead-of-time compiler has to be told exactly the
 /// path the engine will ask for (`qrc:/qt/qml/dae/qml/Main.qml`) or it registers
@@ -281,15 +271,36 @@ fn which(name: &str) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// `<target>/cxxqt/qml_modules`: where `dae-qt`'s build script exports the
-/// generated `qmldir` and `plugin.qmltypes`. Resolved the way cxx-qt-build
-/// resolves it, because the build script of a dependency has already run by the
-/// time this one does.
-fn qml_modules() -> Option<PathBuf> {
-    let base = std::env::var_os("CXX_QT_EXPORT_DIR")
+fn query_qmake(key: &str) -> Option<PathBuf> {
+    let qmake = std::env::var_os("QMAKE")
         .map(PathBuf::from)
-        .or_else(cargo_target_dir)?;
-    Some(base.join("qml_modules"))
+        .or_else(|| which("qmake6").or_else(|| which("qmake")))?;
+    let output = Command::new(qmake).args(["-query", key]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let trimmed = text.trim();
+    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+}
+
+/// Synthesizes `<out_dir>/modules/dae/{qmldir,plugin.qmltypes}` from the
+/// `#[qobject]` Rust declarations so `qmlcachegen`, `qmltc`, and `qmllint`
+/// resolve `import dae` cleanly.
+fn prepare_dae_module(out_dir: &Path) -> Result<PathBuf, String> {
+    let dir = out_dir.join("modules").join("dae");
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("could not create {}: {error}", dir.display()))?;
+
+    const BASE_QMLTYPES: &str = "import QtQuick.tooling 1.2\n\nModule {\n}\n";
+    let prepared = with_port_placeholders(BASE_QMLTYPES, &ported_qml_elements());
+    std::fs::write(dir.join("plugin.qmltypes"), prepared)
+        .map_err(|error| format!("could not write synthesized plugin.qmltypes: {error}"))?;
+
+    let qmldir = "module dae\ntypeinfo plugin.qmltypes\ndepends QtQuick auto\n";
+    std::fs::write(dir.join("qmldir"), qmldir)
+        .map_err(|error| format!("could not write synthesized qmldir: {error}"))?;
+    Ok(out_dir.join("modules"))
 }
 
 /// One type that Qt Bridge registers at runtime, as its `QmlElement` impl and
@@ -300,8 +311,9 @@ struct PortedElement {
     major: u8,
     minor: u8,
     singleton: bool,
-    /// Properties, as (QML name, QML type).
-    properties: Vec<(String, String)>,
+    prototype: String,
+    /// Properties, as (QML name, QML type, optional NOTIFY signal name).
+    properties: Vec<(String, String, Option<String>)>,
     /// Slots and signals, as (QML name, parameter count).
     slots: Vec<(String, usize)>,
     signals: Vec<(String, usize)>,
@@ -339,13 +351,7 @@ fn ported_qml_elements() -> Vec<PortedElement> {
             continue;
         }
         println!("cargo:rerun-if-changed={}", path.display());
-        // `ConvertToCamelCase` renames the members, not the properties.
-        let camel_case = text
-            .lines()
-            .filter(|line| line.trim_start().starts_with("#[qobject("))
-            .any(|line| line.contains("ConvertToCamelCase"));
-        let slots = bridged_members(&text, "#[qslot]", camel_case);
-        let signals = bridged_members(&text, "#[qsignal]", camel_case);
+        let qobject_blocks = split_qobject_blocks(&text);
 
         let mut rest = text.as_str();
         while let Some(index) = rest.find(HEADER) {
@@ -366,19 +372,73 @@ fn ported_qml_elements() -> Vec<PortedElement> {
             ) else {
                 continue;
             };
+
+            let scope = qobject_blocks
+                .iter()
+                .find(|block| {
+                    block.contains(&format!("impl {name} "))
+                        || block.contains(&format!("impl {name}\n"))
+                        || block.contains(&format!("impl {name}\r"))
+                        || block.contains(&format!("struct {name} "))
+                        || block.contains(&format!("struct {name}\n"))
+                        || block.contains(&format!("struct {name}\r"))
+                })
+                .map(String::as_str)
+                .unwrap_or(text.as_str());
+            let qobject_attr = scope
+                .lines()
+                .find(|line| line.trim_start().starts_with("#[qobject"))
+                .unwrap_or("");
+            // `ConvertToCamelCase` renames the members, not the properties.
+            let camel_case = qobject_attr.contains("ConvertToCamelCase");
+            let prototype = if qobject_attr.contains("Base = QAbstractItemModel") {
+                "QAbstractItemModel".to_owned()
+            } else {
+                "QObject".to_owned()
+            };
+
             elements.push(PortedElement {
                 uri,
                 name: name.clone(),
                 major,
                 minor,
                 singleton,
-                properties: bridged_properties(&text, &name),
-                slots: slots.clone(),
-                signals: signals.clone(),
+                prototype,
+                properties: bridged_properties(scope, &text, &name, camel_case),
+                slots: bridged_members(scope, "#[qslot]", camel_case),
+                signals: bridged_members(scope, "#[qsignal]", camel_case),
             });
         }
     }
     elements
+}
+
+fn split_qobject_blocks(text: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut rest = text;
+    while let Some(index) = rest.find("#[qobject") {
+        rest = &rest[index..];
+        let Some(open) = rest.find('{') else { break };
+        let mut depth = 0usize;
+        let mut end = None;
+        for (offset, byte) in rest[open..].bytes().enumerate() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(open + offset + 1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { break };
+        blocks.push(rest[..end].to_owned());
+        rest = &rest[end..];
+    }
+    blocks
 }
 
 /// The `#[qslot]`/`#[qsignal]` functions of a file, as (QML name, arity).
@@ -457,10 +517,15 @@ fn snake_to_camel(name: &str) -> String {
 /// declaration names with `Member = …`, because the macro does not repeat it.
 /// A field whose Rust type has no QML spelling yet is declared `var`: the value
 /// still resolves at run time, only static type checks are skipped.
-fn bridged_properties(text: &str, struct_name: &str) -> Vec<(String, String)> {
-    let field_types = struct_field_types(text, struct_name);
+fn bridged_properties(
+    scope: &str,
+    full_text: &str,
+    struct_name: &str,
+    camel_case: bool,
+) -> Vec<(String, String, Option<String>)> {
+    let field_types = struct_field_types(full_text, struct_name);
     let mut properties = Vec::new();
-    let mut rest = text;
+    let mut rest = scope;
     while let Some(index) = rest.find("qproperty!(") {
         rest = &rest[index + "qproperty!(".len()..];
         let Some(opening_quote) = rest.find('"') else {
@@ -479,13 +544,40 @@ fn bridged_properties(text: &str, struct_name: &str) -> Vec<(String, String)> {
                 .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
                 .next()
         });
+        let read_fn = arguments.find("Read = ").and_then(|at| {
+            let func = &arguments[at + "Read = ".len()..];
+            func.split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+                .next()
+        });
+        let notify = arguments.find("Notify = ").and_then(|at| {
+            let sig = &arguments[at + "Notify = ".len()..];
+            let sig = sig
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+                .next()?;
+            Some(if camel_case {
+                snake_to_camel(sig)
+            } else {
+                sig.to_owned()
+            })
+        });
         let qml_type = field
             .and_then(|field| field_types.get(field))
-            .map_or_else(|| "var".to_owned(), |ty| qml_type(ty));
-        properties.push((name, qml_type));
+            .map(|ty| qml_type(ty))
+            .or_else(|| read_fn.and_then(|func| getter_return_type(scope, func)).map(|ty| qml_type(&ty)))
+            .unwrap_or_else(|| "var".to_owned());
+        properties.push((name, qml_type, notify));
         rest = &after[closing_quote..];
     }
     properties
+}
+
+fn getter_return_type(scope: &str, func: &str) -> Option<String> {
+    let needle = format!("fn {func}(");
+    let at = scope.find(&needle)?;
+    let sig = &scope[at + needle.len()..];
+    let arrow = sig.find("->")?;
+    let brace = sig[arrow..].find('{')?;
+    Some(sig[arrow + 2..arrow + brace].trim().to_owned())
 }
 
 /// The fields of `struct <name> { … }`, as Rust type text.
@@ -496,7 +588,22 @@ fn struct_field_types(text: &str, struct_name: &str) -> HashMap<String, String> 
         return types;
     };
     let body = &text[start + header.len()..];
-    let Some(end) = body.find("\n}") else {
+    let mut depth = 1usize;
+    let mut end = None;
+    for (offset, byte) in body.bytes().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(offset);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(end) = end else {
         return types;
     };
     for line in body[..end].lines() {
@@ -581,6 +688,7 @@ fn with_port_placeholders(text: &str, elements: &[PortedElement]) -> String {
             major,
             minor,
             singleton,
+            prototype,
             properties,
             slots,
             signals,
@@ -590,16 +698,26 @@ fn with_port_placeholders(text: &str, elements: &[PortedElement]) -> String {
             "    Component {{\n\
              \x20       name: \"{name}\"\n\
              \x20       accessSemantics: \"reference\"\n\
-             \x20       prototype: \"QObject\"\n\
+             \x20       prototype: \"{prototype}\"\n\
              \x20       exports: [\"{uri}/{name} {major}.{minor}\"]\n\
              \x20       isCreatable: {creatable}\n\
-             \x20       isSingleton: {singleton}\n\
-             \x20       isTypeOpaque: true\n"
+             \x20       isSingleton: {singleton}\n"
         ));
-        for (name, qml_type) in properties {
-            blocks.push_str(&format!(
-                "        Property {{ name: \"{name}\"; type: \"{qml_type}\" }}\n"
-            ));
+        for (index, (name, qml_type, notify)) in properties.iter().enumerate() {
+            let mut chars = name.chars();
+            let setter = match chars.next() {
+                Some(first) => format!("set{}{}", first.to_ascii_uppercase(), chars.as_str()),
+                None => "set".to_owned(),
+            };
+            if let Some(notify) = notify {
+                blocks.push_str(&format!(
+                    "        Property {{ name: \"{name}\"; type: \"{qml_type}\"; read: \"{name}\"; write: \"{setter}\"; notify: \"{notify}\"; index: {index} }}\n"
+                ));
+            } else {
+                blocks.push_str(&format!(
+                    "        Property {{ name: \"{name}\"; type: \"{qml_type}\"; read: \"{name}\"; index: {index}; isReadonly: true }}\n"
+                ));
+            }
         }
         for (name, arity) in slots {
             blocks.push_str("        Method {\n");
@@ -609,16 +727,14 @@ fn with_port_placeholders(text: &str, elements: &[PortedElement]) -> String {
             blocks.push_str("        }\n");
         }
         for (name, arity) in signals {
-            blocks.push_str(&format!("        Signal {{ name: \"{name}\""));
-            if *arity > 0 {
-                blocks.push_str("; Parameter { name: \"arg0\"; type: \"var\" }");
-                for index in 1..*arity {
-                    blocks.push_str(&format!(
-                        "; Parameter {{ name: \"arg{index}\"; type: \"var\" }}"
-                    ));
-                }
+            if *arity == 0 {
+                blocks.push_str(&format!("        Signal {{ name: \"{name}\" }}\n"));
+            } else {
+                blocks.push_str("        Signal {\n");
+                blocks.push_str(&format!("            name: \"{name}\"\n"));
+                push_parameters(&mut blocks, *arity);
+                blocks.push_str("        }\n");
             }
-            blocks.push_str(" }\n");
         }
         blocks.push_str("    }\n");
     }
@@ -637,30 +753,6 @@ fn push_parameters(block: &mut String, arity: usize) {
     }
 }
 
-fn cargo_target_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR") {
-        return Some(PathBuf::from(dir).join("cxxqt"));
-    }
-    let mut dir = PathBuf::from(std::env::var_os("OUT_DIR")?);
-    loop {
-        let marker = dir.join(".rustc_info.json").exists()
-            || dir.join("CACHEDIR.TAG").exists()
-            || (dir.file_name().is_some_and(|name| name == "target")
-                && dir
-                    .parent()
-                    .is_some_and(|parent| parent.join("Cargo.toml").exists()));
-        if marker {
-            return Some(dir.join("cxxqt"));
-        }
-        if !dir.pop() {
-            return None;
-        }
-    }
-}
-
-/// Runs one compiler invocation, folding its stderr into the message so a
-/// compile error in a binding is reported by the build script instead of as a
-/// bare exit code.
 fn run_tool(command: &mut Command) -> Result<(), String> {
     let output = command
         .output()
@@ -677,7 +769,76 @@ fn run_tool(command: &mut Command) -> Result<(), String> {
     })
 }
 
+fn compile_resources(out_dir: &Path, manifest: &Path) -> PathBuf {
+    let rcc = find_qt_tool("DAE_RCC", "rcc")
+        .expect("rcc was not found (set QMAKE or DAE_RCC)");
+
+    const TRANSLATIONS: &[(&str, &str)] = &[
+        ("../../qml/i18n/dae_en.ts", "dae_en.ts"),
+        ("../../qml/i18n/dae_zh_CN.ts", "dae_zh_CN.ts"),
+        ("../../qml/i18n/dae_zh_TW.ts", "dae_zh_TW.ts"),
+    ];
+    const FONTS: &[(&str, &str)] = &[
+        ("../../Assets/fonts/GoogleSansFlex.ttf", "GoogleSansFlex.ttf"),
+        ("../../Assets/fonts/GoogleSansCodeVF.ttf", "GoogleSansCodeVF.ttf"),
+        (
+            "../../Assets/fonts/SymbolsNerdFontMono-Regular.ttf",
+            "SymbolsNerdFontMono-Regular.ttf",
+        ),
+        (
+            "../../Assets/fonts/LICENSE-GoogleSansFlex.txt",
+            "LICENSE-GoogleSansFlex.txt",
+        ),
+        (
+            "../../Assets/fonts/LICENSE-GoogleSansCode.txt",
+            "LICENSE-GoogleSansCode.txt",
+        ),
+        (
+            "../../Assets/fonts/LICENSE-NerdFontsSymbols.txt",
+            "LICENSE-NerdFontsSymbols.txt",
+        ),
+    ];
+
+    let mut qrc = String::from("<RCC>\n");
+    let mut push_group = |prefix: &str, entries: &[(&str, &str)]| {
+        qrc.push_str(&format!("  <qresource prefix=\"{prefix}\">\n"));
+        for (source, alias) in entries {
+            println!("cargo:rerun-if-changed={source}");
+            let full = std::fs::canonicalize(manifest.join(source))
+                .unwrap_or_else(|error| panic!("missing resource {source}: {error}"));
+            let normalized = full.to_string_lossy().replace('\\', "/");
+            // Strip Windows UNC prefix `//?/` if canonicalize produced one.
+            let clean = normalized.strip_prefix("//?/").unwrap_or(&normalized);
+            qrc.push_str(&format!("    <file alias=\"{alias}\">{clean}</file>\n"));
+        }
+        qrc.push_str("  </qresource>\n");
+    };
+
+    push_group(QML_PREFIX, QML_FILES);
+    push_group("/i18n", TRANSLATIONS);
+    push_group("/fonts", FONTS);
+    qrc.push_str("</RCC>\n");
+
+    let qrc_path = out_dir.join("dae_resources.qrc");
+    std::fs::write(&qrc_path, qrc).expect("write dae_resources.qrc");
+
+    let cpp_out = out_dir.join("qrc_dae_resources.cpp");
+    let mut command = Command::new(&rcc);
+    command
+        .arg("--name")
+        .arg("dae_resources")
+        .arg("-o")
+        .arg(&cpp_out)
+        .arg(&qrc_path);
+    run_tool(&mut command).expect("rcc failed on dae_resources.qrc");
+    cpp_out
+}
+
 fn main() {
+    for var in ["QMAKE", "DAE_RCC", "QT_ROOT_DIR", "QTDIR"] {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
+
     // The shell draws its own chrome and never sets a QWindow icon, so the
     // taskbar button and Alt+Tab fell back to the generic application icon.
     // Embed the icon as resource 1; `set_window_icon` in
@@ -691,48 +852,6 @@ fn main() {
             .compile()
             .expect("compile packaging/icons/icon.ico into dae.exe");
     }
-
-    let files = QML_FILES
-        .iter()
-        .map(|(path, alias)| QResourceFile::new(path).alias((*alias).to_owned()));
-    let qml = QResource::new().prefix(QML_PREFIX).files(files);
-
-    // The translator reads these XML documents directly (see
-    // `crates/dae-qt/cpp/translator.cpp`), so no `lrelease` step is needed.
-    let translations = QResource::new().prefix("/i18n").files([
-        QResourceFile::new("../../qml/i18n/dae_en.ts").alias("dae_en.ts".to_owned()),
-        QResourceFile::new("../../qml/i18n/dae_zh_CN.ts").alias("dae_zh_CN.ts".to_owned()),
-        QResourceFile::new("../../qml/i18n/dae_zh_TW.ts").alias("dae_zh_TW.ts".to_owned()),
-    ]);
-
-    // The UI faces (proposal §6.2.1, §9.2). Google Sans Flex is the variable UI
-    // face — Latin, Greek and Cyrillic over the `ROND`/`opsz`/`slnt`/`wdth`/
-    // `wght` axes — and Google Sans Code is its fixed-pitch sibling for the
-    // terminal, sizes, rates and code previews. Neither carries CJK glyphs on
-    // purpose: Chinese falls through to the platform's own face (Microsoft
-    // YaHei UI, PingFang, Noto Sans CJK), which is what
-    // `dae_qt_ui_fallback_families` names. Symbols Nerd Font Mono is neither:
-    // it holds only the private-use icon glyphs a shell prompt draws, and takes
-    // part in no text run except when a cell asks for one of those codepoints.
-    //
-    // All three are redistributable but not public domain, so the licences
-    // travel beside them in the same resource prefix.
-    // `dae_qt_apply_fonts` loads these paths before the first QML document
-    // exists.
-    let fonts = QResource::new().prefix("/fonts").files([
-        QResourceFile::new("../../Assets/fonts/GoogleSansFlex.ttf")
-            .alias("GoogleSansFlex.ttf".to_owned()),
-        QResourceFile::new("../../Assets/fonts/GoogleSansCodeVF.ttf")
-            .alias("GoogleSansCodeVF.ttf".to_owned()),
-        QResourceFile::new("../../Assets/fonts/SymbolsNerdFontMono-Regular.ttf")
-            .alias("SymbolsNerdFontMono-Regular.ttf".to_owned()),
-        QResourceFile::new("../../Assets/fonts/LICENSE-GoogleSansFlex.txt")
-            .alias("LICENSE-GoogleSansFlex.txt".to_owned()),
-        QResourceFile::new("../../Assets/fonts/LICENSE-GoogleSansCode.txt")
-            .alias("LICENSE-GoogleSansCode.txt".to_owned()),
-        QResourceFile::new("../../Assets/fonts/LICENSE-NerdFontsSymbols.txt")
-            .alias("LICENSE-NerdFontsSymbols.txt".to_owned()),
-    ]);
 
     // The C++ type descriptions for the two modules registered by hand at run
     // time (`dae.terminal`, `dae.activation`). They are not documents, so they
@@ -748,45 +867,60 @@ fn main() {
     ] {
         println!("cargo:rerun-if-changed={path}");
     }
+    println!("cargo:rerun-if-changed=cpp/qml_cache_init.cpp");
 
-    let mut builder = CxxQtBuilder::new()
-        .qt_module("Quick")
-        .qrc_resources(
-            QResources::new()
-                .resource(qml)
-                .resource(translations)
-                .resource(fonts),
-        )
-        // Always compiled: it is the reference that keeps the generated units
-        // out of the archive's dead objects. See the file itself.
-        .cpp_file("cpp/qml_cache_init.cpp");
-
-    // Applies to the anchor above, and (because cxx-qt-build shares one
-    // `cc::Build`) to the AOT units added below.
-    builder = unsafe { builder.cc_builder(|cc| apply_cxx_profile(cc)) };
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let modules = prepare_dae_module(&out_dir).expect("prepare synthesized dae QML module");
 
     // Runs first because it is the cheapest guard: a Qt upgrade that breaks
     // type compilation fails here instead of after the AOT and C++ build.
-    typec::compile();
-    lint::check();
+    typec::compile(&modules);
+    lint::check(&modules);
 
-    // The `.qml` files above stay in the resource: the units are a cache the
-    // engine prefers for a matching `qrc:` URL, not a replacement for the file
-    // the URL names, and a unit whose lookup signature no longer matches falls
-    // back to that file instead of failing.
-    let units = aot::compile();
-    if !units.is_empty() {
-        // Marks the anchor above so it actually references the loader. It also
-        // reaches the bridge sources, which do not test it.
-        builder = unsafe {
-            builder.cc_builder(|cc| {
-                cc.define("DAE_QML_AOT", None);
-            })
-        };
-        builder = builder.cpp_files(units);
+    let rcc_cpp = compile_resources(&out_dir, &manifest);
+    let units = aot::compile(&modules);
+
+    let headers = query_qmake("QT_INSTALL_HEADERS")
+        .expect("qmake -query QT_INSTALL_HEADERS failed (set QMAKE or add Qt to PATH)");
+    let libs = query_qmake("QT_INSTALL_LIBS")
+        .expect("qmake -query QT_INSTALL_LIBS failed");
+
+    let mut cc = cc::Build::new();
+    cc.cpp(true)
+        .std("c++17")
+        .flag_if_supported("/Zc:__cplusplus")
+        .flag_if_supported("/permissive-");
+    if cfg!(target_env = "msvc") {
+        cc.flag("-utf-8");
     }
+    for module in ["", "QtCore", "QtGui", "QtQml", "QtQuick"] {
+        let dir = if module.is_empty() {
+            headers.clone()
+        } else {
+            headers.join(module)
+        };
+        if dir.exists() {
+            cc.include(dir);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    cc.flag("-F").flag(libs.to_string_lossy().as_ref());
 
-    builder.build();
+    cc.file("cpp/qml_cache_init.cpp").file(&rcc_cpp);
+    if !units.is_empty() {
+        cc.define("DAE_QML_AOT", None);
+        for unit in &units {
+            cc.file(unit);
+        }
+    }
+    apply_cxx_profile(&mut cc);
+    cc.compile("dae_app_qml");
+
+    println!("cargo:rustc-link-search=native={}", libs.display());
+    for lib in ["Qt6Core", "Qt6Qml"] {
+        println!("cargo:rustc-link-lib=dylib={lib}");
+    }
 }
 
 /// QML ahead-of-time compilation.
@@ -813,10 +947,10 @@ fn main() {
 mod aot {
     use std::env;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    use super::{QML_FILES, QML_PREFIX, qml_modules, run_tool};
+    use super::{QML_FILES, QML_PREFIX, run_tool};
 
     /// Name the loader registers under. Only has to be unique; it ends up in
     /// the generated `qInitResources_<name>` symbols.
@@ -825,17 +959,11 @@ mod aot {
     /// The generated units, plus the loader that points at them. Empty when the
     /// step is skipped or degraded, which just means the engine compiles the
     /// sources at run time as before.
-    pub(super) fn compile() -> Vec<PathBuf> {
+    pub(super) fn compile(modules: &Path) -> Vec<PathBuf> {
         // Before the gate below, not after: a skipped build still has to react
         // to `DAE_QML_AOT=1` on the next invocation, and cargo only watches what
         // the script prints this time.
-        for name in [
-            "DAE_QML_AOT",
-            "DAE_QMLCACHEGEN",
-            "QMAKE",
-            "CARGO_TARGET_DIR",
-            "CXX_QT_EXPORT_DIR",
-        ] {
+        for name in ["DAE_QML_AOT", "DAE_QMLCACHEGEN", "QMAKE"] {
             println!("cargo:rerun-if-env-changed={name}");
         }
 
@@ -844,10 +972,10 @@ mod aot {
             Some("0") => Vec::new(),
             // Explicitly on, in any profile, and a failure is fatal so CI can
             // tell "shipped with units" from "shipped without".
-            Some("1") => compile_units(true),
+            Some("1") => compile_units(true, modules),
             // An unrecognised value behaves like unset rather than silently
             // disabling the step for a release.
-            _ if env::var("PROFILE").as_deref() == Ok("release") => compile_units(false),
+            _ if env::var("PROFILE").as_deref() == Ok("release") => compile_units(false, modules),
             // Debug builds skip it: the generated C++ is ~18 MB, and
             // recompiling it after every QML edit costs more than the launch it
             // would speed up.
@@ -855,7 +983,7 @@ mod aot {
         }
     }
 
-    fn compile_units(strict: bool) -> Vec<PathBuf> {
+    fn compile_units(strict: bool, modules: &Path) -> Vec<PathBuf> {
         let Some(qmlcachegen) = find_qmlcachegen() else {
             return degraded(
                 strict,
@@ -870,15 +998,9 @@ mod aot {
         // its binary directory for the same reason).
         let qml_dir = manifest.join("../../qml");
 
-        // The `dae` module's generated `qmldir`/`plugin.qmltypes` are what let
-        // the compiler see the Rust types, so bindings on `dae.*` properties and
-        // invokables compile to C++ instead of falling back to lookups.
-        let modules = qml_modules();
-        let module_dir = modules.as_ref().map(|dir| dir.join("dae"));
-        let qmldir = module_dir.as_ref().map(|dir| dir.join("qmldir"));
-        if let Some(qmldir) = qmldir.as_ref().filter(|path| path.exists()) {
-            println!("cargo:rerun-if-changed={}", qmldir.display());
-        }
+        // The synthesized `dae` `qmldir`/`plugin.qmltypes` let the compiler see
+        // the Rust types so bindings on `dae.*` compile directly.
+        let qmldir = modules.join("dae").join("qmldir");
 
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("qmlcache");
         if let Err(error) = fs::create_dir_all(&out_dir) {
@@ -904,14 +1026,13 @@ mod aot {
             let unit = out_dir.join(format!("{}.cpp", alias.replace('/', "_")));
 
             let mut command = Command::new(&qmlcachegen);
-            command.arg("--resource-path").arg(&resource_path);
-            if let Some(modules) = modules.as_ref() {
-                command.arg("-I").arg(modules);
-            }
-            if let Some(qmldir) = qmldir.as_ref().filter(|path| path.exists()) {
-                command.arg("-i").arg(qmldir);
-            }
             command
+                .arg("--resource-path")
+                .arg(&resource_path)
+                .arg("-I")
+                .arg(modules)
+                .arg("-i")
+                .arg(&qmldir)
                 .arg("-I")
                 .arg(&qml_dir)
                 .arg("-o")
@@ -995,10 +1116,7 @@ mod typec {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    use super::{
-        QML_FILES, QML_PREFIX, find_qt_tool, ported_qml_elements, qml_modules, run_tool,
-        with_port_placeholders,
-    };
+    use super::{QML_FILES, QML_PREFIX, find_qt_tool, run_tool};
 
     /// Documents `qmltc` cannot compile today. `MediaPreview.qml` binds a
     /// `MediaPlayer`; Qt 6.12's own QtMultimedia qmltypes marks
@@ -1008,29 +1126,23 @@ mod typec {
     /// Drop the entry once the type is exported.
     const SKIPPED: &[&str] = &["qml/MediaPreview.qml"];
 
-    pub(super) fn compile() {
+    pub(super) fn compile(modules: &Path) {
         // Printed even when the step is skipped: a build that did not parse
         // this environment this time must still react when it is set.
-        for name in [
-            "DAE_QML_TYPEC",
-            "DAE_QMLTC",
-            "QMAKE",
-            "CARGO_TARGET_DIR",
-            "CXX_QT_EXPORT_DIR",
-        ] {
+        for name in ["DAE_QML_TYPEC", "DAE_QMLTC", "QMAKE"] {
             println!("cargo:rerun-if-env-changed={name}");
         }
 
         if env::var("DAE_QML_TYPEC").ok().as_deref() != Some("1") {
             return;
         }
-        if let Err(reason) = check() {
+        if let Err(reason) = check(modules) {
             panic!("DAE_QML_TYPEC=1 was requested but QML type compilation failed: {reason}");
         }
     }
 
     /// Runs `qmltc` over every document and reports the first failure.
-    fn check() -> Result<(), String> {
+    fn check(modules: &Path) -> Result<(), String> {
         let qmltc = find_qt_tool("DAE_QMLTC", "qmltc")
             .ok_or_else(|| "qmltc was not found (set QMAKE or DAE_QMLTC)".to_owned())?;
 
@@ -1040,7 +1152,6 @@ mod typec {
         fs::create_dir_all(out_dir.join("units"))
             .map_err(|error| format!("could not create {}: {error}", out_dir.display()))?;
 
-        let module_dir = prepare_module(&out_dir)?;
         let qrc = write_qrc(&out_dir, &manifest)?;
 
         let mut compiled = 0usize;
@@ -1062,7 +1173,7 @@ mod typec {
             let mut command = Command::new(&qmltc);
             command
                 .arg("-I")
-                .arg(&module_dir)
+                .arg(modules)
                 // The module declarations for the two hand-registered
                 // C++ modules (`dae.terminal`, `dae.activation`).
                 .arg("-I")
@@ -1089,106 +1200,6 @@ mod typec {
             return Err("no QML document was type-compiled".to_owned());
         }
         Ok(())
-    }
-
-    /// The `dae` module as `qmltc` and `qmllint` need to see it.
-    ///
-    /// cxx-qt's generated `plugin.qmltypes` declares every built-in value type
-    /// it only references from a property (`QString`, `bool`, `double`, …) as
-    /// an `isTypeOpaque: true` placeholder. qmllint accepts that; qmltc does
-    /// not, and reports "Type of property 'x' is unknown" for every property of
-    /// every `dae` type. Those placeholders describe types Qt already
-    /// registers, so drop the blocks and let the built-ins resolve normally.
-    /// The generated file itself is left alone: qmlcachegen and qmllint read
-    /// it, and it is cxx-qt's to write.
-    ///
-    /// The same file is where the types that moved to Qt Bridge went missing
-    /// from: those register at run time and write no metadata, so every ported
-    /// type is added back as an opaque placeholder (see
-    /// [`ported_qml_elements`]). Stripping first and appending after is what
-    /// keeps the two apart — one pass would otherwise delete the placeholders it
-    /// depends on.
-    ///
-    /// `depends QtQuick` is what resolves `QAbstractListModel`, the prototype
-    /// of every model type here; cxx-qt cannot infer it from the prototype
-    /// names, so it is added in `crates/dae-qt/build.rs` as well.
-    pub(super) fn prepare_module(out_dir: &Path) -> Result<PathBuf, String> {
-        let modules =
-            qml_modules().ok_or_else(|| "could not locate target/cxxqt/qml_modules".to_owned())?;
-        let source = modules.join("dae");
-        let qmltypes = source.join("plugin.qmltypes");
-        let text = fs::read_to_string(&qmltypes).map_err(|error| {
-            format!(
-                "could not read {} (did dae-qt build?): {error}",
-                qmltypes.display()
-            )
-        })?;
-        println!("cargo:rerun-if-changed={}", qmltypes.display());
-        println!("cargo:rerun-if-changed={}", source.join("qmldir").display());
-
-        let dir = out_dir.join("modules").join("dae");
-        fs::create_dir_all(&dir)
-            .map_err(|error| format!("could not create {}: {error}", dir.display()))?;
-        let prepared = with_port_placeholders(&strip_opaque(&text), &ported_qml_elements());
-        fs::write(dir.join("plugin.qmltypes"), prepared)
-            .map_err(|error| format!("could not write the sanitised qmltypes: {error}"))?;
-        // No `plugin`/`classname`/`prefer` lines: this copy exists for qmltc's
-        // type resolver only, and it must not try to load a plugin.
-        let qmldir = "module dae\ntypeinfo plugin.qmltypes\ndepends QtQuick auto\n";
-        fs::write(dir.join("qmldir"), qmldir)
-            .map_err(|error| format!("could not write the sanitised qmldir: {error}"))?;
-        Ok(out_dir.join("modules"))
-    }
-
-    /// Drops every `Component { … }` block carrying `isTypeOpaque: true`.
-    /// Everything else is copied verbatim, including blocks whose contents are
-    /// not placeholders.
-    fn strip_opaque(text: &str) -> String {
-        let mut kept = String::with_capacity(text.len());
-        let mut block: Option<(String, usize)> = None;
-
-        for line in text.lines() {
-            if let Some((mut body, mut depth)) = block.take() {
-                body.push('\n');
-                body.push_str(line);
-                depth += line.matches('{').count();
-                depth = depth.saturating_sub(line.matches('}').count());
-                if depth == 0 {
-                    if !body.contains("isTypeOpaque: true") {
-                        kept.push_str(&body);
-                        kept.push('\n');
-                    }
-                } else {
-                    block = Some((body, depth));
-                }
-                continue;
-            }
-
-            if line.trim_start().starts_with("Component {") {
-                let depth = line.matches('{').count();
-                let depth = depth.saturating_sub(line.matches('}').count());
-                if depth == 0 {
-                    if !line.contains("isTypeOpaque: true") {
-                        kept.push_str(line);
-                        kept.push('\n');
-                    }
-                } else {
-                    block = Some((line.to_owned(), depth));
-                }
-                continue;
-            }
-
-            kept.push_str(line);
-            kept.push('\n');
-        }
-
-        // An unterminated block means the qmltypes is malformed. Keep it so the
-        // compiler reports the real problem instead of losing types silently.
-        if let Some((tail, _)) = block {
-            kept.push_str(&tail);
-            kept.push('\n');
-        }
-        kept
     }
 
     /// `qmltc` registers each generated class under the `qrc:` URL the mapper
@@ -1231,39 +1242,29 @@ mod typec {
 /// yet, and because the two tools catch different regressions.
 mod lint {
     use std::env;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    use super::{QML_FILES, find_qt_tool, typec};
+    use super::{QML_FILES, find_qt_tool};
 
-    pub(super) fn check() {
-        for name in [
-            "DAE_QML_LINT",
-            "DAE_QMLLINT",
-            "QMAKE",
-            "CARGO_TARGET_DIR",
-            "CXX_QT_EXPORT_DIR",
-        ] {
+    pub(super) fn check(modules: &Path) {
+        for name in ["DAE_QML_LINT", "DAE_QMLLINT", "QMAKE"] {
             println!("cargo:rerun-if-env-changed={name}");
         }
 
         if env::var("DAE_QML_LINT").ok().as_deref() != Some("1") {
             return;
         }
-        if let Err(reason) = run() {
+        if let Err(reason) = run(modules) {
             panic!("DAE_QML_LINT=1 was requested but QML linting failed: {reason}");
         }
     }
 
-    fn run() -> Result<(), String> {
+    fn run(modules: &Path) -> Result<(), String> {
         let qmllint = find_qt_tool("DAE_QMLLINT", "qmllint")
             .ok_or_else(|| "qmllint was not found (set QMAKE or DAE_QMLLINT)".to_owned())?;
         let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
         let qml_dir = manifest.join("../../qml");
-        // The sanitised copy, not cxx-qt's own file: it is the one that carries
-        // the ported types (see `typec::prepare_module`), and a type that only
-        // exists there would otherwise read as an unresolved import here.
-        let modules = typec::prepare_module(&PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")))?;
 
         for (source, alias) in QML_FILES {
             // The `.js` files are imported by name, not linted as documents,
@@ -1274,9 +1275,9 @@ mod lint {
 
             let mut command = Command::new(&qmllint);
             command
-                // The Rust types, from cxx-qt's generated `plugin.qmltypes`.
+                // The synthesized Rust QML types (`plugin.qmltypes`).
                 .arg("-I")
-                .arg(&modules)
+                .arg(modules)
                 // The declarations for the two hand-registered modules
                 // (`dae.terminal`, `dae.activation`).
                 .arg("-I")

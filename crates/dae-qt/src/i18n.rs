@@ -27,7 +27,7 @@
 /// `main` calls this before `engine.load`, so the very first binding already
 /// sees the persisted language. Safe to call again with the same engine.
 pub fn attach_engine(engine: usize) {
-    crate::appearance::qobject::dae_qt_i18n_attach_engine(engine);
+    crate::appearance::ffi::dae_qt_i18n_attach_engine(engine);
 }
 
 /// Applies the language saved in `settings.toml`. `system` resolves to the OS
@@ -42,7 +42,7 @@ pub fn apply_stored() {
 /// translation was installed (`false` means the Simplified Chinese source
 /// strings are in use).
 pub fn apply(language: &str) -> bool {
-    crate::appearance::qobject::dae_qt_i18n_apply(&cxx_qt_lib::QString::from(language))
+    crate::appearance::ffi::dae_qt_i18n_apply(language)
 }
 
 /// Applies a settings-panel choice once its QtBridge slot has returned.
@@ -51,10 +51,10 @@ pub fn apply(language: &str) -> bool {
 /// `choose_language` still owns `&mut self` trips QtBridge's runtime borrow
 /// guard and aborts across the FFI boundary.
 pub fn apply_deferred(language: &str) {
-    crate::appearance::qobject::dae_qt_i18n_apply_deferred(&cxx_qt_lib::QString::from(language));
+    crate::appearance::ffi::dae_qt_i18n_apply_deferred(language);
 }
 
 /// The locale name the language menu can show beside "follow system".
 pub fn system_language() -> String {
-    crate::appearance::qobject::dae_qt_i18n_system_language().to_string()
+    crate::appearance::ffi::dae_qt_i18n_system_language()
 }

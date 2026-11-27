@@ -16,12 +16,10 @@
 //! GUI thread and behind its own cache.
 
 use std::collections::{HashMap, VecDeque};
-use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QString, QStringList};
+use qtbridge::{QmlElement, QmlObject, qobject};
 use dae_core::fs::media_meta;
 use dae_core::fs::vfs;
 use dae_core::fs::{office, preview, service};
@@ -44,108 +42,21 @@ const LEGACY_OFFICE_MESSAGE: &str =
 /// OpenDocument and the Apple iWork bundles: known, not parsed.
 const UNSUPPORTED_OFFICE_MESSAGE: &str = "This document format has no preview yet.";
 
-#[cxx_qt::bridge]
-pub mod qobject {
+#[cxx::bridge]
+pub mod ffi {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-
-        include!("cxx-qt-lib/qqmlapplicationengine.h");
-        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
-
         include!("image_provider.h");
         #[namespace = "dae_qt"]
         #[rust_name = "register_thumbnail_provider"]
-        unsafe fn dae_qt_register_thumbnail_provider(engine: *mut QQmlApplicationEngine);
+        fn dae_qt_register_thumbnail_provider_ptr(engine_ptr: usize);
     }
-
-    unsafe extern "RustQt" {
-        /// QML usage: `PreviewController { id: preview }` then
-        /// `preview.open(path)`. `thumbnailRevision` is part of the provider
-        /// URL, so a file edited on disk is not served from a stale cache.
-        #[qobject]
-        #[qml_element]
-        #[qproperty(QString, path)]
-        #[qproperty(QString, name)]
-        #[qproperty(bool, is_directory, cxx_name = "isDirectory")]
-        #[qproperty(QString, size_text, cxx_name = "sizeText")]
-        #[qproperty(QString, modified_text, cxx_name = "modifiedText")]
-        #[qproperty(QString, kind_text, cxx_name = "kindText")]
-        /// How many entries a selected folder holds, and the first few of
-        /// their names. Filled for directories only, from a bounded read that
-        /// starts no watcher: the listing itself belongs to the tab.
-        #[qproperty(i32, child_count, cxx_name = "childCount")]
-        #[qproperty(QStringList, child_names, cxx_name = "childNames")]
-        #[qproperty(QString, content)]
-        /// The rendered HTML for Markdown and highlighted code, empty for a
-        /// plain-text peek. `content` always keeps the raw text so the panel
-        /// can fall back to it.
-        #[qproperty(QString, content_html, cxx_name = "contentHtml")]
-        #[qproperty(bool, is_markdown, cxx_name = "isMarkdown")]
-        /// Non-zero revision identifying the current `MarkdownModel` block list
-        /// published for this preview, or 0 when the entry is not Markdown.
-        #[qproperty(i32, markdown_revision, cxx_name = "markdownRevision")]
-        #[qproperty(bool, truncated)]
-        #[qproperty(bool, has_text, cxx_name = "hasText")]
-        #[qproperty(bool, has_thumbnail, cxx_name = "hasThumbnail")]
-        #[qproperty(QString, thumbnail_revision, cxx_name = "thumbnailRevision")]
-        #[qproperty(QString, media_text, cxx_name = "mediaText")]
-        /// `audio` or `video` when this entry can be played in place; empty
-        /// for everything else and for remote entries (their bytes live behind
-        /// a VFS the media backend cannot open).
-        #[qproperty(QString, media_kind, cxx_name = "mediaKind")]
-        #[qproperty(QString, media_url, cxx_name = "mediaUrl")]
-        /// The rendered body of an OOXML document (`.docx`, `.xlsx`, `.pptx`),
-        /// empty for every other file. `officeFormat` names the family and
-        /// `officeTruncated` says the pane is showing a sample.
-        #[qproperty(bool, has_office, cxx_name = "hasOffice")]
-        #[qproperty(QString, office_html, cxx_name = "officeHtml")]
-        #[qproperty(QString, office_format, cxx_name = "officeFormat")]
-        #[qproperty(bool, office_truncated, cxx_name = "officeTruncated")]
-        /// Why an Office file has no preview: too large, encrypted, a legacy
-        /// binary format, or a format dae does not parse. Shown in place of the
-        /// body rather than replacing the metadata.
-        #[qproperty(QString, office_error, cxx_name = "officeError")]
-        #[qproperty(bool, loading)]
-        #[qproperty(QString, error)]
-        /// True for `smb://`, `sftp://` and `cloud://` entries. Their text is
-        /// read through the VFS, but thumbnails and media tags are desktop
-        /// services that only know local paths.
-        #[qproperty(bool, remote)]
-        type PreviewController = super::PreviewControllerRust;
-
-        #[qinvokable]
-        fn open(self: Pin<&mut PreviewController>, path: &QString);
-
-        /// Fills the snapshot cache for the rows around the selection, in the
-        /// order the shell expects to reach them. Low priority and cancellable:
-        /// a newer `open()` or `preload()` drops whatever has not started.
-        #[qinvokable]
-        fn preload(self: Pin<&mut PreviewController>, paths: &QStringList);
-
-        #[qinvokable]
-        fn clear(self: Pin<&mut PreviewController>);
-
-        /// The panel's light/dark choice. Markdown and highlighted code carry
-        /// concrete colours, so a theme change re-renders the cached source.
-        #[qinvokable]
-        #[cxx_name = "setDark"]
-        fn set_dark(self: Pin<&mut PreviewController>, dark: bool);
-    }
-
-    impl cxx_qt::Threading for PreviewController {}
 }
 
 /// Registers the `thumbnail://` and `fileicon://` providers before the QML
 /// root is loaded.
-pub fn register_image_providers(engine: *mut cxx_qt_lib::QQmlApplicationEngine) {
-    unsafe {
-        qobject::register_thumbnail_provider(engine);
-    }
-    crate::icons::register_provider(engine);
+pub fn register_image_providers(engine_ptr: usize) {
+    ffi::register_thumbnail_provider(engine_ptr);
+    crate::icons::register_provider(engine_ptr);
 }
 
 /// Whether the pane should give this file an image slot: formats Qt decodes
@@ -159,49 +70,6 @@ fn has_thumbnail(path: &str) -> bool {
     } else {
         preview::is_thumbnail_path(path)
     }
-}
-
-#[derive(Default)]
-pub struct PreviewControllerRust {
-    path: QString,
-    name: QString,
-    is_directory: bool,
-    size_text: QString,
-    modified_text: QString,
-    kind_text: QString,
-    child_count: i32,
-    child_names: QStringList,
-    content: QString,
-    content_html: QString,
-    is_markdown: bool,
-    markdown_revision: i32,
-    truncated: bool,
-    has_text: bool,
-    has_thumbnail: bool,
-    thumbnail_revision: QString,
-    media_text: QString,
-    media_kind: QString,
-    media_url: QString,
-    has_office: bool,
-    office_html: QString,
-    office_format: QString,
-    office_truncated: bool,
-    office_error: QString,
-    loading: bool,
-    error: QString,
-    remote: bool,
-    generation: u64,
-    /// Shared with the in-flight preload tasks: every `open()`, `clear()` and
-    /// `preload()` bumps it, and a task whose epoch no longer matches drops
-    /// itself instead of reading for a selection that has moved on.
-    preload_epoch: Arc<AtomicU64>,
-    source_text: String,
-    source_kind: SourceKind,
-    source_path: String,
-    /// The extracted document behind `office_html`, kept so a theme switch can
-    /// re-render without opening the container again.
-    source_office: Option<office::OfficePreview>,
-    dark: bool,
 }
 
 #[derive(Clone, Default)]
@@ -302,276 +170,437 @@ fn revision_of(properties: &FileProperties) -> String {
     )
 }
 
-impl qobject::PreviewController {
-    fn open(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        // The selection moved: speculation for the old neighbourhood is no
-        // longer worth a thread. The shell's `preload()` for the new one
-        // bumps the epoch again and queues under that.
-        self.as_mut()
-            .rust_mut()
-            .preload_epoch
-            .fetch_add(1, AtomicOrdering::AcqRel);
+macro_rules! notifying_setters {
+    ($($setter:ident($ty:ty) => $field:ident, $notify:ident;)*) => {
+        $(fn $setter(&mut self, value: $ty) {
+            self.$field = value;
+            self.$notify();
+        })*
+    };
+}
 
-        // The previous snapshot stays on screen until the new one is ready.
-        // Clearing it here collapsed the pane to a placeholder for every
-        // selection, so moving through a folder flashed the whole preview.
-        // `apply` swaps every field in one batch instead.
-        self.as_mut().set_error(QString::default());
-        self.as_mut().set_loading(true);
+#[qobject(NoQmlElement, ConvertToCamelCase)]
+mod preview_impl {
+    use super::*;
 
-        let dark = self.dark;
-        let thread = self.as_mut().qt_thread();
-        runtime::spawn(async move {
-            let result = load_snapshot(&path, dark).await;
-            let _ =
-                thread.queue(move |mut preview| preview.as_mut().apply(generation, path, result));
-        });
+    #[derive(Default)]
+    pub struct PreviewController {
+        path: String,
+        name: String,
+        is_directory: bool,
+        size_text: String,
+        modified_text: String,
+        kind_text: String,
+        child_count: i32,
+        child_names: Vec<String>,
+        content: String,
+        content_html: String,
+        is_markdown: bool,
+        markdown_revision: i32,
+        truncated: bool,
+        has_text: bool,
+        has_thumbnail: bool,
+        thumbnail_revision: String,
+        media_text: String,
+        media_kind: String,
+        media_url: String,
+        has_office: bool,
+        office_html: String,
+        office_format: String,
+        office_truncated: bool,
+        office_error: String,
+        loading: bool,
+        error: String,
+        remote: bool,
+        generation: u64,
+        /// Shared with the in-flight preload tasks: every `open()`, `clear()` and
+        /// `preload()` bumps it, and a task whose epoch no longer matches drops
+        /// itself instead of reading for a selection that has moved on.
+        preload_epoch: Arc<AtomicU64>,
+        source_text: String,
+        source_kind: SourceKind,
+        source_path: String,
+        /// The extracted document behind `office_html`, kept so a theme switch can
+        /// re-render without opening the container again.
+        source_office: Option<office::OfficePreview>,
+        dark: bool,
     }
 
-    fn preload(mut self: Pin<&mut Self>, paths: &QStringList) {
-        let epoch = Arc::clone(&self.as_mut().rust_mut().preload_epoch);
-        let generation = epoch.fetch_add(1, AtomicOrdering::AcqRel) + 1;
-        let dark = self.dark;
-        for path in paths.iter().take(PRELOAD_NEIGHBORS) {
+
+    impl PreviewController {
+        qproperty!("path", Member = path, Notify = path_changed);
+        qproperty!("name", Member = name, Notify = name_changed);
+        qproperty!("isDirectory", Member = is_directory, Notify = is_directory_changed);
+        qproperty!("sizeText", Member = size_text, Notify = size_text_changed);
+        qproperty!("modifiedText", Member = modified_text, Notify = modified_text_changed);
+        qproperty!("kindText", Member = kind_text, Notify = kind_text_changed);
+        qproperty!("childCount", Member = child_count, Notify = child_count_changed);
+        qproperty!("childNames", Member = child_names, Notify = child_names_changed);
+        qproperty!("content", Member = content, Notify = content_changed);
+        qproperty!("contentHtml", Member = content_html, Notify = content_html_changed);
+        qproperty!("isMarkdown", Member = is_markdown, Notify = is_markdown_changed);
+        qproperty!("markdownRevision", Member = markdown_revision, Notify = markdown_revision_changed);
+        qproperty!("truncated", Member = truncated, Notify = truncated_changed);
+        qproperty!("hasText", Member = has_text, Notify = has_text_changed);
+        qproperty!("hasThumbnail", Member = has_thumbnail, Notify = has_thumbnail_changed);
+        qproperty!("thumbnailRevision", Member = thumbnail_revision, Notify = thumbnail_revision_changed);
+        qproperty!("mediaText", Member = media_text, Notify = media_text_changed);
+        qproperty!("mediaKind", Member = media_kind, Notify = media_kind_changed);
+        qproperty!("mediaUrl", Member = media_url, Notify = media_url_changed);
+        qproperty!("hasOffice", Member = has_office, Notify = has_office_changed);
+        qproperty!("officeHtml", Member = office_html, Notify = office_html_changed);
+        qproperty!("officeFormat", Member = office_format, Notify = office_format_changed);
+        qproperty!("officeTruncated", Member = office_truncated, Notify = office_truncated_changed);
+        qproperty!("officeError", Member = office_error, Notify = office_error_changed);
+        qproperty!("loading", Member = loading, Notify = loading_changed);
+        qproperty!("error", Member = error, Notify = error_changed);
+        qproperty!("remote", Member = remote, Notify = remote_changed);
+
+        #[qsignal]
+        fn path_changed(&mut self);
+        #[qsignal]
+        fn name_changed(&mut self);
+        #[qsignal]
+        fn is_directory_changed(&mut self);
+        #[qsignal]
+        fn size_text_changed(&mut self);
+        #[qsignal]
+        fn modified_text_changed(&mut self);
+        #[qsignal]
+        fn kind_text_changed(&mut self);
+        #[qsignal]
+        fn child_count_changed(&mut self);
+        #[qsignal]
+        fn child_names_changed(&mut self);
+        #[qsignal]
+        fn content_changed(&mut self);
+        #[qsignal]
+        fn content_html_changed(&mut self);
+        #[qsignal]
+        fn is_markdown_changed(&mut self);
+        #[qsignal]
+        fn markdown_revision_changed(&mut self);
+        #[qsignal]
+        fn truncated_changed(&mut self);
+        #[qsignal]
+        fn has_text_changed(&mut self);
+        #[qsignal]
+        fn has_thumbnail_changed(&mut self);
+        #[qsignal]
+        fn thumbnail_revision_changed(&mut self);
+        #[qsignal]
+        fn media_text_changed(&mut self);
+        #[qsignal]
+        fn media_kind_changed(&mut self);
+        #[qsignal]
+        fn media_url_changed(&mut self);
+        #[qsignal]
+        fn has_office_changed(&mut self);
+        #[qsignal]
+        fn office_html_changed(&mut self);
+        #[qsignal]
+        fn office_format_changed(&mut self);
+        #[qsignal]
+        fn office_truncated_changed(&mut self);
+        #[qsignal]
+        fn office_error_changed(&mut self);
+        #[qsignal]
+        fn loading_changed(&mut self);
+        #[qsignal]
+        fn error_changed(&mut self);
+        #[qsignal]
+        fn remote_changed(&mut self);
+
+        notifying_setters! {
+            set_path(String) => path, path_changed;
+            set_name(String) => name, name_changed;
+            set_is_directory(bool) => is_directory, is_directory_changed;
+            set_size_text(String) => size_text, size_text_changed;
+            set_modified_text(String) => modified_text, modified_text_changed;
+            set_kind_text(String) => kind_text, kind_text_changed;
+            set_child_count(i32) => child_count, child_count_changed;
+            set_child_names(Vec<String>) => child_names, child_names_changed;
+            set_content(String) => content, content_changed;
+            set_content_html(String) => content_html, content_html_changed;
+            set_is_markdown(bool) => is_markdown, is_markdown_changed;
+            set_markdown_revision(i32) => markdown_revision, markdown_revision_changed;
+            set_truncated(bool) => truncated, truncated_changed;
+            set_has_text(bool) => has_text, has_text_changed;
+            set_has_thumbnail(bool) => has_thumbnail, has_thumbnail_changed;
+            set_thumbnail_revision(String) => thumbnail_revision, thumbnail_revision_changed;
+            set_media_text(String) => media_text, media_text_changed;
+            set_media_kind(String) => media_kind, media_kind_changed;
+            set_media_url(String) => media_url, media_url_changed;
+            set_has_office(bool) => has_office, has_office_changed;
+            set_office_html(String) => office_html, office_html_changed;
+            set_office_format(String) => office_format, office_format_changed;
+            set_office_truncated(bool) => office_truncated, office_truncated_changed;
+            set_office_error(String) => office_error, office_error_changed;
+            set_loading(bool) => loading, loading_changed;
+            set_error(String) => error, error_changed;
+            set_remote(bool) => remote, remote_changed;
+        }
+
+
+        #[qslot]
+
+        fn open(&mut self, path: String) {
             let path = path.to_string();
-            // A remote read's latency is unpredictable, and one stuck SFTP
-            // request would hold the single preload lane for every local
-            // neighbour behind it. Speculation stays on local disk.
-            if !vfs::is_local_path(&path) {
-                continue;
-            }
-            let epoch = Arc::clone(&epoch);
-            runtime::spawn_preload(async move {
-                if epoch.load(AtomicOrdering::Acquire) != generation {
-                    return;
-                }
-                let Ok(properties) = service::get_file_properties(path.clone()).await else {
-                    return;
-                };
-                // The stat is the cheap half; the content reads are what a
-                // moved-on selection must not pay for.
-                if epoch.load(AtomicOrdering::Acquire) != generation {
-                    return;
-                }
-                snapshot_cached(properties, &path, dark).await;
+            let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+            // The selection moved: speculation for the old neighbourhood is no
+            // longer worth a thread. The shell's `preload()` for the new one
+            // bumps the epoch again and queues under that.
+            self.preload_epoch
+                .fetch_add(1, AtomicOrdering::AcqRel);
+
+            // The previous snapshot stays on screen until the new one is ready.
+            // Clearing it here collapsed the pane to a placeholder for every
+            // selection, so moving through a folder flashed the whole preview.
+            // `apply` swaps every field in one batch instead.
+            self.set_error(String::new());
+            self.set_loading(true);
+
+            let dark = self.dark;
+            let thread = self.get_thread_handle();
+            runtime::spawn(async move {
+                let result = load_snapshot(&path, dark).await;
+                thread.invoke_mut(move |preview| preview.apply(generation, path, result));
             });
         }
-    }
 
-    fn clear(mut self: Pin<&mut Self>) {
-        let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
-        self.as_mut().rust_mut().generation = generation;
-        self.as_mut()
-            .rust_mut()
-            .preload_epoch
-            .fetch_add(1, AtomicOrdering::AcqRel);
+        #[qslot]
 
-        self.as_mut().set_path(QString::default());
-        self.as_mut().set_name(QString::default());
-        self.as_mut().set_is_directory(false);
-        self.as_mut().set_size_text(QString::default());
-        self.as_mut().set_modified_text(QString::default());
-        self.as_mut().set_kind_text(QString::default());
-        self.as_mut().set_child_count(0);
-        self.as_mut().set_child_names(QStringList::default());
-        self.as_mut().set_content(QString::default());
-        self.as_mut().set_content_html(QString::default());
-        self.as_mut().set_is_markdown(false);
-        self.as_mut().set_markdown_revision(0);
-        self.as_mut().set_truncated(false);
-        self.as_mut().set_has_text(false);
-        self.as_mut().set_has_thumbnail(false);
-        self.as_mut().set_thumbnail_revision(QString::default());
-        self.as_mut().set_media_text(QString::default());
-        self.as_mut().set_media_kind(QString::default());
-        self.as_mut().set_media_url(QString::default());
-        self.as_mut().set_has_office(false);
-        self.as_mut().set_office_html(QString::default());
-        self.as_mut().set_office_format(QString::default());
-        self.as_mut().set_office_truncated(false);
-        self.as_mut().set_office_error(QString::default());
-        self.as_mut().set_loading(false);
-        self.as_mut().set_error(QString::default());
-        self.as_mut().set_remote(false);
-        self.as_mut().rust_mut().source_text.clear();
-        self.as_mut().rust_mut().source_kind = SourceKind::Plain;
-        self.as_mut().rust_mut().source_path.clear();
-        self.as_mut().rust_mut().source_office = None;
-    }
-
-    fn apply(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        path: String,
-        result: Result<Snapshot, String>,
-    ) {
-        if self.generation != generation {
-            return;
-        }
-
-        match result {
-            Ok(snapshot) => {
-                let is_markdown = snapshot.source_kind.is_markdown();
-                let (html, markdown_revision) = if is_markdown {
-                    let blocks = if snapshot.dark == self.dark {
-                        Arc::clone(&snapshot.markdown_blocks)
-                    } else {
-                        Arc::new(preview_markup::render_markdown_blocks(
-                            &snapshot.content,
-                            &snapshot.source_path,
-                            self.dark,
-                        ))
+        fn preload(&mut self, paths: Vec<String>) {
+            let epoch = Arc::clone(&self.preload_epoch);
+            let generation = epoch.fetch_add(1, AtomicOrdering::AcqRel) + 1;
+            let dark = self.dark;
+            for path in paths.into_iter().take(PRELOAD_NEIGHBORS) {
+                // A remote read's latency is unpredictable, and one stuck SFTP
+                // request would hold the single preload lane for every local
+                // neighbour behind it. Speculation stays on local disk.
+                if !vfs::is_local_path(&path) {
+                    continue;
+                }
+                let epoch = Arc::clone(&epoch);
+                runtime::spawn_preload(async move {
+                    if epoch.load(AtomicOrdering::Acquire) != generation {
+                        return;
+                    }
+                    let Ok(properties) = service::get_file_properties(path.clone()).await else {
+                        return;
                     };
-                    (String::new(), markdown_model::publish(blocks))
-                } else {
-                    let html = if snapshot.dark == self.dark {
-                        snapshot.content_html.clone()
+                    // The stat is the cheap half; the content reads are what a
+                    // moved-on selection must not pay for.
+                    if epoch.load(AtomicOrdering::Acquire) != generation {
+                        return;
+                    }
+                    snapshot_cached(properties, &path, dark).await;
+                });
+            }
+        }
+
+        #[qslot]
+
+        fn clear(&mut self) {
+            let generation = self.generation.wrapping_add(1);
+            self.generation = generation;
+            self.preload_epoch
+                .fetch_add(1, AtomicOrdering::AcqRel);
+
+            self.set_path(String::new());
+            self.set_name(String::new());
+            self.set_is_directory(false);
+            self.set_size_text(String::new());
+            self.set_modified_text(String::new());
+            self.set_kind_text(String::new());
+            self.set_child_count(0);
+            self.set_child_names(Vec::new());
+            self.set_content(String::new());
+            self.set_content_html(String::new());
+            self.set_is_markdown(false);
+            self.set_markdown_revision(0);
+            self.set_truncated(false);
+            self.set_has_text(false);
+            self.set_has_thumbnail(false);
+            self.set_thumbnail_revision(String::new());
+            self.set_media_text(String::new());
+            self.set_media_kind(String::new());
+            self.set_media_url(String::new());
+            self.set_has_office(false);
+            self.set_office_html(String::new());
+            self.set_office_format(String::new());
+            self.set_office_truncated(false);
+            self.set_office_error(String::new());
+            self.set_loading(false);
+            self.set_error(String::new());
+            self.set_remote(false);
+            self.source_text.clear();
+            self.source_kind = SourceKind::Plain;
+            self.source_path.clear();
+            self.source_office = None;
+        }
+
+        fn apply(
+            &mut self,
+            generation: u64,
+            path: String,
+            result: Result<Snapshot, String>,
+        ) {
+            if self.generation != generation {
+                return;
+            }
+
+            match result {
+                Ok(snapshot) => {
+                    let is_markdown = snapshot.source_kind.is_markdown();
+                    let (html, markdown_revision) = if is_markdown {
+                        let blocks = if snapshot.dark == self.dark {
+                            Arc::clone(&snapshot.markdown_blocks)
+                        } else {
+                            Arc::new(preview_markup::render_markdown_blocks(
+                                &snapshot.content,
+                                &snapshot.source_path,
+                                self.dark,
+                            ))
+                        };
+                        (String::new(), markdown_model::publish(blocks))
                     } else {
-                        preview_markup::render(
-                            &snapshot.content,
-                            &snapshot.source_path,
-                            &snapshot.source_kind,
-                            self.dark,
-                        )
+                        let html = if snapshot.dark == self.dark {
+                            snapshot.content_html.clone()
+                        } else {
+                            preview_markup::render(
+                                &snapshot.content,
+                                &snapshot.source_path,
+                                &snapshot.source_kind,
+                                self.dark,
+                            )
+                        };
+                        (html, 0)
                     };
-                    (html, 0)
-                };
-                let office_html = match (&snapshot.office, snapshot.dark == self.dark) {
-                    (Some(preview), false) => office_markup::render(preview, self.dark),
-                    _ => snapshot.office_html.clone(),
-                };
-                let has_office = snapshot.office.is_some();
-                self.as_mut().set_path(QString::from(path.as_str()));
-                self.as_mut()
-                    .set_name(QString::from(snapshot.name.as_str()));
-                self.as_mut().set_is_directory(snapshot.is_directory);
-                self.as_mut()
-                    .set_size_text(QString::from(snapshot.size_text.as_str()));
-                self.as_mut()
-                    .set_modified_text(QString::from(snapshot.modified_text.as_str()));
-                self.as_mut()
-                    .set_kind_text(QString::from(snapshot.kind_text.as_str()));
-                self.as_mut().set_child_count(snapshot.child_count);
-                self.as_mut().set_child_names(
-                    snapshot
-                        .child_names
-                        .iter()
-                        .map(|name| QString::from(name.as_str()))
-                        .collect::<QStringList>(),
-                );
-                self.as_mut()
-                    .set_content(QString::from(snapshot.content.as_str()));
-                self.as_mut().set_content_html(QString::from(html.as_str()));
-                self.as_mut().set_is_markdown(is_markdown);
-                self.as_mut().set_markdown_revision(markdown_revision);
-                self.as_mut().set_truncated(snapshot.truncated);
-                self.as_mut().set_has_text(snapshot.has_text);
-                self.as_mut().set_has_thumbnail(snapshot.has_thumbnail);
-                self.as_mut()
-                    .set_thumbnail_revision(QString::from(snapshot.thumbnail_revision.as_str()));
-                self.as_mut()
-                    .set_media_text(QString::from(snapshot.media_text.as_str()));
-                self.as_mut()
-                    .set_media_kind(QString::from(snapshot.media_kind.as_str()));
-                self.as_mut()
-                    .set_media_url(QString::from(snapshot.media_url.as_str()));
-                self.as_mut().set_has_office(has_office);
-                self.as_mut()
-                    .set_office_html(QString::from(office_html.as_str()));
-                self.as_mut()
-                    .set_office_format(QString::from(snapshot.office_format.as_str()));
-                self.as_mut().set_office_truncated(snapshot.office_truncated);
-                self.as_mut()
-                    .set_office_error(QString::from(snapshot.office_error.as_str()));
-                self.as_mut().set_remote(snapshot.remote);
-                self.as_mut().set_error(QString::default());
+                    let office_html = match (&snapshot.office, snapshot.dark == self.dark) {
+                        (Some(preview), false) => office_markup::render(preview, self.dark),
+                        _ => snapshot.office_html.clone(),
+                    };
+                    let has_office = snapshot.office.is_some();
+                    self.set_path(path.to_owned());
+                    self.set_name(snapshot.name.to_owned());
+                    self.set_is_directory(snapshot.is_directory);
+                    self.set_size_text(snapshot.size_text.to_owned());
+                    self.set_modified_text(snapshot.modified_text.to_owned());
+                    self.set_kind_text(snapshot.kind_text.to_owned());
+                    self.set_child_count(snapshot.child_count);
+                    self.set_child_names(snapshot.child_names);
+                    self.set_content(snapshot.content.to_owned());
+                    self.set_content_html(html.to_owned());
+                    self.set_is_markdown(is_markdown);
+                    self.set_markdown_revision(markdown_revision);
+                    self.set_truncated(snapshot.truncated);
+                    self.set_has_text(snapshot.has_text);
+                    self.set_has_thumbnail(snapshot.has_thumbnail);
+                    self.set_thumbnail_revision(snapshot.thumbnail_revision.to_owned());
+                    self.set_media_text(snapshot.media_text.to_owned());
+                    self.set_media_kind(snapshot.media_kind.to_owned());
+                    self.set_media_url(snapshot.media_url.to_owned());
+                    self.set_has_office(has_office);
+                    self.set_office_html(office_html.to_owned());
+                    self.set_office_format(snapshot.office_format.to_owned());
+                    self.set_office_truncated(snapshot.office_truncated);
+                    self.set_office_error(snapshot.office_error.to_owned());
+                    self.set_remote(snapshot.remote);
+                    self.set_error(String::new());
 
-                let mut rust = self.as_mut().rust_mut();
-                rust.source_text = snapshot.content;
-                rust.source_kind = snapshot.source_kind;
-                rust.source_path = snapshot.source_path;
-                rust.source_office = snapshot.office;
-            }
-            Err(message) => {
-                // The retained snapshot belongs to the previous entry; drop it
-                // rather than pair its content with this file's name and error.
-                self.as_mut().set_path(QString::from(path.as_str()));
-                self.as_mut()
-                    .set_name(QString::from(display_name_from_path(&path).as_str()));
-                self.as_mut().set_is_directory(false);
-                self.as_mut().set_size_text(QString::default());
-                self.as_mut().set_modified_text(QString::default());
-                self.as_mut().set_kind_text(QString::default());
-                self.as_mut().set_child_count(0);
-                self.as_mut().set_child_names(QStringList::default());
-                self.as_mut().set_content(QString::default());
-                self.as_mut().set_content_html(QString::default());
-                self.as_mut().set_is_markdown(false);
-                self.as_mut().set_markdown_revision(0);
-                self.as_mut().set_truncated(false);
-                self.as_mut().set_has_text(false);
-                self.as_mut().set_has_thumbnail(false);
-                self.as_mut().set_thumbnail_revision(QString::default());
-                self.as_mut().set_media_text(QString::default());
-                self.as_mut().set_media_kind(QString::default());
-                self.as_mut().set_media_url(QString::default());
-                self.as_mut().set_has_office(false);
-                self.as_mut().set_office_html(QString::default());
-                self.as_mut().set_office_format(QString::default());
-                self.as_mut().set_office_truncated(false);
-                self.as_mut().set_office_error(QString::default());
-                self.as_mut().set_remote(!vfs::is_local_path(&path));
-                self.as_mut().set_error(QString::from(message.as_str()));
+                    let rust = &mut *self;
+                    rust.source_text = snapshot.content;
+                    rust.source_kind = snapshot.source_kind;
+                    rust.source_path = snapshot.source_path;
+                    rust.source_office = snapshot.office;
+                }
+                Err(message) => {
+                    // The retained snapshot belongs to the previous entry; drop it
+                    // rather than pair its content with this file's name and error.
+                    self.set_path(path.to_owned());
+                    self.set_name(display_name_from_path(&path).to_owned());
+                    self.set_is_directory(false);
+                    self.set_size_text(String::new());
+                    self.set_modified_text(String::new());
+                    self.set_kind_text(String::new());
+                    self.set_child_count(0);
+                    self.set_child_names(Vec::new());
+                    self.set_content(String::new());
+                    self.set_content_html(String::new());
+                    self.set_is_markdown(false);
+                    self.set_markdown_revision(0);
+                    self.set_truncated(false);
+                    self.set_has_text(false);
+                    self.set_has_thumbnail(false);
+                    self.set_thumbnail_revision(String::new());
+                    self.set_media_text(String::new());
+                    self.set_media_kind(String::new());
+                    self.set_media_url(String::new());
+                    self.set_has_office(false);
+                    self.set_office_html(String::new());
+                    self.set_office_format(String::new());
+                    self.set_office_truncated(false);
+                    self.set_office_error(String::new());
+                    self.set_remote(!vfs::is_local_path(&path));
+                    self.set_error(message.to_owned());
 
-                let mut rust = self.as_mut().rust_mut();
-                rust.source_text.clear();
-                rust.source_kind = SourceKind::Plain;
-                rust.source_path.clear();
-                rust.source_office = None;
+                    let rust = &mut *self;
+                    rust.source_text.clear();
+                    rust.source_kind = SourceKind::Plain;
+                    rust.source_path.clear();
+                    rust.source_office = None;
+                }
             }
+            // Last: every binding that also reads `loading` then sees the complete
+            // snapshot instead of an intermediate state.
+            self.set_loading(false);
         }
-        // Last: every binding that also reads `loading` then sees the complete
-        // snapshot instead of an intermediate state.
-        self.as_mut().set_loading(false);
-    }
 
-    fn set_dark(mut self: Pin<&mut Self>, dark: bool) {
-        if self.dark == dark {
-            return;
-        }
-        self.as_mut().rust_mut().dark = dark;
-        let (source, path, kind, office) = {
-            let this = self.as_ref();
-            let rust = this.rust();
-            (
-                rust.source_text.clone(),
-                rust.source_path.clone(),
-                rust.source_kind.clone(),
-                rust.source_office.clone(),
-            )
-        };
-        if kind.is_markdown() {
-            let blocks = Arc::new(preview_markup::render_markdown_blocks(&source, &path, dark));
-            let revision = markdown_model::publish(blocks);
-            self.as_mut().set_markdown_revision(revision);
-        } else if kind != SourceKind::Plain {
-            let html = preview_markup::render(&source, &path, &kind, dark);
-            if html != self.content_html.to_string() {
-                self.as_mut().set_content_html(QString::from(html.as_str()));
+        #[qslot]
+
+        fn set_dark(&mut self, dark: bool) {
+            if self.dark == dark {
+                return;
             }
-        }
-        // An Office body carries concrete colours too, so switching the theme
-        // has to re-render it from the cached extraction.
-        if let Some(preview) = office {
-            let html = office_markup::render(&preview, dark);
-            if html != self.office_html.to_string() {
-                self.as_mut().set_office_html(QString::from(html.as_str()));
+            self.dark = dark;
+            let (source, path, kind, office) = (
+                self.source_text.clone(),
+                self.source_path.clone(),
+                self.source_kind.clone(),
+                self.source_office.clone(),
+            );
+            if kind.is_markdown() {
+                let blocks = Arc::new(preview_markup::render_markdown_blocks(&source, &path, dark));
+                let revision = markdown_model::publish(blocks);
+                self.set_markdown_revision(revision);
+            } else if kind != SourceKind::Plain {
+                let html = preview_markup::render(&source, &path, &kind, dark);
+                if html != self.content_html {
+                    self.set_content_html(html.to_owned());
+                }
+            }
+            // An Office body carries concrete colours too, so switching the theme
+            // has to re-render it from the cached extraction.
+            if let Some(preview) = office {
+                let html = office_markup::render(&preview, dark);
+                if html != self.office_html {
+                    self.set_office_html(html.to_owned());
+                }
             }
         }
     }
+}
+
+pub use preview_impl::PreviewController;
+
+impl QmlElement for PreviewController {
+    const URI: &str = "dae";
+    const ELEMENT_NAME: &str = "PreviewController";
+    const MINOR_VERSION: u8 = 0;
+    const MAJOR_VERSION: u8 = 1;
+    const IS_SINGLETON: bool = false;
 }
 
 async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
