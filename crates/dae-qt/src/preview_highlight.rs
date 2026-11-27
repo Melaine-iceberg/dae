@@ -17,6 +17,7 @@
 //! highlight query, so just their `highlights.scm` is vendored alongside
 //! (GraphQL, Proto).
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -25,6 +26,10 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 use tree_sitter_language::LanguageFn;
 
 use crate::preview_markup::{expand_tabs, push_escaped};
+
+thread_local! {
+    static HIGHLIGHTER: RefCell<Highlighter> = RefCell::new(Highlighter::new());
+}
 
 // The shell's canvas and ink, kept identical to the pane's surrounding card.
 const DARK_BG: &str = "#101216";
@@ -250,24 +255,40 @@ pub fn supports(language: &str) -> bool {
 /// language has a grammar, escaped plain text otherwise. Tabs are expanded to
 /// the pane's four-column grid first, so spans and glyphs share coordinates.
 pub fn render_code(source: &str, language: &str, dark: bool) -> String {
+    render_code_inner(source, language, dark, true)
+}
+
+/// Renders `source` as a `<pre>` block without a background fill, for
+/// container cards (such as Markdown fenced code blocks) that paint their own
+/// card background and padding.
+pub fn render_code_block(source: &str, language: &str, dark: bool) -> String {
+    render_code_inner(source, language, dark, false)
+}
+
+fn render_code_inner(source: &str, language: &str, dark: bool, with_background: bool) -> String {
     let expanded = expand_tabs(source);
     let Some(config) = canonical(language).and_then(|token| CONFIGS.get(token)) else {
-        return plain_pre(&expanded, dark);
+        return plain_pre(&expanded, dark, with_background);
     };
 
-    let mut highlighter = Highlighter::new();
-    let events = match highlighter.highlight(config, expanded.as_bytes(), None, None, |_| None) {
-        Ok(iter) => iter.collect::<Vec<_>>(),
-        Err(_) => return plain_pre(&expanded, dark),
+    let events = HIGHLIGHTER.with(|cell| {
+        let mut highlighter = cell.borrow_mut();
+        match highlighter.highlight(config, expanded.as_bytes(), None, None, |_| None) {
+            Ok(iter) => Ok(iter.collect::<Vec<_>>()),
+            Err(_) => Err(()),
+        }
+    });
+    let Ok(events) = events else {
+        return plain_pre(&expanded, dark, with_background);
     };
     // A mid-stream error means the tail would be unstyled; fall back to plain
     // for the whole block rather than ship a half-coloured file.
     if events.iter().any(|event| event.is_err()) {
-        return plain_pre(&expanded, dark);
+        return plain_pre(&expanded, dark, with_background);
     }
 
     let mut out = String::with_capacity(source.len() * 2);
-    out.push_str(&pre_open(dark));
+    out.push_str(&pre_open(dark, with_background));
     let mut stack: Vec<usize> = Vec::new();
     for event in events {
         match event.expect("checked above") {
@@ -333,21 +354,26 @@ fn push_span(out: &mut String, color: &str, italic: bool, bold: bool, text: &str
 /// card's width and height are measured against. Padding is deliberately absent
 /// — Qt's rich text engine only honours it on table cells; the card's margins
 /// do the inset.
-fn pre_open(dark: bool) -> String {
+fn pre_open(dark: bool, with_background: bool) -> String {
     let (background, foreground) = if dark {
         (DARK_BG, DARK_FG)
     } else {
         (LIGHT_BG, LIGHT_FG)
     };
+    let bg_rule = if with_background {
+        format!(" background-color:{background};")
+    } else {
+        String::new()
+    };
     format!(
-        "<pre style=\"margin:0; background-color:{background}; color:{foreground}; \
+        "<pre style=\"margin:0;{bg_rule} color:{foreground}; \
          font-family:'Google Sans Code','Cascadia Mono',Consolas,monospace; font-size:12px; line-height:18px; \
          white-space:pre;\">"
     )
 }
 
-fn plain_pre(source: &str, dark: bool) -> String {
-    let mut out = pre_open(dark);
+fn plain_pre(source: &str, dark: bool, with_background: bool) -> String {
+    let mut out = pre_open(dark, with_background);
     push_escaped(&mut out, source);
     out.push_str("</pre>");
     out

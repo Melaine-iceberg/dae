@@ -28,8 +28,9 @@ use dae_core::fs::{office, preview, service};
 use dae_core::types::{EntryKind, FileProperties, display_name_from_path};
 
 use crate::format;
+use crate::markdown_model;
 use crate::office_markup;
-use crate::preview_markup::{self, SourceKind};
+use crate::preview_markup::{self, MarkdownBlock, SourceKind};
 use crate::runtime;
 
 const PREVIEW_READ_BYTES: u32 = 64 * 1024;
@@ -84,6 +85,9 @@ pub mod qobject {
         /// can fall back to it.
         #[qproperty(QString, content_html, cxx_name = "contentHtml")]
         #[qproperty(bool, is_markdown, cxx_name = "isMarkdown")]
+        /// Non-zero revision identifying the current `MarkdownModel` block list
+        /// published for this preview, or 0 when the entry is not Markdown.
+        #[qproperty(i32, markdown_revision, cxx_name = "markdownRevision")]
         #[qproperty(bool, truncated)]
         #[qproperty(bool, has_text, cxx_name = "hasText")]
         #[qproperty(bool, has_thumbnail, cxx_name = "hasThumbnail")]
@@ -170,6 +174,7 @@ pub struct PreviewControllerRust {
     content: QString,
     content_html: QString,
     is_markdown: bool,
+    markdown_revision: i32,
     truncated: bool,
     has_text: bool,
     has_thumbnail: bool,
@@ -210,6 +215,7 @@ struct Snapshot {
     child_names: Vec<String>,
     content: String,
     content_html: String,
+    markdown_blocks: Arc<Vec<MarkdownBlock>>,
     source_kind: SourceKind,
     source_path: String,
     dark: bool,
@@ -374,6 +380,7 @@ impl qobject::PreviewController {
         self.as_mut().set_content(QString::default());
         self.as_mut().set_content_html(QString::default());
         self.as_mut().set_is_markdown(false);
+        self.as_mut().set_markdown_revision(0);
         self.as_mut().set_truncated(false);
         self.as_mut().set_has_text(false);
         self.as_mut().set_has_thumbnail(false);
@@ -407,15 +414,30 @@ impl qobject::PreviewController {
 
         match result {
             Ok(snapshot) => {
-                let html = if snapshot.dark == self.dark {
-                    snapshot.content_html.clone()
+                let is_markdown = snapshot.source_kind.is_markdown();
+                let (html, markdown_revision) = if is_markdown {
+                    let blocks = if snapshot.dark == self.dark {
+                        Arc::clone(&snapshot.markdown_blocks)
+                    } else {
+                        Arc::new(preview_markup::render_markdown_blocks(
+                            &snapshot.content,
+                            &snapshot.source_path,
+                            self.dark,
+                        ))
+                    };
+                    (String::new(), markdown_model::publish(blocks))
                 } else {
-                    preview_markup::render(
-                        &snapshot.content,
-                        &snapshot.source_path,
-                        &snapshot.source_kind,
-                        self.dark,
-                    )
+                    let html = if snapshot.dark == self.dark {
+                        snapshot.content_html.clone()
+                    } else {
+                        preview_markup::render(
+                            &snapshot.content,
+                            &snapshot.source_path,
+                            &snapshot.source_kind,
+                            self.dark,
+                        )
+                    };
+                    (html, 0)
                 };
                 let office_html = match (&snapshot.office, snapshot.dark == self.dark) {
                     (Some(preview), false) => office_markup::render(preview, self.dark),
@@ -443,8 +465,8 @@ impl qobject::PreviewController {
                 self.as_mut()
                     .set_content(QString::from(snapshot.content.as_str()));
                 self.as_mut().set_content_html(QString::from(html.as_str()));
-                self.as_mut()
-                    .set_is_markdown(snapshot.source_kind.is_markdown());
+                self.as_mut().set_is_markdown(is_markdown);
+                self.as_mut().set_markdown_revision(markdown_revision);
                 self.as_mut().set_truncated(snapshot.truncated);
                 self.as_mut().set_has_text(snapshot.has_text);
                 self.as_mut().set_has_thumbnail(snapshot.has_thumbnail);
@@ -488,6 +510,7 @@ impl qobject::PreviewController {
                 self.as_mut().set_content(QString::default());
                 self.as_mut().set_content_html(QString::default());
                 self.as_mut().set_is_markdown(false);
+                self.as_mut().set_markdown_revision(0);
                 self.as_mut().set_truncated(false);
                 self.as_mut().set_has_text(false);
                 self.as_mut().set_has_thumbnail(false);
@@ -530,7 +553,11 @@ impl qobject::PreviewController {
                 rust.source_office.clone(),
             )
         };
-        if kind != SourceKind::Plain {
+        if kind.is_markdown() {
+            let blocks = Arc::new(preview_markup::render_markdown_blocks(&source, &path, dark));
+            let revision = markdown_model::publish(blocks);
+            self.as_mut().set_markdown_revision(revision);
+        } else if kind != SourceKind::Plain {
             let html = preview_markup::render(&source, &path, &kind, dark);
             if html != self.content_html.to_string() {
                 self.as_mut().set_content_html(QString::from(html.as_str()));
@@ -641,7 +668,8 @@ async fn snapshot_body(properties: FileProperties, path: &str, dark: bool) -> Sn
         None
     } else {
         let name = properties.name.as_str();
-        let claimed = media.is_some()
+        let claimed = text.is_some()
+            || media.is_some()
             || exif.is_some()
             || office.is_some()
             || !office_error.is_empty()
@@ -657,16 +685,12 @@ async fn snapshot_body(properties: FileProperties, path: &str, dark: bool) -> Sn
         }
     };
 
-    let forced_kind = hex
-        .as_ref()
-        .is_some_and(Result::is_ok)
-        .then(|| SourceKind::Code(String::new()));
-    let text = match (text, hex) {
+    let (text, forced_kind) = match (text, hex) {
         // A decodeable text always wins; the hex view is the fallback, not
         // a second opinion.
-        (Some(text), _) => Some(text),
-        (None, Some(Ok(hex))) => Some(hex),
-        (None, None | Some(Err(_))) => None,
+        (Some(text), _) => (Some(text), None),
+        (None, Some(Ok(hex))) => (Some(hex), Some(SourceKind::Code(String::new()))),
+        (None, None | Some(Err(_))) => (None, None),
     };
 
     snapshot_from(
@@ -683,7 +707,7 @@ fn read_hex_preview(
     use std::io::Read;
 
     let total = std::fs::metadata(path).map(|metadata| metadata.len())?;
-    let mut reader = std::fs::File::open(path)?;
+    let reader = std::fs::File::open(path)?;
     let mut bytes = Vec::with_capacity(HEX_PREVIEW_BYTES as usize);
     reader
         .take(HEX_PREVIEW_BYTES.into())
@@ -779,12 +803,26 @@ fn snapshot_from(
 ) -> Snapshot {
     let is_directory = properties.kind == EntryKind::Directory;
     let revision = revision_of(&properties);
-    let (content, truncated, has_text, source_kind, content_html) = match text {
+    let (content, truncated, has_text, source_kind, content_html, markdown_blocks) = match text {
         Some(text) => {
             let kind =
                 forced_kind.unwrap_or_else(|| preview_markup::classify(&properties.name));
-            let html = preview_markup::render(&text.content, &properties.path, &kind, dark);
-            (text.content, text.truncated, true, kind, html)
+            let (html, blocks) = if kind.is_markdown() {
+                (
+                    String::new(),
+                    Arc::new(preview_markup::render_markdown_blocks(
+                        &text.content,
+                        &properties.path,
+                        dark,
+                    )),
+                )
+            } else {
+                (
+                    preview_markup::render(&text.content, &properties.path, &kind, dark),
+                    Arc::default(),
+                )
+            };
+            (text.content, text.truncated, true, kind, html, blocks)
         }
         None => (
             String::new(),
@@ -792,6 +830,7 @@ fn snapshot_from(
             false,
             SourceKind::Plain,
             String::new(),
+            Arc::default(),
         ),
     };
     // The media player still uses Qt's file backend, so a remote entry keeps
@@ -830,6 +869,7 @@ fn snapshot_from(
         child_names: children.1,
         content,
         content_html,
+        markdown_blocks,
         source_kind,
         source_path: properties.path.clone(),
         dark,
@@ -1175,5 +1215,55 @@ mod tests {
         cache_insert(&format!("{base}overflow.txt"), "1-1", &Snapshot::default());
         assert!(cache_get(&format!("{base}overflow.txt"), "1-1").is_some());
         assert!(cache_get(&format!("{base}a.txt"), "11-20").is_none());
+    }
+
+    #[test]
+    fn local_code_and_markdown_keep_their_markup_instead_of_falling_back_to_hex() {
+        let root = std::env::temp_dir().join(format!("dae-preview-markup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let code = root.join("main.rs");
+        std::fs::write(&code, b"fn main() { let x = 1; }\n").unwrap();
+        let md = root.join("README.md");
+        std::fs::write(&md, b"# Title\n\nhello **world**\n").unwrap();
+        let bin = root.join("blob.bin");
+        std::fs::write(&bin, [0x00, 0x01, 0x02, 0x7f]).unwrap();
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let code_path = code.to_string_lossy().into_owned();
+            let props = service::get_file_properties(code_path.clone()).await.unwrap();
+            let snap = snapshot_body(props, &code_path, true).await;
+            assert_eq!(snap.source_kind, SourceKind::Code("rs".to_owned()));
+            assert!(
+                snap.content_html.contains("<span style=\"color:"),
+                "expected syntax highlight spans, got: {}",
+                snap.content_html
+            );
+
+            let md_path = md.to_string_lossy().into_owned();
+            let props = service::get_file_properties(md_path.clone()).await.unwrap();
+            let snap = snapshot_body(props, &md_path, true).await;
+            assert_eq!(snap.source_kind, SourceKind::Markdown);
+            assert!(
+                snap.markdown_blocks
+                    .iter()
+                    .any(|block| block.html.contains("<b>world</b>")),
+                "expected virtualized markdown blocks, got: {:?}",
+                snap.markdown_blocks
+            );
+
+            let bin_path = bin.to_string_lossy().into_owned();
+            let props = service::get_file_properties(bin_path.clone()).await.unwrap();
+            let snap = snapshot_body(props, &bin_path, true).await;
+            assert_eq!(snap.source_kind, SourceKind::Code(String::new()));
+            assert!(snap.content.starts_with("00000000  00 01 02 7f"));
+        });
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

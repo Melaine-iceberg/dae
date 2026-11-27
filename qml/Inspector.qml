@@ -46,9 +46,12 @@ Item {
     /// hairline; the plate is already `canvas` with a border and rounded
     /// corners, so the pane leaves both to it.
     property bool plate: false
-    /// The preview well is 128 dp in the column (§6.3.1). The overlay has the
-    /// whole window and gives its well more room.
+    /// Minimum height for the preview well (128 dp in the column, larger in
+    /// the overlay). Content wells expand to use whatever space the pane has
+    /// left below the metadata so a tall window shows more of the preview.
     property int wellHeight: 128
+    readonly property real contentWellHeight: Math.max(root.wellHeight,
+        scroller.height - 28 - singleDetails.height - 12)
     /// Bumped by the tag store so `currentTags`/`allTags` re-read after a
     /// write or a definition change.
     property int tagRevision: 0
@@ -138,7 +141,8 @@ Item {
     readonly property string thumbnailSource: root.single && controller.hasThumbnail
         && controller.thumbnailRevision !== ""
         ? "image://thumbnail/" + encodeURIComponent(controller.path)
-          + "?size=384&v=" + encodeURIComponent(controller.thumbnailRevision)
+          + "?size=" + (root.plate ? "1024" : "640")
+          + "&v=" + encodeURIComponent(controller.thumbnailRevision)
         : ""
 
     /// Plain text keeps its line numbers; rendered Markdown and highlighted
@@ -170,13 +174,16 @@ Item {
     readonly property bool showsOffice: root.single && (controller.hasOffice
         || controller.officeError !== "")
     readonly property bool showsText: root.single && controller.hasText
-        && controller.contentHtml === ""
+        && !controller.isMarkdown && controller.contentHtml === ""
+    readonly property bool showsMarkdown: root.single && controller.hasText
+        && controller.isMarkdown
     readonly property bool showsRich: root.single && controller.hasText
-        && controller.contentHtml !== ""
+        && !controller.isMarkdown && controller.contentHtml !== ""
     readonly property bool showsFolder: root.single && controller.isDirectory
     readonly property bool showsFallback: root.single && !root.showsMedia
         && !root.showsThumbnail && !root.showsOffice && !root.showsText
-        && !root.showsRich && !root.showsFolder && controller.path !== ""
+        && !root.showsMarkdown && !root.showsRich && !root.showsFolder
+        && controller.path !== ""
 
     /// The directory total is only measured when asked: a deep tree is a
     /// minute of I/O, so the row starts as an action instead of a number.
@@ -208,7 +215,19 @@ Item {
             controller.clear()
         }
     }
-    Component.onCompleted: controller.setDark(root.dark)
+    Component.onCompleted: {
+        controller.setDark(root.dark)
+        markdownModel.loadRevision(controller.markdownRevision)
+    }
+
+    function activateMarkdownLink(link) {
+        if (!link || link.charAt(0) === "#")
+            return
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(link))
+            Qt.openUrlExternally(link)
+        else
+            Workspace.openPath(link)
+    }
 
     /// §8.3: where F6 puts focus when the ring reaches the inspector. The
     /// pane itself is a column of text, so the scroll surface is the stop.
@@ -297,12 +316,25 @@ Item {
     /// arrow and page keys here: in the docked pane the flickable is reachable
     /// with the pointer, but an overlay that traps focus has to move it too.
     function scrollBy(dy) {
+        const inner = root.showsMarkdown ? markdownList
+            : (root.showsRich ? richScroller
+                : (root.showsText ? plainScroller
+                    : (root.showsOffice ? officeScroller : null)))
+        if (inner !== null && inner.contentHeight > inner.height + 1) {
+            const innerMax = Math.max(0, inner.contentHeight - inner.height)
+            inner.contentY = Math.max(0, Math.min(innerMax, inner.contentY + dy))
+            return
+        }
         const maximum = Math.max(0, scroller.contentHeight - scroller.height)
         scroller.contentY = Math.max(0, Math.min(maximum, scroller.contentY + dy))
     }
 
     PreviewController {
         id: controller
+    }
+
+    MarkdownModel {
+        id: markdownModel
     }
 
     /// Details is a second read of the same entry, and it is the properties
@@ -765,7 +797,7 @@ Item {
                     id: thumbnailCard
                     visible: root.showsThumbnail
                     width: parent.width
-                    height: root.wellHeight
+                    height: root.contentWellHeight
                     radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
@@ -817,12 +849,13 @@ Item {
 
                     visible: root.showsOffice
                     width: parent.width
-                    height: root.wellHeight
+                    height: root.contentWellHeight
                     radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
 
                     Flickable {
+                        id: officeScroller
                         anchors.fill: parent
                         anchors.margins: 1
                         contentWidth: width
@@ -873,7 +906,7 @@ Item {
                 Rectangle {
                     visible: root.showsText
                     width: parent.width
-                    height: root.wellHeight
+                    height: root.contentWellHeight
                     radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
@@ -933,13 +966,262 @@ Item {
                     }
                 }
 
-                // Rendered Markdown and highlighted code. They carry their own
-                // colours, so they keep the text-edit path instead of the
+                // Virtualized Markdown document: parsed into blocks in Rust
+                // off the GUI thread, and laid out on demand per visible item
+                // so large documents, images, tables and code fences stay
+                // responsive while paragraphs wrap to the pane.
+                Rectangle {
+                    id: markdownCard
+                    visible: root.showsMarkdown
+                    width: parent.width
+                    height: root.contentWellHeight
+                    radius: Theme.radiusMd
+                    color: root.wellColor
+                    clip: true
+
+                    ListView {
+                        id: markdownList
+                        anchors.fill: parent
+                        anchors.topMargin: 1
+                        anchors.bottomMargin: 1
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        topMargin: 10
+                        bottomMargin: 10
+                        spacing: 8
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        reuseItems: true
+                        cacheBuffer: 400
+                        model: markdownModel
+
+                        delegate: Item {
+                            id: mdBlock
+                            required property string kind
+                            required property string html
+                            required property int level
+                            required property string marker
+                            required property string language
+                            required property string rawText
+                            required property string imageUrl
+                            required property string alt
+
+                            readonly property real innerWidth: markdownList.width
+                            readonly property bool isTextBlock: kind === "heading" || kind === "paragraph"
+                            width: innerWidth
+                            height: {
+                                if (kind === "rule")
+                                    return 9
+                                if (kind === "code")
+                                    return codeLoader.item ? (codeLoader.item as Item).implicitHeight : 36
+                                if (kind === "table")
+                                    return tableLoader.item ? (tableLoader.item as Item).implicitHeight : 36
+                                if (kind === "image")
+                                    return mdImageBox.implicitHeight
+                                if (kind === "quote")
+                                    return mdQuoteRow.implicitHeight
+                                if (kind === "listItem")
+                                    return mdListRow.implicitHeight
+                                return mdBlockText.implicitHeight
+                            }
+
+                            Text {
+                                id: mdBlockText
+                                visible: mdBlock.isTextBlock
+                                width: mdBlock.innerWidth
+                                text: visible ? mdBlock.html : ""
+                                color: root.textColor
+                                font.family: Theme.uiFamily
+                                font.pixelSize: mdBlock.kind === "heading"
+                                    ? (mdBlock.level === 1 ? 18
+                                        : mdBlock.level === 2 ? 15.5
+                                        : mdBlock.level === 3 ? 13.5
+                                        : 12.5)
+                                    : Theme.typeCaption
+                                font.weight: mdBlock.kind === "heading" ? Font.DemiBold : Font.Normal
+                                lineHeight: mdBlock.kind === "heading" ? 1.3 : 1.5
+                                wrapMode: Text.Wrap
+                                textFormat: Text.RichText
+                                onLinkActivated: function (link) {
+                                    root.activateMarkdownLink(link)
+                                }
+                            }
+
+                            Item {
+                                id: mdQuoteRow
+                                visible: mdBlock.kind === "quote"
+                                width: mdBlock.innerWidth
+                                implicitHeight: mdQuoteText.implicitHeight
+                                readonly property int indent: Math.max(0, mdBlock.level - 1) * 12
+
+                                Rectangle {
+                                    x: mdQuoteRow.indent
+                                    y: 2
+                                    width: 2
+                                    height: Math.max(12, mdQuoteText.implicitHeight - 4)
+                                    radius: 1
+                                    color: root.hairline
+                                }
+
+                                Text {
+                                    id: mdQuoteText
+                                    x: mdQuoteRow.indent + 10
+                                    width: Math.max(0, mdBlock.innerWidth - x)
+                                    text: mdQuoteRow.visible ? mdBlock.html : ""
+                                    color: root.mutedColor
+                                    font.family: Theme.uiFamily
+                                    font.pixelSize: Theme.typeCaption
+                                    lineHeight: 1.5
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.RichText
+                                    onLinkActivated: function (link) {
+                                        root.activateMarkdownLink(link)
+                                    }
+                                }
+                            }
+
+                            Item {
+                                id: mdListRow
+                                visible: mdBlock.kind === "listItem"
+                                width: mdBlock.innerWidth
+                                implicitHeight: Math.max(mdMarkerText.implicitHeight, mdListText.implicitHeight)
+                                readonly property int indent: Math.max(0, mdBlock.level) * 14
+
+                                Text {
+                                    id: mdMarkerText
+                                    x: mdListRow.indent
+                                    width: 18
+                                    text: mdBlock.marker
+                                    color: mdBlock.marker === "☑" ? root.accent : root.mutedColor
+                                    horizontalAlignment: Text.AlignRight
+                                    font.family: Theme.uiFamily
+                                    font.pixelSize: Theme.typeCaption
+                                    lineHeight: 1.5
+                                    textFormat: Text.PlainText
+                                }
+
+                                Text {
+                                    id: mdListText
+                                    x: mdListRow.indent + 24
+                                    width: Math.max(0, mdBlock.innerWidth - x)
+                                    text: mdListRow.visible ? mdBlock.html : ""
+                                    color: root.textColor
+                                    font.family: Theme.uiFamily
+                                    font.pixelSize: Theme.typeCaption
+                                    lineHeight: 1.5
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.RichText
+                                    onLinkActivated: function (link) {
+                                        root.activateMarkdownLink(link)
+                                    }
+                                }
+                            }
+
+                            Item {
+                                visible: mdBlock.kind === "rule"
+                                width: mdBlock.innerWidth
+                                height: 9
+
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width
+                                    height: Theme.ruleWidth(Screen.devicePixelRatio)
+                                    color: root.hairline
+                                }
+                            }
+
+                            Item {
+                                id: mdImageBox
+                                visible: mdBlock.kind === "image"
+                                width: mdBlock.innerWidth
+                                implicitHeight: mdImage.status === Image.Error
+                                    ? mdImageAlt.implicitHeight
+                                    : (mdImage.sourceSize.width > 0 && mdImage.sourceSize.height > 0
+                                        ? Math.max(24, Math.round(mdImage.width
+                                            * mdImage.sourceSize.height / mdImage.sourceSize.width))
+                                        : 120)
+
+                                Image {
+                                    id: mdImage
+                                    visible: mdBlock.kind === "image" && status !== Image.Error
+                                    width: Math.min(mdBlock.innerWidth,
+                                        sourceSize.width > 0 ? sourceSize.width : mdBlock.innerWidth)
+                                    height: parent.implicitHeight
+                                    source: mdBlock.kind === "image" ? mdBlock.imageUrl : ""
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                    cache: false
+                                }
+
+                                Text {
+                                    id: mdImageAlt
+                                    visible: mdBlock.kind === "image" && mdImage.status === Image.Error
+                                    width: mdBlock.innerWidth
+                                    text: mdBlock.alt !== "" ? mdBlock.alt : qsTr("图片无法加载")
+                                    color: root.faintColor
+                                    font.pixelSize: Theme.typeCaption
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
+                            }
+
+                            Loader {
+                                id: codeLoader
+                                width: mdBlock.innerWidth
+                                active: mdBlock.kind === "code"
+                                sourceComponent: mdCodeBlockComponent
+
+                                onLoaded: {
+                                    // qmllint disable missing-property
+                                    item.blockHtml = Qt.binding(function () { return mdBlock.html })
+                                    item.blockLanguage = Qt.binding(function () { return mdBlock.language })
+                                    // qmllint enable missing-property
+                                }
+                            }
+
+                            Loader {
+                                id: tableLoader
+                                width: mdBlock.innerWidth
+                                active: mdBlock.kind === "table"
+                                sourceComponent: mdTableBlockComponent
+
+                                onLoaded: {
+                                    // qmllint disable missing-property
+                                    item.tableHtml = Qt.binding(function () { return mdBlock.html })
+                                    // qmllint enable missing-property
+                                }
+                            }
+                        }
+                    }
+
+                    ScrollBar {
+                        target: markdownList
+                        anchors.right: parent.right
+                        anchors.rightMargin: 2
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.topMargin: 4
+                        anchors.bottomMargin: 4
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 6
+                        visible: controller.truncated
+                        text: qsTr("仅显示前 64 KB")
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeCaption
+                    }
+                }
+
+                // Highlighted code (and binary hex fallback). They carry their
+                // own colours, so they keep the text-edit path instead of the
                 // gutter.
                 Rectangle {
                     visible: root.showsRich
                     width: parent.width
-                    height: root.wellHeight
+                    height: root.contentWellHeight
                     radius: Theme.radiusMd
                     color: root.wellColor
                     clip: true
@@ -998,12 +1280,7 @@ Item {
                             textFormat: TextEdit.RichText
 
                             onLinkActivated: function (link) {
-                                if (!link || link.charAt(0) === "#")
-                                    return
-                                if (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(link))
-                                    Qt.openUrlExternally(link)
-                                else
-                                    Workspace.openPath(link)
+                                root.activateMarkdownLink(link)
                             }
                         }
                     }
@@ -1120,135 +1397,141 @@ Item {
                         preview.mutedColor = Qt.binding(function () { return root.mutedColor })
                         preview.sectionColor = Qt.binding(function () { return root.wellColor })
                         preview.hairline = Qt.binding(function () { return root.hairline })
-                        preview.contentHeight = Qt.binding(function () { return root.wellHeight })
+                        preview.contentHeight = Qt.binding(function () { return root.contentWellHeight })
                     }
-                }
-
-                Text {
-                    width: parent.width
-                    visible: mediaLoader.active && mediaLoader.status === Loader.Error
-                    text: qsTr("当前构建不支持媒体播放")
-                    color: root.faintColor
-                    font.pixelSize: Theme.typeCaption
-                    wrapMode: Text.Wrap
-                }
-
-                Text {
-                    width: parent.width
-                    visible: root.showsMedia
-                    text: Localize.message(controller.mediaText)
-                    color: root.faintColor
-                    font.pixelSize: Theme.typeCaption
-                    lineHeight: Theme.leadingBody
-                    wrapMode: Text.Wrap
-                }
-
-                Text {
-                    width: parent.width
-                    text: controller.name !== "" ? controller.name
-                        : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
-                    color: root.textColor
-                    font.family: Theme.uiFamily
-                    font.pixelSize: Theme.typeHeading
-                    font.weight: Font.Medium
-                    lineHeight: Theme.leadingTight
-                    wrapMode: Text.Wrap
-                }
-
-                Text {
-                    width: parent.width
-                    text: controller.path
-                    color: root.faintColor
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.typeCaption
-                    elide: Text.ElideMiddle
-                    textFormat: Text.PlainText
                 }
 
                 Column {
+                    id: singleDetails
                     width: parent.width
-                    visible: controller.error === "" && controller.path !== ""
+                    spacing: 12
 
-                    Repeater {
-                        model: [
-                            [qsTr("类型"), Localize.message(controller.kindText)],
-                            [qsTr("大小"), controller.sizeText],
-                            [qsTr("修改时间"), detailsController.modifiedText],
-                            [qsTr("创建时间"), detailsController.createdText],
-                            [qsTr("权限"), root.permissionSummary()],
-                            [qsTr("所有者"), root.ownerSummary()]
-                        ].filter(function (row) { return row[1] !== "" })
+                    Text {
+                        width: parent.width
+                        visible: mediaLoader.active && mediaLoader.status === Loader.Error
+                        text: qsTr("当前构建不支持媒体播放")
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeCaption
+                        wrapMode: Text.Wrap
+                    }
 
-                        MetaRow {
-                            width: content.width
-                            required property var modelData
-                            key: modelData[0]
-                            value: modelData[1]
+                    Text {
+                        width: parent.width
+                        visible: root.showsMedia
+                        text: Localize.message(controller.mediaText)
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeCaption
+                        lineHeight: Theme.leadingBody
+                        wrapMode: Text.Wrap
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: controller.name !== "" ? controller.name
+                            : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
+                        color: root.textColor
+                        font.family: Theme.uiFamily
+                        font.pixelSize: Theme.typeHeading
+                        font.weight: Font.Medium
+                        lineHeight: Theme.leadingTight
+                        wrapMode: Text.Wrap
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: controller.path
+                        color: root.faintColor
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.typeCaption
+                        elide: Text.ElideMiddle
+                        textFormat: Text.PlainText
+                    }
+
+                    Column {
+                        width: parent.width
+                        visible: controller.error === "" && controller.path !== ""
+
+                        Repeater {
+                            model: [
+                                [qsTr("类型"), Localize.message(controller.kindText)],
+                                [qsTr("大小"), controller.sizeText],
+                                [qsTr("修改时间"), detailsController.modifiedText],
+                                [qsTr("创建时间"), detailsController.createdText],
+                                [qsTr("权限"), root.permissionSummary()],
+                                [qsTr("所有者"), root.ownerSummary()]
+                            ].filter(function (row) { return row[1] !== "" })
+
+                            MetaRow {
+                                width: content.width
+                                required property var modelData
+                                key: modelData[0]
+                                value: modelData[1]
+                            }
                         }
                     }
-                }
 
-                TagFlow {
-                }
-
-                Text {
-                    width: parent.width
-                    visible: controller.error !== ""
-                    text: Localize.message(controller.error)
-                    color: Theme.danger
-                    font.pixelSize: Theme.typeCaption
-                    wrapMode: Text.Wrap
-                }
-
-                Text {
-                    width: parent.width
-                    visible: controller.remote && controller.error === ""
-                    text: qsTr("远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。")
-                    color: root.faintColor
-                    font.pixelSize: Theme.typeCaption
-                    wrapMode: Text.Wrap
-                    lineHeight: Theme.leadingBody
-                }
-
-                // Quiet text, not buttons: the pane is a read-out, and the one
-                // saturated colour in it belongs to `全部属性`.
-                Row {
-                    id: actionRow
-                    width: parent.width
-                    height: Theme.controlMd
-                    spacing: 16
-                    visible: controller.path !== "" && !root.plate
-                    enabled: !controller.loading
-                    opacity: controller.loading ? 0.4 : 1
-
-                    TextAction {
-                        id: openAction
-                        label: controller.isDirectory ? qsTr("打开文件夹")
-                            : (root.remote ? qsTr("远程文件") : qsTr("打开"))
-                        available: !root.remote || controller.isDirectory
-                        onClicked: root.openRequested(controller.path, controller.isDirectory)
+                    TagFlow {
                     }
 
-                    TextAction {
-                        id: revealAction
-                        label: qsTr("定位")
-                        available: !root.remote
-                        onClicked: Workspace.reveal(controller.path)
+                    Text {
+                        width: parent.width
+                        visible: controller.error !== ""
+                        text: Localize.message(controller.error)
+                        color: Theme.danger
+                        font.pixelSize: Theme.typeCaption
+                        wrapMode: Text.Wrap
                     }
 
-                    Item {
-                        width: Math.max(0, actionRow.width - openAction.width
-                            - revealAction.width - propertiesAction.width
-                            - actionRow.spacing * 3)
-                        height: 1
+                    Text {
+                        width: parent.width
+                        visible: controller.remote && controller.error === ""
+                        text: qsTr("远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。")
+                        color: root.faintColor
+                        font.pixelSize: Theme.typeCaption
+                        wrapMode: Text.Wrap
+                        lineHeight: Theme.leadingBody
                     }
 
-                    TextAction {
-                        id: propertiesAction
-                        label: qsTr("全部属性")
-                        accent: true
-                        chevron: true
-                        onClicked: root.propertiesRequested(controller.path)
+                    // Quiet text, not buttons: the pane is a read-out, and the one
+                    // saturated colour in it belongs to `全部属性`.
+                    Row {
+                        id: actionRow
+                        width: parent.width
+                        height: Theme.controlMd
+                        spacing: 16
+                        visible: controller.path !== "" && !root.plate
+                        enabled: !controller.loading
+                        opacity: controller.loading ? 0.4 : 1
+
+                        TextAction {
+                            id: openAction
+                            label: controller.isDirectory ? qsTr("打开文件夹")
+                                : (root.remote ? qsTr("远程文件") : qsTr("打开"))
+                            available: !root.remote || controller.isDirectory
+                            onClicked: root.openRequested(controller.path, controller.isDirectory)
+                        }
+
+                        TextAction {
+                            id: revealAction
+                            label: qsTr("定位")
+                            available: !root.remote
+                            onClicked: Workspace.reveal(controller.path)
+                        }
+
+                        Item {
+                            width: Math.max(0, actionRow.width - openAction.width
+                                - revealAction.width - propertiesAction.width
+                                - actionRow.spacing * 3)
+                            height: 1
+                        }
+
+                        TextAction {
+                            id: propertiesAction
+                            label: qsTr("全部属性")
+                            accent: true
+                            chevron: true
+                            onClicked: root.propertiesRequested(controller.path)
+                        }
                     }
                 }
             }
@@ -1505,11 +1788,125 @@ Item {
         anchors.bottom: parent.bottom
     }
 
+    Component {
+        id: mdCodeBlockComponent
+
+        Rectangle {
+            id: codeCard
+            property string blockHtml: ""
+            property string blockLanguage: ""
+
+            implicitHeight: codeEdit.contentHeight + 16
+            radius: Theme.radiusSm
+            color: root.dark ? "#101216" : "#f7f7f9"
+            border.width: 1
+            border.color: root.hairline
+            clip: true
+
+            onBlockHtmlChanged: codeFlick.contentX = 0
+
+            Flickable {
+                id: codeFlick
+                anchors.fill: parent
+                anchors.margins: 1
+                contentWidth: Math.max(width, codeEdit.contentWidth + 20)
+                contentHeight: height
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.HorizontalFlick
+
+                WheelHandler {
+                    acceptedModifiers: Qt.ShiftModifier
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+
+                    onWheel: function (event) {
+                        const step = event.pixelDelta.x !== 0
+                            ? event.pixelDelta.x
+                            : (event.angleDelta.x !== 0
+                                ? event.angleDelta.x * 0.4
+                                : -event.angleDelta.y * 0.4)
+                        const maximum = Math.max(0, codeFlick.contentWidth - codeFlick.width)
+                        codeFlick.contentX = Math.max(0, Math.min(maximum, codeFlick.contentX + step))
+                        event.accepted = true
+                    }
+                }
+
+                TextEdit {
+                    id: codeEdit
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: codeCard.blockLanguage !== ""
+                        ? qsTr("代码块：%1").arg(codeCard.blockLanguage)
+                        : qsTr("代码块")
+                    x: 10
+                    y: 8
+                    width: Math.max(codeFlick.width - 20, codeEdit.contentWidth)
+                    height: Math.max(contentHeight, codeFlick.height - 16)
+                    readOnly: true
+                    selectByMouse: true
+                    text: codeCard.blockHtml
+                    color: root.textColor
+                    selectionColor: root.accent
+                    selectedTextColor: Theme.inkOnAccent
+                    font.pixelSize: Theme.typeCaption
+                    textFormat: TextEdit.RichText
+                }
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 6
+                visible: codeCard.blockLanguage !== ""
+                text: codeCard.blockLanguage
+                color: root.faintColor
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.typeMicro
+                textFormat: Text.PlainText
+            }
+        }
+    }
+
+    Component {
+        id: mdTableBlockComponent
+
+        Flickable {
+            id: tableFlick
+            property string tableHtml: ""
+
+            implicitHeight: tableText.contentHeight + 4
+            contentWidth: Math.max(width, tableText.contentWidth)
+            contentHeight: implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.HorizontalFlick
+
+            onTableHtmlChanged: tableFlick.contentX = 0
+
+            Text {
+                id: tableText
+                width: Math.max(tableFlick.width, tableText.contentWidth)
+                text: tableFlick.tableHtml
+                color: root.textColor
+                font.family: Theme.uiFamily
+                font.pixelSize: Theme.typeCaption
+                textFormat: Text.RichText
+                onLinkActivated: function (link) {
+                    root.activateMarkdownLink(link)
+                }
+            }
+        }
+    }
+
     Connections {
         target: controller
 
         function onPathChanged() {
             scroller.contentY = 0
+        }
+
+        function onMarkdownRevisionChanged() {
+            markdownModel.loadRevision(controller.markdownRevision)
+            markdownList.positionViewAtBeginning()
         }
     }
 

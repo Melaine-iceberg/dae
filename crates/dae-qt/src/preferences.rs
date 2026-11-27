@@ -1430,8 +1430,8 @@ impl ExplorerPrefs {
     fn set_number(&mut self, key: String, value: i32) {
         let changed = match key.as_str() {
             "previewWidth" => {
-                // 260–420, the range the grip and its arrow keys share.
-                let next = value.clamp(260, 420);
+                // 260–720; the shell also caps against half the window width.
+                let next = value.clamp(260, 720);
                 if self.preview_width == next {
                     return;
                 }

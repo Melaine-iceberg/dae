@@ -234,14 +234,42 @@ struct Renderer<'a> {
     in_metadata: bool,
 }
 
-pub fn render_markdown(source: &str, source_path: &str, dark: bool) -> String {
+/// A single virtualized block for the QML Markdown preview `ListView`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MarkdownBlockKind {
+    Heading,
+    Paragraph,
+    Quote,
+    ListItem,
+    Code,
+    Table,
+    Image,
+    Rule,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MarkdownBlock {
+    pub kind: MarkdownBlockKind,
+    pub html: String,
+    pub level: i32,
+    pub marker: String,
+    pub language: String,
+    pub raw_text: String,
+    pub image_url: String,
+    pub alt: String,
+}
+
+fn markdown_options() -> Options {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_DEFINITION_LIST);
+    options
+}
 
+pub fn render_markdown(source: &str, source_path: &str, dark: bool) -> String {
     let mut renderer = Renderer {
         out: String::with_capacity(source.len() * 2),
         source_path,
@@ -258,11 +286,544 @@ pub fn render_markdown(source: &str, source_path: &str, dark: bool) -> String {
         in_metadata: false,
     };
     renderer.out.push_str("<div style=\"line-height:150%;\">");
-    for event in Parser::new_ext(source, options) {
+    for event in Parser::new_ext(source, markdown_options()) {
         renderer.event(event);
     }
     renderer.out.push_str("</div>");
     renderer.out
+}
+
+/// Parses `source` into display blocks on the worker thread so the inspector's
+/// `ListView` only lays out and shapes the blocks currently in the viewport.
+pub fn render_markdown_blocks(source: &str, source_path: &str, dark: bool) -> Vec<MarkdownBlock> {
+    let mut builder = BlockBuilder {
+        blocks: Vec::new(),
+        source_path,
+        local: !source_path.contains("://"),
+        dark,
+        palette: Palette::new(dark),
+        inline: String::new(),
+        link_open: Vec::new(),
+        heading_level: None,
+        quote_depth: 0,
+        list_stack: Vec::new(),
+        code: None,
+        image: None,
+        table: None,
+        in_metadata: false,
+        in_def_title: false,
+    };
+    for event in Parser::new_ext(source, markdown_options()) {
+        builder.event(event);
+    }
+    builder.flush_inline(false);
+    builder.blocks
+}
+
+struct ListState {
+    ordered: bool,
+    next_index: u64,
+    active_item_marker: Option<String>,
+}
+
+struct TableState {
+    out: String,
+    alignments: Vec<Alignment>,
+    cell: usize,
+    in_head: bool,
+    link_open: Vec<bool>,
+}
+
+struct BlockBuilder<'a> {
+    blocks: Vec<MarkdownBlock>,
+    source_path: &'a str,
+    local: bool,
+    dark: bool,
+    palette: Palette,
+    inline: String,
+    link_open: Vec<bool>,
+    heading_level: Option<HeadingLevel>,
+    quote_depth: i32,
+    list_stack: Vec<ListState>,
+    code: Option<(String, String)>,
+    image: Option<(String, String)>,
+    table: Option<TableState>,
+    in_metadata: bool,
+    in_def_title: bool,
+}
+
+impl BlockBuilder<'_> {
+    fn event(&mut self, event: Event<'_>) {
+        if let Some((_, alt)) = self.image.as_mut() {
+            match event {
+                Event::Text(text) | Event::Code(text) => alt.push_str(&text),
+                Event::SoftBreak | Event::HardBreak => alt.push(' '),
+                Event::End(TagEnd::Image) => {
+                    let (destination, alt) = self.image.take().expect("image is open");
+                    if let Some(url) = resolve_local_image(self.source_path, self.local, &destination) {
+                        self.flush_inline(true);
+                        self.blocks.push(MarkdownBlock {
+                            kind: MarkdownBlockKind::Image,
+                            html: String::new(),
+                            level: 0,
+                            marker: String::new(),
+                            language: String::new(),
+                            raw_text: String::new(),
+                            image_url: url,
+                            alt,
+                        });
+                    } else {
+                        push_escaped(&mut self.inline, &alt);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if self.in_metadata {
+            if matches!(event, Event::End(TagEnd::MetadataBlock(_))) {
+                self.in_metadata = false;
+            }
+            return;
+        }
+
+        if let Some((_, buffer)) = self.code.as_mut() {
+            match event {
+                Event::Text(text) => buffer.push_str(&text),
+                Event::End(TagEnd::CodeBlock) => {
+                    let (language, text) = self.code.take().expect("code block is open");
+                    self.flush_inline(true);
+                    let trimmed = text.strip_suffix('\n').unwrap_or(&text);
+                    let html = preview_highlight::render_code_block(trimmed, &language, self.dark);
+                    self.blocks.push(MarkdownBlock {
+                        kind: MarkdownBlockKind::Code,
+                        html,
+                        level: 0,
+                        marker: String::new(),
+                        language,
+                        raw_text: trimmed.to_owned(),
+                        image_url: String::new(),
+                        alt: String::new(),
+                    });
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if self.table.is_some() {
+            self.table_event(event);
+            return;
+        }
+
+        match event {
+            Event::Start(tag) => self.start(tag),
+            Event::End(tag) => self.end(tag),
+            Event::Text(text) => push_escaped(&mut self.inline, &text),
+            Event::Code(code) => push_inline_code(&mut self.inline, &self.palette, &code),
+            Event::InlineMath(text) | Event::DisplayMath(text) => {
+                push_inline_code(&mut self.inline, &self.palette, &text);
+            }
+            Event::Html(_) | Event::InlineHtml(_) => {}
+            Event::FootnoteReference(label) => {
+                self.inline.push_str("<sup>[");
+                push_escaped(&mut self.inline, &label);
+                self.inline.push_str("]</sup>");
+            }
+            Event::SoftBreak => self.inline.push(' '),
+            Event::HardBreak => self.inline.push_str("<br>"),
+            Event::Rule => {
+                self.flush_inline(true);
+                self.blocks.push(MarkdownBlock {
+                    kind: MarkdownBlockKind::Rule,
+                    html: String::new(),
+                    level: 0,
+                    marker: String::new(),
+                    language: String::new(),
+                    raw_text: String::new(),
+                    image_url: String::new(),
+                    alt: String::new(),
+                });
+            }
+            Event::TaskListMarker(checked) => {
+                if let Some(list) = self.list_stack.last_mut() {
+                    list.active_item_marker = Some(if checked { "☑" } else { "☐" }.to_owned());
+                }
+            }
+        }
+    }
+
+    fn start(&mut self, tag: Tag<'_>) {
+        match tag {
+            Tag::Paragraph => self.flush_inline(false),
+            Tag::Heading { level, .. } => {
+                self.flush_inline(false);
+                self.heading_level = Some(level);
+            }
+            Tag::BlockQuote(_) => {
+                self.flush_inline(false);
+                self.quote_depth += 1;
+            }
+            Tag::CodeBlock(kind) => {
+                let language = match kind {
+                    CodeBlockKind::Indented => String::new(),
+                    CodeBlockKind::Fenced(info) => fence_language(&info),
+                };
+                self.code = Some((language, String::new()));
+            }
+            Tag::HtmlBlock => {}
+            Tag::List(start) => {
+                self.flush_inline(true);
+                self.list_stack.push(ListState {
+                    ordered: start.is_some(),
+                    next_index: start.unwrap_or(1),
+                    active_item_marker: None,
+                });
+            }
+            Tag::Item => {
+                self.flush_inline(true);
+                if let Some(list) = self.list_stack.last_mut() {
+                    let marker = if list.ordered {
+                        let current = list.next_index;
+                        list.next_index = list.next_index.saturating_add(1);
+                        format!("{current}.")
+                    } else {
+                        "•".to_owned()
+                    };
+                    list.active_item_marker = Some(marker);
+                }
+            }
+            Tag::FootnoteDefinition(label) => {
+                self.flush_inline(false);
+                let _ = write!(
+                    self.inline,
+                    "<span style=\"color:{};\"><sup>",
+                    self.palette.muted
+                );
+                push_escaped(&mut self.inline, &label);
+                self.inline.push_str("</sup></span> ");
+            }
+            Tag::DefinitionList => self.flush_inline(false),
+            Tag::DefinitionListTitle => {
+                self.flush_inline(false);
+                self.in_def_title = true;
+                self.inline.push_str("<b>");
+            }
+            Tag::DefinitionListDefinition => self.flush_inline(false),
+            Tag::Table(alignments) => {
+                self.flush_inline(true);
+                let mut out = String::new();
+                push_table_open(&mut out, &self.palette);
+                self.table = Some(TableState {
+                    out,
+                    alignments,
+                    cell: 0,
+                    in_head: false,
+                    link_open: Vec::new(),
+                });
+            }
+            Tag::TableHead | Tag::TableRow | Tag::TableCell => {}
+            Tag::Emphasis => self.inline.push_str("<i>"),
+            Tag::Strong => self.inline.push_str("<b>"),
+            Tag::Strikethrough => self.inline.push_str("<s>"),
+            Tag::Superscript => self.inline.push_str("<sup>"),
+            Tag::Subscript => self.inline.push_str("<sub>"),
+            Tag::Link { dest_url, .. } => {
+                let target = resolve_link_target(self.source_path, self.local, &dest_url);
+                self.link_open.push(target.is_some());
+                if let Some(target) = target {
+                    push_link_open(&mut self.inline, &self.palette, &target);
+                }
+            }
+            Tag::Image { dest_url, .. } => {
+                self.image = Some((dest_url.into_string(), String::new()));
+            }
+            Tag::MetadataBlock(_) => self.in_metadata = true,
+        }
+    }
+
+    fn end(&mut self, tag: TagEnd) {
+        match tag {
+            TagEnd::Paragraph => self.flush_inline(true),
+            TagEnd::Heading(_) => {
+                self.flush_inline(false);
+                self.heading_level = None;
+            }
+            TagEnd::BlockQuote(_) => {
+                self.flush_inline(false);
+                self.quote_depth = (self.quote_depth - 1).max(0);
+            }
+            TagEnd::CodeBlock | TagEnd::HtmlBlock | TagEnd::DefinitionList => {}
+            TagEnd::List(_) => {
+                self.flush_inline(true);
+                self.list_stack.pop();
+            }
+            TagEnd::Item => {
+                self.flush_inline(true);
+                if let Some(list) = self.list_stack.last_mut() {
+                    list.active_item_marker = None;
+                }
+            }
+            TagEnd::FootnoteDefinition => self.flush_inline(false),
+            TagEnd::DefinitionListTitle => {
+                if self.in_def_title {
+                    self.inline.push_str("</b>");
+                    self.in_def_title = false;
+                }
+                self.flush_inline(false);
+            }
+            TagEnd::DefinitionListDefinition => self.flush_inline(false),
+            TagEnd::Table | TagEnd::TableHead | TagEnd::TableRow | TagEnd::TableCell => {}
+            TagEnd::Emphasis => self.inline.push_str("</i>"),
+            TagEnd::Strong => self.inline.push_str("</b>"),
+            TagEnd::Strikethrough => self.inline.push_str("</s>"),
+            TagEnd::Superscript => self.inline.push_str("</sup>"),
+            TagEnd::Subscript => self.inline.push_str("</sub>"),
+            TagEnd::Link => {
+                if self.link_open.pop().unwrap_or(false) {
+                    self.inline.push_str("</a>");
+                }
+            }
+            TagEnd::Image => {}
+            TagEnd::MetadataBlock(_) => self.in_metadata = false,
+        }
+    }
+
+    fn table_event(&mut self, event: Event<'_>) {
+        let mut finished = None;
+        {
+            let table = self.table.as_mut().expect("table is open");
+            match event {
+                Event::Start(Tag::TableHead) => {
+                    table.in_head = true;
+                    table.cell = 0;
+                    table.out.push_str("<thead><tr>");
+                }
+                Event::End(TagEnd::TableHead) => {
+                    table.in_head = false;
+                    table.out.push_str("</tr></thead>");
+                }
+                Event::Start(Tag::TableRow) => {
+                    table.cell = 0;
+                    table.out.push_str("<tr>");
+                }
+                Event::End(TagEnd::TableRow) => table.out.push_str("</tr>"),
+                Event::Start(Tag::TableCell) => {
+                    let alignment = table
+                        .alignments
+                        .get(table.cell)
+                        .copied()
+                        .unwrap_or(Alignment::None);
+                    table.cell += 1;
+                    push_table_cell_open(&mut table.out, &self.palette, alignment, table.in_head);
+                }
+                Event::End(TagEnd::TableCell) => {
+                    table
+                        .out
+                        .push_str(if table.in_head { "</th>" } else { "</td>" });
+                }
+                Event::End(TagEnd::Table) => {
+                    table.out.push_str("</table>");
+                    finished = Some(std::mem::take(&mut table.out));
+                }
+                Event::Text(text) => push_escaped(&mut table.out, &text),
+                Event::Code(code) => push_inline_code(&mut table.out, &self.palette, &code),
+                Event::InlineMath(text) => push_inline_code(&mut table.out, &self.palette, &text),
+                Event::SoftBreak => table.out.push(' '),
+                Event::HardBreak => table.out.push_str("<br>"),
+                Event::Start(Tag::Emphasis) => table.out.push_str("<i>"),
+                Event::End(TagEnd::Emphasis) => table.out.push_str("</i>"),
+                Event::Start(Tag::Strong) => table.out.push_str("<b>"),
+                Event::End(TagEnd::Strong) => table.out.push_str("</b>"),
+                Event::Start(Tag::Strikethrough) => table.out.push_str("<s>"),
+                Event::End(TagEnd::Strikethrough) => table.out.push_str("</s>"),
+                Event::Start(Tag::Superscript) => table.out.push_str("<sup>"),
+                Event::End(TagEnd::Superscript) => table.out.push_str("</sup>"),
+                Event::Start(Tag::Subscript) => table.out.push_str("<sub>"),
+                Event::End(TagEnd::Subscript) => table.out.push_str("</sub>"),
+                Event::Start(Tag::Link { dest_url, .. }) => {
+                    let target = resolve_link_target(self.source_path, self.local, &dest_url);
+                    table.link_open.push(target.is_some());
+                    if let Some(target) = target {
+                        push_link_open(&mut table.out, &self.palette, &target);
+                    }
+                }
+                Event::End(TagEnd::Link) => {
+                    if table.link_open.pop().unwrap_or(false) {
+                        table.out.push_str("</a>");
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(html) = finished {
+            self.table = None;
+            self.blocks.push(MarkdownBlock {
+                kind: MarkdownBlockKind::Table,
+                html,
+                level: 0,
+                marker: String::new(),
+                language: String::new(),
+                raw_text: String::new(),
+                image_url: String::new(),
+                alt: String::new(),
+            });
+        }
+    }
+
+    fn flush_inline(&mut self, consume_list_marker: bool) {
+        if self.inline.trim().is_empty() {
+            self.inline.clear();
+            return;
+        }
+        let html = std::mem::take(&mut self.inline);
+        if let Some(level) = self.heading_level {
+            self.blocks.push(MarkdownBlock {
+                kind: MarkdownBlockKind::Heading,
+                html,
+                level: heading_number(level),
+                marker: String::new(),
+                language: String::new(),
+                raw_text: String::new(),
+                image_url: String::new(),
+                alt: String::new(),
+            });
+            return;
+        }
+        if !self.list_stack.is_empty() {
+            let depth = (self.list_stack.len() - 1) as i32;
+            let marker = if consume_list_marker {
+                self.list_stack
+                    .last_mut()
+                    .and_then(|list| list.active_item_marker.take())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            self.blocks.push(MarkdownBlock {
+                kind: MarkdownBlockKind::ListItem,
+                html,
+                level: depth,
+                marker,
+                language: String::new(),
+                raw_text: String::new(),
+                image_url: String::new(),
+                alt: String::new(),
+            });
+            return;
+        }
+        if self.quote_depth > 0 {
+            self.blocks.push(MarkdownBlock {
+                kind: MarkdownBlockKind::Quote,
+                html,
+                level: self.quote_depth,
+                marker: String::new(),
+                language: String::new(),
+                raw_text: String::new(),
+                image_url: String::new(),
+                alt: String::new(),
+            });
+            return;
+        }
+        self.blocks.push(MarkdownBlock {
+            kind: MarkdownBlockKind::Paragraph,
+            html,
+            level: 0,
+            marker: String::new(),
+            language: String::new(),
+            raw_text: String::new(),
+            image_url: String::new(),
+            alt: String::new(),
+        });
+    }
+}
+
+fn heading_number(level: HeadingLevel) -> i32 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+fn push_inline_code(out: &mut String, palette: &Palette, code: &str) {
+    let _ = write!(
+        out,
+        "<span style=\"font-family:'Google Sans Code','Cascadia Mono',Consolas,monospace; color:{}; \
+         background-color:{};\">",
+        palette.inline_code_fg, palette.inline_code_bg
+    );
+    push_escaped(out, code);
+    out.push_str("</span>");
+}
+
+fn push_link_open(out: &mut String, palette: &Palette, target: &str) {
+    out.push_str("<a href=\"");
+    push_escaped(out, target);
+    let _ = write!(out, "\" style=\"color:{};\">", palette.link);
+}
+
+fn push_table_open(out: &mut String, palette: &Palette) {
+    // Qt's rich text engine only paints a grid when the table carries `border`
+    // and a non-zero `cellspacing`; a collapsed table with per-cell borders
+    // renders as bare text.
+    let _ = write!(
+        out,
+        "<table border=\"1\" cellspacing=\"1\" cellpadding=\"4\" \
+         style=\"border-color:{}; margin:0; font-size:11px;\">",
+        palette.table_border
+    );
+}
+
+fn push_table_cell_open(
+    out: &mut String,
+    palette: &Palette,
+    alignment: Alignment,
+    in_head: bool,
+) {
+    let tag = if in_head { "th" } else { "td" };
+    let _ = write!(
+        out,
+        "<{tag} align=\"{}\" style=\"border-width:1px; border-style:solid; \
+         border-color:{}; {}padding:3px 5px;\">",
+        alignment_name(alignment),
+        palette.table_border,
+        if in_head {
+            format!(
+                "background-color:{}; font-weight:600; ",
+                palette.table_head_bg
+            )
+        } else {
+            String::new()
+        }
+    );
+}
+
+fn resolve_local_image(source_path: &str, local: bool, destination: &str) -> Option<String> {
+    if scheme(destination).is_none() && local {
+        let path = resolve_local_target(source_path, destination)?;
+        file_url(&path)
+    } else {
+        None
+    }
+}
+
+fn resolve_link_target(source_path: &str, local: bool, destination: &str) -> Option<String> {
+    if destination.starts_with('#') {
+        return None;
+    }
+    if let Some(scheme) = scheme(destination) {
+        let scheme = scheme.to_ascii_lowercase();
+        return matches!(scheme.as_str(), "http" | "https" | "mailto")
+            .then(|| destination.to_owned());
+    }
+    local
+        .then(|| resolve_local_target(source_path, destination))
+        .flatten()
 }
 
 impl Renderer<'_> {
@@ -391,15 +952,7 @@ impl Renderer<'_> {
             Tag::DefinitionListDefinition => self.out.push_str("<dd style=\"margin-left:16px;\">"),
             Tag::Table(alignments) => {
                 self.table_alignments = alignments;
-                // Qt's rich text engine only paints a grid when the table
-                // carries `border` and a non-zero `cellspacing`; a collapsed
-                // table with per-cell borders renders as bare text.
-                let _ = write!(
-                    self.out,
-                    "<table border=\"1\" cellspacing=\"1\" cellpadding=\"4\" \
-                     style=\"border-color:{}; margin:8px 0; font-size:11px;\">",
-                    self.palette.table_border
-                );
+                push_table_open(&mut self.out, &self.palette);
             }
             Tag::TableHead => {
                 self.in_table_head = true;
@@ -417,22 +970,7 @@ impl Renderer<'_> {
                     .copied()
                     .unwrap_or(Alignment::None);
                 self.table_cell += 1;
-                let tag = if self.in_table_head { "th" } else { "td" };
-                let _ = write!(
-                    self.out,
-                    "<{tag} align=\"{}\" style=\"border-width:1px; border-style:solid; \
-                     border-color:{}; {}padding:3px 5px;\">",
-                    alignment_name(alignment),
-                    self.palette.table_border,
-                    if self.in_table_head {
-                        format!(
-                            "background-color:{}; font-weight:600; ",
-                            self.palette.table_head_bg
-                        )
-                    } else {
-                        String::new()
-                    }
-                );
+                push_table_cell_open(&mut self.out, &self.palette, alignment, self.in_table_head);
             }
             Tag::Emphasis => self.out.push_str("<i>"),
             Tag::Strong => self.out.push_str("<b>"),
@@ -498,14 +1036,7 @@ impl Renderer<'_> {
     }
 
     fn inline_code(&mut self, code: &str) {
-        let _ = write!(
-            self.out,
-            "<span style=\"font-family:'Google Sans Code','Cascadia Mono',Consolas,monospace; color:{}; \
-             background-color:{};\">",
-            self.palette.inline_code_fg, self.palette.inline_code_bg
-        );
-        push_escaped(&mut self.out, code);
-        self.out.push_str("</span>");
+        push_inline_code(&mut self.out, &self.palette, code);
     }
 
     fn emit_code_block(&mut self, language: &str, text: &str) {
@@ -515,11 +1046,7 @@ impl Renderer<'_> {
     }
 
     fn emit_image(&mut self, destination: &str, alt: &str) {
-        if scheme(destination).is_none()
-            && self.local
-            && let Some(path) = resolve_local_target(self.source_path, destination)
-            && let Some(url) = file_url(&path)
-        {
+        if let Some(url) = resolve_local_image(self.source_path, self.local, destination) {
             self.out.push_str("<img src=\"");
             push_escaped(&mut self.out, &url);
             let _ = write!(
@@ -533,17 +1060,7 @@ impl Renderer<'_> {
     }
 
     fn link_target(&self, destination: &str) -> Option<String> {
-        if destination.starts_with('#') {
-            return None;
-        }
-        if let Some(scheme) = scheme(destination) {
-            let scheme = scheme.to_ascii_lowercase();
-            return matches!(scheme.as_str(), "http" | "https" | "mailto")
-                .then(|| destination.to_owned());
-        }
-        self.local
-            .then(|| resolve_local_target(self.source_path, destination))
-            .flatten()
+        resolve_link_target(self.source_path, self.local, destination)
     }
 }
 
@@ -812,5 +1329,76 @@ mod tests {
     fn file_urls_encode_spaces_and_drive_letters() {
         let url = file_url(r"C:\notes\a b.md").expect("local path has a URL");
         assert_eq!(url, "file:///C:/notes/a%20b.md");
+    }
+
+    #[test]
+    fn markdown_blocks_split_headings_lists_quotes_tables_and_code() {
+        let source = "\
+# Heading
+
+Paragraph with **bold** and `code`.
+
+> Quoted line
+
+- item one
+  - nested item
+- [x] done task
+
+```rust
+fn main() { let x = 1; }
+```
+
+| A | B |
+| --- | --- |
+| 1 | 2 |
+
+---
+";
+        let blocks = render_markdown_blocks(source, r"C:\notes\readme.md", true);
+        assert_eq!(blocks[0].kind, MarkdownBlockKind::Heading);
+        assert_eq!(blocks[0].level, 1);
+        assert_eq!(blocks[0].html, "Heading");
+
+        assert_eq!(blocks[1].kind, MarkdownBlockKind::Paragraph);
+        assert!(blocks[1].html.contains("<b>bold</b>"));
+        assert!(blocks[1].html.contains("code"));
+
+        assert_eq!(blocks[2].kind, MarkdownBlockKind::Quote);
+        assert_eq!(blocks[2].level, 1);
+
+        assert_eq!(blocks[3].kind, MarkdownBlockKind::ListItem);
+        assert_eq!(blocks[3].marker, "•");
+        assert_eq!(blocks[3].level, 0);
+
+        assert_eq!(blocks[4].kind, MarkdownBlockKind::ListItem);
+        assert_eq!(blocks[4].marker, "•");
+        assert_eq!(blocks[4].level, 1);
+
+        assert_eq!(blocks[5].kind, MarkdownBlockKind::ListItem);
+        assert_eq!(blocks[5].marker, "☑");
+
+        assert_eq!(blocks[6].kind, MarkdownBlockKind::Code);
+        assert_eq!(blocks[6].language, "rust");
+        assert!(blocks[6].html.contains("<span style=\"color:"));
+
+        assert_eq!(blocks[7].kind, MarkdownBlockKind::Table);
+        assert!(blocks[7].html.contains("<table "));
+
+        assert_eq!(blocks[8].kind, MarkdownBlockKind::Rule);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn markdown_blocks_emit_local_images_separately() {
+        let blocks = render_markdown_blocks(
+            "Intro\n\n![shot](img/a.png)\n",
+            r"C:\notes\readme.md",
+            true,
+        );
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].kind, MarkdownBlockKind::Paragraph);
+        assert_eq!(blocks[1].kind, MarkdownBlockKind::Image);
+        assert_eq!(blocks[1].image_url, "file:///C:/notes/img/a.png");
+        assert_eq!(blocks[1].alt, "shot");
     }
 }

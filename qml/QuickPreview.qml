@@ -126,8 +126,8 @@ Item {
                     id: panel
 
                     anchors.centerIn: parent
-                    width: Math.min(760, parent.width - 96)
-                    height: Math.min(parent.height - 96, 680)
+                    width: Math.min(1120, Math.max(360, parent.width - 96))
+                    height: Math.min(920, Math.max(320, parent.height - 96))
                     /// The preview is a large floating sheet, so it wears the
                     /// dialog corner and the high container instead of a
                     /// hairline outline.

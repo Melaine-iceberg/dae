@@ -163,6 +163,7 @@ fn main() {
             "src/config.rs",
             "src/icons.rs",
             "src/ime.rs",
+            "src/markdown_model.rs",
             "src/model.rs",
             "src/open_with_model.rs",
             "src/preview.rs",

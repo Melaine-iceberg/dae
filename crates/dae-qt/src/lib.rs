@@ -57,6 +57,7 @@ pub mod ime;
 pub mod jump_list;
 mod linux_desktop;
 pub mod logging;
+pub mod markdown_model;
 pub mod material;
 pub mod model;
 pub mod network_discovery;
