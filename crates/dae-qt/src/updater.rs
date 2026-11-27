@@ -32,9 +32,9 @@ pub mod qobject {
         #[qml_singleton]
         #[qproperty(bool, supported)]
         /// True when this process runs from an installed Windows app package.
-        /// The self-updater is off there — the tree is read-only and gets a new
-        /// directory on every update — so the UI has to say where updates come
-        /// from instead of silently hiding the entry.
+        /// Release MSIX builds still enable `supported` and update via Windows
+        /// `PackageManager`; non-updatable packaged builds fall back to telling
+        /// the user updates arrive with the installer.
         #[qproperty(bool, packaged)]
         #[qproperty(QString, current_version, cxx_name = "currentVersion")]
         #[qproperty(bool, checking)]

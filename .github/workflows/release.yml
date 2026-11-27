@@ -208,6 +208,48 @@ jobs:
           files: "*.msix"
           draft: true
 
+      - uses: oven-sh/setup-bun@v2
+        if: github.event_name == 'push'
+
+      - name: Install frontend dependencies for the Tauri signer
+        if: github.event_name == 'push'
+        run: bun install --frozen-lockfile
+
+      - name: Sign the MSIX update package
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node -p "require('./package.json').version"
+          $msix = Get-ChildItem -Filter '*.msix' | Select-Object -First 1
+          if (-not $msix) { throw 'no .msix produced by winapp pack' }
+          if ($env:TAURI_SIGNING_PRIVATE_KEY -and (Test-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue)) {
+            $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY
+          }
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            throw 'TAURI_SIGNING_PRIVATE_KEY is not configured; refusing to publish an unsigned MSIX update.'
+          }
+          bun tauri signer sign $msix.FullName --app-version $version
+          if ($LASTEXITCODE -ne 0) { throw "tauri signer sign failed with exit code $LASTEXITCODE" }
+          $sig = "$($msix.FullName).sig"
+          if (-not (Test-Path -LiteralPath $sig) -or ((Get-Item -LiteralPath $sig).Length -le 0)) {
+            throw "missing MSIX signature at $sig"
+          }
+
+      - name: Upload MSIX update artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: qt-msix
+          path: |
+            *.msix
+            *.msix.sig
+          if-no-files-found: error
+          retention-days: 7
+
   # ---------------------------------------------------------------------------
   # Qt shell update artifacts.
   #
@@ -1050,10 +1092,10 @@ jobs:
 
   # Merge the matrix results into the single feed the app fetches. This runs
   # after `draft`, which is what creates the release these assets are appended
-  # to.
+  # to, and after `msix`, whose signed `.msix` belongs in `latest-qt.json`.
   qt-feed:
     name: Qt update feed
-    needs: [draft, qt]
+    needs: [draft, qt, msix]
     runs-on: ubuntu-26.04
     # Every step here writes to the release by tag; a manual run has no tag.
     if: github.event_name != 'workflow_dispatch'

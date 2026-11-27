@@ -24,6 +24,7 @@ import {
   existsSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   statSync,
@@ -40,6 +41,11 @@ const PLATFORM_KEYS = [
   "darwin-aarch64",
   "linux-x86_64",
   "linux-aarch64",
+];
+
+const MSIX_TARGETS = [
+  { platformKey: "windows-x86_64-msix", arch: "x86_64" },
+  { platformKey: "windows-aarch64-msix", arch: "aarch64" },
 ];
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -236,7 +242,7 @@ function zipEntryNames(zipPath) {
   }
 }
 
-function validateArchive(zipPath, platformKey) {
+function validateArchiveEntries(zipPath) {
   const entries = zipEntryNames(zipPath).map((entry) =>
     entry.replaceAll("\\", "/"),
   );
@@ -254,6 +260,12 @@ function validateArchive(zipPath, platformKey) {
       fail(`${path.basename(zipPath)} contains an unsafe path: ${entry}`);
     }
   }
+
+  return { entries, files };
+}
+
+function validateArchive(zipPath, platformKey) {
+  const { entries, files } = validateArchiveEntries(zipPath);
 
   if (platformKey.startsWith("darwin")) {
     const roots = new Set(
@@ -275,6 +287,38 @@ function validateArchive(zipPath, platformKey) {
   if (!files.some((entry) => entry.startsWith("platforms/"))) {
     fail(`${path.basename(zipPath)} is missing platforms/ at its root`);
   }
+}
+
+function validateMsix(msixPath) {
+  const { files } = validateArchiveEntries(msixPath);
+  if (!files.includes("AppxManifest.xml")) {
+    fail(`${path.basename(msixPath)} is missing AppxManifest.xml at its root`);
+  }
+  if (!files.some((entry) => entry.toLowerCase().endsWith("dae.exe"))) {
+    fail(`${path.basename(msixPath)} is missing dae.exe`);
+  }
+}
+
+function findMsixArtifact(artifactDir, arch) {
+  const matches = [];
+  for (const entry of readdirSync(artifactDir)) {
+    const lower = entry.toLowerCase();
+    if (!lower.endsWith(".msix")) {
+      continue;
+    }
+    const isArm = lower.includes("arm64") || lower.includes("aarch64");
+    const isX64 =
+      lower.includes("x64") ||
+      lower.includes("x86_64") ||
+      (!isArm && lower === "dae.msix");
+    if ((arch === "aarch64" && isArm) || (arch === "x86_64" && isX64)) {
+      matches.push(entry);
+    }
+  }
+  if (matches.length > 1) {
+    fail(`multiple ${arch} .msix packages in ${artifactDir}: ${matches.join(", ")}`);
+  }
+  return matches[0] ?? null;
 }
 
 function readSignature(sigPath) {
@@ -324,6 +368,24 @@ for (const platformKey of PLATFORM_KEYS) {
   validateArchive(zipPath, platformKey);
   platforms[platformKey] = {
     url: zipName,
+    signature: readSignature(sigPath),
+  };
+}
+
+for (const { platformKey, arch } of MSIX_TARGETS) {
+  const msixName = findMsixArtifact(artifactDir, arch);
+  if (!msixName) {
+    continue;
+  }
+  const msixPath = path.join(artifactDir, msixName);
+  const sigPath = `${msixPath}.sig`;
+  if (!existsSync(sigPath)) {
+    fail(`${msixName} and ${msixName}.sig must exist together`);
+  }
+
+  validateMsix(msixPath);
+  platforms[platformKey] = {
+    url: msixName,
     signature: readSignature(sigPath),
   };
 }

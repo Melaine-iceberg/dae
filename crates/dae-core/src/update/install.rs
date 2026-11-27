@@ -20,6 +20,7 @@ use super::{AvailableUpdate, UpdateError, download_verified};
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 enum LayoutKind {
     Portable,
+    Msix,
     MacBundle,
 }
 
@@ -66,12 +67,13 @@ impl InstallLayout {
 
         #[cfg(not(target_os = "macos"))]
         {
-            // An MSIX install is read-only and its directory is renamed on
-            // every update, so the swap below cannot run there. Answering
-            // "not installed" turns the updater off before it can offer an
-            // update it would fail to apply; see `crate::package`.
+            // An MSIX install lives inside a read-only WindowsApps directory
+            // whose path changes on every upgrade, so packaged updates stage a
+            // verified `.msix` in temp and hand deployment + relaunch to
+            // Windows `PackageManager`; see `crate::package`.
             if crate::package::is_packaged() {
-                return None;
+                let dir = exe.parent()?.to_path_buf();
+                return Some(Self::msix_layout(dir, exe));
             }
             let dir = exe.parent()?.to_path_buf();
             // `windeployqt`/`linuxdeploy` put the platform plugin next to the
@@ -92,16 +94,42 @@ impl InstallLayout {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
+    fn msix_layout(install_dir: PathBuf, executable: PathBuf) -> Self {
+        let launch = std::env::var_os("LOCALAPPDATA")
+            .filter(|value| !value.is_empty())
+            .map(|local_app_data| {
+                let exe_name = executable
+                    .file_name()
+                    .unwrap_or_else(|| std::ffi::OsStr::new("dae.exe"));
+                PathBuf::from(local_app_data)
+                    .join("Microsoft")
+                    .join("WindowsApps")
+                    .join(exe_name)
+            })
+            .unwrap_or_else(|| executable.clone());
+        Self {
+            install_dir,
+            staging_parent: std::env::temp_dir(),
+            executable,
+            launch,
+            kind: LayoutKind::Msix,
+            bundle: None,
+        }
+    }
+
     fn ensure_writable(&self) -> Result<(), UpdateError> {
-        let probe = self
-            .install_dir
-            .join(format!(".dae-update-probe-{}", std::process::id()));
+        let probe_dir = match self.kind {
+            LayoutKind::Msix => &self.staging_parent,
+            LayoutKind::Portable | LayoutKind::MacBundle => &self.install_dir,
+        };
+        let probe = probe_dir.join(format!(".dae-update-probe-{}", std::process::id()));
         let result = File::create(&probe).and_then(|file| {
             let _ = file.sync_all();
             fs::remove_file(&probe)
         });
         result.map_err(|error| {
-            UpdateError::Install(format!("the install directory is not writable: {error}"))
+            UpdateError::Install(format!("the update staging directory is not writable: {error}"))
         })
     }
 
@@ -157,63 +185,58 @@ impl InstallLayout {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            self.spawn_portable_installer(staging)
+            match self.kind {
+                LayoutKind::Msix => self.spawn_msix_installer(staging),
+                LayoutKind::Portable | LayoutKind::MacBundle => {
+                    self.spawn_portable_installer(staging)
+                }
+            }
         }
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn spawn_portable_installer(&self, staging: &Path) -> Result<(), UpdateError> {
-        let script = write_script(
-            if cfg!(windows) { "ps1" } else { "sh" },
-            if cfg!(windows) {
-                PORTABLE_POWERSHELL
-            } else {
-                PORTABLE_SHELL
-            },
-        )?;
-
-        let mut command = if cfg!(windows) {
-            let mut command = Command::new("powershell.exe");
-            command.args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-WindowStyle",
-                "Hidden",
-                "-File",
-            ]);
-            command
-        } else {
-            let mut command = Command::new("/bin/sh");
-            command.arg(&script);
-            command
-        };
-
-        if cfg!(windows) {
-            command.arg(&script);
-            command
-                .arg("-TargetPid")
-                .arg(std::process::id().to_string())
-                .arg("-Staging")
-                .arg(staging)
-                .arg("-InstallPath")
-                .arg(&self.install_dir)
-                .arg("-LaunchPath")
-                .arg(&self.launch);
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                command.creation_flags(CREATE_NO_WINDOW);
-            }
-        } else {
-            command
-                .arg(std::process::id().to_string())
-                .arg(staging)
-                .arg(&self.install_dir)
-                .arg(&self.launch);
+    fn spawn_msix_installer(&self, staging: &Path) -> Result<(), UpdateError> {
+        if !cfg!(windows) {
+            return Err(UpdateError::Install(
+                "MSIX package deployment is only supported on Windows".to_owned(),
+            ));
         }
+        let package_path = staging.join("update.msix");
+        let pid = std::process::id().to_string();
+        spawn_powershell_script(
+            MSIX_POWERSHELL,
+            &[
+                ("-TargetPid", std::ffi::OsStr::new(&pid)),
+                ("-Staging", staging.as_os_str()),
+                ("-PackagePath", package_path.as_os_str()),
+                ("-LaunchPath", self.launch.as_os_str()),
+            ],
+        )
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn spawn_portable_installer(&self, staging: &Path) -> Result<(), UpdateError> {
+        if cfg!(windows) {
+            let pid = std::process::id().to_string();
+            return spawn_powershell_script(
+                PORTABLE_POWERSHELL,
+                &[
+                    ("-TargetPid", std::ffi::OsStr::new(&pid)),
+                    ("-Staging", staging.as_os_str()),
+                    ("-InstallPath", self.install_dir.as_os_str()),
+                    ("-LaunchPath", self.launch.as_os_str()),
+                ],
+            );
+        }
+
+        let script = write_script("sh", PORTABLE_SHELL)?;
+        let mut command = Command::new("/bin/sh");
+        command.arg(&script);
+        command
+            .arg(std::process::id().to_string())
+            .arg(staging)
+            .arg(&self.install_dir)
+            .arg(&self.launch);
 
         spawn_detached(command).map_err(|error| {
             let _ = fs::remove_file(&script);
@@ -260,16 +283,23 @@ where
 
     let staging = layout.new_staging_dir()?;
     progress(94);
-    if let Err(error) = extract_zip(&zip_path, &staging) {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error);
-    }
-    progress(97);
 
-    // Rejects an archive that does not contain the executable the installer
-    // is about to relaunch, before anything outside the staging directory is
-    // touched.
-    if let Err(error) = layout.staged_launch(&staging) {
+    let stage_result = match layout.kind {
+        LayoutKind::Msix => {
+            validate_msix(&zip_path)?;
+            progress(97);
+            persist_staged_file(&zip_path, &staging.join("update.msix"))
+        }
+        LayoutKind::Portable | LayoutKind::MacBundle => {
+            extract_zip(&zip_path, &staging)?;
+            progress(97);
+            // Rejects an archive that does not contain the executable the installer
+            // is about to relaunch, before anything outside the staging directory is
+            // touched.
+            layout.staged_launch(&staging).map(|_| ())
+        }
+    };
+    if let Err(error) = stage_result {
         let _ = fs::remove_dir_all(&staging);
         return Err(error);
     }
@@ -280,6 +310,74 @@ where
     }
 
     progress(100);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn spawn_powershell_script(
+    script_body: &str,
+    args: &[(&str, &std::ffi::OsStr)],
+) -> Result<(), UpdateError> {
+    let script = write_script("ps1", script_body)?;
+    let mut command = Command::new("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+        ])
+        .arg(&script);
+    for (flag, value) in args {
+        command.arg(flag).arg(value);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    spawn_detached(command).map_err(|error| {
+        let _ = fs::remove_file(&script);
+        UpdateError::Install(format!("could not start the installer: {error}"))
+    })
+}
+
+fn validate_msix(msix_path: &Path) -> Result<(), UpdateError> {
+    let file = File::open(msix_path).map_err(|error| UpdateError::Archive(error.to_string()))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|error| UpdateError::Archive(error.to_string()))?;
+    if archive.is_empty() {
+        return Err(UpdateError::Archive("the MSIX package is empty".to_owned()));
+    }
+    let mut has_manifest = false;
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| UpdateError::Archive(error.to_string()))?;
+        let relative = entry.enclosed_name().ok_or_else(|| {
+            UpdateError::Archive("the archive contains an unsafe path".to_owned())
+        })?;
+        if relative == Path::new("AppxManifest.xml") {
+            has_manifest = true;
+        }
+    }
+    if !has_manifest {
+        return Err(UpdateError::Archive(
+            "the update does not contain AppxManifest.xml".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn persist_staged_file(source: &Path, destination: &Path) -> Result<(), UpdateError> {
+    if fs::rename(source, destination).is_ok() {
+        return Ok(());
+    }
+    fs::copy(source, destination).map_err(|error| UpdateError::Install(error.to_string()))?;
     Ok(())
 }
 
@@ -465,6 +563,67 @@ try {
 "#;
 
 #[cfg_attr(target_os = "macos", allow(dead_code))]
+const MSIX_POWERSHELL: &str = r#"
+param(
+    [Parameter(Mandatory=$true)][int]$TargetPid,
+    [Parameter(Mandatory=$true)][string]$Staging,
+    [Parameter(Mandatory=$true)][string]$PackagePath,
+    [Parameter(Mandatory=$true)][string]$LaunchPath
+)
+$ErrorActionPreference = 'Stop'
+$log = Join-Path $env:TEMP 'dae-update.log'
+function Launch-Dae {
+    if ($LaunchPath -and (Test-Path -LiteralPath $LaunchPath)) {
+        Start-Process -FilePath $LaunchPath
+        return
+    }
+    $pkg = Get-AppxPackage -Name 'dae' -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
+    if ($pkg) {
+        $manifest = Get-AppxPackageManifest $pkg
+        $appId = ($manifest.Package.Applications.Application | Select-Object -First 1).Id
+        if ($appId) {
+            Start-Process -FilePath 'explorer.exe' -ArgumentList "shell:AppsFolder\$($pkg.PackageFamilyName)!$appId"
+        }
+    }
+}
+try {
+    try {
+        Wait-Process -Id $TargetPid -Timeout 90 -ErrorAction Stop
+    } catch {
+        # The process may already have exited.
+    }
+    Start-Sleep -Milliseconds 300
+    [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType=WindowsRuntime] | Out-Null
+    [Windows.Management.Deployment.DeploymentOptions, Windows.Management.Deployment, ContentType=WindowsRuntime] | Out-Null
+    [Windows.Foundation.AsyncStatus, Windows.Foundation, ContentType=WindowsRuntime] | Out-Null
+    $pm = [Windows.Management.Deployment.PackageManager]::new()
+    $uri = [Uri]::new($PackagePath)
+    $op = $pm.AddPackageAsync($uri, $null, [Windows.Management.Deployment.DeploymentOptions]::ForceApplicationShutdown)
+    while ($op.Status -eq [Windows.Foundation.AsyncStatus]::Started) {
+        Start-Sleep -Milliseconds 150
+    }
+    $result = $op.GetResults()
+    if ($op.Status -ne [Windows.Foundation.AsyncStatus]::Completed -or ($result -and $result.ExtendedErrorCode)) {
+        $detail = if ($result -and $result.ErrorText) {
+            $result.ErrorText
+        } elseif ($op.ErrorCode) {
+            $op.ErrorCode.Message
+        } else {
+            $op.Status.ToString()
+        }
+        throw "AddPackageAsync failed: $detail"
+    }
+    Launch-Dae
+} catch {
+    Add-Content -LiteralPath $log -Value ("dae MSIX update failed: " + $_.Exception.Message)
+    Launch-Dae
+} finally {
+    Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}
+"#;
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 const PORTABLE_SHELL: &str = r#"#!/bin/sh
 # $1 old pid, $2 staging, $3 install directory, $4 executable to relaunch
 pid="$1"
@@ -589,8 +748,56 @@ mod tests {
         // interpolation approach.
         assert!(!PORTABLE_POWERSHELL.contains("Staging = '"));
         assert!(PORTABLE_POWERSHELL.contains("[string]$Staging"));
+        assert!(!MSIX_POWERSHELL.contains("PackagePath = '"));
+        assert!(MSIX_POWERSHELL.contains("[string]$PackagePath"));
         assert!(PORTABLE_SHELL.contains("\"$staging\""));
         assert!(MAC_BUNDLE_SHELL.contains("\"$staged_app\""));
+    }
+
+    #[test]
+    fn msix_validation_requires_root_manifest() {
+        use std::io::Write;
+
+        let directory = tempfile::tempdir().unwrap();
+        let valid_msix = directory.path().join("valid.msix");
+        {
+            let file = File::create(&valid_msix).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("AppxManifest.xml", options).unwrap();
+            zip.write_all(b"<Package/>").unwrap();
+            zip.finish().unwrap();
+        }
+        validate_msix(&valid_msix).unwrap();
+
+        let missing_manifest = directory.path().join("no-manifest.msix");
+        {
+            let file = File::create(&missing_manifest).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("dae.exe", options).unwrap();
+            zip.write_all(b"exe").unwrap();
+            zip.finish().unwrap();
+        }
+        assert!(matches!(
+            validate_msix(&missing_manifest),
+            Err(UpdateError::Archive(_))
+        ));
+    }
+
+    #[test]
+    fn msix_layout_stages_in_writable_temp() {
+        let directory = tempfile::tempdir().unwrap();
+        let readonly_like_install = directory.path().join("WindowsApps");
+        let layout = InstallLayout {
+            install_dir: readonly_like_install,
+            staging_parent: directory.path().to_path_buf(),
+            executable: directory.path().join("WindowsApps/dae.exe"),
+            launch: directory.path().join("WindowsApps/dae.exe"),
+            kind: LayoutKind::Msix,
+            bundle: None,
+        };
+        layout.ensure_writable().unwrap();
     }
 
     #[test]

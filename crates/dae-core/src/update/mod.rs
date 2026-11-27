@@ -209,19 +209,24 @@ fn parse_version(text: &str) -> Result<Version, UpdateError> {
 }
 
 fn platform_key() -> &'static str {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", "x86_64") => "windows-x86_64",
-        ("windows", "aarch64") => "windows-aarch64",
-        ("macos", "x86_64") => "darwin-x86_64",
-        ("macos", "aarch64") => "darwin-aarch64",
-        ("linux", "x86_64") => "linux-x86_64",
-        ("linux", "aarch64") => "linux-aarch64",
-        (os, arch) => {
-            // A compile-time table keeps the match exhaustive without leaking a
-            // formatted allocation into the common path.
-            let _ = (os, arch);
-            "unsupported"
-        }
+    platform_key_for(
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        crate::package::is_packaged(),
+    )
+}
+
+fn platform_key_for(os: &str, arch: &str, packaged: bool) -> &'static str {
+    match (os, arch, packaged) {
+        ("windows", "x86_64", true) => "windows-x86_64-msix",
+        ("windows", "aarch64", true) => "windows-aarch64-msix",
+        ("windows", "x86_64", false) => "windows-x86_64",
+        ("windows", "aarch64", false) => "windows-aarch64",
+        ("macos", "x86_64", _) => "darwin-x86_64",
+        ("macos", "aarch64", _) => "darwin-aarch64",
+        ("linux", "x86_64", _) => "linux-x86_64",
+        ("linux", "aarch64", _) => "linux-aarch64",
+        _ => "unsupported",
     }
 }
 
@@ -679,6 +684,28 @@ mod tests {
 
         assert_eq!(selected.version, Version::parse("0.6.0").unwrap());
         assert_eq!(selected.url.as_str(), "https://example.com/dae-0.6.0.zip");
+    }
+
+    #[test]
+    fn packaged_windows_selects_the_msix_platform_key() {
+        assert_eq!(platform_key_for("windows", "x86_64", false), "windows-x86_64");
+        assert_eq!(platform_key_for("windows", "x86_64", true), "windows-x86_64-msix");
+        assert_eq!(
+            platform_key_for("windows", "aarch64", true),
+            "windows-aarch64-msix"
+        );
+        assert_eq!(platform_key_for("linux", "x86_64", true), "linux-x86_64");
+
+        let endpoint = Url::parse("https://example.com/latest-qt.json").unwrap();
+        let selected = select_update(
+            feed("0.6.0", "windows-x86_64-msix"),
+            &endpoint,
+            &Version::parse("0.5.0").unwrap(),
+            "windows-x86_64-msix",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(selected.version, Version::parse("0.6.0").unwrap());
     }
 
     #[test]

@@ -7,10 +7,10 @@
 //! * An installed package lives under `C:\Program Files\WindowsApps\<name>_
 //!   <version>_<arch>__<publisher>`, which is read-only and gets a **new
 //!   directory name on every update**. The portable updater in
-//!   [`crate::update`] swaps files beside the executable, so it cannot work
-//!   there: it could neither write the tree nor keep a stable path for the
-//!   shortcuts and registry entries pointing at it. Updates have to arrive as a
-//!   new package, so the updater reports itself unavailable.
+//!   [`crate::update`] swaps files beside the executable, so packaged builds
+//!   instead verify a signed `.msix` update and hand it to Windows
+//!   `PackageManager` via [`crate::update`] rather than mutating the install
+//!   tree directly.
 //! * `dae://` is declared by the package manifest, which registers it for the
 //!   application rather than for one executable path. Writing the per-user
 //!   `HKCU\Software\Classes\dae` command on top of that would pin the scheme to
