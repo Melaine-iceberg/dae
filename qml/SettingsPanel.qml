@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Dialogs
 import dae 1.0
+import "Localize.js" as Localize
 import "Shortcut.js" as ShortcutJS
 import "DialogFocus.js" as DialogFocus
 
@@ -66,7 +67,7 @@ FocusScope {
     function createTag(name, color) {
         root.tagError = ""
         if (TagStore.createTag(name, color) === "") {
-            root.tagError = TagStore.note !== "" ? TagStore.note
+            root.tagError = TagStore.note !== "" ? root.backendError(TagStore.note)
                 : qsTr("无法创建标签（名称可能重复）")
             return
         }
@@ -77,14 +78,14 @@ FocusScope {
         root.tagError = ""
         const error = TagStore.updateTag(id, name, color)
         if (error !== "")
-            root.tagError = error
+            root.tagError = root.backendError(error)
     }
 
     function removeTag(id) {
         root.tagError = ""
         const error = TagStore.removeTag(id)
         if (error !== "")
-            root.tagError = error
+            root.tagError = root.backendError(error)
     }
 
     /// The tag store's one reply shape: JSON, with `ok` deciding whether the
@@ -102,14 +103,14 @@ FocusScope {
         root.tagTaskFailed = !reply.ok
         root.tagTaskStatus = reply.ok
             ? qsTr("已导出到 %1").arg(path)
-            : String(reply.error)
+            : root.backendError(String(reply.error))
     }
 
     function importTags(path) {
         const reply = root.tagReply(TagStore.importDefinitions(path))
         if (!reply.ok) {
             root.tagTaskFailed = true
-            root.tagTaskStatus = String(reply.error)
+            root.tagTaskStatus = root.backendError(String(reply.error))
             return
         }
         root.tagTaskFailed = false
@@ -127,7 +128,7 @@ FocusScope {
         const reply = root.tagReply(TagStore.rebuildIndex())
         if (!reply.ok) {
             root.tagTaskFailed = true
-            root.tagTaskStatus = String(reply.error)
+            root.tagTaskStatus = root.backendError(String(reply.error))
             return
         }
         root.tagTaskFailed = false
@@ -479,7 +480,7 @@ FocusScope {
         const log = /^Could not create log directory: (.+)$/.exec(text)
         if (log)
             return qsTr("无法创建日志目录：%1").arg(log[1])
-        return text
+        return Localize.message(text)
     }
 
     /// The platform layer reports the manual follow-up as a fixed sentence.
@@ -914,6 +915,7 @@ FocusScope {
                                 Repeater {
                                     model: root.accentPalette
                                     delegate: Rectangle {
+                                        id: accentSwatch
                                         required property var modelData
                                         property color hue: modelData
                                         readonly property bool picked:
@@ -934,17 +936,18 @@ FocusScope {
 
                                         Rectangle {
                                             anchors.centerIn: parent
-                                            visible: picked
+                                            visible: accentSwatch.picked
                                             width: 8
                                             height: 8
                                             radius: 4
-                                            color: Theme.readableInk(hue)
+                                            color: Theme.readableInk(accentSwatch.hue)
                                         }
 
                                         MouseArea {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: Appearance.chooseCustomAccent(modelData)
+                                            onClicked: Appearance.chooseCustomAccent(
+                                                accentSwatch.modelData)
                                         }
                                     }
                                 }

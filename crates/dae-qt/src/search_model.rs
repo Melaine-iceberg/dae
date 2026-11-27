@@ -940,7 +940,7 @@ fn build_request(args: &SearchArgs) -> Result<search::SearchRequest, String> {
     roots.sort_unstable();
     roots.dedup();
     if roots.is_empty() {
-        return Err("没有可搜索的本地位置".to_owned());
+        return Err("No searchable local location".to_owned());
     }
 
     let (size_min, size_max) = match args.size.as_str() {

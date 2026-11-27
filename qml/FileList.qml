@@ -172,7 +172,7 @@ Item {
         const label = root.columnLabel(id) + "  "
         const sample = label.length > (samples[id] || "").length ? label : samples[id]
         const metrics = Qt.createQmlObject(
-            "import QtQuick; Text { font.pixelSize: " + Theme.typeCaption + " }", root)
+            "import QtQuick; Text { font.pixelSize: " + Theme.typeCaption + " }", root) as Text
         metrics.text = sample || ""
         root.setColumnWidth(id, metrics.implicitWidth + 28)
         metrics.destroy()

@@ -63,11 +63,22 @@ fn store() -> Option<tag_core::TagStore> {
 }
 
 fn failure(message: String) -> String {
-    message
+    crate::errors::friendly_error(&message)
 }
 
+fn write_failed_message(count: usize) -> String {
+    if count == 1 {
+        "1 item could not be tagged".to_owned()
+    } else {
+        format!("{count} items could not be tagged")
+    }
+}
+
+const MISSING_CONFIG_DIR: &str = "Could not locate the configuration directory";
+
 /// What the note says after a write that could not put the tags on the file.
-const INDEX_ONLY_NOTE: &str = "此位置无法随文件保存标签，标签只在 dae 内生效";
+const INDEX_ONLY_NOTE: &str =
+    "Tags cannot be saved with files at this location and only apply within dae";
 
 #[qobject(NoQmlElement, ConvertToCamelCase)]
 impl TagStore {
@@ -101,7 +112,7 @@ impl TagStore {
     #[qslot]
     fn create_tag(&mut self, name: String, color: String) -> String {
         let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
+            return failure(MISSING_CONFIG_DIR.to_owned());
         };
         match store.create_tag(&name, &color) {
             Ok((definition, _)) => {
@@ -123,7 +134,7 @@ impl TagStore {
     #[qslot]
     fn update_tag(&mut self, id: String, name: String, color: String) -> String {
         let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
+            return failure(MISSING_CONFIG_DIR.to_owned());
         };
         match store.update_tag(&id, &name, &color) {
             Ok(_) => {
@@ -141,7 +152,7 @@ impl TagStore {
     #[qslot]
     fn remove_tag(&mut self, id: String) -> String {
         let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
+            return failure(MISSING_CONFIG_DIR.to_owned());
         };
         match store.remove_tag(&id) {
             Ok(_) => {
@@ -161,7 +172,7 @@ impl TagStore {
     #[qslot]
     fn set_tags(&mut self, paths: Vec<String>, ids: Vec<String>) -> String {
         let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
+            return failure(MISSING_CONFIG_DIR.to_owned());
         };
         if paths.is_empty() {
             return String::new();
@@ -175,7 +186,7 @@ impl TagStore {
                 };
                 let mut message = note;
                 if !report.failed.is_empty() {
-                    message = failure(format!("{} 项无法写入标签", report.failed.len()));
+                    message = write_failed_message(report.failed.len());
                 }
                 self.note = message;
                 self.note_changed();
@@ -194,7 +205,7 @@ impl TagStore {
     #[qslot]
     fn toggle_tag(&mut self, paths: Vec<String>, id: String) -> String {
         let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
+            return failure(MISSING_CONFIG_DIR.to_owned());
         };
         if paths.is_empty() || id.is_empty() {
             return String::new();
@@ -226,7 +237,7 @@ impl TagStore {
         }
 
         self.note = if failed > 0 {
-            format!("{failed} 项无法写入标签")
+            write_failed_message(failed)
         } else if index_only {
             INDEX_ONLY_NOTE.to_owned()
         } else {
@@ -243,7 +254,7 @@ impl TagStore {
     #[qslot]
     fn clear_tags(&mut self, paths: Vec<String>) -> String {
         let Some(store) = store() else {
-            return failure("无法定位配置目录".to_owned());
+            return failure(MISSING_CONFIG_DIR.to_owned());
         };
         if paths.is_empty() {
             return String::new();
@@ -304,7 +315,7 @@ impl TagStore {
     #[qslot]
     fn export_definitions(&mut self, path: String) -> String {
         let Some(store) = store() else {
-            return json_error("无法定位配置目录");
+            return json_error(MISSING_CONFIG_DIR);
         };
         export_reply(&store, &path)
     }
@@ -316,7 +327,7 @@ impl TagStore {
     #[qslot]
     fn import_definitions(&mut self, path: String) -> String {
         let Some(store) = store() else {
-            return json_error("无法定位配置目录");
+            return json_error(MISSING_CONFIG_DIR);
         };
         let reply = import_reply(&store, &path);
         if reply_ok(&reply) {
@@ -337,7 +348,7 @@ impl TagStore {
     #[qslot]
     fn rebuild_index(&mut self) -> String {
         let Some(store) = store() else {
-            return json_error("无法定位配置目录");
+            return json_error(MISSING_CONFIG_DIR);
         };
         let reply = rebuild_reply(&store);
         if reply_ok(&reply) {
@@ -367,7 +378,7 @@ impl QmlElement for TagStore {
 fn export_reply(store: &tag_core::TagStore, path: &str) -> String {
     match store.export_to(Path::new(path)) {
         Ok(()) => json_ok(serde_json::json!({ "ok": true })),
-        Err(error) => json_error(&error.to_string()),
+        Err(error) => json_error(&failure(error.to_string())),
     }
 }
 
@@ -379,7 +390,7 @@ fn import_reply(store: &tag_core::TagStore, path: &str) -> String {
             "updated": report.updated,
             "skipped": report.skipped,
         })),
-        Err(error) => json_error(&error.to_string()),
+        Err(error) => json_error(&failure(error.to_string())),
     }
 }
 
@@ -393,7 +404,7 @@ fn rebuild_reply(store: &tag_core::TagStore) -> String {
             "adoptedFromFile": report.adopted_from_file,
             "corruptShards": report.corrupt_shards,
         })),
-        Err(error) => json_error(&error.to_string()),
+        Err(error) => json_error(&failure(error.to_string())),
     }
 }
 

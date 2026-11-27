@@ -43,8 +43,8 @@ Window {
     /// from the translator, and children inherit because QML does not mirror by
     /// default. Glyphs that encode a direction (chevrons, the back arrow) stay
     /// as drawn; their semantics follow the mirrored anchors.
-    // qmllint cannot see `layoutDirection` on its `Qt.application` stub; it is
-    // a real QGuiApplication property.
+    // Note: qmllint cannot see `layoutDirection` on its `Qt.application` stub;
+    // it is a real QGuiApplication property.
     // qmllint disable missing-property
     LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
     // qmllint enable missing-property
@@ -733,7 +733,7 @@ Window {
     }
 
     function createTab(path) {
-        const tab = tabComponent.createObject(null)
+        const tab = tabComponent.createObject(null) as Tab
         if (tab === null)
             return null
         if (path && path.length > 0)
@@ -3053,7 +3053,8 @@ Window {
         }
         const items = []
         for (let index = 0; index < entries.length; index += 1)
-            items.push({ id: "customAction:" + entries[index].id, label: entries[index].name })
+            items.push({ id: "customAction:" + entries[index].id,
+                         label: Localize.message(entries[index].name) })
         return items
     }
 
@@ -3275,8 +3276,7 @@ Window {
         } else if (name === "inspector") {
             inspector.takeFocus()
         } else if (name === "terminal") {
-            if (terminalLoader.item !== null)
-                terminalLoader.item.focusTerminal()
+            root.focusTerminalPanel()
         }
     }
 
@@ -4085,6 +4085,12 @@ Window {
             panel.focusTerminal()
     }
 
+    function jumpTerminalToFolder() {
+        const panel = terminalLoader.item as TerminalPanel
+        if (panel !== null)
+            panel.jumpToFolder()
+    }
+
     Connections {
         target: Workspace
 
@@ -4735,6 +4741,7 @@ Window {
             Component {
                 id: refreshToolbarComponent
                 Rectangle {
+                    id: refreshToolbarButton
                     width: 30
                     height: 30
                     implicitWidth: width
@@ -4792,7 +4799,7 @@ Window {
                         onPressed: function (mouse) { refreshRipple.burst(mouse.x, mouse.y) }
                         onReleased: refreshRipple.release()
                         onCanceled: refreshRipple.release()
-                        onClicked: trigger()
+                        onClicked: refreshToolbarButton.trigger()
                     }
 
                     ToolTip { text: qsTr("刷新") }
@@ -5233,7 +5240,7 @@ Window {
                             // The panel decides whether a session can take
                             // the jump; the shell never sees a remote path.
                             if (root.terminalActive)
-                                terminalPanel.jumpToFolder()
+                                root.jumpTerminalToFolder()
                         }
                         onPreviewRequested: function (path) {
                             root.togglePreview(path)
@@ -5650,7 +5657,7 @@ Window {
                             }
                             onTerminalJumpRequested: {
                                 if (root.terminalActive)
-                                    terminalPanel.jumpToFolder()
+                                    root.jumpTerminalToFolder()
                             }
 
                             // Focus follows the pointer; the pane itself carries
@@ -6983,6 +6990,10 @@ Window {
         function open(paths) {
             instantiate().open(paths);
         }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
     }
 
     LazySurface {
@@ -7005,6 +7016,10 @@ Window {
             const dialog = instantiate()
             dialog.extractSource = source
             dialog.open(destination, [])
+        }
+        function close() {
+            if (content !== null)
+                content.close();
         }
     }
 

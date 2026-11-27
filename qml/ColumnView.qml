@@ -135,8 +135,10 @@ Item {
             return null
         for (let index = panes.count - 1; index >= 0; index -= 1) {
             const pane = panes.itemAt(index)
+            // qmllint disable missing-property
             if (pane !== null && pane.listing.indexOfPath(String(path)) >= 0)
                 return pane
+            // qmllint enable missing-property
         }
         return null
     }
@@ -179,8 +181,11 @@ Item {
         const paths = []
         for (let index = 0; index < panes.count; index += 1) {
             const pane = panes.itemAt(index)
-            if (pane !== null)
+            if (pane !== null) {
+                // qmllint disable missing-property
                 paths.push.apply(paths, pane.listing.selectedPaths())
+                // qmllint enable missing-property
+            }
         }
         return paths
     }
@@ -191,12 +196,15 @@ Item {
     property int selectionRevision: 0
 
     readonly property int selectionCount: {
-        selectionRevision
+        void selectionRevision
         let total = 0
         for (let index = 0; index < panes.count; index += 1) {
             const pane = panes.itemAt(index)
-            if (pane !== null)
+            if (pane !== null) {
+                // qmllint disable missing-property
                 total += pane.listing.selectedCount
+                // qmllint enable missing-property
+            }
         }
         return total
     }
@@ -205,7 +213,7 @@ Item {
     /// per column, so asking the workspace to sum the selected paths is
     /// cheaper than teaching every pane model to publish a second total.
     readonly property string selectionSizeText: {
-        selectionRevision
+        void selectionRevision
         return root.selectionCount > 0
             ? Workspace.selectionSizeText(root.selectedPathList()) : ""
     }
@@ -216,6 +224,7 @@ Item {
             if (pane !== null) {
                 // qmllint disable missing-property
                 pane.listing.clearSelection()
+                // qmllint enable missing-property
             }
         }
     }
@@ -690,7 +699,7 @@ Item {
                 readonly property bool expanded: pane.activeChildPath !== ""
                     && pane.activeChildPath === row.filePath
                 readonly property bool current: list.currentIndex === row.index
-                readonly property bool focusedCursor: list.activeFocus
+                readonly property bool cursorActive: list.activeFocus
                     && pane.keyboardCursor && row.current
                 readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
                     && row.thumbnailSource !== ""
@@ -699,7 +708,7 @@ Item {
                 titleColor: row.hidden ? Theme.inkTertiary : Theme.ink
                 isSelected: row.selected
                 highlighted: row.expanded
-                keyboardCursor: row.focusedCursor
+                keyboardCursor: row.cursorActive
                 isCurrent: row.current
                 showFocusRail: false
                 iconCategory: row.isDir ? "folder" : row.category

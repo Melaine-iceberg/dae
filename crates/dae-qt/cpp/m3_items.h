@@ -178,6 +178,7 @@ signals:
 
 protected:
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
 
 private:
     QColor m_color = QColor("#ffffff");

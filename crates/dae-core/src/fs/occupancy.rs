@@ -63,7 +63,7 @@ pub fn holders_sentence(paths: &[String]) -> Option<String> {
     }
 
     let names: Vec<String> = holders.iter().take(3).map(Holder::describe).collect();
-    Some(names.join("、"))
+    Some(names.join(", "))
 }
 
 /// What "查看占用进程" asks: every file the selection names, plus the files
@@ -192,11 +192,13 @@ pub fn annotate_lock_error(paths: &[String], error: FileSystemError) -> FileSyst
 
     match error {
         FileSystemError::PermissionDenied(message) => {
-            FileSystemError::PermissionDenied(format!("{message}（占用：{sentence}）"))
+            FileSystemError::PermissionDenied(format!("{message} (held by: {sentence})"))
         }
-        FileSystemError::Io(message) => FileSystemError::Io(format!("{message}（占用：{sentence}）")),
+        FileSystemError::Io(message) => {
+            FileSystemError::Io(format!("{message} (held by: {sentence})"))
+        }
         FileSystemError::Internal(message) => {
-            FileSystemError::Internal(format!("{message}（占用：{sentence}）"))
+            FileSystemError::Internal(format!("{message} (held by: {sentence})"))
         }
         other => other,
     }

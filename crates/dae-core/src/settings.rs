@@ -175,7 +175,7 @@ impl Default for CustomAction {
 pub fn default_actions() -> Vec<CustomAction> {
     vec![CustomAction {
         id: "open-in-ide".to_owned(),
-        name: "在 IDE 中打开".to_owned(),
+        name: "Open in IDE".to_owned(),
         command: "code".to_owned(),
         args: vec!["%d".to_owned()],
         platforms: Vec::new(),

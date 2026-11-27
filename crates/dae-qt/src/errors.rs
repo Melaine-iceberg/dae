@@ -124,6 +124,12 @@ fn friendly_code(code: &str) -> Option<&'static str> {
         Some("Archives are read-only. Extract the files to edit them")
     } else if code.starts_with("fs.archive_missing_separator") {
         Some("An archive path is archive:<archive>!<inner path>")
+    } else if code.starts_with("tags.save_failed") {
+        Some("Could not save tag definitions")
+    } else if code.starts_with("tags.export_failed") {
+        Some("Could not export tag definitions")
+    } else if code.starts_with("tags.import_invalid") {
+        Some("Invalid tag definitions file")
     } else if code.starts_with("git.not_a_worktree") {
         Some("This directory is not in a Git repository")
     } else if code.starts_with("git.branch_not_found") {
@@ -215,6 +221,18 @@ mod tests {
         assert_eq!(
             friendly_error("The requested operation has invalid input: fs.something_new"),
             "Invalid input: fs.something_new"
+        );
+        assert_eq!(
+            friendly_error("The directory operation could not complete: tags.save_failed: io"),
+            "Could not save tag definitions"
+        );
+        assert_eq!(
+            friendly_error("The directory operation could not complete: tags.export_failed: io"),
+            "Could not export tag definitions"
+        );
+        assert_eq!(
+            friendly_error("The requested operation has invalid input: tags.import_invalid: bad"),
+            "Invalid tag definitions file"
         );
     }
 

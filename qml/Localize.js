@@ -25,6 +25,10 @@ function line(value) {
     if (!value)
         return value
 
+    const held = /^(.+) \(held by: (.+)\)$/.exec(value)
+    if (held)
+        return line(held[1]) + qsTr("（占用：%1）").arg(held[2])
+
     let match = /^Items: (\d+) · (.+)$/.exec(value)
     if (match)
         return qsTr("%1 项 · %2").arg(match[1]).arg(match[2])
@@ -93,6 +97,9 @@ function line(value) {
     match = /^Unsupported connection protocol: (.+)$/.exec(value)
     if (match)
         return qsTr("不支持的网络协议：%1").arg(match[1])
+    match = /^(\d+) items? could not be tagged$/.exec(value)
+    if (match)
+        return qsTr("%1 项无法写入标签").arg(match[1])
 
     // Windows access-mask summaries join their parts with " & "; translate
     // the combination only when every part is a known right.
@@ -113,6 +120,18 @@ function line(value) {
     switch (value) {
     case "No matches": return qsTr("没有匹配项")
     case "No matching content": return qsTr("没有匹配内容")
+    case "No searchable local location": return qsTr("没有可搜索的本地位置")
+    case "Tags cannot be saved with files at this location and only apply within dae":
+        return qsTr("此位置无法随文件保存标签，标签只在 dae 内生效")
+    case "Could not locate the configuration directory": return qsTr("无法定位配置目录")
+    case "A tag needs a name": return qsTr("标签需要名称")
+    case "A tag name is limited to 32 characters": return qsTr("标签名称最多 32 个字符")
+    case "Could not save tag definitions": return qsTr("无法保存标签定义")
+    case "Could not export tag definitions": return qsTr("无法导出标签定义")
+    case "Invalid tag definitions file": return qsTr("标签定义文件格式无效")
+    case "Open in IDE":
+    case "在 IDE 中打开":
+        return qsTr("在 IDE 中打开")
     case "Invalid search query": return qsTr("搜索表达式无效")
     case "Invalid search expression": return qsTr("搜索表达式无效")
     case "Loading…": return qsTr("读取中…")
@@ -298,6 +317,12 @@ function detail(value) {
     match = /^Not supported on this platform: (.+)$/.exec(value)
     if (match)
         return qsTr("当前平台不支持：%1").arg(match[1])
+    match = /^An item already exists at the destination: (.+)$/.exec(value)
+    if (match)
+        return qsTr("目标位置已存在同名项：%1").arg(match[1])
+    match = /^The requested path was not found: (.+)$/.exec(value)
+    if (match)
+        return qsTr("找不到路径：%1").arg(match[1])
     match = /^The system could not open (.+)$/.exec(value)
     if (match)
         return qsTr("系统无法打开 %1").arg(match[1])

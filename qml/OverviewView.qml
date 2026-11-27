@@ -329,8 +329,8 @@ Item {
                                 spacing: 8
 
                                 Glyph {
-                                    width: 16
-                                    height: 16
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
                                     kind: root.glyphKind(chip.modelData.icon)
                                     tint: Theme.inkSecondary
                                 }

@@ -1,6 +1,7 @@
 #include "m3_items.h"
 
 #include <QPointF>
+#include <QQuickWindow>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
 #include <QSGVertexColorMaterial>
@@ -28,13 +29,15 @@ struct Mesh
 
     int vert(qreal x, qreal y, const QColor &c, qreal alpha = 1.0)
     {
+        // QSGVertexColorMaterial blends with premultiplied alpha (One, OneMinusSrcAlpha).
+        const qreal a = qBound(0.0, alpha * c.alphaF(), 1.0);
         QSGGeometry::ColoredPoint2D v;
         v.x = float(x);
         v.y = float(y);
-        v.r = uchar(c.red());
-        v.g = uchar(c.green());
-        v.b = uchar(c.blue());
-        v.a = uchar(qBound(0.0, alpha * c.alphaF() * 255.0, 255.0));
+        v.r = uchar(qRound(c.redF() * a * 255.0));
+        v.g = uchar(qRound(c.greenF() * a * 255.0));
+        v.b = uchar(qRound(c.blueF() * a * 255.0));
+        v.a = uchar(qRound(a * 255.0));
         verts.append(v);
         return verts.size() - 1;
     }
@@ -554,6 +557,13 @@ void ChromeTabShape::setConnected(bool on)
     update();
 }
 
+void ChromeTabShape::itemChange(ItemChange change, const ItemChangeData &data)
+{
+    QQuickItem::itemChange(change, data);
+    if (change == ItemDevicePixelRatioHasChanged || change == ItemSceneChange)
+        update();
+}
+
 QSGNode *ChromeTabShape::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
     const qreal w = width();
@@ -563,90 +573,172 @@ QSGNode *ChromeTabShape::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
         return nullptr;
     }
 
-    Mesh mesh;
-    const qreal br = m_connected ? qMin(m_bottomRadius, qMin(w * 0.25, h * 0.5)) : 0.0;
-    const qreal bodyW = qMax(qreal(2), w - 2.0 * br);
-    const qreal tr = qMin(m_topRadius, qMin(bodyW * 0.5, h * 0.5));
-    const qreal cornerBottomR = m_connected ? 0.0 : qMin(m_topRadius, qMin(w * 0.5, h * 0.5));
+    const qreal dpr = window() ? qMax(qreal(1.0), window()->effectiveDevicePixelRatio()) : qreal(1.0);
+    const qreal px = 1.0 / dpr;
+    const qreal halfAA = 0.5 * px;
 
-    // Build horizontal scanline bands [y, xL, xR] from top to bottom.
-    // Every edge curve is sampled at 14 steps so corners and concave flares
-    // stay smooth at any DPR.
-    struct Slice {
-        qreal y;
-        qreal xL;
-        qreal xR;
+    Mesh mesh;
+    const qreal rawBr = m_connected ? qMin(m_bottomRadius, qMin(w * 0.25, h * 0.5)) : 0.0;
+    const qreal br = (rawBr > halfAA + 0.1) ? rawBr : 0.0;
+    const qreal bodyW = qMax(qreal(2), w - 2.0 * br);
+    const qreal rawTr = qMin(m_topRadius, qMin(bodyW * 0.5, h * 0.5));
+    const qreal tr = (rawTr > halfAA + 0.1) ? rawTr : 0.0;
+    const qreal rawCornerBottomR = m_connected ? 0.0 : qMin(m_topRadius, qMin(w * 0.5, h * 0.5));
+    const qreal cornerBottomR = (rawCornerBottomR > halfAA + 0.1) ? rawCornerBottomR : 0.0;
+
+    // Sample the left half of the symmetric silhouette top-to-bottom, recording
+    // each boundary point and its outward unit normal so the 1-device-pixel AA
+    // ramp is always perpendicular to the edge (including near horizontal crests
+    // and concave flares).
+    struct Sample {
+        QPointF p;
+        QPointF n;
     };
-    QVector<Slice> slices;
-    constexpr int CornerSteps = 14;
+    QVector<Sample> leftSamples;
+    constexpr int CornerSteps = 32;
+    leftSamples.reserve(CornerSteps * 2 + 4);
 
     if (tr > 0) {
         for (int i = 0; i <= CornerSteps; ++i) {
             const qreal a = (M_PI / 2.0) * (1.0 - qreal(i) / CornerSteps);
-            const qreal dy = tr * (1.0 - std::sin(a));
-            const qreal dx = tr * (1.0 - std::cos(a));
-            slices << Slice{dy, br + dx, w - br - dx};
+            const qreal ca = std::cos(a);
+            const qreal sa = std::sin(a);
+            leftSamples << Sample{
+                QPointF(br + tr - tr * ca, tr - tr * sa),
+                QPointF(-ca, -sa)
+            };
         }
     } else {
-        slices << Slice{0.0, br, w - br};
+        leftSamples << Sample{QPointF(br, 0.0), QPointF(-1.0, -1.0)};
     }
 
-    const qreal wallBottom = m_connected ? (h - br) : (h - cornerBottomR);
-    if (wallBottom > slices.last().y + 0.01)
-        slices << Slice{wallBottom, br, w - br};
-
-    if (m_connected && br > 0) {
-        for (int i = 1; i <= CornerSteps; ++i) {
-            const qreal a = (M_PI / 2.0) * qreal(i) / CornerSteps;
-            const qreal y = (h - br) + br * std::sin(a);
-            const qreal xOff = br * std::cos(a);
-            slices << Slice{y, xOff, w - xOff};
-        }
-    } else if (!m_connected && cornerBottomR > 0) {
-        for (int i = 1; i <= CornerSteps; ++i) {
-            const qreal a = (M_PI / 2.0) * qreal(i) / CornerSteps;
-            const qreal dy = cornerBottomR * std::sin(a);
-            const qreal dx = cornerBottomR * (1.0 - std::cos(a));
-            slices << Slice{wallBottom + dy, dx, w - dx};
+    if (m_connected) {
+        if (br > 0) {
+            for (int i = 0; i <= CornerSteps; ++i) {
+                const qreal a = (M_PI / 2.0) * qreal(i) / CornerSteps;
+                const qreal ca = std::cos(a);
+                const qreal sa = std::sin(a);
+                // Avoid duplicating the exact wall-top corner when tr > 0 and h - br == tr.
+                if (i == 0 && tr > 0 && qFuzzyCompare(h - br, tr))
+                    continue;
+                leftSamples << Sample{
+                    QPointF(br * ca, (h - br) + br * sa),
+                    QPointF(-ca, -sa)
+                };
+            }
+        } else {
+            leftSamples << Sample{QPointF(0.0, h), QPointF(-1.0, 0.0)};
         }
     } else {
-        slices << Slice{h, 0.0, w};
+        if (cornerBottomR > 0) {
+            for (int i = 0; i <= CornerSteps; ++i) {
+                const qreal a = (M_PI / 2.0) * qreal(i) / CornerSteps;
+                const qreal ca = std::cos(a);
+                const qreal sa = std::sin(a);
+                if (i == 0 && tr > 0 && qFuzzyCompare(h - cornerBottomR, tr))
+                    continue;
+                leftSamples << Sample{
+                    QPointF(cornerBottomR * (1.0 - ca), (h - cornerBottomR) + cornerBottomR * sa),
+                    QPointF(-ca, sa)
+                };
+            }
+        } else {
+            leftSamples << Sample{QPointF(0.0, h), QPointF(-1.0, 1.0)};
+        }
     }
 
-    // Fill body with 1px horizontal AA feather along the left/right edges,
-    // and crisp flush bottom at y = h when connected so there is zero seam
-    // against the toolbar below.
-    const qreal aa = 0.85;
-    QVector<int> outL, inL, inR, outR;
-    for (int i = 0; i < slices.size(); ++i) {
-        const Slice &s = slices[i];
-        const qreal midX = (s.xL + s.xR) * 0.5;
-        const qreal lIn = qMin(midX, s.xL + aa);
-        const qreal rIn = qMax(midX, s.xR - aa);
-        const qreal lOut = qMax(qreal(0), s.xL - aa * 0.5);
-        const qreal rOut = qMin(w, s.xR + aa * 0.5);
-        outL << mesh.vert(lOut, s.y, m_color, 0.0);
-        inL << mesh.vert(lIn, s.y, m_color, 1.0);
-        inR << mesh.vert(rIn, s.y, m_color, 1.0);
-        outR << mesh.vert(rOut, s.y, m_color, 0.0);
+    const int n = leftSamples.size();
+    QVector<QPointF> inPosL(n);
+    QVector<int> outL(n), inL(n), inR(n), outR(n);
+    for (int i = 0; i < n; ++i) {
+        const Sample &s = leftSamples[i];
+        const qreal outX = s.p.x() + s.n.x() * halfAA;
+        const qreal outY = s.p.y() + s.n.y() * halfAA;
+        const qreal inX = qMin(w * 0.5, s.p.x() - s.n.x() * halfAA);
+        const qreal rawInY = s.p.y() - s.n.y() * halfAA;
+        const qreal inY = m_connected ? qMin(h, rawInY) : qBound(qreal(0), rawInY, h);
+
+        inPosL[i] = QPointF(inX, inY);
+        outL[i] = mesh.vert(outX, outY, m_color, 0.0);
+        inL[i] = mesh.vert(inX, inY, m_color, 1.0);
+        inR[i] = mesh.vert(w - inX, inY, m_color, 1.0);
+        outR[i] = mesh.vert(w - outX, outY, m_color, 0.0);
     }
 
-    for (int i = 0; i < slices.size() - 1; ++i) {
+    // Top horizontal AA ramp connecting the left and right crest samples.
+    mesh.quad(outL.first(), outR.first(), inR.first(), inL.first());
+
+    for (int i = 0; i < n - 1; ++i) {
         mesh.quad(outL[i], inL[i], inL[i + 1], outL[i + 1]);
-        mesh.quad(inL[i], inR[i], inR[i + 1], inL[i + 1]);
         mesh.quad(inR[i], outR[i], outR[i + 1], inR[i + 1]);
+        if (inPosL[i + 1].y() > inPosL[i].y() + 1e-6)
+            mesh.quad(inL[i], inR[i], inR[i + 1], inL[i + 1]);
     }
+
+    if (!m_connected)
+        mesh.quad(inL.last(), inR.last(), outR.last(), outL.last());
 
     // Optional hairline contour along the outer edge (left flare -> top -> right flare).
     if (m_borderWidth > 0.01 && m_borderColor.alpha() > 0) {
-        QVector<QPointF> contour;
-        for (int i = slices.size() - 1; i >= 0; --i)
-            contour << QPointF(slices[i].xL, slices[i].y);
-        for (int i = 0; i < slices.size(); ++i)
-            contour << QPointF(slices[i].xR, slices[i].y);
+        QVector<Sample> contour;
+        contour.reserve(n * 2);
+        for (int i = n - 1; i >= 0; --i) {
+            const Sample &s = leftSamples[i];
+            const qreal len = std::hypot(s.n.x(), s.n.y());
+            const QPointF unitN = len > 1e-6 ? (s.n / len) : QPointF(0.0, -1.0);
+            contour << Sample{s.p, unitN};
+        }
+        for (int i = 0; i < n; ++i) {
+            const Sample &s = leftSamples[i];
+            const qreal len = std::hypot(s.n.x(), s.n.y());
+            const QPointF unitN = len > 1e-6 ? (s.n / len) : QPointF(0.0, -1.0);
+            contour << Sample{QPointF(w - s.p.x(), s.p.y()), QPointF(-unitN.x(), unitN.y())};
+        }
         if (!m_connected)
             contour << contour.first();
-        featheredStroke(mesh, contour, qMax(qreal(1.2), m_borderWidth), m_borderColor);
+
+        const qreal strokeW = m_borderWidth;
+        const int cn = contour.size();
+        auto clampBorderY = [&](qreal y) {
+            return m_connected ? qMin(h, y) : y;
+        };
+
+        if (strokeW <= px) {
+            const qreal peakAlpha = qBound(qreal(0), strokeW / px, qreal(1));
+            QVector<int> bOut(cn), bMid(cn), bIn(cn);
+            for (int i = 0; i < cn; ++i) {
+                const QPointF center = contour[i].p - contour[i].n * (0.5 * px);
+                const QPointF pOut = center + contour[i].n * px;
+                const QPointF pIn = center - contour[i].n * px;
+                bOut[i] = mesh.vert(pOut.x(), clampBorderY(pOut.y()), m_borderColor, 0.0);
+                bMid[i] = mesh.vert(center.x(), clampBorderY(center.y()), m_borderColor, peakAlpha);
+                bIn[i] = mesh.vert(pIn.x(), clampBorderY(pIn.y()), m_borderColor, 0.0);
+            }
+            for (int i = 0; i < cn - 1; ++i) {
+                mesh.quad(bOut[i], bMid[i], bMid[i + 1], bOut[i + 1]);
+                mesh.quad(bMid[i], bIn[i], bIn[i + 1], bMid[i + 1]);
+            }
+        } else {
+            const qreal halfSolid = 0.5 * (strokeW - px);
+            const qreal outerSpan = halfSolid + px;
+            QVector<int> bOutF(cn), bOutS(cn), bInS(cn), bInF(cn);
+            for (int i = 0; i < cn; ++i) {
+                const QPointF center = contour[i].p - contour[i].n * (0.5 * strokeW);
+                const QPointF pOutF = center + contour[i].n * outerSpan;
+                const QPointF pOutS = center + contour[i].n * halfSolid;
+                const QPointF pInS = center - contour[i].n * halfSolid;
+                const QPointF pInF = center - contour[i].n * outerSpan;
+                bOutF[i] = mesh.vert(pOutF.x(), clampBorderY(pOutF.y()), m_borderColor, 0.0);
+                bOutS[i] = mesh.vert(pOutS.x(), clampBorderY(pOutS.y()), m_borderColor, 1.0);
+                bInS[i] = mesh.vert(pInS.x(), clampBorderY(pInS.y()), m_borderColor, 1.0);
+                bInF[i] = mesh.vert(pInF.x(), clampBorderY(pInF.y()), m_borderColor, 0.0);
+            }
+            for (int i = 0; i < cn - 1; ++i) {
+                mesh.quad(bOutF[i], bOutS[i], bOutS[i + 1], bOutF[i + 1]);
+                mesh.quad(bOutS[i], bInS[i], bInS[i + 1], bOutS[i + 1]);
+                mesh.quad(bInS[i], bInF[i], bInF[i + 1], bInS[i + 1]);
+            }
+        }
     }
 
     QSGGeometryNode *node = nodeFromMesh(mesh);

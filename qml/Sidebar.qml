@@ -188,19 +188,23 @@ Item {
     /// Runs the row under the cursor through the same branch the pointer uses.
     function activateCursor() {
         const item = list.currentItem
+        // qmllint disable missing-property
         if (item !== null && item.activate !== undefined)
             item.activate()
+        // qmllint enable missing-property
     }
 
     /// → opens a volume's tree, ← closes it. On any other row the key does
     /// nothing: a sidebar has no depth to walk into.
     function unfoldCursor(open) {
         const item = list.currentItem
+        // qmllint disable missing-property
         if (item === null || item.isVolume !== true)
             return
         if (root.volumeExpanded(item.path) === open)
             return
         root.toggleVolume(item.path)
+        // qmllint enable missing-property
     }
 
     function sectionLabel(value) {

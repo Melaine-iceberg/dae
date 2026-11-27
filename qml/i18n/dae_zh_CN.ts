@@ -881,6 +881,26 @@
         <source>清除所选标签</source>
         <translation>清除所选标签</translation>
     </message>
+    <message>
+        <location filename="../CommandPalette.qml"/>
+        <source>位置</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <location filename="../CommandPalette.qml"/>
+        <source>反选</source>
+        <translation>反选</translation>
+    </message>
+    <message>
+        <location filename="../CommandPalette.qml"/>
+        <source>命令</source>
+        <translation>命令</translation>
+    </message>
+    <message>
+        <location filename="../CommandPalette.qml"/>
+        <source>按类型选择…</source>
+        <translation>按类型选择…</translation>
+    </message>
 </context>
 <context>
     <name>ConfirmDialog</name>
@@ -1576,6 +1596,66 @@
         <source>名称不能包含 /</source>
         <translation>名称不能包含 /</translation>
     </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>%1 %2 项</source>
+        <translation>%1 %2 项</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>以管理员身份重试</source>
+        <translation>以管理员身份重试</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>创建快捷方式</source>
+        <translation>创建快捷方式</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>名称不能为空</source>
+        <translation>名称不能为空</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>名称不能包含 \ / : * ? " &lt; &gt; |</source>
+        <translation>名称不能包含 \ / : * ? " &lt; &gt; |</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>复制</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>已存在同名文件</source>
+        <translation>已存在同名文件</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>无法写入剪贴板</source>
+        <translation>无法写入剪贴板</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>清除筛选</source>
+        <translation>清除筛选</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>移动</source>
+        <translation>移动</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>重命名 %1</source>
+        <translation>重命名 %1</translation>
+    </message>
+    <message>
+        <location filename="../FileList.qml"/>
+        <source>重试</source>
+        <translation>重试</translation>
+    </message>
 </context>
 <context>
     <name>FilterMenu</name>
@@ -1991,6 +2071,21 @@
         <location filename="../Inspector.qml" line="1183"/>
         <source>全部属性</source>
         <translation>全部属性</translation>
+    </message>
+    <message>
+        <location filename="../Inspector.qml"/>
+        <source>代码块</source>
+        <translation>代码块</translation>
+    </message>
+    <message>
+        <location filename="../Inspector.qml"/>
+        <source>代码块：%1</source>
+        <translation>代码块：%1</translation>
+    </message>
+    <message>
+        <location filename="../Inspector.qml"/>
+        <source>图片无法加载</source>
+        <translation>图片无法加载</translation>
     </message>
 </context>
 <context>
@@ -3211,6 +3306,96 @@
         <source>压缩包路径的格式为 archive:&lt;压缩包&gt;!&lt;内部路径&gt;</source>
         <translation>压缩包路径的格式为 archive:&lt;压缩包&gt;!&lt;内部路径&gt;</translation>
     </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>%1 项无法写入标签</source>
+        <translation>%1 项无法写入标签</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>以管理员身份打开…</source>
+        <translation>以管理员身份打开…</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>只有本地文件夹可以以管理员身份重试</source>
+        <translation>只有本地文件夹可以以管理员身份重试</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>在 IDE 中打开</source>
+        <translation>在 IDE 中打开</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>找不到路径：%1</source>
+        <translation>找不到路径：%1</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>无法保存标签定义</source>
+        <translation>无法保存标签定义</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>无法定位配置目录</source>
+        <translation>无法定位配置目录</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>无法导出标签定义</source>
+        <translation>无法导出标签定义</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>无法用此应用打开文件</source>
+        <translation>无法用此应用打开文件</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>标签名称最多 32 个字符</source>
+        <translation>标签名称最多 32 个字符</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>标签定义文件格式无效</source>
+        <translation>标签定义文件格式无效</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>标签需要名称</source>
+        <translation>标签需要名称</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>此位置无法随文件保存标签，标签只在 dae 内生效</source>
+        <translation>此位置无法随文件保存标签，标签只在 dae 内生效</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>没有可搜索的本地位置</source>
+        <translation>没有可搜索的本地位置</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>目标位置已存在同名项：%1</source>
+        <translation>目标位置已存在同名项：%1</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>该应用已不可用</source>
+        <translation>该应用已不可用</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>请在系统对话框中更改默认应用</source>
+        <translation>请在系统对话框中更改默认应用</translation>
+    </message>
+    <message>
+        <location filename="../Localize.js"/>
+        <source>（占用：%1）</source>
+        <translation>（占用：%1）</translation>
+    </message>
 </context>
 <context>
     <name>Locator</name>
@@ -3245,6 +3430,31 @@
         <location filename="../Locator.qml" line="519"/>
         <source>清除搜索</source>
         <translation>清除搜索</translation>
+    </message>
+    <message>
+        <location filename="../Locator.qml"/>
+        <source>取消固定</source>
+        <translation>取消固定</translation>
+    </message>
+    <message>
+        <location filename="../Locator.qml"/>
+        <source>固定到侧边栏</source>
+        <translation>固定到侧边栏</translation>
+    </message>
+    <message>
+        <location filename="../Locator.qml"/>
+        <source>复制路径</source>
+        <translation>复制路径</translation>
+    </message>
+    <message>
+        <location filename="../Locator.qml"/>
+        <source>打开子目录</source>
+        <translation>打开子目录</translation>
+    </message>
+    <message>
+        <location filename="../Locator.qml"/>
+        <source>编辑路径</source>
+        <translation>编辑路径</translation>
     </message>
 </context>
 <context>
@@ -3580,6 +3790,16 @@
         <location filename="../OverviewView.qml" line="904"/>
         <source>在地址栏打开一个文件夹，它会出现在「最近」里。</source>
         <translation>在地址栏打开一个文件夹，它会出现在「最近」里。</translation>
+    </message>
+    <message>
+        <location filename="../OverviewView.qml"/>
+        <source>快速访问</source>
+        <translation>快速访问</translation>
+    </message>
+    <message>
+        <location filename="../OverviewView.qml"/>
+        <source>磁盘</source>
+        <translation>磁盘</translation>
     </message>
 </context>
 <context>
@@ -4238,6 +4458,26 @@
     <message>
         <source>区分大小写</source>
         <translation>区分大小写</translation>
+    </message>
+    <message>
+        <location filename="../SearchFilterBar.qml"/>
+        <source>子文件夹</source>
+        <translation>子文件夹</translation>
+    </message>
+    <message>
+        <location filename="../SearchFilterBar.qml"/>
+        <source>所有位置</source>
+        <translation>所有位置</translation>
+    </message>
+    <message>
+        <location filename="../SearchFilterBar.qml"/>
+        <source>此文件夹</source>
+        <translation>此文件夹</translation>
+    </message>
+    <message>
+        <location filename="../SearchFilterBar.qml"/>
+        <source>索引不可用 · 逐个遍历，可能较慢</source>
+        <translation>索引不可用 · 逐个遍历，可能较慢</translation>
     </message>
 </context>
 <context>
@@ -5581,6 +5821,241 @@
         <source>让内嵌终端 cd 到当前标签的文件夹</source>
         <translation>让内嵌终端 cd 到当前标签的文件夹</translation>
     </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>1:1</source>
+        <translation>1:1</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>3:4</source>
+        <translation>3:4</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>Mica 从壁纸取色，Mica Alt 色调更重、适合标签栏，Acrylic 实时模糊；仅作用于顶部标签栏。选择材质会开启背景效果，默认不透明。</source>
+        <translation>Mica 从壁纸取色，Mica Alt 色调更重、适合标签栏，Acrylic 实时模糊；仅作用于顶部标签栏。选择材质会开启背景效果，默认不透明。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>“系统”读取桌面强调色，“青蓝”用自带色，“自定义”从调色盘选种色。</source>
+        <translation>“系统”读取桌面强调色，“青蓝”用自带色，“自定义”从调色盘选种色。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>云母 Alt (Mica Alt)</source>
+        <translation>云母 Alt (Mica Alt)</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>先显示纯色窗口，界面在它后面加载；下次启动生效。</source>
+        <translation>先显示纯色窗口，界面在它后面加载；下次启动生效。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>关闭一项后，概览页对应的分组整段隐藏。</source>
+        <translation>关闭一项后，概览页对应的分组整段隐藏。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>关闭则使用实色，适合远程桌面环境。</source>
+        <translation>关闭则使用实色，适合远程桌面环境。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>减少动效</source>
+        <translation>减少动效</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>分栏视图</source>
+        <translation>分栏视图</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>切换后整个窗口立即重新翻译。</source>
+        <translation>切换后整个窗口立即重新翻译。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>列表视图</source>
+        <translation>列表视图</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>动效方案</source>
+        <translation>动效方案</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>取色…</source>
+        <translation>取色…</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>只影响显示；排序与比较仍用字节数。</source>
+        <translation>只影响显示；排序与比较仍用字节数。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>图片铺在列表后面，列表用半透明画布盖住它。</source>
+        <translation>图片铺在列表后面，列表用半透明画布盖住它。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>外观、语言、背景效果、启动方式与终端排版保存在 settings.toml；大小单位与视图偏好保存在 explorer-qt.ini。</source>
+        <translation>外观、语言、背景效果、启动方式与终端排版保存在 settings.toml；大小单位与视图偏好保存在 explorer-qt.ini。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>宽松</source>
+        <translation>宽松</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>开启后所有过渡改为瞬时切换。</source>
+        <translation>开启后所有过渡改为瞬时切换。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>影响文件列表的行高与网格间距。</source>
+        <translation>影响文件列表的行高与网格间距。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>恢复%1的默认值</source>
+        <translation>恢复%1的默认值</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>拖动地址栏两侧的按钮调整顺序，重启后保留。</source>
+        <translation>拖动地址栏两侧的按钮调整顺序，重启后保留。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>未选择</source>
+        <translation>未选择</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>标准</source>
+        <translation>标准</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>标签颜色 %1</source>
+        <translation>标签颜色 %1</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>浮层毛玻璃</source>
+        <translation>浮层毛玻璃</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>生动</source>
+        <translation>生动</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>生动方案带弹簧过冲；标准方案平稳落入，不回弹。</source>
+        <translation>生动方案带弹簧过冲；标准方案平稳落入，不回弹。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>界面</source>
+        <translation>界面</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>界面密度</source>
+        <translation>界面密度</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>直接切换到 Miller 分栏</source>
+        <translation>直接切换到 Miller 分栏</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>直接切换到图标网格</source>
+        <translation>直接切换到图标网格</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>直接切换到详细列表</source>
+        <translation>直接切换到详细列表</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>紧凑</source>
+        <translation>紧凑</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>缩略图形状</source>
+        <translation>缩略图形状</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>网格与密度</source>
+        <translation>网格与密度</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>网格视图</source>
+        <translation>网格视图</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>网格视图的缩略图比例；1:1 更适合图标。</source>
+        <translation>网格视图的缩略图比例；1:1 更适合图标。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>背景与工具栏</source>
+        <translation>背景与工具栏</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>自定义</source>
+        <translation>自定义</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>菜单、对话框等浮层模糊背后内容；关闭改为不透明表面，适合性能较弱的设备。</source>
+        <translation>菜单、对话框等浮层模糊背后内容；关闭改为不透明表面，适合性能较弱的设备。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>跟随系统时，深浅色会随系统切换。</source>
+        <translation>跟随系统时，深浅色会随系统切换。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>还没有标签。输入名称、挑一个颜色，然后点「添加」——之后就能在文件列表和检查器里给文件打标签。</source>
+        <translation>还没有标签。输入名称、挑一个颜色，然后点「添加」——之后就能在文件列表和检查器里给文件打标签。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>选中即复制</source>
+        <translation>选中即复制</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>遮罩</source>
+        <translation>遮罩</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>遮罩越高，背景图上的文字越清楚。</source>
+        <translation>遮罩越高，背景图上的文字越清楚。</translation>
+    </message>
+    <message>
+        <location filename="../SettingsPanel.qml"/>
+        <source>颜色、密度、材质与背景都在这里；改动立即生效。</source>
+        <translation>颜色、密度、材质与背景都在这里；改动立即生效。</translation>
+    </message>
 </context>
 <context>
     <name>ShellWindow</name>
@@ -6882,6 +7357,96 @@
         <source>无法读取设置</source>
         <translation>无法读取设置</translation>
     </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>%1 个文件</source>
+        <translation>%1 个文件</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>%1 个文件夹</source>
+        <translation>%1 个文件夹</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>剪贴板 %1 项，点击清空</source>
+        <translation>剪贴板 %1 项，点击清空</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>在此窗格新建标签页</source>
+        <translation>在此窗格新建标签页</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>已清空剪贴板</source>
+        <translation>已清空剪贴板</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>打开方式</source>
+        <translation>打开方式</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>排序、分组与密度</source>
+        <translation>排序、分组与密度</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>新建标签页</source>
+        <translation>新建标签页</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>显示菜单</source>
+        <translation>显示菜单</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>正在复制到 %1</source>
+        <translation>正在复制到 %1</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>正在查找应用…</source>
+        <translation>正在查找应用…</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>正在移动到 %1</source>
+        <translation>正在移动到 %1</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>没有这类文件</source>
+        <translation>没有这类文件</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>清空剪贴板</source>
+        <translation>清空剪贴板</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>筛选</source>
+        <translation>筛选</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>这个位置没有子目录</source>
+        <translation>这个位置没有子目录</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>这个文件夹没有可选的文件</source>
+        <translation>这个文件夹没有可选的文件</translation>
+    </message>
+    <message>
+        <location filename="../ShellWindow.qml"/>
+        <source>选择其他应用</source>
+        <translation>选择其他应用</translation>
+    </message>
 </context>
 <context>
     <name>Sidebar</name>
@@ -7041,6 +7606,21 @@
         <source>搜索中…</source>
         <translation>搜索中…</translation>
     </message>
+    <message>
+        <location filename="../Sidebar.qml"/>
+        <source>%1 可用</source>
+        <translation>%1 可用</translation>
+    </message>
+    <message>
+        <location filename="../Sidebar.qml"/>
+        <source>已展开，点击折叠</source>
+        <translation>已展开，点击折叠</translation>
+    </message>
+    <message>
+        <location filename="../Sidebar.qml"/>
+        <source>已折叠，点击展开</source>
+        <translation>已折叠，点击展开</translation>
+    </message>
 </context>
 <context>
     <name>SidebarTree</name>
@@ -7133,6 +7713,11 @@
         <source>概览</source>
         <translation>概览</translation>
     </message>
+    <message>
+        <location filename="../Tab.qml"/>
+        <source>新标签页</source>
+        <translation>新标签页</translation>
+    </message>
 </context>
 <context>
     <name>TabStrip</name>
@@ -7187,6 +7772,66 @@
         <location filename="../TerminalPanel.qml" line="495"/>
         <source>跳转</source>
         <translation>跳转</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>%1（shell 未上报目录；安装 Assets/terminal-integration 后跟随）</source>
+        <translation>%1（shell 未上报目录；安装 Assets/terminal-integration 后跟随）</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>上一个匹配</source>
+        <translation>上一个匹配</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>下一个匹配</source>
+        <translation>下一个匹配</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>关闭搜索</source>
+        <translation>关闭搜索</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>关闭此终端</source>
+        <translation>关闭此终端</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>在终端中搜索</source>
+        <translation>在终端中搜索</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>已退出</source>
+        <translation>已退出</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>新建终端</source>
+        <translation>新建终端</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>无匹配</source>
+        <translation>无匹配</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>清屏</source>
+        <translation>清屏</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>终端 %1</source>
+        <translation>终端 %1</translation>
+    </message>
+    <message>
+        <location filename="../TerminalPanel.qml"/>
+        <source>隐藏终端</source>
+        <translation>隐藏终端</translation>
     </message>
 </context>
 <context>
@@ -7274,6 +7919,26 @@
         <source>最大化</source>
         <translation>最大化</translation>
     </message>
+    <message>
+        <location filename="../TopBar.qml"/>
+        <source>切换标签页</source>
+        <translation>切换标签页</translation>
+    </message>
+    <message>
+        <location filename="../TopBar.qml"/>
+        <source>向右滚动标签页</source>
+        <translation>向右滚动标签页</translation>
+    </message>
+    <message>
+        <location filename="../TopBar.qml"/>
+        <source>向左滚动标签页</source>
+        <translation>向左滚动标签页</translation>
+    </message>
+    <message>
+        <location filename="../TopBar.qml"/>
+        <source>搜索与切换标签页</source>
+        <translation>搜索与切换标签页</translation>
+    </message>
 </context>
 <context>
     <name>TransferChip</name>
@@ -7291,6 +7956,21 @@
         <location filename="../TransferChip.qml" line="60"/>
         <source>%1 项传输</source>
         <translation>%1 项传输</translation>
+    </message>
+    <message>
+        <location filename="../TransferChip.qml"/>
+        <source>%1 个传输</source>
+        <translation>%1 个传输</translation>
+    </message>
+    <message>
+        <location filename="../TransferChip.qml"/>
+        <source>%1 个传输，%2%</source>
+        <translation>%1 个传输，%2%</translation>
+    </message>
+    <message>
+        <location filename="../TransferChip.qml"/>
+        <source>，%1</source>
+        <translation>，%1</translation>
     </message>
 </context>
 <context>
@@ -7444,6 +8124,11 @@
         <source>剩余 %1</source>
         <translation>剩余 %1</translation>
     </message>
+    <message>
+        <location filename="../TransferQueue.qml"/>
+        <source>准备中</source>
+        <translation>准备中</translation>
+    </message>
 </context>
 <context>
     <name>TrashView</name>
@@ -7541,6 +8226,31 @@
         <location filename="../TrashView.qml" line="698"/>
         <source>重试</source>
         <translation>重试</translation>
+    </message>
+    <message>
+        <location filename="../TrashView.qml"/>
+        <source>回收站中的项目不会被自动清理；还原会回到原位置，原位置不存在时放回主目录。</source>
+        <translation>回收站中的项目不会被自动清理；还原会回到原位置，原位置不存在时放回主目录。</translation>
+    </message>
+    <message>
+        <location filename="../TrashView.qml"/>
+        <source>已选 %1 项</source>
+        <translation>已选 %1 项</translation>
+    </message>
+    <message>
+        <location filename="../TrashView.qml"/>
+        <source>永久删除</source>
+        <translation>永久删除</translation>
+    </message>
+    <message>
+        <location filename="../TrashView.qml"/>
+        <source>还原</source>
+        <translation>还原</translation>
+    </message>
+    <message>
+        <location filename="../TrashView.qml"/>
+        <source>选择此行</source>
+        <translation>选择此行</translation>
     </message>
 </context>
 <context>
@@ -7706,6 +8416,59 @@
         <location filename="../LocksmithDialog.qml"/>
         <source>重新检查</source>
         <translation>重新检查</translation>
+    </message>
+</context>
+<context>
+    <name>ButtonGroup</name>
+    <message>
+        <location filename="../ButtonGroup.qml"/>
+        <source>选项组</source>
+        <translation>选项组</translation>
+    </message>
+</context>
+<context>
+    <name>Dialog</name>
+    <message>
+        <location filename="../Dialog.qml"/>
+        <source>新建文件夹</source>
+        <translation>新建文件夹</translation>
+    </message>
+</context>
+<context>
+    <name>M3Loader</name>
+    <message>
+        <location filename="../M3Loader.qml"/>
+        <source>加载中</source>
+        <translation>加载中</translation>
+    </message>
+</context>
+<context>
+    <name>M3Progress</name>
+    <message>
+        <location filename="../M3Progress.qml"/>
+        <source>正在处理</source>
+        <translation>正在处理</translation>
+    </message>
+    <message>
+        <location filename="../M3Progress.qml"/>
+        <source>进度 %1%</source>
+        <translation>进度 %1%</translation>
+    </message>
+</context>
+<context>
+    <name>M3Slider</name>
+    <message>
+        <location filename="../M3Slider.qml"/>
+        <source>滑杆</source>
+        <translation>滑杆</translation>
+    </message>
+</context>
+<context>
+    <name>M3Switch</name>
+    <message>
+        <location filename="../M3Switch.qml"/>
+        <source>开关</source>
+        <translation>开关</translation>
     </message>
 </context>
 </TS>
