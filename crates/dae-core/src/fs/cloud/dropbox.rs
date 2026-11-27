@@ -3,8 +3,8 @@
 //! demand via `get_metadata`.
 
 use super::provider::{
-    CloudMeta, CloudProvider, TokenSet, map_status, map_token_error, parse_timestamp, read_chunk,
-    url_encode,
+    CloudMeta, CloudProvider, TokenSet, map_response_error, map_status, map_token_error,
+    parse_timestamp, read_chunk, url_encode,
 };
 use crate::fs::error::FileSystemError;
 use crate::fs::types::EntryKind;
@@ -115,7 +115,11 @@ struct UploadSessionStart {
 /// Maps a Dropbox error response. Dropbox reports `path/not_found` with HTTP
 /// 409 (the same code it uses for real conflicts), so the error summary has
 /// to disambiguate before the generic status mapping runs.
-fn map_dropbox_error(status: reqwest::StatusCode, text: &str) -> FileSystemError {
+fn map_dropbox_error(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    text: &str,
+) -> FileSystemError {
     if status.as_u16() == 401 {
         // Keeps the "401 " prefix the token vault uses to trigger refreshes.
         return map_status(status, text);
@@ -136,17 +140,18 @@ fn map_dropbox_error(status: reqwest::StatusCode, text: &str) -> FileSystemError
             return FileSystemError::Io(format!("Dropbox is out of space: {}", summarize(summary)));
         }
     }
-    map_status(status, text)
+    map_response_error(status, headers, text)
 }
 
 /// Validates a Dropbox RPC/content response and returns its body text.
 async fn dropbox_checked(response: reqwest::Response) -> Result<String, FileSystemError> {
     let status = response.status();
+    let headers = response.headers().clone();
     let text = response.text().await.unwrap_or_default();
     if status.is_success() {
         Ok(text)
     } else {
-        Err(map_dropbox_error(status, &text))
+        Err(map_dropbox_error(status, &headers, &text))
     }
 }
 
@@ -264,11 +269,7 @@ impl CloudProvider for DropboxProvider {
             .send()
             .await
             .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?;
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(map_dropbox_error(status, &text));
-        }
+        let text = dropbox_checked(response).await?;
         let account: CurrentAccount = serde_json::from_str(&text).map_err(|error| {
             FileSystemError::Internal(format!("Unreadable account info: {error}"))
         })?;
@@ -498,8 +499,9 @@ impl CloudProvider for DropboxProvider {
             .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?;
         if !response.status().is_success() {
             let status = response.status();
+            let headers = response.headers().clone();
             let text = response.text().await.unwrap_or_default();
-            return Err(map_dropbox_error(status, &text));
+            return Err(map_dropbox_error(status, &headers, &text));
         }
         Ok(response)
     }
@@ -562,11 +564,7 @@ impl CloudProvider for DropboxProvider {
                     .send()
                     .await
                     .map_err(|error| FileSystemError::Io(format!("Upload failed: {error}")))?;
-                let status = response.status();
-                let text = response.text().await.unwrap_or_default();
-                if !status.is_success() {
-                    return Err(map_dropbox_error(status, &text));
-                }
+                let _ = dropbox_checked(response).await?;
                 offset += read as u64;
                 continue;
             }
@@ -588,11 +586,7 @@ impl CloudProvider for DropboxProvider {
                 .send()
                 .await
                 .map_err(|error| FileSystemError::Io(format!("Upload failed: {error}")))?;
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(map_dropbox_error(status, &text));
-            }
+            let text = dropbox_checked(response).await?;
             let entry: DropboxEntry = serde_json::from_str(&text).map_err(|error| {
                 FileSystemError::Internal(format!("Unreadable upload result: {error}"))
             })?;

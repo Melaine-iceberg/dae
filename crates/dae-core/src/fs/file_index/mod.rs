@@ -187,6 +187,12 @@ fn spawn_feeder_if_uncovered(store: &store::Store, root: &str) {
     feeder::start(store.clone(), root);
 }
 
+pub(crate) fn clear_started(root: &str) {
+    if let Ok(mut roots) = STARTED.lock() {
+        roots.remove(root);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

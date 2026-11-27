@@ -186,12 +186,18 @@ pub fn provider_for(kind: CloudProviderKind) -> Arc<dyn CloudProvider> {
 
 // -- Shared helpers ----------------------------------------------------------
 
+/// Bounds idle gaps while reading cloud metadata or download chunks so a stalled
+/// socket fails instead of hanging forever, without capping long downloads.
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+const MAX_RETRY_AFTER_SECS: u64 = 10;
+
 /// Builds the HTTP client shared by all cloud traffic. Installs the
 /// process-wide rustls provider (ring) on first use.
 pub fn http_client() -> Result<reqwest::Client, FileSystemError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
+        .read_timeout(READ_TIMEOUT)
         .build()
         .map_err(|error| {
             FileSystemError::Internal(format!("Could not build the HTTP client: {error}"))
@@ -225,20 +231,45 @@ pub fn map_status(status: reqwest::StatusCode, detail: &str) -> FileSystemError 
         404 => FileSystemError::NotFound(detail),
         409 => FileSystemError::AlreadyExists(detail),
         429 => FileSystemError::Io(format!(
-            "The cloud service rate-limited the request: {detail}"
+            "429 The cloud service rate-limited the request: {detail}"
         )),
         _ => FileSystemError::Io(format!("The cloud service returned {status}: {detail}")),
     }
 }
 
+/// Maps an HTTP error response while preserving any `Retry-After` seconds hint
+/// on `429` responses so [`super::CloudInner::call`] can back off cleanly.
+pub fn map_response_error(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    detail: &str,
+) -> FileSystemError {
+    if status.as_u16() == 429
+        && let Some(secs) = retry_after_secs(headers)
+    {
+        return FileSystemError::Io(format!(
+            "429 The cloud service rate-limited the request (retry after {secs}s): {}",
+            summarize(detail)
+        ));
+    }
+    map_status(status, detail)
+}
+
+fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?.trim();
+    let secs: u64 = value.parse().ok()?;
+    Some(secs.clamp(1, MAX_RETRY_AFTER_SECS))
+}
+
 /// Validates the response status and returns the body text.
 pub async fn text_checked(response: reqwest::Response) -> Result<String, FileSystemError> {
     let status = response.status();
+    let headers = response.headers().clone();
     let text = response.text().await.unwrap_or_default();
     if status.is_success() {
         Ok(text)
     } else {
-        Err(map_status(status, &text))
+        Err(map_response_error(status, &headers, &text))
     }
 }
 
@@ -281,6 +312,27 @@ pub fn read_chunk(file: &mut std::fs::File, chunk: &mut [u8]) -> Result<usize, F
 /// True when an error came from an expired or revoked access token.
 pub fn is_token_error(error: &FileSystemError) -> bool {
     matches!(error, FileSystemError::PermissionDenied(message) if message.starts_with("401 "))
+}
+
+/// Delay to wait before retrying a rate-limited (429) provider call.
+pub fn rate_limit_delay(error: &FileSystemError, attempt: u32) -> Option<std::time::Duration> {
+    let FileSystemError::Io(message) = error else {
+        return None;
+    };
+    if !message.starts_with("429 ") {
+        return None;
+    }
+    if let Some((_, rest)) = message.split_once("(retry after ")
+        && let Some((secs, _)) = rest.split_once("s)")
+        && let Ok(parsed) = secs.parse::<u64>()
+    {
+        return Some(std::time::Duration::from_secs(
+            parsed.clamp(1, MAX_RETRY_AFTER_SECS),
+        ));
+    }
+    Some(std::time::Duration::from_secs(
+        u64::from(attempt + 1).min(MAX_RETRY_AFTER_SECS),
+    ))
 }
 
 fn summarize(text: &str) -> String {
@@ -412,5 +464,33 @@ mod tests {
         assert!(is_token_error(&error));
         let denied = FileSystemError::PermissionDenied("quota".into());
         assert!(!is_token_error(&denied));
+    }
+
+    #[test]
+    fn rate_limit_delay_honors_retry_after_and_caps_backoff() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::RETRY_AFTER, "4".parse().unwrap());
+        let hinted = map_response_error(reqwest::StatusCode::TOO_MANY_REQUESTS, &headers, "slow down");
+        assert_eq!(
+            rate_limit_delay(&hinted, 0),
+            Some(std::time::Duration::from_secs(4))
+        );
+
+        headers.insert(reqwest::header::RETRY_AFTER, "120".parse().unwrap());
+        let clamped = map_response_error(reqwest::StatusCode::TOO_MANY_REQUESTS, &headers, "slow down");
+        assert_eq!(
+            rate_limit_delay(&clamped, 0),
+            Some(std::time::Duration::from_secs(MAX_RETRY_AFTER_SECS))
+        );
+
+        let unhinted = map_status(reqwest::StatusCode::TOO_MANY_REQUESTS, "busy");
+        assert_eq!(
+            rate_limit_delay(&unhinted, 0),
+            Some(std::time::Duration::from_secs(1))
+        );
+        assert_eq!(
+            rate_limit_delay(&unhinted, 1),
+            Some(std::time::Duration::from_secs(2))
+        );
     }
 }

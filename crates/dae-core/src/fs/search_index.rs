@@ -114,7 +114,7 @@ pub fn try_query(text: &str, limit: usize) -> Result<Vec<String>, FileSystemErro
 /// Whether `program` resolves through `PATH`, with the Windows executable
 /// extensions tried as well. Spawning it is the caller's decision; this only
 /// answers "is it installed".
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn command_available(program: &str) -> bool {
     let Some(path) = std::env::var_os("PATH") else {
         return false;

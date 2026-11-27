@@ -16,6 +16,7 @@
 //! at nothing until the next crawl.
 
 use super::store::{Entry, Store};
+use crate::fs::local::ALWAYS_IGNORED;
 use crate::types::{display_name_from_path, path_to_string};
 use ignore::overrides::{Override, OverrideBuilder};
 use ignore::{WalkBuilder, WalkState};
@@ -41,16 +42,6 @@ const UPSERT_BATCH: usize = 5_000;
 /// left in the queue is picked up by the next `recv`.
 const COALESCE_LIMIT: usize = 1_024;
 
-/// Directory names skipped wherever they appear below a crawl root.
-///
-/// The same list every search walk in this crate skips — `fs::local::ignores`
-/// pins it for name and content search, and the index must cover exactly
-/// what a search would visit, no more and no less. That list is private to
-/// `fs::local`, so the patterns are mirrored here; keep the two in sync.
-/// Exclusion form, relative to the walk root, so a rule never excludes the
-/// root itself.
-const ALWAYS_IGNORED: [&str; 4] = ["!.git", "!**/.git", "!**/node_modules", "!**/target"];
-
 /// Crawl-then-watch on one thread: the whole index lifetime for `root`.
 ///
 /// The watcher arms after the crawl so the two never race the same tree;
@@ -59,6 +50,7 @@ pub fn start(store: Store, root: String) -> JoinHandle<()> {
     std::thread::spawn(move || {
         crawl(&store, &root);
         watch(&store, &root);
+        super::clear_started(&root);
     })
 }
 

@@ -78,9 +78,9 @@ struct Member {
     data: MemberData,
 }
 
-/// The backend for one archive file. Stateless beyond the target: the ZIP
-/// index is cheap enough to rebuild per call, the TAR index is cached
-/// process-wide because it costs a full sequential scan.
+/// The backend for one archive file. Stateless beyond the target: both ZIP
+/// central directories and TAR scans share the process-wide LRU index cache
+/// keyed by path, modification time, and size.
 pub struct ArchiveBackend {
     target: PathBuf,
     /// The verbatim local path text, so child paths round-trip exactly the
@@ -127,10 +127,7 @@ impl ArchiveBackend {
 
     /// The member index for this backend's target.
     fn members(&self) -> Result<Arc<Vec<Member>>, FileSystemError> {
-        match self.format {
-            BrowsedFormat::Zip => Ok(Arc::new(zip_members(&self.target)?)),
-            BrowsedFormat::Tar => tar_index(&self.target),
-        }
+        cached_members(&self.target, self.format)
     }
 
     fn breadcrumbs(&self, inner: &[String]) -> Vec<Breadcrumb> {
@@ -323,16 +320,28 @@ fn tar_members(target: &Path) -> Result<Vec<Member>, FileSystemError> {
     Ok(members)
 }
 
-struct TarIndex {
+struct CachedIndex {
+    format: BrowsedFormat,
     mtime_ms: u64,
     size: u64,
+    last_used: u64,
     members: Arc<Vec<Member>>,
 }
 
-/// The TAR index cache: one scan per (path, mtime, size), process-wide. A
-/// stale entry can only cost one extra scan; the cap keeps a tab that
-/// wandered past thirty archives from holding every index at once.
-fn tar_index(target: &Path) -> Result<Arc<Vec<Member>>, FileSystemError> {
+#[derive(Default)]
+struct IndexCache {
+    clock: u64,
+    entries: HashMap<PathBuf, CachedIndex>,
+}
+
+const INDEX_CACHE_CAP: usize = 32;
+
+/// The archive index cache: one parse per `(path, format, mtime, size)`,
+/// process-wide with LRU eviction at [`INDEX_CACHE_CAP`].
+fn cached_members(
+    target: &Path,
+    format: BrowsedFormat,
+) -> Result<Arc<Vec<Member>>, FileSystemError> {
     let metadata = std::fs::metadata(target)?;
     let mtime_ms = metadata
         .modified()
@@ -342,29 +351,63 @@ fn tar_index(target: &Path) -> Result<Arc<Vec<Member>>, FileSystemError> {
         .unwrap_or(0);
     let size = metadata.len();
 
-    static CACHE: LazyLock<Mutex<HashMap<PathBuf, TarIndex>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-    let cache = &*CACHE;
-    let mut guard = cache.lock().expect("archive tar index poisoned");
-    if let Some(index) = guard.get(target)
-        && index.mtime_ms == mtime_ms
-        && index.size == size
+    static CACHE: LazyLock<Mutex<IndexCache>> = LazyLock::new(|| Mutex::new(IndexCache::default()));
+    let mut guard = CACHE.lock().expect("archive index cache poisoned");
+    if let Some(entry) = guard.entries.get(target)
+        && entry.format == format
+        && entry.mtime_ms == mtime_ms
+        && entry.size == size
     {
-        return Ok(Arc::clone(&index.members));
+        let members = Arc::clone(&entry.members);
+        guard.clock = guard.clock.wrapping_add(1);
+        let stamp = guard.clock;
+        if let Some(entry) = guard.entries.get_mut(target) {
+            entry.last_used = stamp;
+        }
+        return Ok(members);
     }
-    let members = Arc::new(tar_members(target)?);
-    if guard.len() >= 32 {
-        guard.clear();
+    // Parse outside the cache lock so a large archive does not stall other tabs.
+    drop(guard);
+
+    let members = Arc::new(match format {
+        BrowsedFormat::Zip => zip_members(target)?,
+        BrowsedFormat::Tar => tar_members(target)?,
+    });
+
+    let mut guard = CACHE.lock().expect("archive index cache poisoned");
+    if guard.entries.len() >= INDEX_CACHE_CAP
+        && !guard.entries.contains_key(target)
+        && let Some(oldest_key) = guard
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_used)
+            .map(|(key, _)| key.clone())
+    {
+        guard.entries.remove(&oldest_key);
     }
-    guard.insert(
+    guard.clock = guard.clock.wrapping_add(1);
+    let stamp = guard.clock;
+    guard.entries.insert(
         target.to_owned(),
-        TarIndex {
+        CachedIndex {
+            format,
             mtime_ms,
             size,
+            last_used: stamp,
             members: Arc::clone(&members),
         },
     );
     Ok(members)
+}
+
+#[cfg(test)]
+fn tar_index(target: &Path) -> Result<Arc<Vec<Member>>, FileSystemError> {
+    cached_members(target, BrowsedFormat::Tar)
+}
+
+#[cfg(test)]
+fn zip_index(target: &Path) -> Result<Arc<Vec<Member>>, FileSystemError> {
+    cached_members(target, BrowsedFormat::Zip)
 }
 
 fn read_only(path: &str) -> FileSystemError {
@@ -382,16 +425,22 @@ impl FileSystemBackend for ArchiveBackend {
         if !inner.is_empty()
             && let Some(member) = members.iter().find(|member| member.segments == inner)
             && !member.is_dir
-            && members
-                .iter()
-                .all(|candidate| !candidate.segments.starts_with(&inner[..]))
-                .then_some(true)
-                .unwrap_or(false)
+            && !members.iter().any(|candidate| {
+                candidate.segments.len() > inner.len() && candidate.segments.starts_with(&inner)
+            })
         {
             return Err(FileSystemError::NotDirectory(path.to_owned()));
         }
 
         let children = children_of(&members, &inner);
+        if !inner.is_empty()
+            && children.is_empty()
+            && !members
+                .iter()
+                .any(|member| member.segments == inner && member.is_dir)
+        {
+            return Err(FileSystemError::NotFound(path.to_owned()));
+        }
         let entries = children
             .iter()
             .map(|child| directory_entry(&url, &child.name, child))
@@ -741,5 +790,41 @@ mod tests {
         assert!(EntryUrl::parse("archive:archive:/K:/x.zip!/a").is_err());
         assert!(EntryUrl::parse("archive://K:/x.zip!/a").is_err());
         assert!(EntryUrl::parse("archive:/K:/x.zip").is_err());
+    }
+
+    #[test]
+    fn zip_cache_and_missing_or_file_read_dir_behave_consistently() {
+        let dir = scratch("zip-cache-errors");
+        let zip_path = dir.join("tree.zip");
+        build_zip(&zip_path);
+        let root = format!("archive:{}!", zip_path.to_string_lossy());
+        let backend = resolve(&root);
+
+        let first = zip_index(&zip_path).unwrap();
+        let second = zip_index(&zip_path).unwrap();
+        assert!(Arc::ptr_eq(&first, &second), "second zip index read hits cache");
+
+        assert!(matches!(
+            backend.read_dir(&format!("{root}/top.txt")),
+            Err(FileSystemError::NotDirectory(_))
+        ));
+        assert!(matches!(
+            backend.read_dir(&format!("{root}/does-not-exist")),
+            Err(FileSystemError::NotFound(_))
+        ));
+
+        // Explicit empty directories remain browsable.
+        let empty_zip = dir.join("empty-dir.zip");
+        {
+            let file = std::fs::File::create(&empty_zip).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_directory("blank", options).unwrap();
+            zip.finish().unwrap();
+        }
+        let empty_root = format!("archive:{}!", empty_zip.to_string_lossy());
+        let empty_backend = resolve(&empty_root);
+        let view = empty_backend.read_dir(&format!("{empty_root}/blank")).unwrap();
+        assert!(view.entries.is_empty());
     }
 }

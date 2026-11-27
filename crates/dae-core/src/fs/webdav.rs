@@ -51,6 +51,11 @@ use std::time::Duration;
 /// Bounds one connection attempt; a listing or a download issues many requests
 /// and only each individual request is bounded by this, never the whole stream.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bounds idle gaps while reading headers or response chunks so a stalled
+/// socket fails instead of hanging forever, without capping long downloads.
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
+/// Bounds short metadata operations (`PROPFIND`, `MKCOL`, `DELETE`, `MOVE`).
+const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Upload chunks waiting for the PUT thread before `write` blocks. Four chunks
 /// is the same pipeline depth the transfer engine uses for its own streams.
@@ -247,6 +252,7 @@ impl WebDavBackend {
     ) -> Result<Vec<DavResource>, FileSystemError> {
         let request = self
             .authenticated(http_client()?.request(custom_method("PROPFIND")?, request_url(path)))
+            .timeout(METADATA_TIMEOUT)
             .header("Depth", depth)
             .header("Content-Type", "application/xml; charset=utf-8")
             .body(PROPFIND_BODY);
@@ -287,6 +293,7 @@ impl WebDavBackend {
 
         let request = self
             .authenticated(http_client()?.request(custom_method("MOVE")?, request_url(&from)))
+            .timeout(METADATA_TIMEOUT)
             .header("Destination", request_url(&to))
             .header("Overwrite", "F");
 
@@ -421,8 +428,9 @@ impl FileSystemBackend for WebDavBackend {
             ));
         }
 
-        let request =
-            self.authenticated(http_client()?.request(custom_method("MKCOL")?, request_url(&parsed)));
+        let request = self
+            .authenticated(http_client()?.request(custom_method("MKCOL")?, request_url(&parsed)))
+            .timeout(METADATA_TIMEOUT);
         let response = self.send(request)?;
         self.expect_success(response, &parsed.to_string()).map(|_| ())
     }
@@ -487,7 +495,8 @@ impl FileSystemBackend for WebDavBackend {
         }
 
         let request = self
-            .authenticated(http_client()?.request(reqwest::Method::DELETE, request_url(&parsed)));
+            .authenticated(http_client()?.request(reqwest::Method::DELETE, request_url(&parsed)))
+            .timeout(METADATA_TIMEOUT);
         let response = self.send(request)?;
         self.expect_success(response, &parsed.to_string()).map(|_| ())
     }
@@ -507,6 +516,9 @@ fn blocking_client() -> Result<&'static reqwest::blocking::Client, FileSystemErr
         let _ = rustls::crypto::ring::default_provider().install_default();
         reqwest::blocking::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
+            // `reqwest::blocking` defaults to a 30-second total timeout, which
+            // would abort legitimate large uploads mid-stream.
+            .timeout(None)
             .build()
             .map_err(|error| error.to_string())
     });
@@ -710,6 +722,7 @@ fn http_client() -> Result<&'static reqwest::Client, FileSystemError> {
         let _ = rustls::crypto::ring::default_provider().install_default();
         reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
+            .read_timeout(READ_TIMEOUT)
             .build()
             .map_err(|error| error.to_string())
     });

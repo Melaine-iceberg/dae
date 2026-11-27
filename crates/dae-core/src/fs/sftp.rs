@@ -3,10 +3,11 @@
 //! the generic engine in `transfer.rs`; this module implements the
 //! single-server primitives, mirroring the SMB backend.
 //!
-//! Auth is password-based today; the username falls back to the local
-//! account name when the connection store has none. Host keys are verified
-//! against the user's OpenSSH `known_hosts` file and recorded on first
-//! contact — see [`super::known_hosts`] for the policy and its limits.
+//! Auth tries SSH agent, default `~/.ssh` private keys, and password
+//! (depending on whether a password was supplied); the username falls back to
+//! the local account name when the connection store has none. Host keys are
+//! verified against the user's OpenSSH `known_hosts` file and recorded on
+//! first contact — see [`super::known_hosts`] for the policy and its limits.
 
 use super::connections::{self, Protocol};
 use super::error::FileSystemError;
@@ -203,7 +204,7 @@ impl SftpBackend {
             host,
             port,
             &username,
-            password.unwrap_or(""),
+            password.filter(|value| !value.is_empty()),
         ))?;
         sftp.set_timeout(SESSION_TIMEOUT_SECS);
 
@@ -247,7 +248,7 @@ async fn connect_session(
     host: &str,
     port: u16,
     username: &str,
-    password: &str,
+    password: Option<&str>,
 ) -> Result<SftpSession, FileSystemError> {
     let config = Arc::new(russh::client::Config::default());
     let refusal = Arc::new(Mutex::new(None));
@@ -270,15 +271,7 @@ async fn connect_session(
             }
         })?;
 
-    let authenticated = session
-        .authenticate_password(username, password)
-        .await
-        .map_err(|error| FileSystemError::Io(format!("SFTP authentication failed: {error}")))?;
-    if !authenticated.success() {
-        return Err(FileSystemError::PermissionDenied(
-            "The server rejected the account or password. Check the credentials in the connect dialog.".into(),
-        ));
-    }
+    authenticate_session(&mut session, username, password).await?;
 
     let channel = session
         .channel_open_session()
@@ -294,6 +287,168 @@ async fn connect_session(
     SftpSession::new(channel.into_stream())
         .await
         .map_err(|error| FileSystemError::Io(format!("Could not start the SFTP session: {error}")))
+}
+
+/// Authenticates an SFTP session using password, SSH agent, and default
+/// `~/.ssh` private keys.
+///
+/// When the user supplied a password, password auth runs first; if the server
+/// refuses it (for example, `PasswordAuthentication no`), we still try the
+/// agent and local keys (using the supplied password as a key passphrase if
+/// needed). Without a password, agent and unencrypted local keys run before an
+/// empty-password fallback.
+async fn authenticate_session(
+    session: &mut russh::client::Handle<KnownHostsHandler>,
+    username: &str,
+    password: Option<&str>,
+) -> Result<(), FileSystemError> {
+    if let Some(password) = password {
+        let authenticated = session
+            .authenticate_password(username, password)
+            .await
+            .map_err(|error| FileSystemError::Io(format!("SFTP authentication failed: {error}")))?;
+        if authenticated.success() {
+            return Ok(());
+        }
+    }
+
+    if try_agent_auth(session, username).await {
+        return Ok(());
+    }
+
+    if try_default_keys(session, username, password).await {
+        return Ok(());
+    }
+
+    if password.is_none() {
+        let authenticated = session
+            .authenticate_password(username, "")
+            .await
+            .map_err(|error| FileSystemError::Io(format!("SFTP authentication failed: {error}")))?;
+        if authenticated.success() {
+            return Ok(());
+        }
+    }
+
+    Err(FileSystemError::PermissionDenied(
+        "The server rejected the account or password. Check the credentials or SSH key/agent configuration.".into(),
+    ))
+}
+
+async fn negotiated_rsa_hash(
+    session: &russh::client::Handle<KnownHostsHandler>,
+    cached: &mut Option<Option<russh::keys::HashAlg>>,
+    algorithm: russh::keys::Algorithm,
+) -> Option<russh::keys::HashAlg> {
+    if !algorithm.is_rsa() {
+        return None;
+    }
+    if let Some(cached) = *cached {
+        return cached;
+    }
+    let resolved = session.best_supported_rsa_hash().await.ok().flatten().flatten();
+    *cached = Some(resolved);
+    resolved
+}
+
+async fn connect_agent() -> Option<
+    russh::keys::agent::client::AgentClient<
+        Box<dyn russh::keys::agent::client::AgentStream + Send + Unpin>,
+    >,
+> {
+    use russh::keys::agent::client::AgentClient;
+
+    #[cfg(unix)]
+    {
+        AgentClient::connect_env()
+            .await
+            .ok()
+            .map(AgentClient::dynamic)
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(client) = AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await {
+            return Some(client.dynamic());
+        }
+        AgentClient::connect_pageant()
+            .await
+            .ok()
+            .map(AgentClient::dynamic)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
+    }
+}
+
+async fn try_agent_auth(
+    session: &mut russh::client::Handle<KnownHostsHandler>,
+    username: &str,
+) -> bool {
+    let Some(mut agent) = connect_agent().await else {
+        return false;
+    };
+    let Ok(identities) = agent.request_identities().await else {
+        return false;
+    };
+    let mut rsa_hash = None;
+    for identity in identities {
+        let key = identity.public_key().into_owned();
+        let hash_alg = negotiated_rsa_hash(session, &mut rsa_hash, key.algorithm()).await;
+        if let Ok(result) = session
+            .authenticate_publickey_with(username, key, hash_alg, &mut agent)
+            .await
+            && result.success()
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn default_identity_paths_in(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let ssh_dir = home.join(".ssh");
+    ["id_ed25519", "id_ecdsa", "id_rsa"]
+        .into_iter()
+        .map(|name| ssh_dir.join(name))
+        .collect()
+}
+
+async fn try_default_keys(
+    session: &mut russh::client::Handle<KnownHostsHandler>,
+    username: &str,
+    passphrase: Option<&str>,
+) -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let mut rsa_hash = None;
+    for path in default_identity_paths_in(&home) {
+        if !path.is_file() {
+            continue;
+        }
+        let key = match russh::keys::load_secret_key(&path, None) {
+            Ok(key) => key,
+            Err(_) => {
+                let Some(pass) = passphrase else {
+                    continue;
+                };
+                match russh::keys::load_secret_key(&path, Some(pass)) {
+                    Ok(key) => key,
+                    Err(_) => continue,
+                }
+            }
+        };
+        let hash_alg =
+            negotiated_rsa_hash(session, &mut rsa_hash, key.public_key().algorithm()).await;
+        let with_hash = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
+        if let Ok(result) = session.authenticate_publickey(username, with_hash).await
+            && result.success()
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Verifies a connection attempt before it is saved, using the credentials
@@ -968,5 +1123,17 @@ mod sftp_tests {
             map_sftp_error(SftpError::Timeout),
             FileSystemError::Io(_)
         ));
+    }
+
+    #[test]
+    fn default_identity_paths_list_standard_openssh_keys() {
+        let home = std::path::Path::new("/home/alice");
+        let paths = default_identity_paths_in(home);
+        let names: Vec<_> = paths
+            .iter()
+            .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
+            .collect();
+        assert_eq!(names, vec!["id_ed25519", "id_ecdsa", "id_rsa"]);
+        assert!(paths.iter().all(|path| path.parent() == Some(&home.join(".ssh"))));
     }
 }

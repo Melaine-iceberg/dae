@@ -172,22 +172,51 @@ impl CloudInner {
         Ok(tokens.access_token)
     }
 
-    /// Runs one provider call with a fresh token, retrying exactly once when
-    /// the provider reports an expired token (401).
+    /// Runs one provider call with a fresh token, retrying once on an expired
+    /// token (401) and backing off up to twice on rate limits (429).
     fn call<T, F, Fut>(&self, make: F) -> Result<T, FileSystemError>
     where
         F: Fn(String) -> Fut,
         Fut: Future<Output = Result<T, FileSystemError>>,
     {
-        let token = self.access_token(false)?;
-        let result = self.runtime.block_on(make(token));
-        if let Err(error) = &result
-            && provider::is_token_error(error)
-        {
-            let token = self.access_token(true)?;
-            return self.runtime.block_on(make(token));
+        const MAX_RATE_LIMIT_RETRIES: u32 = 2;
+
+        let mut token_refreshed = false;
+        let mut rate_retries = 0;
+        loop {
+            let token = self.access_token(false)?;
+            let result = self.runtime.block_on(make(token));
+            match result {
+                Ok(value) => return Ok(value),
+                Err(error) if !token_refreshed && provider::is_token_error(&error) => {
+                    token_refreshed = true;
+                    let refreshed = self.access_token(true)?;
+                    match self.runtime.block_on(make(refreshed)) {
+                        Ok(value) => return Ok(value),
+                        Err(retry_error) => {
+                            if rate_retries < MAX_RATE_LIMIT_RETRIES
+                                && let Some(delay) =
+                                    provider::rate_limit_delay(&retry_error, rate_retries)
+                            {
+                                rate_retries += 1;
+                                self.runtime.block_on(tokio::time::sleep(delay));
+                                continue;
+                            }
+                            return Err(retry_error);
+                        }
+                    }
+                }
+                Err(error) if rate_retries < MAX_RATE_LIMIT_RETRIES => {
+                    if let Some(delay) = provider::rate_limit_delay(&error, rate_retries) {
+                        rate_retries += 1;
+                        self.runtime.block_on(tokio::time::sleep(delay));
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(error) => return Err(error),
+            }
         }
-        result
     }
 
     fn root_meta(&self) -> CloudMeta {

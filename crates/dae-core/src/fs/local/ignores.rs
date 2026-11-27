@@ -24,7 +24,7 @@ use ignore::overrides::{Override, OverrideBuilder};
 use std::path::Path;
 
 /// Directories skipped wherever they appear below a search root.
-const ALWAYS_IGNORED: [&str; 4] = ["!.git", "!**/.git", "!**/node_modules", "!**/target"];
+pub(crate) const ALWAYS_IGNORED: [&str; 4] = ["!.git", "!**/.git", "!**/node_modules", "!**/target"];
 
 /// [`ALWAYS_IGNORED`] as a matcher for a walk rooted at `root`.
 pub(super) fn default_overrides(root: &Path) -> Result<Override, FileSystemError> {

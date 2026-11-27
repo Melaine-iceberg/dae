@@ -22,6 +22,7 @@ pub use operations::{
     copy_entries_with_progress, delete_entries_with_progress, move_entries_with_progress,
     rename_entry_sync,
 };
+pub(crate) use ignores::ALWAYS_IGNORED;
 pub(crate) use operations::{copy_entry_unreported, validate_entry_name};
 
 use crate::fs::error::FileSystemError;

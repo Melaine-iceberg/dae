@@ -476,7 +476,7 @@ fn copy_entry(
         // atomic and always starts from zero, so the offset is worth
         // having exactly on the throttled path.
         let resumed_at = if merge {
-            local_resume_offset(source, destination, &metadata)
+            local_resume_offset(destination, &metadata)
         } else {
             0
         };
@@ -658,7 +658,7 @@ fn copy_file_throttled(
 /// `transfer::resume_offset`: a file, non-empty, smaller than the source,
 /// and at least as new — a source edited after the interrupted run is
 /// re-copied from zero rather than grafted onto stale bytes.
-fn local_resume_offset(source: &Path, destination: &Path, source_metadata: &fs::Metadata) -> u64 {
+fn local_resume_offset(destination: &Path, source_metadata: &fs::Metadata) -> u64 {
     let Ok(existing) = fs::metadata(destination) else {
         return 0;
     };
