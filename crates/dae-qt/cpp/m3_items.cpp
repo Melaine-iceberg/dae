@@ -560,7 +560,8 @@ void ChromeTabShape::setConnected(bool on)
 void ChromeTabShape::itemChange(ItemChange change, const ItemChangeData &data)
 {
     QQuickItem::itemChange(change, data);
-    if (change == ItemDevicePixelRatioHasChanged || change == ItemSceneChange)
+    if (change == ItemDevicePixelRatioHasChanged || change == ItemSceneChange
+        || change == ItemVisibleHasChanged)
         update();
 }
 
